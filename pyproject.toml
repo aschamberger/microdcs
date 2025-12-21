@@ -1,0 +1,13 @@
+[project]
+name = "micro-dcs"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "aiomqtt>=2.4.0",
+    "pygount>=3.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pygount>=3.1.0",
+]

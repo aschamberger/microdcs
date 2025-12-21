@@ -1,0 +1,79 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "APP_MQTT_HOSTNAME": "localhost",
+            "APP_MQTT_PORT": "1883",
+            "APP_MQTT_IDENTIFIER": "app",
+            "APP_MQTT_TIMEOUT": "10",
+            //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
+            //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
+            "APP_PROCESSING_TOPICS": "app/events/#,app/invoke123/#",
+            "APP_LOGGING_LEVEL": "DEBUG",
+            "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"
+        }
+    },
+    "presentation": {
+        "reveal": "always",
+        "panel": "new"
+    },
+    "tasks": [
+        {
+            "label": "Run App (plain)",
+            "type": "shell",
+            "command": "${command:python.interpreterPath} -m app",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Run App (instrumented)",
+            "type": "shell",
+            "command": "${workspaceFolder}${/}.venv${/}Scripts${/}opentelemetry-instrument ${command:python.interpreterPath} -m app 2>&1",
+            "options": {
+                "env": {
+                    "APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true",
+                    "OTEL_SERVICE_NAME": "app",
+                    "OTEL_TRACES_EXPORTER": "console", // console, otlp, none
+                    "OTEL_METRICS_EXPORTER": "console", // console, otlp, none
+                    "OTEL_LOGS_EXPORTER": "console", // console, otlp, none
+                    // "OTEL_EXPORTER_OTLP_ENDPOINT": "0.0.0.0:4318",
+                    "OTEL_PYTHON_LOG_CORRELATION": "true",
+                    // "OTEL_PYTHON_LOG_FORMAT": "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s resource.service.name=%(otelServiceName)s trace_sampled=%(otelTraceSampled)s] - %(message)s",
+                    "OTEL_PYTHON_LOG_LEVEL": "debug",
+                    "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED": "true",
+                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading"
+                }
+            },
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "MQTT broker port forwarding",
+            "type": "shell",
+            "command": "kubectl port-forward --namespace azure-iot-operations pod/aio-broker-frontend-0 19884 19884",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "App deployment",
+            "type": "shell",
+            "command": "kubectl apply -f ./deploy/app.yaml",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Line count stats",
+            "type": "shell",
+            "command": "pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],processor",
+            "options": {
+                "env": {
+                    "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
+                }
+            },
+            "group": "none",
+            "problemMatcher": [],
+        },
+    ]
+}
