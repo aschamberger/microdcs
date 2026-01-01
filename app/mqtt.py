@@ -19,25 +19,41 @@ class QoS(enum.IntEnum):
 
 
 class MQTTProcessorMessage:
-    topic: str | aiomqtt.Topic
+    topic: str
     payload: bytes
+    qos: QoS
+    retain: bool
+    payload_format_indicator: int
+    message_expiry_interval: int | None
+    content_type: str | None
+    response_topic: str | None
+    correlation_data: bytes | None
     user_properties: dict[str, Any]
-    response_topic: str | None = None
-    retain: bool = False
 
     def __init__(
         self,
-        topic: str | aiomqtt.Topic,
+        topic: str,
+        *,
         payload: bytes,
-        user_properties: dict[str, Any],
-        response_topic: str | None = None,
+        qos: QoS = QoS.AT_LEAST_ONCE,
         retain: bool = False,
+        payload_format_indicator: int = 1,
+        message_expiry_interval: int | None = None,
+        content_type: str = "application/json",
+        response_topic: str | None = None,
+        correlation_data: bytes = uuid4().bytes,
+        user_properties: dict[str, Any],
     ):
         self.topic = topic
         self.payload = payload
-        self.user_properties = user_properties
-        self.response_topic = response_topic
+        self.qos = qos
         self.retain = retain
+        self.payload_format_indicator = payload_format_indicator
+        self.message_expiry_interval = message_expiry_interval
+        self.content_type = content_type
+        self.response_topic = response_topic
+        self.correlation_data = correlation_data
+        self.user_properties = user_properties
 
 
 class MQTTMessageProcessor:
@@ -91,27 +107,30 @@ class MQTTHandler:
     async def _publish_message(
         self,
         client: aiomqtt.Client,
-        topic: str,
-        payload: bytes,
-        response_topic: str | None = None,
-        user_properties: dict[str, Any] | None = None,
-        retain: bool = False,
+        message: MQTTProcessorMessage,
     ) -> None:
         properties = Properties(PacketTypes.PUBLISH)
-        properties.MessageExpiryInterval = self._runtime_config.message_expiry_interval
-        # https://www.hivemq.com/blog/mqtt5-essentials-part8-payload-format-description/
-        properties.PayloadFormatIndicator = 1  # UTF-8
-        properties.ContentType = "application/json"
-        properties.CorrelationData = uuid4().bytes
-        if response_topic:
-            properties.ResponseTopic = response_topic
-        if user_properties:
-            properties.UserProperty = list[user_properties.items()]
+        if message.message_expiry_interval is not None:
+            properties.MessageExpiryInterval = message.message_expiry_interval
+        else:
+            properties.MessageExpiryInterval = self._runtime_config.message_expiry_interval
+        if message.payload_format_indicator is not None:
+            # https://www.hivemq.com/blog/mqtt5-essentials-part8-payload-format-description/
+            properties.PayloadFormatIndicator = message.payload_format_indicator
+        if message.content_type is not None:
+            properties.ContentType = message.content_type
+        if message.response_topic:
+            properties.ResponseTopic = message.response_topic
+        if message.correlation_data is not None:
+            properties.CorrelationData = message.correlation_data
+        if message.user_properties:
+            # Convert dictionary to list of tuples
+            properties.UserProperty = list(message.user_properties.items())
         await client.publish(
-            topic,
-            payload,
-            qos=QoS.AT_LEAST_ONCE,
-            retain=retain,
+            message.topic,
+            message.payload,
+            qos=message.qos,
+            retain=message.retain,
             properties=properties,
             timeout=self._runtime_config.message_publication_timeout,
         )
@@ -119,17 +138,30 @@ class MQTTHandler:
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
     ) -> None:
-        user_properties: dict[str, Any] = {}
-        if message.properties and hasattr(message.properties, "UserProperty"):
-            # Convert list of tuples to dictionary
-            user_properties = dict(message.properties.UserProperty)  # type: ignore
-        response_topic: str | None = None
-        if message.properties and hasattr(message.properties, "ResponseTopic"):
-            response_topic = str(message.properties.ResponseTopic)  # type: ignore
         # FIXME type error should be gone with new release: https://github.com/empicano/aiomqtt/commit/68303021095de6c2782e01c4f1391442fb7c8246
         processor_message = MQTTProcessorMessage(
-            message.topic, message.payload, user_properties, response_topic
-        )  # type: ignore
+            topic=message.topic,
+            payload=message.payload,  # type: ignore
+            qos=message.qos,
+            retain=message.retain,
+        )
+        if message.properties and hasattr(message.properties, "PayloadFormatIndicator"):
+            processor_message.payload_format_indicator = (
+                message.properties.PayloadFormatIndicator # type: ignore
+            )
+        if message.properties and hasattr(message.properties, "MessageExpiryInterval"):
+            processor_message.message_expiry_interval = (
+                message.properties.MessageExpiryInterval # type: ignore
+            )
+        if message.properties and hasattr(message.properties, "ContentType"):
+            processor_message.content_type = str(message.properties.ContentType)  # type: ignore
+        if message.properties and hasattr(message.properties, "ResponseTopic"):
+            processor_message.response_topic = str(message.properties.ResponseTopic)  # type: ignore
+        if message.properties and hasattr(message.properties, "CorrelationData"):
+            processor_message.correlation_data = message.properties.CorrelationData  # type: ignore
+        if message.properties and hasattr(message.properties, "UserProperty"):
+            # Convert list of tuples to dictionary
+            processor_message.user_properties = dict(message.properties.UserProperty)  # type: ignore
 
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor
@@ -148,14 +180,7 @@ class MQTTHandler:
 
         # send responses back if any
         for response in responses:
-            await self._publish_message(
-                client,
-                topic=str(response.topic),
-                payload=response.payload,
-                response_topic=response.response_topic,
-                user_properties=response.user_properties,
-                retain=response.retain,
-            )
+            await self._publish_message(client, response)
 
         # FIXME: use the native ack method when https://github.com/empicano/aiomqtt/pull/346 is merged
         client._client.ack(message.mid, message.qos)  # type: ignore #
