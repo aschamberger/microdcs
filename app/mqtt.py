@@ -1,6 +1,7 @@
 import asyncio
 import enum
 from abc import abstractmethod
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -10,6 +11,8 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from app import MQTTConfig
+
+logger = logging.getLogger("handler.mqtt")
 
 
 class QoS(enum.IntEnum):
@@ -109,11 +112,14 @@ class MQTTHandler:
         client: aiomqtt.Client,
         message: MQTTProcessorMessage,
     ) -> None:
+        logger.debug("Publishing message to topic %s", message.topic)
         properties = Properties(PacketTypes.PUBLISH)
         if message.message_expiry_interval is not None:
             properties.MessageExpiryInterval = message.message_expiry_interval
         else:
-            properties.MessageExpiryInterval = self._runtime_config.message_expiry_interval
+            properties.MessageExpiryInterval = (
+                self._runtime_config.message_expiry_interval
+            )
         if message.payload_format_indicator is not None:
             # https://www.hivemq.com/blog/mqtt5-essentials-part8-payload-format-description/
             properties.PayloadFormatIndicator = message.payload_format_indicator
@@ -138,6 +144,7 @@ class MQTTHandler:
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
     ) -> None:
+        logger.debug("Received message on topic %s", message.topic)
         # FIXME type error should be gone with new release: https://github.com/empicano/aiomqtt/commit/68303021095de6c2782e01c4f1391442fb7c8246
         processor_message = MQTTProcessorMessage(
             topic=message.topic,
@@ -147,11 +154,11 @@ class MQTTHandler:
         )
         if message.properties and hasattr(message.properties, "PayloadFormatIndicator"):
             processor_message.payload_format_indicator = (
-                message.properties.PayloadFormatIndicator # type: ignore
+                message.properties.PayloadFormatIndicator  # type: ignore
             )
         if message.properties and hasattr(message.properties, "MessageExpiryInterval"):
             processor_message.message_expiry_interval = (
-                message.properties.MessageExpiryInterval # type: ignore
+                message.properties.MessageExpiryInterval  # type: ignore
             )
         if message.properties and hasattr(message.properties, "ContentType"):
             processor_message.content_type = str(message.properties.ContentType)  # type: ignore
@@ -186,6 +193,7 @@ class MQTTHandler:
         client._client.ack(message.mid, message.qos)  # type: ignore #
 
     async def _process_messages(self, client: aiomqtt.Client) -> None:
+        logger.info("Starting MQTT message processing")
         message: aiomqtt.Message
         async for message in client.messages:
             await self._process_message(client, message)
@@ -194,6 +202,7 @@ class MQTTHandler:
         self._message_processors.append(processor)
 
     async def task(self) -> None:
+        logger.info("Starting MQTT handler task")
         client: aiomqtt.Client = self._client()
         interval = 1  # seconds
         while True:
@@ -203,10 +212,11 @@ class MQTTHandler:
                         for topic in processor.topics:
                             await client.subscribe(topic)
                     async with asyncio.TaskGroup() as tg:
+                        logger.info("Starting %d message worker tasks", self._runtime_config.message_workers)
                         for _ in range(self._runtime_config.message_workers):
                             tg.create_task(self._process_messages(client))
             except aiomqtt.MqttError:
-                print(f"Connection lost; Reconnecting in {interval} seconds ...")
+                logger.warning(f"Connection lost; Reconnecting in {interval} seconds ...")
                 await asyncio.sleep(interval)
 
 
