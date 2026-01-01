@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 import os
@@ -6,14 +5,14 @@ import os
 from app import RuntimeConfig, SystemEventTaskGroup
 from app.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
 
-
-logger = logging.getLogger('app.main')
+logger = logging.getLogger("app.main")
 
 
 async def task(name: str, duration: int):
     logger.info("Task %s: Starting", name)
     await asyncio.sleep(duration)
     logger.info("Task %s: Completed", name)
+
 
 async def main():
     logger.info("Setting up runtime configuration")

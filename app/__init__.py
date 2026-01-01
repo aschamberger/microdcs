@@ -1,15 +1,14 @@
 import asyncio
-from dataclasses import dataclass, field, fields, MISSING
 import dataclasses
 import logging.config
 import os
-from pathlib import Path
 import signal
+from dataclasses import MISSING, dataclass, field, fields
+from pathlib import Path
 from types import FrameType
 from typing import Any
 
-
-logger = logging.getLogger('app.main')
+logger = logging.getLogger("app.main")
 
 
 @dataclass
@@ -36,47 +35,39 @@ class LoggingConfig:
 
     def set_logging_config(self):
         config: dict[str, Any] = {
-            'version': 1,
-            'disable_existing_loggers': False,
-            'formatters': {
-                'simple': {
-                    'format': self.format
-                }
-            },
-            'handlers': {
-                'stdout': {
-                    'class': 'logging.StreamHandler',
-                    'level': 'INFO',
-                    'formatter': 'simple',
-                    'stream': 'ext://sys.stdout'
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {"simple": {"format": self.format}},
+            "handlers": {
+                "stdout": {
+                    "class": "logging.StreamHandler",
+                    "level": "INFO",
+                    "formatter": "simple",
+                    "stream": "ext://sys.stdout",
                 },
-                'stderr': {
-                    'class': 'logging.StreamHandler',
-                    'level': 'ERROR',
-                    'formatter': 'simple',
-                    'stream': 'ext://sys.stderr'
+                "stderr": {
+                    "class": "logging.StreamHandler",
+                    "level": "ERROR",
+                    "formatter": "simple",
+                    "stream": "ext://sys.stderr",
                 },
-                'file': {
-                    'class': 'logging.FileHandler',
-                    'formatter': 'simple',
-                    'filename': self.filename,
-                    'mode': 'w'
-                }
+                "file": {
+                    "class": "logging.FileHandler",
+                    "formatter": "simple",
+                    "filename": self.filename,
+                    "mode": "w",
+                },
             },
-            'root': {
-                'level': self.level,
-                'handlers': [
-                    'stderr',
-                    'stdout',
-                    'file'
-                ]
-            }
+            "root": {"level": self.level, "handlers": ["stderr", "stdout", "file"]},
         }
         logging.config.dictConfig(config)
 
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
-        if not self.disable_if_otel_enabled or os.getenv("OTEL_LOGS_EXPORTER", "none").lower() == "none":
+        if (
+            not self.disable_if_otel_enabled
+            or os.getenv("OTEL_LOGS_EXPORTER", "none").lower() == "none"
+        ):
             self.set_logging_config()
 
 
@@ -95,34 +86,50 @@ class RuntimeConfig:
     processing: ProcessingConfig
 
     def __init__(self, prefix: str = "APP_"):
-        for field in fields(self):
-            if dataclasses.is_dataclass(field.type) and callable(field.type):
-                setattr(self, field.name, field.type())
-                for field2 in fields(field.type):
-                    env_var = f"{prefix}{field.name.upper()}_{field2.name.upper()}"
+        for field_main in fields(self):
+            if dataclasses.is_dataclass(field_main.type) and callable(field_main.type):
+                setattr(self, field_main.name, field_main.type())
+                for field_child in fields(field_main.type):
+                    env_var = f"{prefix}{field_main.name.upper()}_{field_child.name.upper()}"
                     default = None
-                    if field2.default != MISSING:
-                        default = field2.default
-                    elif callable(field2.default_factory):
-                        default = field2.default_factory()
-                    value: str | int | float | bool | Path | set[str] | list[str] | None = os.getenv(env_var, default)
+                    if field_child.default != MISSING:
+                        default = field_child.default
+                    elif callable(field_child.default_factory):
+                        default = field_child.default_factory()
+                    value: (
+                        str | int | float | bool | Path | set[str] | list[str] | None
+                    ) = os.getenv(env_var, default)
                     if value is not None:
-                        if field2.type == set[str] and not isinstance(value, set) and isinstance(value, str):
+                        if (
+                            field_child.type == set[str]
+                            and not isinstance(value, set)
+                            and isinstance(value, str)
+                        ):
                             value = {v.strip() for v in value.split(",")}
-                        elif field2.type == list[str] and not isinstance(value, list) and isinstance(value, str):
+                        elif (
+                            field_child.type == list[str]
+                            and not isinstance(value, list)
+                            and isinstance(value, str)
+                        ):
                             value = [v.strip() for v in value.split(",")]
-                        elif field2.type == bool and not isinstance(value, bool):
+                        elif field_child.type is bool and not isinstance(value, bool):
                             value = value in [1, "1", "true", "True", "TRUE"]
-                        elif field2.type == Path and not isinstance(value, Path) and isinstance(value, str):
+                        elif (
+                            field_child.type == Path
+                            and not isinstance(value, Path)
+                            and isinstance(value, str)
+                        ):
                             value = Path(value)
-                        elif field2.type == str:
+                        elif field_child.type is str:
                             value = str(value)
-                        elif field2.type == int and isinstance(value, str):
+                        elif field_child.type is int and isinstance(value, str):
                             value = int(value)
-                        elif field2.type == float and (isinstance(value, str) or isinstance(value, int)):
+                        elif field_child.type is float and (
+                            isinstance(value, str) or isinstance(value, int)
+                        ):
                             value = float(value)
 
-                        setattr(getattr(self, field.name), field2.name, value)
+                        setattr(getattr(self, field_main.name), field_child.name, value)
 
 
 class SystemEventTaskGroup(asyncio.TaskGroup):
@@ -136,22 +143,34 @@ class SystemEventTaskGroup(asyncio.TaskGroup):
         for task in self._tasks:
             task.cancel()
 
-    def __init__(self, signals: set[signal.Signals] = {signal.SIGINT, signal.SIGTERM}, *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        signals: set[signal.Signals] = {signal.SIGINT, signal.SIGTERM},
+        *args: Any,
+        **kwargs: Any,
+    ):
         self._signals = signals
         super().__init__(*args, **kwargs)
-        logger.info("Setting up signal handlers for: %s", ', '.join(s.name for s in self._signals))
+        logger.info(
+            "Setting up signal handlers for: %s",
+            ", ".join(s.name for s in self._signals),
+        )
         try:
             loop = asyncio.get_running_loop()
             for sig in self._signals:
                 loop.add_signal_handler(sig, self.shutdown, sig)
-        except NotImplementedError: # Windows compatibility
+        except NotImplementedError:  # Windows compatibility
             self._win_signal = None
+
             def set_win_signal(sig: int, frame: FrameType | None):
                 self._win_signal = sig
+
             for sig in self._signals:
                 signal.signal(sig, set_win_signal)
+
             async def win_signal_watcher():
                 while self._win_signal is None:
                     await asyncio.sleep(1)
                 self.shutdown(signal.Signals(self._win_signal))
+
             self.create_task(win_signal_watcher())

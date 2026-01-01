@@ -1,17 +1,59 @@
-
-from abc import abstractmethod
 import asyncio
+import enum
+from abc import abstractmethod
 from typing import Any
 from uuid import uuid4
+
 import aiomqtt
 import paho.mqtt.client
-from app import MQTTConfig
-from paho.mqtt.properties import Properties
 from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
+
+from app import MQTTConfig
+
+
+class QoS(enum.IntEnum):
+    AT_MOST_ONCE = 0
+    AT_LEAST_ONCE = 1
+    EXACTLY_ONCE = 2
+
+
+class MQTTProcessorMessage:
+    topic: str | aiomqtt.Topic
+    payload: bytes
+    user_properties: dict[str, Any]
+    response_topic: str | None = None
+    retain: bool = False
+
+    def __init__(
+        self,
+        topic: str | aiomqtt.Topic,
+        payload: bytes,
+        user_properties: dict[str, Any],
+        response_topic: str | None = None,
+        retain: bool = False,
+    ):
+        self.topic = topic
+        self.payload = payload
+        self.user_properties = user_properties
+        self.response_topic = response_topic
+        self.retain = retain
+
+
+class MQTTMessageProcessor:
+    topics: set[str]
+
+    def __init__(self, topics: set[str]):
+        self.topics = topics
+
+    @abstractmethod
+    async def process_message(
+        self, message: MQTTProcessorMessage
+    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage:
+        pass
 
 
 class MQTTHandler:
-
     _runtime_config: MQTTConfig
     _message_processors: list[MQTTMessageProcessor] = []
 
@@ -24,7 +66,7 @@ class MQTTHandler:
             with open(self._runtime_config.sat_token_path, "r") as f:
                 sat_token = f.read()
                 properties = Properties(PacketTypes.CONNECT)
-                properties.AuthenticationMethod = 'K8S-SAT'
+                properties.AuthenticationMethod = "K8S-SAT"
                 properties.AuthenticationData = sat_token
         tls_params = None
         if self._runtime_config.tls_cert_path.exists():
@@ -43,32 +85,51 @@ class MQTTHandler:
             tls_params=tls_params,
         )
         # FIXME: set this as a aiomqtt client property when https://github.com/empicano/aiomqtt/pull/346 is merged
-        client._client.manual_ack_set(True)# type: ignore #
+        client._client.manual_ack_set(True)  # type: ignore #
         return client
 
-    async def _publish_message(self, client: aiomqtt.Client, topic: str, payload: bytes, response_topic: str | None = None, user_properties: dict[str, Any] | None = None, retain: bool=False) -> None:
+    async def _publish_message(
+        self,
+        client: aiomqtt.Client,
+        topic: str,
+        payload: bytes,
+        response_topic: str | None = None,
+        user_properties: dict[str, Any] | None = None,
+        retain: bool = False,
+    ) -> None:
         properties = Properties(PacketTypes.PUBLISH)
         properties.MessageExpiryInterval = self._runtime_config.message_expiry_interval
         # https://www.hivemq.com/blog/mqtt5-essentials-part8-payload-format-description/
-        properties.PayloadFormatIndicator = 1 # UTF-8
-        properties.ContentType = 'application/json'
+        properties.PayloadFormatIndicator = 1  # UTF-8
+        properties.ContentType = "application/json"
         properties.CorrelationData = uuid4().bytes
         if response_topic:
             properties.ResponseTopic = response_topic
         if user_properties:
             properties.UserProperty = list[user_properties.items()]
-        await client.publish(topic, payload, qos=1, retain=retain, properties=properties, timeout=self._runtime_config.message_publication_timeout)
+        await client.publish(
+            topic,
+            payload,
+            qos=QoS.AT_LEAST_ONCE,
+            retain=retain,
+            properties=properties,
+            timeout=self._runtime_config.message_publication_timeout,
+        )
 
-    async def _process_message(self, client: aiomqtt.Client, message: aiomqtt.Message) -> None:
+    async def _process_message(
+        self, client: aiomqtt.Client, message: aiomqtt.Message
+    ) -> None:
         user_properties: dict[str, Any] = {}
         if message.properties and hasattr(message.properties, "UserProperty"):
             # Convert list of tuples to dictionary
-            user_properties = dict(message.properties.UserProperty) # type: ignore
+            user_properties = dict(message.properties.UserProperty)  # type: ignore
         response_topic: str | None = None
         if message.properties and hasattr(message.properties, "ResponseTopic"):
-            response_topic = str(message.properties.ResponseTopic) # type: ignore
+            response_topic = str(message.properties.ResponseTopic)  # type: ignore
         # FIXME type error should be gone with new release: https://github.com/empicano/aiomqtt/commit/68303021095de6c2782e01c4f1391442fb7c8246
-        processor_message = MQTTProcessorMessage(message.topic, message.payload, user_properties, response_topic) # type: ignore
+        processor_message = MQTTProcessorMessage(
+            message.topic, message.payload, user_properties, response_topic
+        )  # type: ignore
 
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor
@@ -77,7 +138,9 @@ class MQTTHandler:
         for processor in self._message_processors:
             for topic in processor.topics:
                 if message.topic.matches(topic):
-                    processor_response = await processor.process_message(processor_message)
+                    processor_response = await processor.process_message(
+                        processor_message
+                    )
                     if isinstance(processor_response, list):
                         responses.extend(processor_response)
                     else:
@@ -87,7 +150,7 @@ class MQTTHandler:
         for response in responses:
             await self._publish_message(
                 client,
-                topic=response.topic,
+                topic=str(response.topic),
                 payload=response.payload,
                 response_topic=response.response_topic,
                 user_properties=response.user_properties,
@@ -107,7 +170,7 @@ class MQTTHandler:
 
     async def task(self) -> None:
         client: aiomqtt.Client = self._client()
-        interval = 1 # seconds
+        interval = 1  # seconds
         while True:
             try:
                 async with client:
@@ -126,30 +189,7 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
     def __init__(self, runtime_config: MQTTConfig):
         super().__init__(runtime_config)
 
-    async def _process_message(self, client: aiomqtt.Client, message: aiomqtt.Message) -> None:
+    async def _process_message(
+        self, client: aiomqtt.Client, message: aiomqtt.Message
+    ) -> None:
         return await super()._process_message(client, message)
-
-class MQTTMessageProcessor():
-
-    topics: set[str]
-
-    def __init__(self, topics: set[str]):
-        self.topics = topics
-
-    @abstractmethod
-    async def process_message(self, message: MQTTProcessorMessage) -> list[MQTTProcessorMessage] | MQTTProcessorMessage:
-        pass
-
-class MQTTProcessorMessage:
-    topic: str
-    payload: bytes
-    user_properties: dict[str, Any]
-    response_topic: str | None = None
-    retain: bool = False
-
-    def __init__(self, topic: str, payload: bytes, user_properties: dict[str, Any], response_topic: str | None = None, retain: bool = False):
-        self.topic = topic
-        self.payload = payload
-        self.user_properties = user_properties
-        self.response_topic = response_topic
-        self.retain = retain
