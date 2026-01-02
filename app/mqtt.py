@@ -1,7 +1,10 @@
 import asyncio
+import dataclasses
+import datetime
 import enum
-from abc import abstractmethod
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -10,7 +13,7 @@ import paho.mqtt.client
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
-from app import MQTTConfig
+from app import MQTTConfig, ProcessingConfig
 
 logger = logging.getLogger("handler.mqtt")
 
@@ -21,6 +24,19 @@ class QoS(enum.IntEnum):
     EXACTLY_ONCE = 2
 
 
+@dataclass
+class CloudEventAttributes:
+    specversion: str = "1.0"
+    id: str | None = None  # populated from message correlation_data
+    source: str | None = None
+    type: str | None = None
+    datacontenttype: str | None = None  # populated from message content_type
+    dataschema: str | None = None
+    subject: str | None = None
+    time: str | None = None
+
+
+@dataclass
 class MQTTProcessorMessage:
     topic: str
     payload: bytes
@@ -31,7 +47,8 @@ class MQTTProcessorMessage:
     content_type: str | None
     response_topic: str | None
     correlation_data: bytes | None
-    user_properties: dict[str, Any]
+    user_properties: dict[str, Any] | None
+    cloud_event: CloudEventAttributes
 
     def __init__(
         self,
@@ -42,10 +59,10 @@ class MQTTProcessorMessage:
         retain: bool = False,
         payload_format_indicator: int = 1,
         message_expiry_interval: int | None = None,
-        content_type: str = "application/json",
+        content_type: str = "application/json; charset=utf-8",
         response_topic: str | None = None,
         correlation_data: bytes = uuid4().bytes,
-        user_properties: dict[str, Any],
+        user_properties: dict[str, Any] | None = None,
     ):
         self.topic = topic
         self.payload = payload
@@ -57,13 +74,30 @@ class MQTTProcessorMessage:
         self.response_topic = response_topic
         self.correlation_data = correlation_data
         self.user_properties = user_properties
+        self.cloud_event = CloudEventAttributes()
+        self.cloud_event.id = self.correlation_data.decode("utf-8", errors="ignore")
+        self.cloud_event.datacontenttype = self.content_type
+        self.cloud_event.time = datetime.datetime.now().isoformat() + "Z"
+
+    def cloud_event_to_user_properties(self) -> None:
+        if self.user_properties is None:
+            self.user_properties = {}
+        self.user_properties |= dataclasses.asdict(self.cloud_event)
 
 
-class MQTTMessageProcessor:
+class MQTTMessageProcessor(ABC):
+    runtime_config: ProcessingConfig
+    topic_str_key: str
     topics: set[str]
 
-    def __init__(self, topics: set[str]):
-        self.topics = topics
+    def __init__(self, runtime_config: ProcessingConfig, topic_str_key: str):
+        self.runtime_config = runtime_config
+        self.topic_str_key = topic_str_key
+        self.topics = set()
+        for topic_str in runtime_config.topics:
+            processor, topic = topic_str.split(":", 1)
+            if processor == self.topic_str_key:
+                self.topics.add(topic)
 
     @abstractmethod
     async def process_message(
@@ -113,6 +147,7 @@ class MQTTHandler:
         message: MQTTProcessorMessage,
     ) -> None:
         logger.debug("Publishing message to topic %s", message.topic)
+        message.cloud_event_to_user_properties()
         properties = Properties(PacketTypes.PUBLISH)
         if message.message_expiry_interval is not None:
             properties.MessageExpiryInterval = message.message_expiry_interval
@@ -125,11 +160,11 @@ class MQTTHandler:
             properties.PayloadFormatIndicator = message.payload_format_indicator
         if message.content_type is not None:
             properties.ContentType = message.content_type
-        if message.response_topic:
+        if message.response_topic is not None:
             properties.ResponseTopic = message.response_topic
         if message.correlation_data is not None:
             properties.CorrelationData = message.correlation_data
-        if message.user_properties:
+        if message.user_properties is not None and len(message.user_properties) > 0:
             # Convert dictionary to list of tuples
             properties.UserProperty = list(message.user_properties.items())
         await client.publish(
@@ -145,13 +180,14 @@ class MQTTHandler:
         self, client: aiomqtt.Client, message: aiomqtt.Message
     ) -> None:
         logger.debug("Received message on topic %s", message.topic)
-        # FIXME type error should be gone with new release: https://github.com/empicano/aiomqtt/commit/68303021095de6c2782e01c4f1391442fb7c8246
+        # FIXME payload type error should be gone with new release: https://github.com/empicano/aiomqtt/commit/68303021095de6c2782e01c4f1391442fb7c8246
         processor_message = MQTTProcessorMessage(
-            topic=message.topic,
+            topic=str(message.topic),
             payload=message.payload,  # type: ignore
-            qos=message.qos,
+            qos=QoS(message.qos),
             retain=message.retain,
         )
+        # Populate MQTT 5 properties
         if message.properties and hasattr(message.properties, "PayloadFormatIndicator"):
             processor_message.payload_format_indicator = (
                 message.properties.PayloadFormatIndicator  # type: ignore
@@ -169,6 +205,17 @@ class MQTTHandler:
         if message.properties and hasattr(message.properties, "UserProperty"):
             # Convert list of tuples to dictionary
             processor_message.user_properties = dict(message.properties.UserProperty)  # type: ignore
+        # Populate CloudEvent attributes from user properties if present
+        for field in dataclasses.fields(CloudEventAttributes):
+            if (
+                processor_message.user_properties is not None
+                and field.name in processor_message.user_properties
+            ):
+                setattr(
+                    processor_message.cloud_event,
+                    field.name,
+                    processor_message.user_properties[field.name],
+                )
 
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor
@@ -212,11 +259,16 @@ class MQTTHandler:
                         for topic in processor.topics:
                             await client.subscribe(topic)
                     async with asyncio.TaskGroup() as tg:
-                        logger.info("Starting %d message worker tasks", self._runtime_config.message_workers)
+                        logger.info(
+                            "Starting %d message worker tasks",
+                            self._runtime_config.message_workers,
+                        )
                         for _ in range(self._runtime_config.message_workers):
                             tg.create_task(self._process_messages(client))
             except aiomqtt.MqttError:
-                logger.warning(f"Connection lost; Reconnecting in {interval} seconds ...")
+                logger.warning(
+                    f"Connection lost; Reconnecting in {interval} seconds ..."
+                )
                 await asyncio.sleep(interval)
 
 

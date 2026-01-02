@@ -10,7 +10,7 @@
             "APP_MQTT_TIMEOUT": "10",
             //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
             //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
-            "APP_PROCESSING_TOPICS": "app/events/#,app/invoke123/#",
+            "APP_PROCESSING_TOPICS": "identity:app/identity,xyz:app/events/#,xyz:app/invoke123/#",
             "APP_LOGGING_LEVEL": "DEBUG",
             "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"
         }
