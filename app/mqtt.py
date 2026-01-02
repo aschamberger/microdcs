@@ -99,6 +99,36 @@ class MQTTMessageProcessor(ABC):
             if processor == self.identifier:
                 self.topics.add(topic)
 
+    def create_message(
+        self,
+        topic: str,
+        *,
+        payload: bytes,
+        qos: QoS = QoS.AT_LEAST_ONCE,
+        retain: bool = False,
+        payload_format_indicator: int = 1,
+        message_expiry_interval: int | None = None,
+        content_type: str = "application/json; charset=utf-8",
+        response_topic: str | None = None,
+        correlation_data: bytes = uuid4().bytes,
+        user_properties: dict[str, Any] | None = None,
+    ):
+        message = MQTTProcessorMessage(
+            topic=topic,
+            payload=payload,
+            qos=qos,
+            retain=retain,
+            payload_format_indicator=payload_format_indicator,
+            message_expiry_interval=message_expiry_interval,
+            content_type=content_type,
+            response_topic=response_topic,
+            correlation_data=correlation_data,
+            user_properties=user_properties,
+        )
+        message.cloud_event.source = self.runtime_config.cloudevent_source
+        message.cloud_event.subject = self.identifier
+        return message
+
     @abstractmethod
     async def process_message(
         self, message: MQTTProcessorMessage

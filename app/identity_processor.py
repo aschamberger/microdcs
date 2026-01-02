@@ -22,13 +22,11 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
             return None
 
         # Echo the message back as is
-        response = MQTTProcessorMessage(
+        response = self.create_message(
             topic=message.response_topic,
             payload=message.payload,
             qos=message.qos,
             retain=message.retain,
         )
-        response.cloud_event.source = self.runtime_config.cloudevent_source
-        response.cloud_event.subject = self.identifier
 
         return response
