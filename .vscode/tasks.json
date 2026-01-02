@@ -74,11 +74,13 @@
         {
             "label": "Line count stats",
             "type": "shell",
-            "command": "pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],processor",
-            "options": {
-                "env": {
-                    "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
-                }
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],processor",
+            "windows": {
+                "options": {
+                    "env": {
+                        "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
+                    }
+                },
             },
             "group": "none",
             "problemMatcher": [],
