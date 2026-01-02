@@ -87,16 +87,16 @@ class MQTTProcessorMessage:
 
 class MQTTMessageProcessor(ABC):
     runtime_config: ProcessingConfig
-    topic_str_key: str
+    identifier: str
     topics: set[str]
 
-    def __init__(self, runtime_config: ProcessingConfig, topic_str_key: str):
+    def __init__(self, runtime_config: ProcessingConfig, identifier: str):
         self.runtime_config = runtime_config
-        self.topic_str_key = topic_str_key
+        self.identifier = identifier
         self.topics = set()
         for topic_str in runtime_config.topics:
             processor, topic = topic_str.split(":", 1)
-            if processor == self.topic_str_key:
+            if processor == self.identifier:
                 self.topics.add(topic)
 
     @abstractmethod

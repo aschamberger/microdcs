@@ -74,8 +74,7 @@ class LoggingConfig:
 @dataclass
 class ProcessingConfig:
     otel_instrumentation_enabled: bool = False
-    interval: int = 300
-    timeout: int = 30
+    cloudevent_source: str | None = None
     topics: set[str] = field(default_factory=lambda: {"app/events/#", "app/invoke/#"})
 
 
@@ -90,7 +89,9 @@ class RuntimeConfig:
             if dataclasses.is_dataclass(field_main.type) and callable(field_main.type):
                 setattr(self, field_main.name, field_main.type())
                 for field_child in fields(field_main.type):
-                    env_var = f"{prefix}{field_main.name.upper()}_{field_child.name.upper()}"
+                    env_var = (
+                        f"{prefix}{field_main.name.upper()}_{field_child.name.upper()}"
+                    )
                     default = None
                     if field_child.default != MISSING:
                         default = field_child.default

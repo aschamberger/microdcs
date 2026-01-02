@@ -11,6 +11,7 @@
             //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
             //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
             "APP_PROCESSING_TOPICS": "identity:app/identity,xyz:app/events/#,xyz:app/invoke123/#",
+            "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/micro-dcs/app",
             "APP_LOGGING_LEVEL": "DEBUG",
             "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"
         }
@@ -34,7 +35,7 @@
             "options": {
                 "env": {
                     "APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true",
-                    "OTEL_SERVICE_NAME": "app",
+                    "OTEL_SERVICE_NAME": "micro-dcs.app",
                     "OTEL_TRACES_EXPORTER": "console", // console, otlp, none
                     "OTEL_METRICS_EXPORTER": "console", // console, otlp, none
                     "OTEL_LOGS_EXPORTER": "console", // console, otlp, none
@@ -46,6 +47,13 @@
                     "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading"
                 }
             },
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Start local MQTT broker",
+            "type": "shell",
+            "command": "docker run --rm -it --name mosquitto -p 1883:1883 eclipse-mosquitto mosquitto -c /mosquitto-no-auth.conf",
             "group": "test",
             "problemMatcher": [],
         },
