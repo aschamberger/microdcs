@@ -84,14 +84,17 @@ class MQTTProcessorMessage:
         self.correlation_data = correlation_data
         self.user_properties = user_properties
         self.cloudevent = CloudEventAttributes()
-        self.cloudevent.id = self.correlation_data.decode("utf-8", errors="ignore")
+        self.cloudevent.id = self.correlation_data.hex().upper()
         self.cloudevent.datacontenttype = self.content_type
         self.cloudevent.time = datetime.datetime.now().isoformat() + "Z"
 
     def cloudevent_to_user_properties(self) -> None:
         if self.user_properties is None:
             self.user_properties = {}
-        self.user_properties |= dataclasses.asdict(self.cloudevent)
+        for field in dataclasses.fields(CloudEventAttributes):
+            value = getattr(self.cloudevent, field.name)
+            if value is not None:
+                self.user_properties[field.name] = value
 
 
 class MQTTMessageProcessor(ABC):
@@ -172,6 +175,7 @@ class MQTTHandler:
                 ca_certs=str(self._runtime_config.tls_cert_path)
             )
         client: aiomqtt.Client = aiomqtt.Client(
+            protocol=aiomqtt.ProtocolVersion.V5,
             hostname=self._runtime_config.hostname,
             port=self._runtime_config.port,
             identifier=self._runtime_config.identifier,
