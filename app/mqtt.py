@@ -27,13 +27,22 @@ class QoS(enum.IntEnum):
 @dataclass
 class CloudEventAttributes:
     specversion: str = "1.0"
-    id: str | None = None  # populated from message correlation_data
+    """The version of the CloudEvents specification used by this event."""
+    id: str | None = None
+    """Populated from MQTT message correlation_data; MUST be a non-empty string; MUST be unique within the scope of the producer"""
     source: str | None = None
+    """MUST be a non-empty URI-reference; An absolute URI is RECOMMENDED"""
     type: str | None = None
-    datacontenttype: str | None = None  # populated from message content_type
+    """MUST be a non-empty string; SHOULD be prefixed with a reverse-DNS name. The prefixed domain dictates the organization which defines the semantics of this event type.
+    """
+    datacontenttype: str | None = None
+    """Populated from MQTT message content_type; If present, MUST adhere to the format specified in RFC 2046"""
     dataschema: str | None = None
+    """If present, MUST be a non-empty URI"""
     subject: str | None = None
+    """If present, MUST be a non-empty string"""
     time: str | None = None
+    """If present, MUST adhere to the format specified in RFC 3339"""
 
 
 @dataclass

@@ -27,8 +27,8 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
             payload=message.payload,
             qos=message.qos,
             retain=message.retain,
-            cloudevent_type="identity.response",
-            cloudevent_dataschema="identity/response",
+            cloudevent_type="com.github.aschamberger.micro-dcs.identity.response",
+            cloudevent_dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/response",
         )
 
         return response

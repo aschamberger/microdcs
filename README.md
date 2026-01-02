@@ -5,14 +5,12 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 ## TODO
 
 App:
-* MQTTProcessor interface: send/recieve pattern
-  * CloudEvents handling send/recieve or better UserProperties handling??? --> CloudEventsMQTTProcessorMixin
-  * processing config/plugin model
-  * topic handling, response topic for answer or sending status
-  * handling responses/mrpc
-
-https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
-https://github.com/koepalex/Crow-s-Nest-MQTT
+* MQTTProcessor interface
+  * payload serialization handling with https://github.com/Fatal1ty/mashumaro?tab=readme-ov-file#orjson-library
+  * custom user_prop/header handling for processors = injection into message data object
+  * handling responses/mrpc for published messages
+  * sending of outgoing messages which are not responses
+  * processing config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 
 * distroless container image python
 * what about copying the data n-times and mem consumption + GC impact?!!
@@ -27,7 +25,6 @@ https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Sch
 * https://documentation.unified-automation.com/uasdknet/4.3.0/html/L3ServerTuMachineDemoServerOverview.html
 
 * implement OTELInstrumentedMQTTHandler (mit OTELObservabilityMixin????)
-* OTEL service name vs. cloud events source
 * redis example implementation
 * does redis have persistance?
 * parallel container instances means always read from redis?!
@@ -40,12 +37,12 @@ https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Sch
 
 ## Overall Design
 
-<TODO>
+Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, OPC UA companions specs, ... to apply the speed of software to the mostly hardware-defined OT base.
 
 ### Design Goals
 
 * Manufacturing control/OT apps should be buildable like IT applications with cloud native/modern architecture principles
-* Code is generated as much as possible from the OPC UA specs to lower the burden to adhere to the standards
+* Code is generated as much as possible from standard specs (e.g. OPC UA) to lower the burden to adhere to these standards
 
 ### Premises
 
@@ -53,10 +50,33 @@ https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Sch
 * OPC UA information models/companion specs are used for communication over MQTT
 * Meta information is transported via MQTT user properties/cloud event headers to identify the message payload
 * Implementations must only work via the generated dataclasses and not directly with the MQTT payloads (they are decoded/encoded in the background)
-* There is an app UNS that has at least subtopics for `data` (variable publication/maybe setting), `events` and `invoke` (method calls)
+* There is an app UNS that has at least subtopics for `data` (variable publication/maybe setting), `events` and `invoke` (method calls); optionally `meta`to publish what is offered by the app in a retained topic
+
+## Technical Standards
+
+### MQTTv5
+
+### CloudEvents
+
+* https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
+* https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md
+
+As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT protocol binding!
+`id` and `datacontenttype` are populated from MQTT properties and `time` set on object creation.
+`source` is set from `APP_PROCESSING_CLOUDEVENT_SOURCE` env var and `subject` is set to `processor.identifier`.
+`type` and `dataschema` must be set individually by processor.
+
+### OpenTelemetry
+
+## Information Model Standards
+
+### OPC UA
+
+### ISA-88/ISA-95
 
 ## Python Libs
 
+* https://github.com/empicano/aiomqtt // https://github.com/eclipse-paho/paho.mqtt.python
 * https://github.com/Fatal1ty/mashumaro
 * https://github.com/koxudaxi/datamodel-code-generator
 
@@ -78,5 +98,5 @@ https://gregoryszorc.com/docs/python-build-standalone/main/running.html
 
 ### Links
 
-* https://github.com/empicano/aiomqtt
-* https://github.com/eclipse-paho/paho.mqtt.python
+* https://github.com/koepalex/Crow-s-Nest-MQTT
+* https://hub.docker.com/_/eclipse-mosquitto
