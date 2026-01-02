@@ -3,6 +3,7 @@ import logging
 import os
 
 from app import RuntimeConfig, SystemEventTaskGroup
+from app.identity_processor import IdentityMQTTMessageProcessor
 from app.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
 
 logger = logging.getLogger("app.main")
@@ -30,6 +31,9 @@ async def main():
             mqtt_handler = OTELInstrumentedMQTTHandler(runtime_config.mqtt)
         # Register MQTT processors as needed
         # e.g., mqtt_handler.register_message_processor(your_processor_instance)
+        mqtt_handler.register_message_processor(
+            IdentityMQTTMessageProcessor(runtime_config.processing)
+        )
         task_group.create_task(mqtt_handler.task())
         # Example additional tasks to demonstrate task group usage
         task_group.create_task(task("A", 2))

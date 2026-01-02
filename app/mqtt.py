@@ -102,7 +102,7 @@ class MQTTMessageProcessor(ABC):
     @abstractmethod
     async def process_message(
         self, message: MQTTProcessorMessage
-    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage:
+    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
         pass
 
 
@@ -229,8 +229,10 @@ class MQTTHandler:
                     )
                     if isinstance(processor_response, list):
                         responses.extend(processor_response)
-                    else:
+                    elif isinstance(processor_response, MQTTProcessorMessage):
                         responses.append(processor_response)
+                    elif processor_response is None:
+                        continue
 
         # send responses back if any
         for response in responses:
