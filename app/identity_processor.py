@@ -27,6 +27,8 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
             payload=message.payload,
             qos=message.qos,
             retain=message.retain,
+            cloudevent_type="identity.response",
+            cloudevent_dataschema="identity/response",
         )
 
         return response

@@ -48,7 +48,7 @@ class MQTTProcessorMessage:
     response_topic: str | None
     correlation_data: bytes | None
     user_properties: dict[str, Any] | None
-    cloud_event: CloudEventAttributes
+    cloudevent: CloudEventAttributes
 
     def __init__(
         self,
@@ -74,15 +74,15 @@ class MQTTProcessorMessage:
         self.response_topic = response_topic
         self.correlation_data = correlation_data
         self.user_properties = user_properties
-        self.cloud_event = CloudEventAttributes()
-        self.cloud_event.id = self.correlation_data.decode("utf-8", errors="ignore")
-        self.cloud_event.datacontenttype = self.content_type
-        self.cloud_event.time = datetime.datetime.now().isoformat() + "Z"
+        self.cloudevent = CloudEventAttributes()
+        self.cloudevent.id = self.correlation_data.decode("utf-8", errors="ignore")
+        self.cloudevent.datacontenttype = self.content_type
+        self.cloudevent.time = datetime.datetime.now().isoformat() + "Z"
 
-    def cloud_event_to_user_properties(self) -> None:
+    def cloudevent_to_user_properties(self) -> None:
         if self.user_properties is None:
             self.user_properties = {}
-        self.user_properties |= dataclasses.asdict(self.cloud_event)
+        self.user_properties |= dataclasses.asdict(self.cloudevent)
 
 
 class MQTTMessageProcessor(ABC):
@@ -112,6 +112,8 @@ class MQTTMessageProcessor(ABC):
         response_topic: str | None = None,
         correlation_data: bytes = uuid4().bytes,
         user_properties: dict[str, Any] | None = None,
+        cloudevent_type: str | None = None,
+        cloudevent_dataschema: str | None = None,
     ):
         message = MQTTProcessorMessage(
             topic=topic,
@@ -125,8 +127,12 @@ class MQTTMessageProcessor(ABC):
             correlation_data=correlation_data,
             user_properties=user_properties,
         )
-        message.cloud_event.source = self.runtime_config.cloudevent_source
-        message.cloud_event.subject = self.identifier
+        message.cloudevent.source = self.runtime_config.cloudevent_source
+        message.cloudevent.subject = self.identifier
+        if cloudevent_type is not None:
+            message.cloudevent.type = cloudevent_type
+        if cloudevent_dataschema is not None:
+            message.cloudevent.dataschema = cloudevent_dataschema
         return message
 
     @abstractmethod
@@ -177,7 +183,7 @@ class MQTTHandler:
         message: MQTTProcessorMessage,
     ) -> None:
         logger.debug("Publishing message to topic %s", message.topic)
-        message.cloud_event_to_user_properties()
+        message.cloudevent_to_user_properties()
         properties = Properties(PacketTypes.PUBLISH)
         if message.message_expiry_interval is not None:
             properties.MessageExpiryInterval = message.message_expiry_interval
@@ -242,7 +248,7 @@ class MQTTHandler:
                 and field.name in processor_message.user_properties
             ):
                 setattr(
-                    processor_message.cloud_event,
+                    processor_message.cloudevent,
                     field.name,
                     processor_message.user_properties[field.name],
                 )
