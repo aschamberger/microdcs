@@ -6,7 +6,6 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
 App:
 * MQTTProcessor interface
-  * payload serialization handling with https://github.com/Fatal1ty/mashumaro?tab=readme-ov-file#orjson-library
   * custom user_prop/header handling for processors = injection into message data object
   * handling responses/mrpc for published messages
   * sending of outgoing messages which are not responses
@@ -58,6 +57,7 @@ Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, O
 
 ### CloudEvents
 
+* https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/primer.md#versioning-of-cloudevents
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md
 

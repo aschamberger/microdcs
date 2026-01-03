@@ -5,11 +5,13 @@ import enum
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 import aiomqtt
 import paho.mqtt.client
+from mashumaro.config import BaseConfig
+from mashumaro.mixins.orjson import DataClassORJSONMixin
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -101,6 +103,8 @@ class MQTTMessageProcessor(ABC):
     runtime_config: ProcessingConfig
     identifier: str
     topics: set[str]
+    type_classes: dict[str, type[DataClassORJSONMixin]] = {}
+    type_callbacks: dict[str, Callable[..., Any]] = {}
 
     def __init__(self, runtime_config: ProcessingConfig, identifier: str):
         self.runtime_config = runtime_config
@@ -110,6 +114,75 @@ class MQTTMessageProcessor(ABC):
             processor, topic = topic_str.split(":", 1)
             if processor == self.identifier:
                 self.topics.add(topic)
+
+    def register_callback(
+        self, message_dataclass: type, callback: Callable[..., Any]
+    ) -> None:
+        if not callable(callback):
+            raise TypeError("callback must be callable")
+        if not issubclass(message_dataclass, DataClassORJSONMixin):
+            raise TypeError(
+                "message_dataclass must be a subclass of DataClassORJSONMixin"
+            )
+        config_class = getattr(message_dataclass, "Config", None)
+        if config_class is None or not issubclass(config_class, BaseConfig):
+            raise TypeError(
+                "message_dataclass must have a Config subclass of BaseConfig"
+            )
+        if not hasattr(config_class, "cloudevent_type"):
+            raise TypeError(
+                "message_dataclass must have a Config subclass with cloudevent_type attribute"
+            )
+        cloudevent_type = getattr(config_class, "cloudevent_type")
+        self.type_classes[cloudevent_type] = message_dataclass
+        self.type_callbacks[cloudevent_type] = callback
+
+    def message_has_callback(self, message: MQTTProcessorMessage) -> bool:
+        return message.cloudevent.type in self.type_callbacks
+
+    async def message_callback(
+        self, message: MQTTProcessorMessage
+    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
+        if message.cloudevent.type not in self.type_callbacks:
+            logger.error(
+                "No callback registered for message type: %s", message.cloudevent.type
+            )
+            return None
+
+        payload_type = self.type_classes[message.cloudevent.type]
+        callback: Callable[..., Any] = self.type_callbacks[message.cloudevent.type]
+        request = payload_type.from_json(message.payload)
+        responses: (
+            list[DataClassORJSONMixin] | DataClassORJSONMixin | None
+        ) = await callback(request)
+
+        if responses is None:
+            return None
+
+        if message.response_topic is None:
+            logger.warning("No response topic specified; cannot send response.")
+            return None
+
+        if not isinstance(responses, list):
+            responses = [responses]
+
+        mqtt_responses: list[MQTTProcessorMessage] = []
+        for response in responses:
+            # Get Config class by name
+            response_config = getattr(response, "Config", None)
+            if response_config is None:
+                logger.warning("Response has no Config class")
+                return None
+
+            mqtt_responses.append(
+                self.create_message(
+                    topic=message.response_topic,
+                    payload=response.to_jsonb(),
+                    cloudevent_type=response_config.cloudevent_type,
+                    cloudevent_dataschema=response_config.cloudevent_dataschema,
+                )
+            )
+        return mqtt_responses
 
     def create_message(
         self,
