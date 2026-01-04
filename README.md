@@ -6,7 +6,6 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
 App:
 * MQTTProcessor interface
-  * custom user_prop/header handling for processors = injection into message data object
   * handling responses/mrpc for published messages
   * sending of outgoing messages which are not responses
   * processing config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
@@ -25,7 +24,6 @@ https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Sch
 
 * implement OTELInstrumentedMQTTHandler (mit OTELObservabilityMixin????)
 * redis example implementation
-* does redis have persistance?
 * parallel container instances means always read from redis?!
 
 * OPC UA

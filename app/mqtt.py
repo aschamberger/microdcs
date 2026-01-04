@@ -4,18 +4,18 @@ import datetime
 import enum
 import logging
 from abc import ABC, abstractmethod
+from asyncio import Queue
 from dataclasses import dataclass
 from typing import Any, Callable
 from uuid import uuid4
 
 import aiomqtt
 import paho.mqtt.client
-from mashumaro.config import BaseConfig
-from mashumaro.mixins.orjson import DataClassORJSONMixin
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from app import MQTTConfig, ProcessingConfig
+from app.dataclass import DataClassConfig, DataClassMixin
 
 logger = logging.getLogger("handler.mqtt")
 
@@ -58,7 +58,7 @@ class MQTTProcessorMessage:
     content_type: str | None
     response_topic: str | None
     correlation_data: bytes | None
-    user_properties: dict[str, Any] | None
+    user_properties: dict[str, str] | None
     cloudevent: CloudEventAttributes
 
     def __init__(
@@ -73,7 +73,7 @@ class MQTTProcessorMessage:
         content_type: str = "application/json; charset=utf-8",
         response_topic: str | None = None,
         correlation_data: bytes = uuid4().bytes,
-        user_properties: dict[str, Any] | None = None,
+        user_properties: dict[str, str] | None = None,
     ):
         self.topic = topic
         self.payload = payload
@@ -103,10 +103,21 @@ class MQTTMessageProcessor(ABC):
     runtime_config: ProcessingConfig
     identifier: str
     topics: set[str]
-    type_classes: dict[str, type[DataClassORJSONMixin]] = {}
+    type_classes: dict[str, type[DataClassMixin]] = {}
     type_callbacks: dict[str, Callable[..., Any]] = {}
+    hidden_fields: dict[
+        str,
+        tuple[
+            Callable[[MQTTProcessorMessage], Any] | None,
+            Callable[[MQTTProcessorMessage, Any], Any] | None,
+        ],
+    ] = {}
 
-    def __init__(self, runtime_config: ProcessingConfig, identifier: str):
+    outgoing_queue: Queue[MQTTProcessorMessage]
+
+    def __init__(
+        self, runtime_config: ProcessingConfig, identifier: str, queue_size: int = 1
+    ):
         self.runtime_config = runtime_config
         self.identifier = identifier
         self.topics = set()
@@ -114,20 +125,19 @@ class MQTTMessageProcessor(ABC):
             processor, topic = topic_str.split(":", 1)
             if processor == self.identifier:
                 self.topics.add(topic)
+        self.outgoing_queue = Queue(queue_size)
 
     def register_callback(
         self, message_dataclass: type, callback: Callable[..., Any]
     ) -> None:
         if not callable(callback):
             raise TypeError("callback must be callable")
-        if not issubclass(message_dataclass, DataClassORJSONMixin):
-            raise TypeError(
-                "message_dataclass must be a subclass of DataClassORJSONMixin"
-            )
+        if not issubclass(message_dataclass, DataClassMixin):
+            raise TypeError("message_dataclass must be a subclass of DataClassMixin")
         config_class = getattr(message_dataclass, "Config", None)
-        if config_class is None or not issubclass(config_class, BaseConfig):
+        if config_class is None or not issubclass(config_class, DataClassConfig):
             raise TypeError(
-                "message_dataclass must have a Config subclass of BaseConfig"
+                "message_dataclass must have a Config subclass of DataClassConfig"
             )
         if not hasattr(config_class, "cloudevent_type"):
             raise TypeError(
@@ -139,6 +149,18 @@ class MQTTMessageProcessor(ABC):
 
     def message_has_callback(self, message: MQTTProcessorMessage) -> bool:
         return message.cloudevent.type in self.type_callbacks
+
+    def register_hidden_field(
+        self,
+        name: str,
+        extractor: Callable[..., Any] | None = None,
+        inserter: Callable[..., Any] | None = None,
+    ) -> None:
+        if not callable(extractor):
+            raise TypeError("extractor must be callable")
+        if not callable(inserter):
+            raise TypeError("inserter must be callable")
+        self.hidden_fields[name] = (extractor, inserter)
 
     async def message_callback(
         self, message: MQTTProcessorMessage
@@ -152,9 +174,18 @@ class MQTTMessageProcessor(ABC):
         payload_type = self.type_classes[message.cloudevent.type]
         callback: Callable[..., Any] = self.type_callbacks[message.cloudevent.type]
         request = payload_type.from_json(message.payload)
-        responses: (
-            list[DataClassORJSONMixin] | DataClassORJSONMixin | None
-        ) = await callback(request)
+        # extract hidden properties
+        for name, (extractor, _) in self.hidden_fields.items():
+            if extractor is not None:
+                hidden_value = extractor(message)
+                if hidden_value is not None:
+                    logger.debug("Extracted hidden field %s: %s", name, hidden_value)
+                    setattr(request, f"_{name}", hidden_value)
+        logger.debug("Request before callback: %s", request)
+
+        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
+            request
+        )
 
         if responses is None:
             return None
@@ -168,20 +199,29 @@ class MQTTMessageProcessor(ABC):
 
         mqtt_responses: list[MQTTProcessorMessage] = []
         for response in responses:
+            logger.debug("Response from callback: %s", response)
             # Get Config class by name
             response_config = getattr(response, "Config", None)
             if response_config is None:
                 logger.warning("Response has no Config class")
                 return None
 
-            mqtt_responses.append(
-                self.create_message(
-                    topic=message.response_topic,
-                    payload=response.to_jsonb(),
-                    cloudevent_type=response_config.cloudevent_type,
-                    cloudevent_dataschema=response_config.cloudevent_dataschema,
-                )
+            response_message = self.create_message(
+                topic=message.response_topic,
+                payload=response.to_jsonb(),
+                cloudevent_type=response_config.cloudevent_type,
+                cloudevent_dataschema=response_config.cloudevent_dataschema,
             )
+            # insert hidden properties
+            for name, (_, inserter) in self.hidden_fields.items():
+                if inserter is not None:
+                    hidden_value = getattr(response, f"_{name}", None)
+                    if hidden_value is not None:
+                        logger.debug(
+                            "Inserting hidden field %s: %s", name, hidden_value
+                        )
+                        inserter(response_message, hidden_value)
+            mqtt_responses.append(response_message)
         return mqtt_responses
 
     def create_message(
@@ -372,6 +412,14 @@ class MQTTHandler:
     def register_message_processor(self, processor: MQTTMessageProcessor) -> None:
         self._message_processors.append(processor)
 
+    async def _outgoing_message_publisher(
+        self, client: aiomqtt.Client, processor: MQTTMessageProcessor
+    ) -> None:
+        while True:
+            message = await processor.outgoing_queue.get()
+            await self._publish_message(client, message)
+            processor.outgoing_queue.task_done()
+
     async def task(self) -> None:
         logger.info("Starting MQTT handler task")
         client: aiomqtt.Client = self._client()
@@ -389,6 +437,10 @@ class MQTTHandler:
                         )
                         for _ in range(self._runtime_config.message_workers):
                             tg.create_task(self._process_messages(client))
+                        for processor in self._message_processors:
+                            tg.create_task(
+                                self._outgoing_message_publisher(client, processor)
+                            )
             except aiomqtt.MqttError:
                 logger.warning(
                     f"Connection lost; Reconnecting in {interval} seconds ..."

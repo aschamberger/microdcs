@@ -1,43 +1,95 @@
 import logging
-from dataclasses import dataclass
-from typing import ClassVar
-
-from mashumaro.config import BaseConfig
-from mashumaro.mixins.orjson import DataClassORJSONMixin
+from dataclasses import dataclass, field
 
 from app import ProcessingConfig
+from app.dataclass import DataClassConfig, DataClassMixin
 from app.mqtt import MQTTMessageProcessor, MQTTProcessorMessage
 
 logger = logging.getLogger("processor.identity")
 
 
 @dataclass
-class Hello(DataClassORJSONMixin):
+class HiddenObject(DataClassMixin):
+    field: str
+
+    class Config(DataClassConfig):
+        pass
+
+
+@dataclass
+class Hello(DataClassMixin):
+    _hidden_str: str | None = field(kw_only=True, default=None)
+    _hidden_obj: HiddenObject | None = field(kw_only=True, default=None)
     name: str
 
-    class Config(BaseConfig):
+    class Config(DataClassConfig):
         cloudevent_type: str = "com.github.aschamberger.micro-dcs.identity.hello.v1"
         cloudevent_dataschema: str = (
             "https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1"
         )
-        allow_deserialization_not_by_alias = True
-        serialize_by_alias = True
-        omit_none = True
         aliases = {
             "name": "NameField",
         }
 
 
-async def handle_hello(hello: Hello) -> list[Hello] | Hello | None:
-    logger.info("Received hello from: %s", hello.name)
-
-    return [Hello(name=hello.name), Hello(name="Alice")]
-
-
 class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
+    @classmethod
+    async def handle_hello(cls, hello: Hello) -> list[Hello] | Hello | None:
+        logger.info("Received hello from: %s", hello.name)
+
+        logger.debug("Processing %s %s %s", hello, hello._hidden_str, hello._hidden_obj)
+
+        h1 = Hello(name=hello.name)
+        h1._hidden_str = hello._hidden_str
+        h1._hidden_obj = hello._hidden_obj
+        h2 = Hello(name="Alice")
+        return [
+            h1,
+            h2,
+        ]
+
+    @classmethod
+    def extract_hidden_str(cls, message: MQTTProcessorMessage) -> str | None:
+        if message.user_properties is None:
+            return None
+        return message.user_properties.get("x-hidden-str", None)
+
+    @classmethod
+    def insert_hidden_str(cls, message: MQTTProcessorMessage, value: str) -> None:
+        if message.user_properties is None:
+            message.user_properties = {}
+        message.user_properties["x-hidden-str"] = value
+
+    @classmethod
+    def extract_hidden_obj(cls, message: MQTTProcessorMessage) -> HiddenObject | None:
+        if message.user_properties is None:
+            return None
+        obj_data = message.user_properties.get("x-hidden-obj", None)
+        if obj_data is None:
+            return None
+        return HiddenObject.from_json(obj_data)
+
+    @classmethod
+    def insert_hidden_obj(
+        cls, message: MQTTProcessorMessage, value: HiddenObject
+    ) -> None:
+        if message.user_properties is None:
+            message.user_properties = {}
+        message.user_properties["x-hidden-obj"] = value.to_json()
+
     def __init__(self, runtime_config: ProcessingConfig):
         super().__init__(runtime_config, "identity")
-        self.register_callback(Hello, handle_hello)
+        self.register_callback(Hello, __class__.handle_hello)
+        self.register_hidden_field(
+            "hidden_str",
+            extractor=__class__.extract_hidden_str,
+            inserter=__class__.insert_hidden_str,
+        )
+        self.register_hidden_field(
+            "hidden_obj",
+            extractor=__class__.extract_hidden_obj,
+            inserter=__class__.insert_hidden_obj,
+        )
 
     async def process_message(
         self, message: MQTTProcessorMessage

@@ -40,8 +40,17 @@ async def main():
         cloudevent_dataschema = (
             "https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1"
         )
+        user_properties = {
+            "x-hidden-str": "This is a hidden string",
+            "x-hidden-obj": orjson.dumps({"field": "This is a hidden object field"}),
+        }
         await publish_message(
-            mh, mqtt_client, payload, cloudevent_type, cloudevent_dataschema
+            mh,
+            mqtt_client,
+            payload,
+            cloudevent_type,
+            cloudevent_dataschema,
+            user_properties,
         )
 
 
@@ -51,6 +60,7 @@ async def publish_message(
     payload: dict[str, Any],
     cloudevent_type: str,
     cloudevent_dataschema: str,
+    user_properties: dict[str, str] | None = None,
 ):
     topic: str = "app/identity/request"
     response_topic: str = "app/identity/response"
@@ -64,6 +74,11 @@ async def publish_message(
     message.cloudevent.subject = "test"
     message.cloudevent.type = cloudevent_type
     message.cloudevent.dataschema = cloudevent_dataschema
+
+    if user_properties is not None:
+        if message.user_properties is None:
+            message.user_properties = {}
+        message.user_properties |= user_properties
 
     await mh._publish_message(mqtt_client, message)
 
