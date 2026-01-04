@@ -2,6 +2,7 @@ import dataclasses
 from typing import Any, Dict
 
 from mashumaro.config import BaseConfig
+from mashumaro.mixins.msgpack import DataClassMessagePackMixin
 from mashumaro.mixins.orjson import DataClassORJSONMixin
 
 
@@ -30,7 +31,7 @@ class DataClassValidationMixin:
         super().__setattr__(name, value)
 
 
-class DataClassMixin(DataClassORJSONMixin):
+class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
     # remove hidden fields starting with "_" from serialization
     def __post_serialize__(self, d: Dict[Any, Any]) -> Dict[Any, Any]:
         for key in list(d.keys()):

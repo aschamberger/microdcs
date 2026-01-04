@@ -11,26 +11,18 @@ App:
   * processing config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 
 * distroless container image python
-* what about copying the data n-times and mem consumption + GC impact?!!
-
-
-EUInformation:
-https://reference.opcfoundation.org/Core/Part8/v105/docs/5.6.3
-http://www.opcfoundation.org/UA/EngineeringUnits/UNECE/UNECE_to_OPCUA.csv
-https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Schema/UNECE_to_OPCUA.csv
-
 * Read the bookmarks on DCS internals
-* https://documentation.unified-automation.com/uasdknet/4.3.0/html/L3ServerTuMachineDemoServerOverview.html
+* implement OTELInstrumentedMQTTHandler
 
-* implement OTELInstrumentedMQTTHandler (mit OTELObservabilityMixin????)
-* redis example implementation
-* parallel container instances means always read from redis?!
-
-* OPC UA
+* OPC UA Job Spec
   * publish opc ua meta object with retain on app startup for dicovery functionality
   * build dataset handler with key frame support: https://reference.opcfoundation.org/Core/Part14/v105/docs/5
-  * how to integrate the state machine in the app
-  * is it required to define also the persistance model? or only a callback mechanismto retrieve the data (most of the data model is already fixed by the ISA95... DataTypes)
+  * redis example implementation
+
+* Notes
+  * deployment of additional HTTP services container (with e.g. FastAPI) servicing to the outside in same pod or different one with node affinity?
+  * what about copying the data n-times and mem consumption + GC impact
+  * parallel container instances means always read from redis
 
 ## Overall Design
 
@@ -69,6 +61,14 @@ As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT
 ## Information Model Standards
 
 ### OPC UA
+
+#### ...
+
+#### EUInformation:
+
+* https://reference.opcfoundation.org/Core/Part8/v105/docs/5.6.3
+* http://www.opcfoundation.org/UA/EngineeringUnits/UNECE/UNECE_to_OPCUA.csv
+* https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Schema/UNECE_to_OPCUA.csv
 
 ### ISA-88/ISA-95
 

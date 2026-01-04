@@ -5,14 +5,9 @@ import os
 from app import RuntimeConfig, SystemEventTaskGroup
 from app.identity_processor import IdentityMQTTMessageProcessor
 from app.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
+from app.msgpack import MessagePackHandler, OTELInstrumentedMessagePackHandler
 
 logger = logging.getLogger("app.main")
-
-
-async def task(name: str, duration: int):
-    logger.info("Task %s: Starting", name)
-    await asyncio.sleep(duration)
-    logger.info("Task %s: Completed", name)
 
 
 async def main():
@@ -35,10 +30,21 @@ async def main():
             IdentityMQTTMessageProcessor(runtime_config.processing)
         )
         task_group.create_task(mqtt_handler.task())
-        # Example additional tasks to demonstrate task group usage
-        task_group.create_task(task("A", 2))
-        task_group.create_task(task("B", 3))
-
+        # MessagePackHandler setup based on OTEL instrumentation flag
+        if runtime_config.processing.otel_instrumentation_enabled:
+            logger.info("Starting MessagePackHandler with OTEL instrumentation enabled")
+            msgpack_handler = MessagePackHandler(runtime_config.msgpack)
+        else:
+            logger.info(
+                "Starting MessagePackHandler with OTEL instrumentation disabled"
+            )
+            msgpack_handler = OTELInstrumentedMessagePackHandler(runtime_config.msgpack)
+        # Register MessagePack processors as needed
+        # e.g., msgpack_handler.register_message_processor(your_processor_instance)
+        # msgpack_handler.register_message_processor(
+        #     IdentityMessagePackMessageProcessor(runtime_config.processing)
+        # )
+        task_group.create_task(msgpack_handler.task())
     logger.info("Application shutdown complete")
 
 

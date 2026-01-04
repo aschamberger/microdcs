@@ -13,6 +13,8 @@
             "APP_PROCESSING_TOPICS": "identity:app/identity/request,xyz:app/events/#,xyz:app/invoke123/#",
             "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/micro-dcs/app",
             "APP_LOGGING_LEVEL": "DEBUG",
+            "APP_MSGPACK_HOSTNAME": "localhost",
+            "APP_MSGPACK_PORT": "8888",
             "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"
         }
     },

@@ -27,6 +27,15 @@ class MQTTConfig:
 
 
 @dataclass
+class MessagePackConfig:
+    hostname: str = "localhost"
+    port: int = 8888
+    tls_cert_path: Path = Path("/var/run/certs/ca.crt")
+    keep_alive: bool = True
+    max_queued_connections: int = 100
+
+
+@dataclass
 class LoggingConfig:
     disable_if_otel_enabled: bool = True
     level: str = "INFO"
@@ -81,6 +90,7 @@ class ProcessingConfig:
 @dataclass
 class RuntimeConfig:
     mqtt: MQTTConfig
+    msgpack: MessagePackConfig
     logging: LoggingConfig
     processing: ProcessingConfig
 

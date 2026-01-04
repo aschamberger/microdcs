@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiomqtt>=2.4.0",
     "mashumaro[orjson]>=3.17",
+    "msgpack>=1.1.2",
 ]
 
 [dependency-groups]
