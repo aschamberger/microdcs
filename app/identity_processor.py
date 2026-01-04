@@ -39,9 +39,11 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
 
         logger.debug("Processing %s %s %s", hello, hello._hidden_str, hello._hidden_obj)
 
-        h1 = Hello(name=hello.name)
-        h1._hidden_str = hello._hidden_str
-        h1._hidden_obj = hello._hidden_obj
+        h1 = Hello(
+            name=hello.name,
+            _hidden_str=hello._hidden_str,
+            _hidden_obj=hello._hidden_obj,
+        )
         h2 = Hello(name="Alice")
         return [
             h1,
