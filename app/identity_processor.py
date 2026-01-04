@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app import ProcessingConfig
-from app.dataclass import DataClassConfig, DataClassMixin
+from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
 from app.mqtt import MQTTMessageProcessor, MQTTProcessorMessage
 
 logger = logging.getLogger("processor.identity")
@@ -17,10 +17,10 @@ class HiddenObject(DataClassMixin):
 
 
 @dataclass
-class Hello(DataClassMixin):
+class Hello(DataClassMixin, DataClassValidationMixin):
     _hidden_str: str | None = field(kw_only=True, default=None)
     _hidden_obj: HiddenObject | None = field(kw_only=True, default=None)
-    name: str
+    name: str = field(metadata={"min_length": 3, "max_length": 20})
 
     class Config(DataClassConfig):
         cloudevent_type: str = "com.github.aschamberger.micro-dcs.identity.hello.v1"
