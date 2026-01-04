@@ -342,10 +342,9 @@ class MQTTHandler:
         self, client: aiomqtt.Client, message: aiomqtt.Message
     ) -> None:
         logger.debug("Received message on topic %s", message.topic)
-        # FIXME payload type error should be gone with new release: https://github.com/empicano/aiomqtt/commit/68303021095de6c2782e01c4f1391442fb7c8246
         processor_message = MQTTProcessorMessage(
             topic=str(message.topic),
-            payload=message.payload,  # type: ignore
+            payload=message.payload,
             qos=QoS(message.qos),
             retain=message.retain,
         )
