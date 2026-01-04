@@ -236,7 +236,7 @@ class MQTTMessageProcessor(ABC):
         content_type: str = "application/json; charset=utf-8",
         response_topic: str | None = None,
         correlation_data: bytes = uuid4().bytes,
-        user_properties: dict[str, Any] | None = None,
+        user_properties: dict[str, str] | None = None,
         cloudevent_type: str | None = None,
         cloudevent_dataschema: str | None = None,
     ):
