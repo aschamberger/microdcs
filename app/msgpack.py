@@ -55,9 +55,13 @@ class MessagePackHandler:
         logger.debug("Heartbeat: %s", timestamp)
         # No return value needed for notification
 
-    def __init__(self, runtime_config: MessagePackConfig):
+    def __init__(
+        self,
+        runtime_config: MessagePackConfig,
+        dispatcher: RpcDispatcher = RpcDispatcher(),
+    ):
         self._runtime_config = runtime_config
-        self.dispatcher = RpcDispatcher()
+        self.dispatcher = dispatcher
         self.register_method("process_hello", self.process_hello)
         self.register_method("log_heartbeat", self.log_heartbeat)
 
