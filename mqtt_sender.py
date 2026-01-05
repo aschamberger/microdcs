@@ -5,6 +5,7 @@ import aiomqtt
 import orjson
 
 from app import MQTTConfig
+from app.common import DeliveryError, ErrorCode
 from app.mqtt import MQTTHandler, MQTTProcessorMessage
 
 
@@ -14,6 +15,10 @@ async def main():
     mh: MQTTHandler = MQTTHandler(mqtt_config)
 
     mqtt_client: aiomqtt.Client = mh._client()
+
+    topic: str = "app/identity/request"
+    response_topic: str = "app/identity/response"
+    error_topic: str = "app/identity/errors"
 
     async with mqtt_client:
         # Send a raw identity message
@@ -28,7 +33,13 @@ async def main():
             "https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1"
         )
         await publish_message(
-            mh, mqtt_client, payload, cloudevent_type, cloudevent_dataschema
+            mh,
+            mqtt_client,
+            topic,
+            response_topic,
+            orjson.dumps(payload),
+            cloudevent_type,
+            cloudevent_dataschema,
         )
 
         # Send a Hello identity message
@@ -47,27 +58,58 @@ async def main():
         await publish_message(
             mh,
             mqtt_client,
-            payload,
+            topic,
+            response_topic,
+            orjson.dumps(payload),
             cloudevent_type,
             cloudevent_dataschema,
             user_properties,
+        )
+
+        # send a DeliveryError message
+        payload: dict[str, Any] = {
+            "error_code": "DELIVERY_TIMEOUT",
+            "error_message": "The message could not be delivered within the timeout period.",
+            "error_context": {"abort_message_delivery_timeout": 5.0},
+            "original_topic": topic,
+            "original_payload": orjson.Fragment(orjson.dumps({"NameField": "Charlie"})),
+        }
+        error = DeliveryError(
+            error_code=ErrorCode.DELIVERY_TIMEOUT,
+            error_message="The message could not be delivered within the timeout period.",
+            error_context={"abort_message_delivery_timeout": 5.0},
+            original_topic=topic,
+            original_payload=orjson.dumps({"NameField": "Charlie"}),
+        )
+
+        cloudevent_type = "com.github.aschamberger.micro-dcs.deliveryerror.v1"
+        cloudevent_dataschema = (
+            "https://aschamberger.github.io/schemas/micro-dcs/deliveryerror/v1"
+        )
+        await publish_message(
+            mh,
+            mqtt_client,
+            error_topic,
+            None,
+            error.to_jsonb(),
+            cloudevent_type,
+            cloudevent_dataschema,
         )
 
 
 async def publish_message(
     mh: MQTTHandler,
     mqtt_client: aiomqtt.Client,
-    payload: dict[str, Any],
+    topic: str,
+    response_topic: str | None,
+    payload: bytes,
     cloudevent_type: str,
     cloudevent_dataschema: str,
     user_properties: dict[str, str] | None = None,
 ):
-    topic: str = "app/identity/request"
-    response_topic: str = "app/identity/response"
-
     message = MQTTProcessorMessage(
         topic=topic,
-        payload=orjson.dumps(payload),
+        payload=payload,
         response_topic=response_topic,
     )
     message.cloudevent.source = "https://example.com/sender"
@@ -83,4 +125,5 @@ async def publish_message(
     await mh._publish_message(mqtt_client, message)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

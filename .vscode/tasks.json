@@ -11,6 +11,7 @@
             //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
             //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
             "APP_PROCESSING_TOPICS": "identity:app/identity/request,xyz:app/events/#,xyz:app/invoke123/#",
+            "APP_PROCESSING_ERROR_TOPICS": "identity:app/identity/errors,xyz:app/errors",
             "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/micro-dcs/app",
             "APP_LOGGING_LEVEL": "DEBUG",
             "APP_MSGPACK_HOSTNAME": "localhost",

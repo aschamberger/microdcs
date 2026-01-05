@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app import ProcessingConfig
+from app.common import DeliveryError
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
 from app.mqtt import MQTTMessageProcessor, MQTTProcessorMessage
 
@@ -121,3 +122,28 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
 
         result = await self.message_callback(message)
         return result
+
+    async def process_error_message(
+        self, message: MQTTProcessorMessage
+    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
+        logger.info("Processing error message on topic: %s", message.topic)
+
+        if message.cloudevent.type != DeliveryError.Config.cloudevent_type:
+            logger.error(
+                "Cannot process error message type: %s", message.cloudevent.type
+            )
+            return None
+
+        payload_type = DeliveryError
+        error = payload_type.from_json(message.payload)
+
+        logger.error(
+            "Delivery error received: code=%s, message=%s",
+            error.error_code,
+            error.error_message,
+        )
+        logger.debug("Error message content: %s", error)
+
+        # For error messages, we do not send any response here
+        # however we could retry in some cases or log to an external system
+        return None

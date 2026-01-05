@@ -85,7 +85,9 @@ class LoggingConfig:
 class ProcessingConfig:
     otel_instrumentation_enabled: bool = False
     cloudevent_source: str | None = None
+    abort_message_delivery_timeout: float | None = None
     topics: set[str] = field(default_factory=lambda: {"app/events/#", "app/invoke/#"})
+    error_topics: set[str] = field(default_factory=lambda: {"app/errors/delivery"})
 
 
 @dataclass

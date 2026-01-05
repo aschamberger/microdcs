@@ -4,12 +4,10 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
 ## TODO
 
-
-think about error handling and MQTT RPC response
-
 how to implement the msgpack stuff???
 >> put app layer on top of msgpack RPC format?
 >> extract base classs from MQTTMessageProcessor due to redundancy?
+>> keep heartbeat from poc and just rename?
 
 @dataclass
 class MessagePackProcessorMessage:
@@ -37,7 +35,6 @@ class MessagePackProcessorMessage:
 
 App:
 * MQTTProcessor interface
-  * handling responses/mrpc for published messages
   * sending of outgoing messages which are not responses
   * processing config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 
@@ -91,6 +88,7 @@ Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, O
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/primer.md#versioning-of-cloudevents
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md
+* https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/extensions/distributed-tracing.md
 
 As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT protocol binding!
 `id` and `datacontenttype` are populated from MQTT properties and `time` set on object creation.

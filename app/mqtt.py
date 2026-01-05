@@ -15,6 +15,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from app import MQTTConfig, ProcessingConfig
+from app.common import CloudEventAttributes
 from app.dataclass import DataClassConfig, DataClassMixin
 
 logger = logging.getLogger("handler.mqtt")
@@ -24,27 +25,6 @@ class QoS(enum.IntEnum):
     AT_MOST_ONCE = 0
     AT_LEAST_ONCE = 1
     EXACTLY_ONCE = 2
-
-
-@dataclass
-class CloudEventAttributes:
-    specversion: str = "1.0"
-    """The version of the CloudEvents specification used by this event."""
-    id: str | None = None
-    """Populated from MQTT message correlation_data; MUST be a non-empty string; MUST be unique within the scope of the producer"""
-    source: str | None = None
-    """MUST be a non-empty URI-reference; An absolute URI is RECOMMENDED"""
-    type: str | None = None
-    """MUST be a non-empty string; SHOULD be prefixed with a reverse-DNS name. The prefixed domain dictates the organization which defines the semantics of this event type.
-    """
-    datacontenttype: str | None = None
-    """Populated from MQTT message content_type; If present, MUST adhere to the format specified in RFC 2046"""
-    dataschema: str | None = None
-    """If present, MUST be a non-empty URI"""
-    subject: str | None = None
-    """If present, MUST be a non-empty string"""
-    time: str | None = None
-    """If present, MUST adhere to the format specified in RFC 3339"""
 
 
 @dataclass
@@ -96,13 +76,16 @@ class MQTTProcessorMessage:
         for field in dataclasses.fields(CloudEventAttributes):
             value = getattr(self.cloudevent, field.name)
             if value is not None:
-                self.user_properties[field.name] = value
+                self.user_properties[field.name] = str(
+                    value
+                )  # user properties must be str
 
 
 class MQTTMessageProcessor(ABC):
     runtime_config: ProcessingConfig
     identifier: str
     topics: set[str]
+    error_topic: str
     type_classes: dict[str, type[DataClassMixin]] = {}
     type_callbacks: dict[str, Callable[..., Any]] = {}
     hidden_fields: dict[
@@ -125,6 +108,11 @@ class MQTTMessageProcessor(ABC):
             processor, topic = topic_str.split(":", 1)
             if processor == self.identifier:
                 self.topics.add(topic)
+        for error_topic_str in runtime_config.error_topics:
+            processor, topic = error_topic_str.split(":", 1)
+            if processor == self.identifier:
+                self.error_topic = topic
+                break
         self.outgoing_queue = Queue(queue_size)
 
     def register_callback(
@@ -239,6 +227,7 @@ class MQTTMessageProcessor(ABC):
         user_properties: dict[str, str] | None = None,
         cloudevent_type: str | None = None,
         cloudevent_dataschema: str | None = None,
+        cloudevent_abort_message_delivery_timeout: float | None = None,
     ):
         message = MQTTProcessorMessage(
             topic=topic,
@@ -252,16 +241,30 @@ class MQTTMessageProcessor(ABC):
             correlation_data=correlation_data,
             user_properties=user_properties,
         )
+        # set error topic if applicable
+        if message.response_topic is None and self.error_topic is not None:
+            message.response_topic = self.error_topic
         message.cloudevent.source = self.runtime_config.cloudevent_source
         message.cloudevent.subject = self.identifier
         if cloudevent_type is not None:
             message.cloudevent.type = cloudevent_type
         if cloudevent_dataschema is not None:
             message.cloudevent.dataschema = cloudevent_dataschema
+        # set default abort delivery timeout if applicable (to return control to sender after this timeout)
+        if cloudevent_abort_message_delivery_timeout is not None:
+            message.cloudevent.abort_message_delivery_timeout = (
+                cloudevent_abort_message_delivery_timeout
+            )
         return message
 
     @abstractmethod
     async def process_message(
+        self, message: MQTTProcessorMessage
+    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
+        pass
+
+    @abstractmethod
+    async def process_error_message(
         self, message: MQTTProcessorMessage
     ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
         pass
@@ -329,6 +332,14 @@ class MQTTHandler:
             properties.ResponseTopic = message.response_topic
         if message.correlation_data is not None:
             properties.CorrelationData = message.correlation_data
+        if (
+            message.user_properties is not None
+            and message.user_properties.get("abort_message_delivery_timeout") is None
+        ):
+            if self._runtime_config.message_expiry_interval > 0:
+                message.user_properties["abort_message_delivery_timeout"] = str(
+                    self._runtime_config.message_expiry_interval
+                )
         if message.user_properties is not None and len(message.user_properties) > 0:
             # Convert dictionary to list of tuples
             properties.UserProperty = list(message.user_properties.items())
@@ -386,6 +397,16 @@ class MQTTHandler:
         # If multiple processors match the topic, all will be invoked sequentially
         responses: list[MQTTProcessorMessage] = []
         for processor in self._message_processors:
+            if message.topic.matches(processor.error_topic):
+                processor_response = await processor.process_error_message(
+                    processor_message
+                )
+                if isinstance(processor_response, list):
+                    responses.extend(processor_response)
+                elif isinstance(processor_response, MQTTProcessorMessage):
+                    responses.append(processor_response)
+                elif processor_response is None:
+                    continue
             for topic in processor.topics:
                 if message.topic.matches(topic):
                     processor_response = await processor.process_message(
@@ -432,6 +453,7 @@ class MQTTHandler:
                     for processor in self._message_processors:
                         for topic in processor.topics:
                             await client.subscribe(topic)
+                        await client.subscribe(processor.error_topic)
                     async with asyncio.TaskGroup() as tg:
                         logger.info(
                             "Starting %d message worker tasks",
