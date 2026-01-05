@@ -45,6 +45,15 @@ Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, O
 
 ### MQTTv5
 
+### JSON Schema
+
+* https://json-schema.org/
+
+### MessagePack-RPC
+
+* https://msgpack.org/
+* https://github.com/msgpack-rpc/msgpack-rpc/blob/master/spec.md
+
 ### CloudEvents
 
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/primer.md#versioning-of-cloudevents

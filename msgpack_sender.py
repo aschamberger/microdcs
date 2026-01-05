@@ -1,8 +1,12 @@
 import asyncio
-import struct
+import time
+import typing
+
+import msgpack
 
 from app import MessagePackConfig
 from app.identity_processor import Hello
+from app.msgpack import RpcMessageType
 
 
 async def main():
@@ -12,27 +16,30 @@ async def main():
         msgpack_config.hostname, msgpack_config.port
     )
 
-    # Send 5 requests over the single persistent connection
-    for i in range(5):
-        hello = Hello(name=f"Worker-{i}")
+    # --- 1. Send Notification ---
+    print("Sending Notification...")
+    notify_msg = [RpcMessageType.NOTIFICATION, "log_heartbeat", [time.time()]]
+    writer.write(typing.cast(bytes, msgpack.packb(notify_msg)))
+    await writer.drain()
 
-        # 1. Serialize (Mashumaro)
-        payload = hello.to_msgpack()
+    # --- 2. Send Request ---
+    print("Sending Request...")
+    hello = Hello(name="Bob")
+    req_id = 1
+    req_msg = [RpcMessageType.REQUEST, req_id, "process_hello", [hello.to_dict()]]
+    writer.write(typing.cast(bytes, msgpack.packb(req_msg)))
+    await writer.drain()
 
-        # 2. Add Length Header (4 bytes)
-        # >I means "Big Endian Unsigned Int"
-        header = struct.pack(">I", len(payload))
+    # --- 3. Read Response ---
+    data = await reader.read(4096)
+    unpacker = msgpack.Unpacker(raw=False)
+    unpacker.feed(data)
 
-        # 3. Send as one flush
-        writer.write(header + payload)
-        await writer.drain()
+    for msg in unpacker:
+        # msg: [Type, ID, Error, Result]
+        if msg[0] == RpcMessageType.RESPONSE:
+            print(f"Received Result: {msg[3]}")
 
-        # 4. Wait for simple Ack
-        _ = await reader.readexactly(1)
-
-        print(f"Sent Hello from: {hello.name}")
-
-    print("Finished.")
     writer.close()
     await writer.wait_closed()
 

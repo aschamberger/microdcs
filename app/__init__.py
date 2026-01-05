@@ -33,6 +33,7 @@ class MessagePackConfig:
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
     keep_alive: bool = True
     max_queued_connections: int = 100
+    max_concurrent_requests: int = 10
 
 
 @dataclass
