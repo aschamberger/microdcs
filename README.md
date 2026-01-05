@@ -4,15 +4,47 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
 ## TODO
 
+
+think about error handling and MQTT RPC response
+
+how to implement the msgpack stuff???
+>> put app layer on top of msgpack RPC format?
+>> extract base classs from MQTTMessageProcessor due to redundancy?
+
+@dataclass
+class MessagePackProcessorMessage:
+    version: str
+    correlation_data: bytes | None
+    user_properties: dict[str, str] | None
+    content_type: str | None
+    payload: bytes | None
+
+    def __init__(
+        self,
+        payload: bytes | None = None,
+        *,
+        content_type: str | None = "application/vnd.msgpack",
+        correlation_data: bytes = uuid4().bytes,
+        user_properties: dict[str, str] | None = None,
+        version: str = "1.0",
+    ):
+        self.version = version
+        self.correlation_data = correlation_data
+        self.user_properties = user_properties
+        self.content_type = content_type
+        self.payload = payload
+
+
 App:
 * MQTTProcessor interface
   * handling responses/mrpc for published messages
   * sending of outgoing messages which are not responses
   * processing config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 
+* add more data model validations?
 * distroless container image python
 * Read the bookmarks on DCS internals
-* implement OTELInstrumentedMQTTHandler
+* implement OTELInstrumentedMQTTHandler / OTELInstrumentedMessagePackHandler
 
 * OPC UA Job Spec
   * publish opc ua meta object with retain on app startup for dicovery functionality

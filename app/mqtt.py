@@ -313,7 +313,10 @@ class MQTTHandler:
         properties = Properties(PacketTypes.PUBLISH)
         if message.message_expiry_interval is not None:
             properties.MessageExpiryInterval = message.message_expiry_interval
-        else:
+        elif (
+            self._runtime_config.message_expiry_interval > 0
+            and message.qos == QoS.AT_MOST_ONCE
+        ):
             properties.MessageExpiryInterval = (
                 self._runtime_config.message_expiry_interval
             )
