@@ -35,3 +35,26 @@ def test_serialization_hides_underscore_fields():
     assert "name" in data
     assert "_hidden" not in data
     assert data["name"] == "valid"
+
+
+@dataclass
+class EventModel(DataClassMixin):
+    class Config(DataClassConfig):
+        cloudevent_type = "com.example.event.v1"
+
+
+def test_wildcard_match():
+    # Exact match (should work)
+    assert EventModel.Config.matches_cloudevent_type_pattern("com.example.event.v1")
+
+    # Prefix wildcard (should work after fix)
+    assert EventModel.Config.matches_cloudevent_type_pattern("com.example.event.*")
+
+    # Suffix wildcard (should work after fix)
+    assert EventModel.Config.matches_cloudevent_type_pattern("*.event.v1")
+
+    # Middle wildcard
+    assert EventModel.Config.matches_cloudevent_type_pattern("com.*.v1")
+
+    # No match
+    assert not EventModel.Config.matches_cloudevent_type_pattern("com.other.event")

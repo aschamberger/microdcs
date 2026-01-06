@@ -52,46 +52,36 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
         ]
 
     @classmethod
-    def extract_hidden_str(cls, message: MQTTProcessorMessage) -> str | None:
-        if message.user_properties is None:
-            return None
-        return message.user_properties.get("x-hidden-str", None)
+    def extract_hidden_fields(
+        cls, dclass: DataClassMixin, user_properties: dict[str, str]
+    ):
+        if hasattr(dclass, "_hidden_str"):
+            setattr(dclass, "_hidden_str", user_properties.get("x-hidden-str", None))
+        if hasattr(dclass, "_hidden_obj"):
+            obj_data = user_properties.get("x-hidden-obj", None)
+            if obj_data is not None:
+                setattr(dclass, "_hidden_obj", HiddenObject.from_json(obj_data))
 
     @classmethod
-    def insert_hidden_str(cls, message: MQTTProcessorMessage, value: str) -> None:
-        if message.user_properties is None:
-            message.user_properties = {}
-        message.user_properties["x-hidden-str"] = value
-
-    @classmethod
-    def extract_hidden_obj(cls, message: MQTTProcessorMessage) -> HiddenObject | None:
-        if message.user_properties is None:
-            return None
-        obj_data = message.user_properties.get("x-hidden-obj", None)
-        if obj_data is None:
-            return None
-        return HiddenObject.from_json(obj_data)
-
-    @classmethod
-    def insert_hidden_obj(
-        cls, message: MQTTProcessorMessage, value: HiddenObject
+    def insert_hidden_fields(
+        cls, dclass: DataClassMixin, user_properties: dict[str, str]
     ) -> None:
-        if message.user_properties is None:
-            message.user_properties = {}
-        message.user_properties["x-hidden-obj"] = value.to_json()
+        if user_properties is None:
+            user_properties = {}
+        str_data = getattr(dclass, "_hidden_str", None)
+        if str_data is not None:
+            user_properties["x-hidden-str"] = str_data
+        obj_data = getattr(dclass, "_hidden_obj", None)
+        if obj_data is not None:
+            user_properties["x-hidden-obj"] = obj_data.to_json()
 
     def __init__(self, runtime_config: ProcessingConfig):
         super().__init__(runtime_config, "identity")
         self.register_callback(Hello, __class__.handle_hello)
-        self.register_hidden_field(
-            "hidden_str",
-            extractor=__class__.extract_hidden_str,
-            inserter=__class__.insert_hidden_str,
-        )
-        self.register_hidden_field(
-            "hidden_obj",
-            extractor=__class__.extract_hidden_obj,
-            inserter=__class__.insert_hidden_obj,
+        self.register_hidden_field_processor(
+            "com.github.aschamberger.micro-dcs.identity.*",
+            extractor=__class__.extract_hidden_fields,
+            inserter=__class__.insert_hidden_fields,
         )
 
     async def process_message(

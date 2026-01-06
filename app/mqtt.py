@@ -15,7 +15,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from app import MQTTConfig, ProcessingConfig
-from app.common import CloudEventAttributes
+from app.common import CloudEventAttributes, serialize_payload, unserialize_payload
 from app.dataclass import DataClassConfig, DataClassMixin
 
 logger = logging.getLogger("handler.mqtt")
@@ -88,11 +88,11 @@ class MQTTMessageProcessor(ABC):
     error_topic: str
     type_classes: dict[str, type[DataClassMixin]] = {}
     type_callbacks: dict[str, Callable[..., Any]] = {}
-    hidden_fields: dict[
+    hidden_field_processors: dict[
         str,
         tuple[
-            Callable[[MQTTProcessorMessage], Any] | None,
-            Callable[[MQTTProcessorMessage, Any], Any] | None,
+            Callable[[DataClassMixin, dict[str, str]], None] | None,
+            Callable[[DataClassMixin, dict[str, str]], None] | None,
         ],
     ] = {}
 
@@ -138,9 +138,9 @@ class MQTTMessageProcessor(ABC):
     def message_has_callback(self, message: MQTTProcessorMessage) -> bool:
         return message.cloudevent.type in self.type_callbacks
 
-    def register_hidden_field(
+    def register_hidden_field_processor(
         self,
-        name: str,
+        cloudevent_type: str,
         extractor: Callable[..., Any] | None = None,
         inserter: Callable[..., Any] | None = None,
     ) -> None:
@@ -148,7 +148,7 @@ class MQTTMessageProcessor(ABC):
             raise TypeError("extractor must be callable")
         if not callable(inserter):
             raise TypeError("inserter must be callable")
-        self.hidden_fields[name] = (extractor, inserter)
+        self.hidden_field_processors[cloudevent_type] = (extractor, inserter)
 
     async def message_callback(
         self, message: MQTTProcessorMessage
@@ -161,14 +161,17 @@ class MQTTMessageProcessor(ABC):
 
         payload_type = self.type_classes[message.cloudevent.type]
         callback: Callable[..., Any] = self.type_callbacks[message.cloudevent.type]
-        request = payload_type.from_json(message.payload)
-        # extract hidden properties
-        for name, (extractor, _) in self.hidden_fields.items():
-            if extractor is not None:
-                hidden_value = extractor(message)
-                if hidden_value is not None:
-                    logger.debug("Extracted hidden field %s: %s", name, hidden_value)
-                    setattr(request, f"_{name}", hidden_value)
+        try:
+            request: DataClassMixin | str = unserialize_payload(
+                message.payload,
+                payload_type,
+                message.cloudevent.datacontenttype or "application/json; charset=utf-8",
+                message.user_properties or {},
+                self.hidden_field_processors,
+            )
+        except ValueError as e:
+            logger.error(e)
+            return None
         logger.debug("Request before callback: %s", request)
 
         responses: list[DataClassMixin] | DataClassMixin | None = await callback(
@@ -194,21 +197,28 @@ class MQTTMessageProcessor(ABC):
                 logger.warning("Response has no Config class")
                 return None
 
+            try:
+                response_payload, user_properties = serialize_payload(
+                    response,
+                    message.cloudevent.datacontenttype
+                    or "application/json; charset=utf-8",
+                    self.hidden_field_processors,
+                )
+            except ValueError as e:
+                logger.exception(
+                    "Error serializing payload for message type %s: %s",
+                    message.cloudevent.type,
+                    e,
+                )
+                return None
+
             response_message = self.create_message(
                 topic=message.response_topic,
-                payload=response.to_jsonb(),
+                payload=response_payload,
                 cloudevent_type=response_config.cloudevent_type,
                 cloudevent_dataschema=response_config.cloudevent_dataschema,
+                user_properties=user_properties,
             )
-            # insert hidden properties
-            for name, (_, inserter) in self.hidden_fields.items():
-                if inserter is not None:
-                    hidden_value = getattr(response, f"_{name}", None)
-                    if hidden_value is not None:
-                        logger.debug(
-                            "Inserting hidden field %s: %s", name, hidden_value
-                        )
-                        inserter(response_message, hidden_value)
             mqtt_responses.append(response_message)
         return mqtt_responses
 

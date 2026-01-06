@@ -33,34 +33,44 @@ def test_hello_validation():
 
 
 def test_hidden_str_extraction_insertion():
-    msg = MQTTProcessorMessage(topic="test", payload=b"")
+    # Setup Hello object with hidden str
+    hello = Hello(name="Test", _hidden_str="secret_value")
+    user_properties = {}
 
     # Test insertion
-    IdentityMQTTMessageProcessor.insert_hidden_str(msg, "secret_value")
-    assert msg.user_properties is not None
-    assert msg.user_properties["x-hidden-str"] == "secret_value"
+    IdentityMQTTMessageProcessor.insert_hidden_fields(hello, user_properties)
+    assert user_properties is not None
+    assert user_properties["x-hidden-str"] == "secret_value"
 
     # Test extraction
-    extracted = IdentityMQTTMessageProcessor.extract_hidden_str(msg)
-    assert extracted == "secret_value"
+    hello_new = Hello(name="Test")
+    # Simulate receiving the user property
+    IdentityMQTTMessageProcessor.extract_hidden_fields(hello_new, user_properties)
+    assert hello_new._hidden_str == "secret_value"
 
 
 def test_hidden_obj_extraction_insertion():
-    msg = MQTTProcessorMessage(topic="test", payload=b"")
     hidden_obj = HiddenObject(field="value")
+    hello = Hello(name="Test", _hidden_obj=hidden_obj)
+    user_properties = {}
 
     # Test insertion
-    IdentityMQTTMessageProcessor.insert_hidden_obj(msg, hidden_obj)
-    assert msg.user_properties is not None
-    assert "x-hidden-obj" in msg.user_properties
+    IdentityMQTTMessageProcessor.insert_hidden_fields(hello, user_properties)
+    assert user_properties is not None
+    assert "x-hidden-obj" in user_properties
 
     # Test extraction
-    extracted = IdentityMQTTMessageProcessor.extract_hidden_obj(msg)
-    assert isinstance(extracted, HiddenObject)
-    assert extracted.field == "value"
+    hello_new = Hello(name="Test")
+    IdentityMQTTMessageProcessor.extract_hidden_fields(hello_new, user_properties)
+    assert isinstance(hello_new._hidden_obj, HiddenObject)
+    assert hello_new._hidden_obj.field == "value"
 
 
 def test_extract_hidden_none():
-    msg = MQTTProcessorMessage(topic="test", payload=b"")
-    assert IdentityMQTTMessageProcessor.extract_hidden_str(msg) is None
-    assert IdentityMQTTMessageProcessor.extract_hidden_obj(msg) is None
+    hello = Hello(name="Test")
+    user_properties = {}
+
+    # Just ensure it doesn't raise and nothing is set
+    IdentityMQTTMessageProcessor.extract_hidden_fields(hello, user_properties)
+    assert hello._hidden_str is None
+    assert hello._hidden_obj is None

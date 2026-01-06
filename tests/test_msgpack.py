@@ -40,28 +40,6 @@ async def test_dispatcher_not_found():
 
 
 @pytest.mark.asyncio
-async def test_handler_process_hello():
-    config = MockMessagePackConfig()
-    handler = MessagePackHandler(config)
-
-    user_dict = {"name": "Tester"}
-    # We mock sleep to speed up test
-    original_sleep = asyncio.sleep
-
-    async def mock_sleep(x):
-        pass
-
-    asyncio.sleep = mock_sleep
-
-    try:
-        result = await handler.process_hello(user_dict)
-        assert result["status"] == "ok"
-        assert result["name"] == "Tester"
-    finally:
-        asyncio.sleep = original_sleep
-
-
-@pytest.mark.asyncio
 async def test_handler_log_heartbeat():
     config = MockMessagePackConfig()
     handler = MessagePackHandler(config)

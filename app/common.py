@@ -1,9 +1,12 @@
+import logging
+import typing
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Callable
 
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
-from app.mqtt import MQTTProcessorMessage
+
+logger = logging.getLogger("app.common")
 
 
 class ErrorCode(StrEnum):
@@ -79,3 +82,79 @@ class CloudEventAttributes(DataClassMixin):
     """If present, indicates the maximum time in seconds the message is valid for delivery
     (especially relevant if the processing party is not the final destination and control
     should be given back to the originator to decide on next steps)."""
+
+
+def unserialize_payload(
+    payload: bytes,
+    payload_type: type,
+    content_type: str,
+    user_properties: dict[str, str],
+    hidden_field_processors: dict[
+        str,
+        tuple[
+            Callable[[DataClassMixin, dict[str, str]], None] | None,
+            Callable[[DataClassMixin, dict[str, str]], None] | None,
+        ],
+    ],
+) -> DataClassMixin | str:
+    match content_type:
+        case "text/plain" | "text/plain; charset=utf-8":
+            request = payload.decode("utf-8")
+        case "application/json" | "application/json; charset=utf-8":
+            request = payload_type.from_json(payload)
+        case "application/msgpack" | "application/msgpack; charset=utf-8":
+            request = payload_type.from_msgpack(payload)
+        case _:
+            raise ValueError(f"Unsupported content type: {content_type}")
+    # extract hidden fields from user properties
+    if isinstance(request, DataClassMixin):
+        for cloudevent_type, (extractor, _) in hidden_field_processors.items():
+            if extractor is not None:
+                if payload_type.Config.matches_cloudevent_type_pattern(cloudevent_type):
+                    logger.debug("Extracting hidden field %s", cloudevent_type)
+                    extractor(request, user_properties)
+
+    return request
+
+
+def serialize_payload(
+    payload: DataClassMixin | str,
+    content_type: str,
+    hidden_field_processors: dict[
+        str,
+        tuple[
+            Callable[[DataClassMixin, dict[str, str]], None] | None,
+            Callable[[DataClassMixin, dict[str, str]], None] | None,
+        ],
+    ],
+) -> tuple[bytes, dict[str, str]]:
+    response: bytes
+    if isinstance(payload, str):
+        if content_type not in [
+            "text/plain",
+            "text/plain; charset=utf-8",
+        ]:
+            raise ValueError(
+                f"Cannot serialize str payload to content type: {content_type}"
+            )
+        response = payload.encode("utf-8")
+        return response, {}
+    else:
+        match content_type:
+            case "application/json" | "application/json; charset=utf-8":
+                response = typing.cast(DataClassMixin, payload).to_jsonb()
+            case "application/msgpack" | "application/msgpack; charset=utf-8":
+                response = typing.cast(DataClassMixin, payload).to_msgpack()
+            case _:
+                raise ValueError(f"Unsupported content type: {content_type}")
+        # insert hidden fields from user properties
+        user_properties: dict[str, str] = {}
+        payload_type = type(payload)
+        if isinstance(payload, DataClassMixin):
+            for cloudevent_type, (_, inserter) in hidden_field_processors.items():
+                if inserter is not None:
+                    if hasattr(payload_type, "Config"):
+                        config = getattr(payload_type, "Config")
+                        if config.matches_cloudevent_type_pattern(cloudevent_type):
+                            inserter(payload, user_properties)
+    return response, user_properties

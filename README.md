@@ -4,16 +4,10 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
 ## TODO
 
-how to implement the msgpack stuff???
->> put app layer on top of msgpack RPC format?
->> extract base classs from MQTTMessageProcessor due to redundancy?
->> keep heartbeat from poc and just rename?
+* extract abstract BaseMessageProcessor from MQTTMessageProcessor + make cloudevents leading to derive MQTT props
+* MQTTProcessor: sending of outgoing messages which are not responses
 
-App:
-* MQTTProcessor interface
-  * sending of outgoing messages which are not responses
-  * processing config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
-
+* processer config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 * add more data model validations?
 * distroless container image python
 * Read the bookmarks on DCS internals

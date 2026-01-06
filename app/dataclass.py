@@ -1,4 +1,5 @@
 import dataclasses
+import fnmatch
 from typing import Any, Dict
 
 from mashumaro.config import BaseConfig
@@ -46,3 +47,8 @@ class DataClassConfig(BaseConfig):
     omit_none = True
     cloudevent_type: str
     cloudevent_dataschema: str
+
+    @classmethod
+    def matches_cloudevent_type_pattern(cls, pattern: str) -> bool:
+        """Checks if the type matches a shell-style pattern (e.g., 'com.app.*')."""
+        return fnmatch.fnmatch(cls.cloudevent_type, pattern)

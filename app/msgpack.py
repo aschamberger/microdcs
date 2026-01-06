@@ -2,14 +2,15 @@ import asyncio
 import inspect
 import logging
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Callable
 
 import msgpack
+from mashumaro.config import BaseConfig
 
 from app import MessagePackConfig
-from app.common import CloudEventAttributes, ErrorCode
+from app.common import CloudEventAttributes, ErrorCode, unserialize_payload
 from app.dataclass import DataClassMixin
 from app.identity_processor import Hello
 
@@ -29,10 +30,18 @@ class MessagePackResponse(DataClassMixin):
 
     error_code: ErrorCode | None
     """Machine readable error code."""
-    error_message: str
+    error_message: str | None = None
     """Humand readable explanation of the error."""
-    user_properties: dict[str, str] | None = {}
+    user_properties: dict[str, str] | None = field(default_factory=dict)
     """User properties to include in the response."""
+
+    def __post_init__(self):
+        if self.error_code is not None and self.error_message is None:
+            self.error_message = "Unknown error occurred."
+
+    class Config(BaseConfig):
+        omit_none = True
+        omit_default = True
 
 
 @dataclass
@@ -45,11 +54,11 @@ class MessagePackProcessorMessage:
         self,
         payload: bytes | None = None,
         *,
-        cloud_event: CloudEventAttributes | None = None,
+        cloudevent: CloudEventAttributes | None = None,
         user_properties: dict[str, str] | None = None,
     ):
         self.payload = payload
-        self.cloudevent = cloud_event
+        self.cloudevent = cloudevent
         self.user_properties = user_properties
 
 
@@ -87,7 +96,7 @@ class MessagePackHandler:
     ):
         message = MessagePackProcessorMessage(
             payload,
-            cloud_event=CloudEventAttributes.from_dict(cloud_event),
+            cloudevent=CloudEventAttributes.from_dict(cloud_event),
             user_properties=user_properties,
         )
         logger.debug("Publishing message: %s", message)
@@ -96,30 +105,27 @@ class MessagePackHandler:
         # For example purposes, we assume Hello is the expected type
         # todo: derive from message.cloudevent.type
         if message.payload is not None and message.cloudevent is not None:
-            request: DataClassMixin | str
-            match message.cloudevent.datacontenttype:
-                case "text/plain" | "text/plain; charset=utf-8":
-                    request = message.payload.decode("utf-8")
-                case "application/msgpack" | "application/msgpack; charset=utf-8":
-                    payload_type = Hello
-                    request = payload_type.from_msgpack(message.payload)
-                case _:
-                    logger.error(
-                        "Unsupported content type: %s",
-                        message.cloudevent.datacontenttype,
-                    )
-                    return MessagePackResponse(
-                        error_code=ErrorCode.UNSUPPORTED_CONTENT_TYPE,
-                        error_message=f"Unsupported content type: {message.cloudevent.datacontenttype}",
-                    ).to_dict()
+            payload_type = Hello
+            try:
+                request: DataClassMixin | str = unserialize_payload(
+                    message.payload,
+                    payload_type,
+                    message.cloudevent.datacontenttype
+                    or "application/json; charset=utf-8",
+                    message.user_properties or {},
+                    {},
+                )
+            except ValueError as e:
+                logger.error(e)
+                return MessagePackResponse(
+                    error_code=ErrorCode.UNSUPPORTED_CONTENT_TYPE,
+                    error_message=f"Unsupported content type: {message.cloudevent.datacontenttype}",
+                ).to_dict()
             logger.info("Processed publish request for: %s", request)
         else:
             logger.warning("No payload to publish")
 
-        return MessagePackResponse(
-            error_code=None,
-            error_message="",
-        ).to_dict()
+        return MessagePackResponse(error_code=None).to_dict()
 
     async def heartbeat(self, timestamp):
         logger.debug("Heartbeat: %s", timestamp)
