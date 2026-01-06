@@ -3,11 +3,13 @@ from enum import StrEnum
 from typing import Any
 
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
+from app.mqtt import MQTTProcessorMessage
 
 
 class ErrorCode(StrEnum):
     DELIVERY_TIMEOUT = "DELIVERY_TIMEOUT"
-    UNKNOWN_PAYLOAD = "UNKNOWN_PAYLOAD"
+    UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
+    UNKNOWN_PAYLOAD_TYPE = "UNKNOWN_PAYLOAD_TYPE"
     VALIDATION_FAILED = "VALIDATION_FAILED"
     CONNECTION_LOST = "CONNECTION_LOST"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
@@ -46,7 +48,7 @@ class DeliveryError(DataClassMixin, DataClassValidationMixin):
 
 
 @dataclass
-class CloudEventAttributes:
+class CloudEventAttributes(DataClassMixin):
     specversion: str = "1.0"
     """The version of the CloudEvents specification used by this event."""
     id: str | None = None

@@ -1,10 +1,13 @@
 import asyncio
+import datetime
 import time
 import typing
+import uuid
 
 import msgpack
 
 from app import MessagePackConfig
+from app.common import CloudEventAttributes
 from app.identity_processor import Hello
 from app.msgpack import RpcMessageType
 
@@ -18,15 +21,30 @@ async def main():
 
     # --- 1. Send Notification ---
     print("Sending Notification...")
-    notify_msg = [RpcMessageType.NOTIFICATION, "log_heartbeat", [time.time()]]
+    notify_msg = [RpcMessageType.NOTIFICATION, "heartbeat", [time.time()]]
     writer.write(typing.cast(bytes, msgpack.packb(notify_msg)))
     await writer.drain()
 
     # --- 2. Send Request ---
     print("Sending Request...")
     hello = Hello(name="Bob")
+    cloud_event: CloudEventAttributes = CloudEventAttributes(
+        id=uuid.uuid4().hex,
+        source="https://example.com/sender",
+        type="com.github.aschamberger.micro-dcs.identity.hello.v1",
+        datacontenttype="application/msgpack",
+        dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
+        subject="test",
+        time=datetime.datetime.now().isoformat() + "Z",
+    )
+    user_properties: dict[str, str] = {}
     req_id = 1
-    req_msg = [RpcMessageType.REQUEST, req_id, "process_hello", [hello.to_dict()]]
+    req_msg = [
+        RpcMessageType.REQUEST,
+        req_id,
+        "publish",
+        [hello.to_msgpack(), cloud_event.to_dict(), user_properties],
+    ]
     writer.write(typing.cast(bytes, msgpack.packb(req_msg)))
     await writer.drain()
 

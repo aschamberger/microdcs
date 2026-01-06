@@ -67,4 +67,4 @@ async def test_handler_log_heartbeat():
     handler = MessagePackHandler(config)
 
     # Just ensure it doesn't raise
-    await handler.log_heartbeat("2023-01-01")
+    await handler.heartbeat("2023-01-01")

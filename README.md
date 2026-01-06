@@ -9,30 +9,6 @@ how to implement the msgpack stuff???
 >> extract base classs from MQTTMessageProcessor due to redundancy?
 >> keep heartbeat from poc and just rename?
 
-@dataclass
-class MessagePackProcessorMessage:
-    version: str
-    correlation_data: bytes | None
-    user_properties: dict[str, str] | None
-    content_type: str | None
-    payload: bytes | None
-
-    def __init__(
-        self,
-        payload: bytes | None = None,
-        *,
-        content_type: str | None = "application/vnd.msgpack",
-        correlation_data: bytes = uuid4().bytes,
-        user_properties: dict[str, str] | None = None,
-        version: str = "1.0",
-    ):
-        self.version = version
-        self.correlation_data = correlation_data
-        self.user_properties = user_properties
-        self.content_type = content_type
-        self.payload = payload
-
-
 App:
 * MQTTProcessor interface
   * sending of outgoing messages which are not responses
@@ -101,7 +77,9 @@ As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT
 
 ### OPC UA
 
-#### ...
+#### OPC 40001-3: Machinery Job Mgmt
+
+* https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/
 
 #### EUInformation:
 

@@ -2,12 +2,15 @@ import asyncio
 import inspect
 import logging
 import ssl
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Callable
 
 import msgpack
 
 from app import MessagePackConfig
+from app.common import CloudEventAttributes, ErrorCode
+from app.dataclass import DataClassMixin
 from app.identity_processor import Hello
 
 logger = logging.getLogger("handler.msgpack")
@@ -17,6 +20,37 @@ class RpcMessageType(IntEnum):
     REQUEST = 0  # [0, msgid, method, params]
     RESPONSE = 1  # [1, msgid, error, result]
     NOTIFICATION = 2  # [2, method, params]
+
+
+@dataclass
+class MessagePackResponse(DataClassMixin):
+    """Represents a response to be sent back to the RPC client.
+    An error_code of None indicates success."""
+
+    error_code: ErrorCode | None
+    """Machine readable error code."""
+    error_message: str
+    """Humand readable explanation of the error."""
+    user_properties: dict[str, str] | None = {}
+    """User properties to include in the response."""
+
+
+@dataclass
+class MessagePackProcessorMessage:
+    payload: bytes | None
+    cloudevent: CloudEventAttributes | None
+    user_properties: dict[str, str] | None
+
+    def __init__(
+        self,
+        payload: bytes | None = None,
+        *,
+        cloud_event: CloudEventAttributes | None = None,
+        user_properties: dict[str, str] | None = None,
+    ):
+        self.payload = payload
+        self.cloudevent = cloud_event
+        self.user_properties = user_properties
 
 
 class RpcDispatcher:
@@ -45,13 +79,49 @@ class MessagePackHandler:
     _runtime_config: MessagePackConfig
     dispatcher: RpcDispatcher
 
-    async def process_hello(self, user_dict):
-        hello = Hello.from_dict(user_dict)
-        logger.debug("Processing user: %s", hello.name)
-        await asyncio.sleep(1)  # Simulate work
-        return {"status": "ok", "name": hello.name}
+    async def publish(
+        self,
+        payload: bytes,
+        cloud_event: dict[str, str],
+        user_properties: dict[str, str],
+    ):
+        message = MessagePackProcessorMessage(
+            payload,
+            cloud_event=CloudEventAttributes.from_dict(cloud_event),
+            user_properties=user_properties,
+        )
+        logger.debug("Publishing message: %s", message)
+        # Here you would implement the actual publishing logic
 
-    async def log_heartbeat(self, timestamp):
+        # For example purposes, we assume Hello is the expected type
+        # todo: derive from message.cloudevent.type
+        if message.payload is not None and message.cloudevent is not None:
+            request: DataClassMixin | str
+            match message.cloudevent.datacontenttype:
+                case "text/plain" | "text/plain; charset=utf-8":
+                    request = message.payload.decode("utf-8")
+                case "application/msgpack" | "application/msgpack; charset=utf-8":
+                    payload_type = Hello
+                    request = payload_type.from_msgpack(message.payload)
+                case _:
+                    logger.error(
+                        "Unsupported content type: %s",
+                        message.cloudevent.datacontenttype,
+                    )
+                    return MessagePackResponse(
+                        error_code=ErrorCode.UNSUPPORTED_CONTENT_TYPE,
+                        error_message=f"Unsupported content type: {message.cloudevent.datacontenttype}",
+                    ).to_dict()
+            logger.info("Processed publish request for: %s", request)
+        else:
+            logger.warning("No payload to publish")
+
+        return MessagePackResponse(
+            error_code=None,
+            error_message="",
+        ).to_dict()
+
+    async def heartbeat(self, timestamp):
         logger.debug("Heartbeat: %s", timestamp)
         # No return value needed for notification
 
@@ -62,8 +132,8 @@ class MessagePackHandler:
     ):
         self._runtime_config = runtime_config
         self.dispatcher = dispatcher
-        self.register_method("process_hello", self.process_hello)
-        self.register_method("log_heartbeat", self.log_heartbeat)
+        self.register_method("publish", self.publish)
+        self.register_method("heartbeat", self.heartbeat)
 
     def register_method(self, name, func):
         self.dispatcher.register(name, func)
