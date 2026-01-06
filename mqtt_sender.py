@@ -77,7 +77,10 @@ async def main():
         error = DeliveryError(
             error_code=ErrorCode.DELIVERY_TIMEOUT,
             error_message="The message could not be delivered within the timeout period.",
-            error_context={"abort_message_delivery_timeout": 5.0},
+            error_context={
+                "abort_message_delivery_timeout": 5.0,
+                "message_expiry_interval": 10,
+            },
             original_topic=topic,
             original_payload=orjson.dumps({"NameField": "Charlie"}),
         )

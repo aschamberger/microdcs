@@ -2,7 +2,7 @@ import logging
 import typing
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Callable
+from typing import Any, Callable, Dict
 
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
 
@@ -39,6 +39,21 @@ class DeliveryError(DataClassMixin, DataClassValidationMixin):
     """The properties of the original message that caused the error."""
     original_user_properties: dict[str, str] | None = None
     """The user properties of the original message that caused the error."""
+
+    @classmethod
+    def __pre_deserialize__(cls, d: Dict[Any, Any]) -> Dict[Any, Any]:
+        items = d["error_context"].split(",") if d.get("error_context") else []
+        d["error_context"] = {k: v for k, v in (item.split("=", 1) for item in items)}  # type: ignore
+        return d
+
+    def __post_serialize__(self, d: Dict[Any, Any]) -> Dict[Any, Any]:
+        pairs = (
+            [f"{k}={str(v)}" for k, v in d["error_context"].items()]
+            if d["error_context"]
+            else []
+        )
+        d["error_context"] = ",".join(pairs)
+        return d
 
     class Config(DataClassConfig):
         cloudevent_type: str = "com.github.aschamberger.micro-dcs.deliveryerror.v1"
@@ -82,6 +97,10 @@ class CloudEventAttributes(DataClassMixin):
     """If present, indicates the maximum time in seconds the message is valid for delivery
     (especially relevant if the processing party is not the final destination and control
     should be given back to the originator to decide on next steps)."""
+    message_expiry_interval: int | None = None
+    """If present, allows the publisher to set an expiry interval for time-sensitive messages.
+    If the message remains on the server beyond this specified interval,
+    the server will no longer distribute it to the subscribers."""
 
 
 def unserialize_payload(
