@@ -162,7 +162,7 @@ class MQTTMessageProcessor(ABC):
         payload_type = self.type_classes[message.cloudevent.type]
         callback: Callable[..., Any] = self.type_callbacks[message.cloudevent.type]
         try:
-            request: DataClassMixin | str = unserialize_payload(
+            request: DataClassMixin | bytes = unserialize_payload(
                 message.payload,
                 payload_type,
                 message.cloudevent.datacontenttype or "application/json; charset=utf-8",
@@ -237,7 +237,6 @@ class MQTTMessageProcessor(ABC):
         user_properties: dict[str, str] | None = None,
         cloudevent_type: str | None = None,
         cloudevent_dataschema: str | None = None,
-        cloudevent_abort_message_delivery_timeout: float | None = None,
     ):
         message = MQTTProcessorMessage(
             topic=topic,
@@ -260,11 +259,6 @@ class MQTTMessageProcessor(ABC):
             message.cloudevent.type = cloudevent_type
         if cloudevent_dataschema is not None:
             message.cloudevent.dataschema = cloudevent_dataschema
-        # set default abort delivery timeout if applicable (to return control to sender after this timeout)
-        if cloudevent_abort_message_delivery_timeout is not None:
-            message.cloudevent.abort_message_delivery_timeout = (
-                cloudevent_abort_message_delivery_timeout
-            )
         return message
 
     @abstractmethod
@@ -342,14 +336,6 @@ class MQTTHandler:
             properties.ResponseTopic = message.response_topic
         if message.correlation_data is not None:
             properties.CorrelationData = message.correlation_data
-        if (
-            message.user_properties is not None
-            and message.user_properties.get("abort_message_delivery_timeout") is None
-        ):
-            if self._runtime_config.message_expiry_interval > 0:
-                message.user_properties["abort_message_delivery_timeout"] = str(
-                    self._runtime_config.message_expiry_interval
-                )
         if message.user_properties is not None and len(message.user_properties) > 0:
             # Convert dictionary to list of tuples
             properties.UserProperty = list(message.user_properties.items())

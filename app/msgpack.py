@@ -10,7 +10,7 @@ import msgpack
 from mashumaro.config import BaseConfig
 
 from app import MessagePackConfig
-from app.common import CloudEventAttributes, ErrorCode, unserialize_payload
+from app.common import CloudEventAttributes, ErrorKind, unserialize_payload
 from app.dataclass import DataClassMixin
 from app.identity_processor import Hello
 
@@ -26,9 +26,9 @@ class RpcMessageType(IntEnum):
 @dataclass
 class MessagePackResponse(DataClassMixin):
     """Represents a response to be sent back to the RPC client.
-    An error_code of None indicates success."""
+    An error_kind of None indicates success."""
 
-    error_code: ErrorCode | None
+    error_kind: ErrorKind | None
     """Machine readable error code."""
     error_message: str | None = None
     """Humand readable explanation of the error."""
@@ -36,7 +36,7 @@ class MessagePackResponse(DataClassMixin):
     """User properties to include in the response."""
 
     def __post_init__(self):
-        if self.error_code is not None and self.error_message is None:
+        if self.error_kind is not None and self.error_message is None:
             self.error_message = "Unknown error occurred."
 
     class Config(BaseConfig):
@@ -107,7 +107,7 @@ class MessagePackHandler:
         if message.payload is not None and message.cloudevent is not None:
             payload_type = Hello
             try:
-                request: DataClassMixin | str = unserialize_payload(
+                request: DataClassMixin | bytes = unserialize_payload(
                     message.payload,
                     payload_type,
                     message.cloudevent.datacontenttype
@@ -118,14 +118,14 @@ class MessagePackHandler:
             except ValueError as e:
                 logger.error(e)
                 return MessagePackResponse(
-                    error_code=ErrorCode.UNSUPPORTED_CONTENT_TYPE,
+                    error_kind=ErrorKind.UNSUPPORTED_CONTENT_TYPE,
                     error_message=f"Unsupported content type: {message.cloudevent.datacontenttype}",
                 ).to_dict()
             logger.info("Processed publish request for: %s", request)
         else:
             logger.warning("No payload to publish")
 
-        return MessagePackResponse(error_code=None).to_dict()
+        return MessagePackResponse(error_kind=None).to_dict()
 
     async def heartbeat(self, timestamp):
         logger.debug("Heartbeat: %s", timestamp)

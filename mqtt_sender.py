@@ -5,7 +5,7 @@ import aiomqtt
 import orjson
 
 from app import MQTTConfig
-from app.common import DeliveryError, ErrorCode
+from app.common import DeliveryError, ErrorKind
 from app.mqtt import MQTTHandler, MQTTProcessorMessage
 
 
@@ -68,14 +68,14 @@ async def main():
 
         # send a DeliveryError message
         payload: dict[str, Any] = {
-            "error_code": "DELIVERY_TIMEOUT",
+            "error_kind": "DELIVERY_TIMEOUT",
             "error_message": "The message could not be delivered within the timeout period.",
             "error_context": {"abort_message_delivery_timeout": 5.0},
             "original_topic": topic,
             "original_payload": orjson.Fragment(orjson.dumps({"NameField": "Charlie"})),
         }
         error = DeliveryError(
-            error_code=ErrorCode.DELIVERY_TIMEOUT,
+            error_kind=ErrorKind.TIMEOUT,
             error_message="The message could not be delivered within the timeout period.",
             error_context={
                 "abort_message_delivery_timeout": 5.0,

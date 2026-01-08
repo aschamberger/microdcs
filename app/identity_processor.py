@@ -129,7 +129,7 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
 
         logger.error(
             "Delivery error received: code=%s, message=%s",
-            error.error_code,
+            error.error_kind,
             error.error_message,
         )
         logger.debug("Error message content: %s", error)

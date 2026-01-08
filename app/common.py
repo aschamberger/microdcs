@@ -9,14 +9,53 @@ from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMi
 logger = logging.getLogger("app.common")
 
 
-class ErrorCode(StrEnum):
-    DELIVERY_TIMEOUT = "DELIVERY_TIMEOUT"
+class ErrorKind(StrEnum):
+    """Enumeration of possible error kinds during message delivery."""
+
+    CONFIGURATION_INVALID = "CONFIGURATION_INVALID"
+    """The configuration provided is invalid."""
+
+    NO_MATCHING_SUBSCRIBERS = "NO_MATCHING_SUBSCRIBERS"
+    """IThere were no subscribers matching the message topic."""
+    TIMEOUT = "TIMEOUT"
+    """The message delivery timed out."""
+
     UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
+    """The content type of the message is unsupported."""
     UNKNOWN_PAYLOAD_TYPE = "UNKNOWN_PAYLOAD_TYPE"
-    VALIDATION_FAILED = "VALIDATION_FAILED"
-    CONNECTION_LOST = "CONNECTION_LOST"
+    """The payload type of the message is unknown."""
+    MISSING_PROPERTY = "MISSING_PROPERTY"
+    """A required property is missing."""
+    MISSING_USER_PROPERTY = "MISSING_USER_PROPERTY"
+    """A required user property is missing."""
+    PROPERTY_INVALID = "PROPERTY_INVALID"
+    """A property value is invalid."""
+    USER_PROPERTY_INVALID = "USER_PROPERTY_INVALID"
+    """A user property value is invalid."""
+    PAYLOAD_INVALID = "PAYLOAD_INVALID"
+
+    STATE_INVALID = "STATE_INVALID"
+    """The system is in an invalid state to process the message."""
+    CANCELLATION = "CANCELLATION"
+    """The operation was cancelled."""
+    INTERNAL_LOGIC_ERROR = "INTERNAL_LOGIC_ERROR"
+    """An internal logic error occurred."""
+    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+    """The requested feature is not implemented."""
+
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    """The requested service is currently unavailable."""
+    COMMUNICATION_ERROR = "COMMUNICATION_ERROR"
+    """A communication error occurred while processing the message."""
+    RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
+    """A required resource has been exhausted."""
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    """Permission to perform the operation was denied."""
+    UNSUPPORTED_VERSION = "UNSUPPORTED_VERSION"
+    """The version of the protocol is unsupported."""
+
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
+    """An unknown error occurred."""
 
 
 @dataclass
@@ -25,8 +64,8 @@ class DeliveryError(DataClassMixin, DataClassValidationMixin):
     error_context can hold additional information such as timeout limits, retry counts, stack traces, etc.
     The original message details are included to help with debugging and potential retries."""
 
-    error_code: ErrorCode
-    """Machine readable error code."""
+    error_kind: ErrorKind
+    """Machine readable error kind."""
     error_message: str
     """Humand readable explanation of the error."""
     error_context: dict[str, Any] | None = None
@@ -93,10 +132,6 @@ class CloudEventAttributes(DataClassMixin):
     tracestate: str | None = None
     """If present, contains a W3C Trace Context tracestate header value
     (comma-delimited list of key-value pairs)"""
-    abort_message_delivery_timeout: float | None = None
-    """If present, indicates the maximum time in seconds the message is valid for delivery
-    (especially relevant if the processing party is not the final destination and control
-    should be given back to the originator to decide on next steps)."""
     message_expiry_interval: int | None = None
     """If present, allows the publisher to set an expiry interval for time-sensitive messages.
     If the message remains on the server beyond this specified interval,
@@ -115,10 +150,10 @@ def unserialize_payload(
             Callable[[DataClassMixin, dict[str, str]], None] | None,
         ],
     ],
-) -> DataClassMixin | str:
+) -> DataClassMixin | bytes:
     match content_type:
-        case "text/plain" | "text/plain; charset=utf-8":
-            request = payload.decode("utf-8")
+        case "application/octet-stream":
+            request = payload
         case "application/json" | "application/json; charset=utf-8":
             request = payload_type.from_json(payload)
         case "application/msgpack" | "application/msgpack; charset=utf-8":
@@ -148,32 +183,23 @@ def serialize_payload(
     ],
 ) -> tuple[bytes, dict[str, str]]:
     response: bytes
-    if isinstance(payload, str):
-        if content_type not in [
-            "text/plain",
-            "text/plain; charset=utf-8",
-        ]:
-            raise ValueError(
-                f"Cannot serialize str payload to content type: {content_type}"
-            )
-        response = payload.encode("utf-8")
-        return response, {}
-    else:
-        match content_type:
-            case "application/json" | "application/json; charset=utf-8":
-                response = typing.cast(DataClassMixin, payload).to_jsonb()
-            case "application/msgpack" | "application/msgpack; charset=utf-8":
-                response = typing.cast(DataClassMixin, payload).to_msgpack()
-            case _:
-                raise ValueError(f"Unsupported content type: {content_type}")
-        # insert hidden fields from user properties
-        user_properties: dict[str, str] = {}
-        payload_type = type(payload)
-        if isinstance(payload, DataClassMixin):
-            for cloudevent_type, (_, inserter) in hidden_field_processors.items():
-                if inserter is not None:
-                    if hasattr(payload_type, "Config"):
-                        config = getattr(payload_type, "Config")
-                        if config.matches_cloudevent_type_pattern(cloudevent_type):
-                            inserter(payload, user_properties)
+    match content_type:
+        case "application/octet-stream":
+            response = typing.cast(bytes, payload)
+        case "application/json" | "application/json; charset=utf-8":
+            response = typing.cast(DataClassMixin, payload).to_jsonb()
+        case "application/msgpack" | "application/msgpack; charset=utf-8":
+            response = typing.cast(DataClassMixin, payload).to_msgpack()
+        case _:
+            raise ValueError(f"Unsupported content type: {content_type}")
+    # insert hidden fields from user properties
+    user_properties: dict[str, str] = {}
+    payload_type = type(payload)
+    if isinstance(payload, DataClassMixin):
+        for cloudevent_type, (_, inserter) in hidden_field_processors.items():
+            if inserter is not None:
+                if hasattr(payload_type, "Config"):
+                    config = getattr(payload_type, "Config")
+                    if config.matches_cloudevent_type_pattern(cloudevent_type):
+                        inserter(payload, user_properties)
     return response, user_properties

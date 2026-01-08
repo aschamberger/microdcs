@@ -7,6 +7,14 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 * extract abstract BaseMessageProcessor from MQTTMessageProcessor + make cloudevents leading to derive MQTT props
 * MQTTProcessor: sending of outgoing messages which are not responses
 
+Move to aiomqtt v3
+* uv pip install "git+https://github.com/empicano/aiomqtt@v3"
+* get connect properties
+* subsribe to client specific response topic (or error topic in this case)
+* response topics bei methoden, etc. explizit - ansonsten sind das nur notifications
+* kann mosquitto das mit dem response topic feature
+* https://github.com/empicano/aiomqtt/pull/376#issuecomment-3508036687 >> check puback for no subscriber
+
 * processer config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 * add more data model validations?
 * distroless container image python
@@ -44,9 +52,10 @@ Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, O
 
 ### MQTTv5
 
-### JSON Schema
+* https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html
+* https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901252
 
-* https://json-schema.org/
+TODO: draw sequence diagram
 
 ### MessagePack-RPC
 
@@ -64,6 +73,10 @@ As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT
 `id` and `datacontenttype` are populated from MQTT properties and `time` set on object creation.
 `source` is set from `APP_PROCESSING_CLOUDEVENT_SOURCE` env var and `subject` is set to `processor.identifier`.
 `type` and `dataschema` must be set individually by processor.
+
+### JSON Schema
+
+* https://json-schema.org/
 
 ### OpenTelemetry
 
