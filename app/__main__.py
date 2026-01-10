@@ -27,7 +27,9 @@ async def main():
         # Register MQTT processors as needed
         # e.g., mqtt_handler.register_message_processor(your_processor_instance)
         mqtt_handler.register_message_processor(
-            IdentityMQTTMessageProcessor(runtime_config.processing)
+            IdentityMQTTMessageProcessor(
+                runtime_config.instance_id, runtime_config.processing
+            )
         )
         task_group.create_task(mqtt_handler.task())
         # MessagePackHandler setup based on OTEL instrumentation flag

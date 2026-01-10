@@ -3,6 +3,7 @@ import dataclasses
 import logging.config
 import os
 import signal
+import uuid
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from types import FrameType
@@ -86,18 +87,23 @@ class ProcessingConfig:
     otel_instrumentation_enabled: bool = False
     cloudevent_source: str | None = None
     abort_message_delivery_timeout: float | None = None
+    shared_subscription_name: str | None = None
     topics: set[str] = field(default_factory=lambda: {"app/events/#", "app/invoke/#"})
-    error_topics: set[str] = field(default_factory=lambda: {"app/errors/delivery"})
+    response_topics: set[str] = field(default_factory=lambda: {"app/errors/delivery"})
 
 
 @dataclass
 class RuntimeConfig:
+    instance_id: str
     mqtt: MQTTConfig
     msgpack: MessagePackConfig
     logging: LoggingConfig
     processing: ProcessingConfig
 
     def __init__(self, prefix: str = "APP_"):
+        # Get the ID from Env, fallback to UUID if running locally
+        self.instance_id = os.getenv("POD_ID", str(uuid.uuid4()))
+        # Initialize nested dataclasses
         for field_main in fields(self):
             if dataclasses.is_dataclass(field_main.type) and callable(field_main.type):
                 setattr(self, field_main.name, field_main.type())

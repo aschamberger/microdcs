@@ -62,7 +62,7 @@ class MessagePackRpcClient:
 
         data = msgpack.packb(payload)
         if data is not None:
-            print(f"Sending: {data}")
+            # print(f"Sending: {data}")
             async with self._lock:
                 self.writer.write(data)
                 await self.writer.drain()

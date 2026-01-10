@@ -66,38 +66,38 @@ async def main():
             user_properties,
         )
 
-        # send a DeliveryError message
-        payload: dict[str, Any] = {
-            "error_kind": "DELIVERY_TIMEOUT",
-            "error_message": "The message could not be delivered within the timeout period.",
-            "error_context": {"abort_message_delivery_timeout": 5.0},
-            "original_topic": topic,
-            "original_payload": orjson.Fragment(orjson.dumps({"NameField": "Charlie"})),
-        }
-        error = DeliveryError(
-            error_kind=ErrorKind.TIMEOUT,
-            error_message="The message could not be delivered within the timeout period.",
-            error_context={
-                "abort_message_delivery_timeout": 5.0,
-                "message_expiry_interval": 10,
-            },
-            original_topic=topic,
-            original_payload=orjson.dumps({"NameField": "Charlie"}),
-        )
+        # # send a DeliveryError message
+        # payload: dict[str, Any] = {
+        #     "error_kind": "DELIVERY_TIMEOUT",
+        #     "error_message": "The message could not be delivered within the timeout period.",
+        #     "error_context": {"abort_message_delivery_timeout": 5.0},
+        #     "original_topic": topic,
+        #     "original_payload": orjson.Fragment(orjson.dumps({"NameField": "Charlie"})),
+        # }
+        # error = DeliveryError(
+        #     error_kind=ErrorKind.TIMEOUT,
+        #     error_message="The message could not be delivered within the timeout period.",
+        #     error_context={
+        #         "abort_message_delivery_timeout": 5.0,
+        #         "message_expiry_interval": 10,
+        #     },
+        #     original_topic=topic,
+        #     original_payload=orjson.dumps({"NameField": "Charlie"}),
+        # )
 
-        cloudevent_type = "com.github.aschamberger.micro-dcs.deliveryerror.v1"
-        cloudevent_dataschema = (
-            "https://aschamberger.github.io/schemas/micro-dcs/deliveryerror/v1"
-        )
-        await publish_message(
-            mh,
-            mqtt_client,
-            error_topic,
-            None,
-            error.to_jsonb(),
-            cloudevent_type,
-            cloudevent_dataschema,
-        )
+        # cloudevent_type = "com.github.aschamberger.micro-dcs.deliveryerror.v1"
+        # cloudevent_dataschema = (
+        #     "https://aschamberger.github.io/schemas/micro-dcs/deliveryerror/v1"
+        # )
+        # await publish_message(
+        #     mh,
+        #     mqtt_client,
+        #     error_topic,
+        #     None,
+        #     error.to_jsonb(),
+        #     cloudevent_type,
+        #     cloudevent_dataschema,
+        # )
 
 
 async def publish_message(

@@ -82,10 +82,11 @@ class MQTTProcessorMessage:
 
 
 class MQTTMessageProcessor(ABC):
+    instance_id: str
     runtime_config: ProcessingConfig
     identifier: str
     topics: set[str]
-    error_topic: str
+    response_topic: str
     type_classes: dict[str, type[DataClassMixin]] = {}
     type_callbacks: dict[str, Callable[..., Any]] = {}
     hidden_field_processors: dict[
@@ -99,19 +100,31 @@ class MQTTMessageProcessor(ABC):
     outgoing_queue: Queue[MQTTProcessorMessage]
 
     def __init__(
-        self, runtime_config: ProcessingConfig, identifier: str, queue_size: int = 1
+        self,
+        instance_id: str,
+        runtime_config: ProcessingConfig,
+        identifier: str,
+        queue_size: int = 1,
     ):
+        self.instance_id = instance_id
         self.runtime_config = runtime_config
         self.identifier = identifier
         self.topics = set()
-        for topic_str in runtime_config.topics:
+        for topic_str in self.runtime_config.topics:
             processor, topic = topic_str.split(":", 1)
             if processor == self.identifier:
+                # add shared subscription prefix if applicable
+                if self.runtime_config.shared_subscription_name:
+                    topic = (
+                        f"$share/{self.runtime_config.shared_subscription_name}/{topic}"
+                    )
                 self.topics.add(topic)
-        for error_topic_str in runtime_config.error_topics:
-            processor, topic = error_topic_str.split(":", 1)
+        for response_topic_str in self.runtime_config.response_topics:
+            processor, topic = response_topic_str.split(":", 1)
             if processor == self.identifier:
-                self.error_topic = topic
+                # do not add shared subscription prefix to response topic
+                # we want to receive direct responses here
+                self.response_topic = f"{topic}/{self.instance_id}"
                 break
         self.outgoing_queue = Queue(queue_size)
 
@@ -250,9 +263,9 @@ class MQTTMessageProcessor(ABC):
             correlation_data=correlation_data,
             user_properties=user_properties,
         )
-        # set error topic if applicable
-        if message.response_topic is None and self.error_topic is not None:
-            message.response_topic = self.error_topic
+        # set response topic if applicable
+        if message.response_topic is None and self.response_topic is not None:
+            message.response_topic = self.response_topic
         message.cloudevent.source = self.runtime_config.cloudevent_source
         message.cloudevent.subject = self.identifier
         if cloudevent_type is not None:
@@ -268,7 +281,7 @@ class MQTTMessageProcessor(ABC):
         pass
 
     @abstractmethod
-    async def process_error_message(
+    async def process_response_message(
         self, message: MQTTProcessorMessage
     ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
         pass
@@ -393,8 +406,8 @@ class MQTTHandler:
         # If multiple processors match the topic, all will be invoked sequentially
         responses: list[MQTTProcessorMessage] = []
         for processor in self._message_processors:
-            if message.topic.matches(processor.error_topic):
-                processor_response = await processor.process_error_message(
+            if message.topic.matches(processor.response_topic):
+                processor_response = await processor.process_response_message(
                     processor_message
                 )
                 if isinstance(processor_response, list):
@@ -449,7 +462,7 @@ class MQTTHandler:
                     for processor in self._message_processors:
                         for topic in processor.topics:
                             await client.subscribe(topic)
-                        await client.subscribe(processor.error_topic)
+                        await client.subscribe(processor.response_topic)
                     async with asyncio.TaskGroup() as tg:
                         logger.info(
                             "Starting %d message worker tasks",

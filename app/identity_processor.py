@@ -75,8 +75,8 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
         if obj_data is not None:
             user_properties["x-hidden-obj"] = obj_data.to_json()
 
-    def __init__(self, runtime_config: ProcessingConfig):
-        super().__init__(runtime_config, "identity")
+    def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
+        super().__init__(instance_id, runtime_config, "identity")
         self.register_callback(Hello, __class__.handle_hello)
         self.register_hidden_field_processor(
             "com.github.aschamberger.micro-dcs.identity.*",
@@ -113,14 +113,14 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
         result = await self.message_callback(message)
         return result
 
-    async def process_error_message(
+    async def process_response_message(
         self, message: MQTTProcessorMessage
     ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
-        logger.info("Processing error message on topic: %s", message.topic)
+        logger.info("Processing response message on topic: %s", message.topic)
 
         if message.cloudevent.type != DeliveryError.Config.cloudevent_type:
             logger.error(
-                "Cannot process error message type: %s", message.cloudevent.type
+                "Cannot process response message type: %s", message.cloudevent.type
             )
             return None
 
