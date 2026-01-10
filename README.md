@@ -2,18 +2,29 @@
 
 MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
+## Features
+
+* Transport protocols: MQTTv5 RPC/CloudEvents & MessagePack-RPC over TCP/CloudEvents
+* Generic handling of JSON/MessagePack payloads via content type
+* De-/serialization to Python dataclasses with handling of custom user properties
+* ...
+* OpenTelemetry
+
 ## TODO
 
-* extract abstract BaseMessageProcessor from MQTTMessageProcessor + make cloudevents leading to derive MQTT props
+* setting a response topic sets QoS=1, otherwise its a QoS=0 notification
+* shared subscriptions and client specific response topics
+* Request/Response handling base classes
+  * make cloudevents leading to derive MQTT props
+  * timer tasks
+  * align attribute names with cloudevents naming scheme
+* extract abstract BaseMessageProcessor from MQTTMessageProcessor
 * MQTTProcessor: sending of outgoing messages which are not responses
 
 Move to aiomqtt v3
 * uv pip install "git+https://github.com/empicano/aiomqtt@v3"
-* get connect properties
-* subsribe to client specific response topic (or error topic in this case)
-* response topics bei methoden, etc. explizit - ansonsten sind das nur notifications
-* kann mosquitto das mit dem response topic feature
-* https://github.com/empicano/aiomqtt/pull/376#issuecomment-3508036687 >> check puback for no subscriber
+* https://github.com/empicano/aiomqtt/pull/376#issuecomment-3508036687 >> check puback=0x00 to have subscriber
+* comment on github about missing ssl context parameter in v3
 
 * processer config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 * add more data model validations?
@@ -52,10 +63,83 @@ Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, O
 
 ### MQTTv5
 
-* https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html
-* https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901252
+Standard: https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html
 
-TODO: draw sequence diagram
+#### [Request / Response](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901252)
+
+MQTTv5 supports request/response interaction with `Response Topic` and `Correlation Data`. The `Request Response Information`/`Response Information` is not standardized besides the communication channel and e.g. mosquitto supports the attributes in the communication but does not do anything with it (this means the app itself needs to create a client instance specific id and subscribe to it on startup for providing the error backchannel). Published messages to a topic are required to have a subscriber to it (this means PUBACK=0x00).
+
+```mermaid
+  sequenceDiagram
+  autonumber
+      participant Device
+      participant Device Connector
+      participant Broker
+      participant DCS
+      Note over Device, Device Connector: Device Connector is optional
+      Device Connector->>Broker: Subscribe<br/>[topic: mydevice/event]
+      DCS->>Broker: Subscribe<br/>[topic: +/event]
+      DCS->>Broker: Subscribe<br/>[topic: dcs/errors/<dcs_id>]
+      Device->>Device Connector: Request<br/>[any protocol]
+      Device Connector->>Broker: Request<br/>[topic: mydevice/event<br/>responsetopic: mydevice/command<br/>correlationdata: <cid>]
+      Broker->>DCS: Request [topic: mydevice/event<br/>responsetopic: mydevice/command<br/>correlationdata: <cid>]
+      DCS->>Broker: Response [topic: mydevice/command<br/>responsetopic:dcs/errors/<dcs_id><br/>correlationdata: <cid>]
+      opt Error Response
+        Broker->>DCS: Error Response [topic:dcs/errors/<dcs_id><br/>correlationdata: <cid>]
+      end
+      Broker->>Device Connector: Response [topic: mydevice/command<br/>responsetopic:dcs/errors/<dcs_id><br/>correlationdata: <cid>]
+      Device Connector->>Device: Response<br/>[any protocol]
+```
+
+#### [Message Expiry Interval](https://www.emqx.com/en/blog/mqtt-message-expiry-interval)
+
+MQTTv5 introduced `Message Expiry Interval` to allow the publisher to set the expiry interval for time-sensitive message and (implicitly) gain back control in message flow after expiration. Either the server already discards the message before delivering to a subscriber or the reciever discards the message based on the set interval.
+
+```mermaid
+  sequenceDiagram
+      participant Publisher
+      participant Broker
+      participant Subscriber
+      activate Broker
+      activate Publisher
+      activate Subscriber
+      Subscriber->>Broker: Disconnect
+      deactivate Subscriber
+      Publisher->>Broker: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 10]
+      activate Publisher
+      Publisher->>Publisher: MessageExpirationTask<br/>[correlationdata: <cid>,<br/>timer: 10]
+      Note over Broker: After 10s
+      Publisher->>Publisher: HandleExpiration
+      deactivate Publisher
+      Publisher->>Broker: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 60]
+      activate Publisher
+      Publisher->>Publisher: MessageExpirationTask<br/>[correlationdata: <cid><br/>timer: 60]
+      Note over Broker: After 30s
+      Subscriber->>Broker: Connect
+      activate Subscriber
+      Broker->>Subscriber: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 30]
+      Subscriber->>Broker: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 60]
+      Broker->>Publisher: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 60]
+      Publisher->>Publisher: StopExpirationTask
+      deactivate Publisher
+      deactivate Subscriber
+      deactivate Publisher
+      deactivate Broker
+```
+
+#### [Shared Subscriptions](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901250)
+
+In order to achieve high availabiliy or to increase capacity via multiple container instances/MQTT clients the MQTTv5 Shared Subscriptions can be used. A Shared Subscription is identified using a special style of Topic Filter. The format of this filter is: `$share/{ShareName}/{filter}`.
+
+* `$share` is a literal string that marks the Topic Filter as being a Shared Subscription Topic Filter.
+* `{ShareName}` is a character string that does not include "/", "+" or "#"
+* `{filter}` The remainder of the string has the same syntax and semantics as a Topic Filter in a non-shared subscription.
+
+#### [Quality of Service](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901234)
+
+The QoS level used to deliver an Application Message outbound to the Client could differ from that of the inbound Application Message.
+
+Setting a response topic in the application sets QoS=1 (at least once delivery) where we want to make sure it arrives at the destination, otherwise its a QoS=0 (at most once delivery) notification that can be lost.
 
 ### MessagePack-RPC
 
@@ -122,3 +206,4 @@ https://gregoryszorc.com/docs/python-build-standalone/main/running.html
 
 * https://github.com/koepalex/Crow-s-Nest-MQTT
 * https://hub.docker.com/_/eclipse-mosquitto
+* https://mermaid.js.org/syntax/sequenceDiagram.html
