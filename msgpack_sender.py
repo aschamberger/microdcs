@@ -1,13 +1,12 @@
 import asyncio
-import datetime
 import itertools
 import time
-import uuid
+from datetime import datetime
 
 import msgpack
 
 from app import MessagePackConfig
-from app.common import CloudEventAttributes
+from app.common import CloudEvent
 from app.identity_processor import Hello
 from app.msgpack import RpcMessageType
 
@@ -139,21 +138,20 @@ async def main():
         # --- 2. Sequential Call (Standard) ---
         print("\n--- Sequential Call ---")
         hello = Hello(name="Alice")
-        cloud_event: CloudEventAttributes = CloudEventAttributes(
-            id=uuid.uuid4().hex,
+
+        cloud_event = CloudEvent(
+            data=hello.to_msgpack(),
             source="https://example.com/sender",
             type="com.github.aschamberger.micro-dcs.identity.hello.v1",
             datacontenttype="application/msgpack",
             dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
             subject="test",
-            time=datetime.datetime.now().isoformat() + "Z",
+            time=datetime.now(),
         )
         user_properties: dict[str, str] = {}
 
         # We pass the DICT version of the user because MsgPack expects basic types
-        response = await client.call(
-            "publish", hello.to_msgpack(), cloud_event.to_dict(), user_properties
-        )
+        response = await client.call("publish", cloud_event.to_dict(), user_properties)
         print(f"Result: {response}")
 
         # --- 3. Parallel Calls (High Performance) ---
@@ -164,21 +162,17 @@ async def main():
         tasks = []
         for i in range(5):
             h = Hello(name=f"Bot-{i}")
-            cloud_event: CloudEventAttributes = CloudEventAttributes(
-                id=uuid.uuid4().hex,
+            cloud_event = CloudEvent(
+                data=h.to_msgpack(),
                 source="https://example.com/sender",
                 type="com.github.aschamberger.micro-dcs.identity.hello.v1",
                 datacontenttype="application/msgpack",
                 dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
                 subject="test",
-                time=datetime.datetime.now().isoformat() + "Z",
+                time=datetime.now(),
             )
             user_properties: dict[str, str] = {}
-            tasks.append(
-                client.call(
-                    "publish", h.to_msgpack(), cloud_event.to_dict(), user_properties
-                )
-            )
+            tasks.append(client.call("publish", cloud_event.to_dict(), user_properties))
 
         # Wait for all of them to finish
         results = await asyncio.gather(*tasks)

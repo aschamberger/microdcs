@@ -2,15 +2,13 @@ import asyncio
 import inspect
 import logging
 import ssl
-from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Callable
+from typing import Any, Callable
 
 import msgpack
-from mashumaro.config import BaseConfig
 
 from app import MessagePackConfig
-from app.common import CloudEventAttributes, ErrorKind, unserialize_payload
+from app.common import CloudEvent, ErrorKind, ProtocolHandler
 from app.dataclass import DataClassMixin
 from app.identity_processor import Hello
 
@@ -21,45 +19,6 @@ class RpcMessageType(IntEnum):
     REQUEST = 0  # [0, msgid, method, params]
     RESPONSE = 1  # [1, msgid, error, result]
     NOTIFICATION = 2  # [2, method, params]
-
-
-@dataclass
-class MessagePackResponse(DataClassMixin):
-    """Represents a response to be sent back to the RPC client.
-    An error_kind of None indicates success."""
-
-    error_kind: ErrorKind | None
-    """Machine readable error code."""
-    error_message: str | None = None
-    """Humand readable explanation of the error."""
-    user_properties: dict[str, str] | None = field(default_factory=dict)
-    """User properties to include in the response."""
-
-    def __post_init__(self):
-        if self.error_kind is not None and self.error_message is None:
-            self.error_message = "Unknown error occurred."
-
-    class Config(BaseConfig):
-        omit_none = True
-        omit_default = True
-
-
-@dataclass
-class MessagePackProcessorMessage:
-    payload: bytes | None
-    cloudevent: CloudEventAttributes | None
-    user_properties: dict[str, str] | None
-
-    def __init__(
-        self,
-        payload: bytes | None = None,
-        *,
-        cloudevent: CloudEventAttributes | None = None,
-        user_properties: dict[str, str] | None = None,
-    ):
-        self.payload = payload
-        self.cloudevent = cloudevent
-        self.user_properties = user_properties
 
 
 class RpcDispatcher:
@@ -84,48 +43,42 @@ class RpcDispatcher:
             return func(*params)
 
 
-class MessagePackHandler:
+class MessagePackHandler(ProtocolHandler):
     _runtime_config: MessagePackConfig
     dispatcher: RpcDispatcher
 
     async def publish(
         self,
-        payload: bytes,
-        cloud_event: dict[str, str],
+        cloud_event: dict[str, Any],
         user_properties: dict[str, str],
     ):
-        message = MessagePackProcessorMessage(
-            payload,
-            cloudevent=CloudEventAttributes.from_dict(cloud_event),
-            user_properties=user_properties,
+        logger.debug(
+            "Publishing message %s with user properties: %s",
+            cloud_event,
+            user_properties,
         )
-        logger.debug("Publishing message: %s", message)
-        # Here you would implement the actual publishing logic
+
+        cloudevent = CloudEvent.from_dict(cloud_event)
 
         # For example purposes, we assume Hello is the expected type
         # todo: derive from message.cloudevent.type
-        if message.payload is not None and message.cloudevent is not None:
+        if cloudevent.data is not None:
             payload_type = Hello
             try:
-                request: DataClassMixin | bytes = unserialize_payload(
-                    message.payload,
-                    payload_type,
-                    message.cloudevent.datacontenttype
-                    or "application/json; charset=utf-8",
-                    message.user_properties or {},
-                    {},
+                request: DataClassMixin | bytes = cloudevent.unserialize_payload(
+                    payload_type
                 )
             except ValueError as e:
                 logger.error(e)
-                return MessagePackResponse(
-                    error_kind=ErrorKind.UNSUPPORTED_CONTENT_TYPE,
-                    error_message=f"Unsupported content type: {message.cloudevent.datacontenttype}",
+                return CloudEvent(
+                    mdcserrorkind=ErrorKind.UNSUPPORTED_CONTENT_TYPE,
+                    mdcserrormessage=f"Unsupported content type: {cloudevent.datacontenttype}",
                 ).to_dict()
             logger.info("Processed publish request for: %s", request)
         else:
             logger.warning("No payload to publish")
 
-        return MessagePackResponse(error_kind=None).to_dict()
+        return CloudEvent(mdcserrorkind=None).to_dict()
 
     async def heartbeat(self, timestamp):
         logger.debug("Heartbeat: %s", timestamp)

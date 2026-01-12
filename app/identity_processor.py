@@ -2,9 +2,9 @@ import logging
 from dataclasses import dataclass, field
 
 from app import ProcessingConfig
-from app.common import DeliveryError
+from app.common import CloudEvent
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
-from app.mqtt import MQTTMessageProcessor, MQTTProcessorMessage
+from app.mqtt import MQTTMessageProcessor
 
 logger = logging.getLogger("processor.identity")
 
@@ -84,55 +84,64 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
             inserter=__class__.insert_hidden_fields,
         )
 
-    async def process_message(
-        self, message: MQTTProcessorMessage
-    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
-        logger.info("Processing message on topic: %s", message.topic)
+    async def process_event(
+        self, cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        if (
+            cloudevent.transportmetadata is None
+            or cloudevent.transportmetadata.get("mqtt_topic") is None
+        ):
+            logger.error("No topic specified for publishing message")
+            return None
+        logger.debug(
+            "Processing response message on topic %s",
+            cloudevent.transportmetadata.get("mqtt_topic"),
+        )
 
-        if not self.message_has_callback(message):
-            logger.info(
-                "No handler registered for message type: %s", message.cloudevent.type
-            )
+        if not self.message_has_callback(cloudevent):
+            logger.info("No handler registered for message type: %s", cloudevent.type)
             # Special case: raw identity messages are echoed back
             # Normally, we would not do this here, but for identity messages it's acceptable
-            if message.response_topic is None:
+            if (
+                cloudevent.transportmetadata is None
+                or cloudevent.transportmetadata.get("mqtt_response_topic") is None
+            ):
                 logger.warning(
                     "No response topic specified; cannot send identity response."
                 )
                 return None
-            response = self.create_message(
-                topic=message.response_topic,
-                payload=message.payload,
-                qos=message.qos,
-                retain=message.retain,
-                cloudevent_type="com.github.aschamberger.micro-dcs.identity.raw.v1",
-                cloudevent_dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
+            response = CloudEvent(
+                data=cloudevent.data,
+                type="com.github.aschamberger.micro-dcs.identity.raw.v1",
+                dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
+                datacontenttype=cloudevent.datacontenttype,
+                id=cloudevent.id,
+                transportmetadata={
+                    "mqtt_topic": cloudevent.transportmetadata.get(
+                        "mqtt_response_topic"
+                    ),
+                },
             )
             return response
 
-        result = await self.message_callback(message)
+        result = await self.message_callback(cloudevent)
         return result
 
-    async def process_response_message(
-        self, message: MQTTProcessorMessage
-    ) -> list[MQTTProcessorMessage] | MQTTProcessorMessage | None:
-        logger.info("Processing response message on topic: %s", message.topic)
-
-        if message.cloudevent.type != DeliveryError.Config.cloudevent_type:
-            logger.error(
-                "Cannot process response message type: %s", message.cloudevent.type
-            )
+    async def process_response_event(
+        self, cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        if (
+            cloudevent.transportmetadata is None
+            or cloudevent.transportmetadata.get("mqtt_topic") is None
+        ):
+            logger.error("No topic specified for publishing message")
             return None
-
-        payload_type = DeliveryError
-        error = payload_type.from_json(message.payload)
-
-        logger.error(
-            "Delivery error received: code=%s, message=%s",
-            error.error_kind,
-            error.error_message,
+        logger.debug(
+            "Processing response message on topic %s",
+            cloudevent.transportmetadata.get("mqtt_topic"),
         )
-        logger.debug("Error message content: %s", error)
+
+        logger.debug("Response message: %s", cloudevent)
 
         # For error messages, we do not send any response here
         # however we could retry in some cases or log to an external system

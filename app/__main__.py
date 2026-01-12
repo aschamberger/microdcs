@@ -25,8 +25,8 @@ async def main():
             logger.info("Starting MQTTHandler with OTEL instrumentation disabled")
             mqtt_handler = OTELInstrumentedMQTTHandler(runtime_config.mqtt)
         # Register MQTT processors as needed
-        # e.g., mqtt_handler.register_message_processor(your_processor_instance)
-        mqtt_handler.register_message_processor(
+        # e.g., mqtt_handler.register_processor(your_processor_instance)
+        mqtt_handler.register_processor(
             IdentityMQTTMessageProcessor(
                 runtime_config.instance_id, runtime_config.processing
             )

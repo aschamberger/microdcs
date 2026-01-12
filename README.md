@@ -116,15 +116,21 @@ Setting a response topic in the application sets QoS=1 (at least once delivery) 
 
 ### CloudEvents
 
+#### Overview and Spec
+
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/primer.md#versioning-of-cloudevents
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
-* https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/extensions/distributed-tracing.md
+* https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/expirytime.md
+* https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/recordedtime.md
 
-As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT protocol binding!
-`id` and `datacontenttype` are populated from MQTT properties and `time` set on object creation.
-`source` is set from `APP_PROCESSING_CLOUDEVENT_SOURCE` env var and `subject` is set to `processor.identifier`.
-`type` and `dataschema` must be set individually by processor.
+#### MQTT and MessagePack
+
+For MQTT there is a [binding](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md) defined.
+
+As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT protocol binding! `id` and `datacontenttype` are mapped to MQTT5 properties `CorrelationData` and `ContentType`. `source`, `subject`, `type`, `dataschema` and all items within `custommetadata` are transported via `UserProperty`.
+
+For MessagePack the CloudEvent is transported as is with the `custommetadata` serialized to individual attributes.
 
 ### JSON Schema
 

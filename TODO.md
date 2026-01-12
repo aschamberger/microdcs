@@ -1,11 +1,9 @@
 # TODO
 
 * Request/Response handling base classes
-  * make cloudevents leading to derive MQTT props
-  * setting a response topic sets QoS=1, otherwise its a QoS=0 notification
-  * align attribute names with cloudevents naming scheme
+  * default spec=1.0 is stripped
+  * fill source, expiry and subject from runtime_config, ...
   * timer tasks
-* extract abstract BaseMessageProcessor from MQTTMessageProcessor
 * MQTTProcessor: sending of outgoing messages which are not responses
 
 Move to aiomqtt v3
