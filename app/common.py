@@ -6,7 +6,8 @@ from asyncio import Queue
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Callable, Dict, Optional
+from types import UnionType
+from typing import Any, Callable, Dict, Optional, Type, Union
 
 from mashumaro.config import BaseConfig
 
@@ -299,13 +300,19 @@ class CloudEventProcessor(ABC):
         pass
 
     def register_callback(
-        self, message_dataclass: type, callback: Callable[..., Any]
+        self,
+        cloudevent_dataclass: type | UnionType,
+        callback: Callable[..., Any],
     ) -> None:
         if not callable(callback):
             raise TypeError("callback must be callable")
-        if not issubclass(message_dataclass, DataClassMixin):
+        if isinstance(cloudevent_dataclass, UnionType):
+            for subtype in cloudevent_dataclass.__args__:
+                self.register_callback(subtype, callback)
+            return
+        if not issubclass(cloudevent_dataclass, DataClassMixin):
             raise TypeError("message_dataclass must be a subclass of DataClassMixin")
-        config_class = getattr(message_dataclass, "Config", None)
+        config_class = getattr(cloudevent_dataclass, "Config", None)
         if config_class is None or not issubclass(config_class, DataClassConfig):
             raise TypeError(
                 "message_dataclass must have a Config subclass of DataClassConfig"
@@ -315,7 +322,7 @@ class CloudEventProcessor(ABC):
                 "message_dataclass must have a Config subclass with cloudevent_type attribute"
             )
         cloudevent_type = getattr(config_class, "cloudevent_type")
-        self.type_classes[cloudevent_type] = message_dataclass
+        self.type_classes[cloudevent_type] = cloudevent_dataclass
         self.type_callbacks[cloudevent_type] = callback
 
     def message_has_callback(self, cloudevent: CloudEvent) -> bool:

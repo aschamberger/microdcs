@@ -2,7 +2,6 @@
 
 * Request/Response handling base classes
   * fill source, expiry and subject from runtime_config, ... >> create_event() in processor?
-  * register add all childs of union type
   * timer tasks
 * MQTTProcessor: sending of outgoing messages which are not responses
 
