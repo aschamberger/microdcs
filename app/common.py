@@ -201,6 +201,10 @@ class CloudEvent(DataClassMixin):
             del dict["transportmetadata"]
         if context and context.get("remove_data"):
             del dict["data"]
+        if context and context.get("make_str_values"):
+            for k, v in dict.items():
+                if v is not None and not isinstance(v, str):
+                    dict[k] = str(v)
         return dict
 
     def unserialize_payload(
@@ -219,15 +223,15 @@ class CloudEvent(DataClassMixin):
             case "application/octet-stream":
                 request = typing.cast(bytes, self.data)
             case "application/json" | "application/json; charset=utf-8":
-                if not self.data:
-                    request = payload_type()
-                else:
+                if self.data:
                     request = payload_type.from_json(self.data)
-            case "application/msgpack" | "application/msgpack; charset=utf-8":
-                if not self.data:
-                    request = payload_type()
                 else:
+                    request = payload_type()
+            case "application/msgpack" | "application/msgpack; charset=utf-8":
+                if self.data:
                     request = payload_type.from_msgpack(self.data)
+                else:
+                    request = payload_type()
             case _:
                 raise ValueError(f"Unsupported content type: {self.datacontenttype}")
         # extract hidden fields from user properties
@@ -267,6 +271,14 @@ class CloudEvent(DataClassMixin):
                 self.data = typing.cast(DataClassMixin, payload).to_msgpack()
             case _:
                 raise ValueError(f"Unsupported content type: {self.datacontenttype}")
+        # propagate cloudevent type and schema from payload
+        if isinstance(payload, DataClassMixin):
+            config_class = getattr(type(payload), "Config", None)
+            if config_class is not None and issubclass(config_class, DataClassConfig):
+                if hasattr(config_class, "cloudevent_type"):
+                    self.type = getattr(config_class, "cloudevent_type")
+                if hasattr(config_class, "cloudevent_dataschema"):
+                    self.dataschema = getattr(config_class, "cloudevent_dataschema")
         # insert hidden fields from user properties
         payload_type = type(payload)
         if hidden_field_processors is not None and isinstance(payload, DataClassMixin):

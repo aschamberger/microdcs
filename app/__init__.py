@@ -6,8 +6,8 @@ import signal
 import uuid
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from types import FrameType
-from typing import Any
+from types import FrameType, UnionType
+from typing import Any, Union
 
 logger = logging.getLogger("app.main")
 
@@ -17,13 +17,12 @@ class MQTTConfig:
     hostname: str = "localhost"
     port: int = 1883
     identifier: str = "app_client"
-    timeout: int = 10
+    connect_timeout: int = 10
+    publish_timeout: int = 5
     sat_token_path: Path = Path("/var/run/secrets/tokens/broker-sat")
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
-    message_publication_timeout: float = 1.0
-    message_expiry_interval: int = 10
-    incoming_queue_size: int = 5
-    outgoing_queue_size: int = 1
+    incoming_queue_size: int = 0
+    outgoing_queue_size: int = 0
     message_workers: int = 5
 
 
@@ -86,7 +85,7 @@ class LoggingConfig:
 class ProcessingConfig:
     otel_instrumentation_enabled: bool = False
     cloudevent_source: str | None = None
-    abort_message_delivery_timeout: float | None = None
+    message_expiry_interval: int | None = None
     shared_subscription_name: str | None = None
     topics: set[str] = field(default_factory=lambda: {"app/events/#", "app/invoke/#"})
     response_topics: set[str] = field(default_factory=lambda: {"app/errors/delivery"})
@@ -140,13 +139,20 @@ class RuntimeConfig:
                             and isinstance(value, str)
                         ):
                             value = Path(value)
-                        elif field_child.type is str:
-                            value = str(value)
-                        elif field_child.type is int and isinstance(value, str):
-                            value = int(value)
-                        elif field_child.type is float and (
-                            isinstance(value, str) or isinstance(value, int)
+                        elif (
+                            field_child.type is str
+                            or str(field_child.type) == "str | None"
                         ):
+                            value = str(value)
+                        elif (
+                            field_child.type is int
+                            or str(field_child.type) == "int | None"
+                        ) and isinstance(value, str):
+                            value = int(value)
+                        elif (
+                            field_child.type is float
+                            or str(field_child.type) == "float | None"
+                        ) and (isinstance(value, str) or isinstance(value, int)):
                             value = float(value)
 
                         setattr(getattr(self, field_main.name), field_child.name, value)

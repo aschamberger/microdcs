@@ -115,6 +115,21 @@ class MQTTMessageProcessor(CloudEventProcessor):
                     ),
                 },
             )
+            if self.response_topic is not None and isinstance(
+                response_message.transportmetadata, dict
+            ):
+                response_message.transportmetadata["mqtt_response_topic"] = (
+                    self.response_topic
+                )
+            if self.runtime_config.cloudevent_source is not None:
+                response_message.source = self.runtime_config.cloudevent_source
+            if (
+                self.runtime_config.message_expiry_interval is not None
+                and int(self.runtime_config.message_expiry_interval) > 0
+            ):
+                response_message.expiryinterval = (
+                    self.runtime_config.message_expiry_interval
+                )
             try:
                 response_message.serialize_payload(
                     response,
@@ -157,7 +172,7 @@ class MQTTHandler(ProtocolHandler):
             hostname=self._runtime_config.hostname,
             port=self._runtime_config.port,
             identifier=self._runtime_config.identifier,
-            timeout=self._runtime_config.timeout,
+            timeout=self._runtime_config.connect_timeout,
             clean_start=paho.mqtt.client.MQTT_CLEAN_START_FIRST_ONLY,
             max_queued_incoming_messages=self._runtime_config.incoming_queue_size,
             max_queued_outgoing_messages=self._runtime_config.outgoing_queue_size,
@@ -205,17 +220,19 @@ class MQTTHandler(ProtocolHandler):
             properties.CorrelationData = cloudevent.id.encode("utf-8")
         # Convert dictionary to list of tuples
         properties.UserProperty = list(
-            cloudevent.to_dict(context={"remove_data": True}).items()
+            cloudevent.to_dict(
+                context={"remove_data": True, "make_str_values": True}
+            ).items()
         )
         await client.publish(
-            cloudevent.transportmetadata.get("mqtt_topic", cloudevent.subject),
+            cloudevent.transportmetadata.get("mqtt_topic", ""),
             cloudevent.data,
             qos=qos,
             retain=cloudevent.transportmetadata.get("mqtt_retain", False)
             if cloudevent.transportmetadata
             else False,
             properties=properties,
-            timeout=self._runtime_config.message_publication_timeout,
+            timeout=self._runtime_config.publish_timeout,
         )
 
     async def _process_message(

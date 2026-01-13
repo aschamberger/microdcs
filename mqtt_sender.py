@@ -81,8 +81,8 @@ async def main():
             datacontenttype="application/json; charset=utf-8",
             custommetadata={
                 "x-hidden-str": "This is a hidden string",
-                "x-hidden-obj": orjson.dumps(
-                    {"field": "This is a hidden object field"}
+                "x-hidden-obj": str(
+                    orjson.dumps({"field": "This is a hidden object field"}), "utf-8"
                 ),
             },
             transportmetadata={
