@@ -242,7 +242,7 @@ class MQTTHandler(ProtocolHandler):
                 message.properties.ResponseTopic  # type: ignore
             )
         if message.properties and hasattr(message.properties, "CorrelationData"):
-            cloudevent.id = message.properties.CorrelationData  # type: ignore
+            cloudevent.id = message.properties.CorrelationData.decode("utf-8")  # type: ignore
         if message.properties and hasattr(message.properties, "UserProperty"):
             # Convert list of tuples to dictionary
             cloudevent.custommetadata = dict(message.properties.UserProperty)  # type: ignore

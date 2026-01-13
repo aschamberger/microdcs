@@ -140,7 +140,7 @@ class CloudEvent(DataClassMixin):
     """Machine readable error kind."""
     mdcserrormessage: str | None = None
     """Humand readable explanation of the error."""
-    mdcserrorcontext: dict[str, Any] | None = field(default_factory=dict)
+    mdcserrorcontext: dict[str, Any] | None = None
     """This holds timeout limits, retry counts, stack traces, etc.
     (serialized to comma-delimited list of key-value pairs)"""
 
@@ -182,11 +182,11 @@ class CloudEvent(DataClassMixin):
         )
         if len(pairs) > 0:
             dict["mdcserrorcontext"] = ",".join(pairs)
-        if self.custommetadata is not None and len(self.custommetadata) > 0:
-            for k, v in self.custommetadata.items():
+        if dict["custommetadata"] is not None:
+            for k, v in dict["custommetadata"].items():
                 dict[k] = v
             del dict["custommetadata"]
-        if self.transportmetadata is not None and len(self.transportmetadata) > 0:
+        if dict["transportmetadata"] is not None:
             del dict["transportmetadata"]
         if context and context.get("remove_data"):
             del dict["data"]
@@ -208,9 +208,15 @@ class CloudEvent(DataClassMixin):
             case "application/octet-stream":
                 request = typing.cast(bytes, self.data)
             case "application/json" | "application/json; charset=utf-8":
-                request = payload_type.from_json(self.data)
+                if not self.data:
+                    request = payload_type()
+                else:
+                    request = payload_type.from_json(self.data)
             case "application/msgpack" | "application/msgpack; charset=utf-8":
-                request = payload_type.from_msgpack(self.data)
+                if not self.data:
+                    request = payload_type()
+                else:
+                    request = payload_type.from_msgpack(self.data)
             case _:
                 raise ValueError(f"Unsupported content type: {self.datacontenttype}")
         # extract hidden fields from user properties
@@ -265,7 +271,6 @@ class CloudEvent(DataClassMixin):
     class Config(BaseConfig):
         code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
         omit_none = True
-        omit_default = True
 
 
 class CloudEventProcessor(ABC):
