@@ -64,12 +64,12 @@ class MQTTMessageProcessor(CloudEventProcessor):
     async def message_callback(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
-        if cloudevent.type not in self.type_callbacks:
+        if cloudevent.type not in self.type_callbacks_in:
             logger.error("No callback registered for message type: %s", cloudevent.type)
             return None
 
         payload_type = self.type_classes[cloudevent.type]
-        callback: Callable[..., Any] = self.type_callbacks[cloudevent.type]
+        callback: Callable[..., Any] = self.type_callbacks_in[cloudevent.type]
         try:
             request: DataClassMixin | bytes = cloudevent.unserialize_payload(
                 payload_type,

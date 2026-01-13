@@ -7,13 +7,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import UnionType
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Callable, Dict, Optional
 
 from mashumaro.config import BaseConfig
 
 from app.dataclass import DataClassConfig, DataClassMixin
 
 logger = logging.getLogger("app.common")
+
+
+class Direction(StrEnum):
+    """Enumeration of message directions."""
+
+    INCOMING = "in"
+    """Message is incoming (received)."""
+
+    OUTGOING = "out"
+    """Message is outgoing (sent)."""
 
 
 class ErrorKind(StrEnum):
@@ -279,7 +289,8 @@ class CloudEventProcessor(ABC):
     runtime_config: Any
     identifier: str
     type_classes: dict[str, type[DataClassMixin]] = {}
-    type_callbacks: dict[str, Callable[..., Any]] = {}
+    type_callbacks_in: dict[str, Callable[..., Any]] = {}
+    type_callbacks_out: dict[str, Callable[..., Any]] = {}
     hidden_field_processors: dict[
         str,
         tuple[
@@ -303,6 +314,7 @@ class CloudEventProcessor(ABC):
         self,
         cloudevent_dataclass: type | UnionType,
         callback: Callable[..., Any],
+        direction: Direction = Direction.INCOMING,
     ) -> None:
         if not callable(callback):
             raise TypeError("callback must be callable")
@@ -323,10 +335,13 @@ class CloudEventProcessor(ABC):
             )
         cloudevent_type = getattr(config_class, "cloudevent_type")
         self.type_classes[cloudevent_type] = cloudevent_dataclass
-        self.type_callbacks[cloudevent_type] = callback
+        getattr(
+            self,
+            f"type_callbacks_{direction.value}",
+        )[cloudevent_type] = callback
 
     def message_has_callback(self, cloudevent: CloudEvent) -> bool:
-        return cloudevent.type in self.type_callbacks
+        return cloudevent.type in self.type_callbacks_in
 
     def register_hidden_field_processor(
         self,
