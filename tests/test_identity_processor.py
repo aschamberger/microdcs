@@ -1,7 +1,7 @@
 import pytest
 
 from app import ProcessingConfig
-from app.identity_processor import Hello, HiddenObject, IdentityMQTTMessageProcessor
+from app.identity_processor import Hello, HiddenObject, IdentityMQTTCloudEventProcessor
 from app.mqtt import MQTTProcessorMessage
 
 
@@ -13,13 +13,13 @@ class MockProcessingConfig(ProcessingConfig):
 @pytest.fixture
 def processor():
     config = MockProcessingConfig()
-    return IdentityMQTTMessageProcessor(config)
+    return IdentityMQTTCloudEventProcessor(config)
 
 
 @pytest.mark.asyncio
 async def test_handle_hello():
     hello_input = Hello(name="World")
-    results = await IdentityMQTTMessageProcessor.handle_hello(hello_input)
+    results = await IdentityMQTTCloudEventProcessor.handle_hello(hello_input)
 
     assert isinstance(results, list)
     assert len(results) == 2
@@ -38,14 +38,14 @@ def test_hidden_str_extraction_insertion():
     user_properties = {}
 
     # Test insertion
-    IdentityMQTTMessageProcessor.insert_hidden_fields(hello, user_properties)
+    IdentityMQTTCloudEventProcessor.insert_hidden_fields(hello, user_properties)
     assert user_properties is not None
     assert user_properties["x-hidden-str"] == "secret_value"
 
     # Test extraction
     hello_new = Hello(name="Test")
     # Simulate receiving the user property
-    IdentityMQTTMessageProcessor.extract_hidden_fields(hello_new, user_properties)
+    IdentityMQTTCloudEventProcessor.extract_hidden_fields(hello_new, user_properties)
     assert hello_new._hidden_str == "secret_value"
 
 
@@ -55,13 +55,13 @@ def test_hidden_obj_extraction_insertion():
     user_properties = {}
 
     # Test insertion
-    IdentityMQTTMessageProcessor.insert_hidden_fields(hello, user_properties)
+    IdentityMQTTCloudEventProcessor.insert_hidden_fields(hello, user_properties)
     assert user_properties is not None
     assert "x-hidden-obj" in user_properties
 
     # Test extraction
     hello_new = Hello(name="Test")
-    IdentityMQTTMessageProcessor.extract_hidden_fields(hello_new, user_properties)
+    IdentityMQTTCloudEventProcessor.extract_hidden_fields(hello_new, user_properties)
     assert isinstance(hello_new._hidden_obj, HiddenObject)
     assert hello_new._hidden_obj.field == "value"
 
@@ -71,6 +71,6 @@ def test_extract_hidden_none():
     user_properties = {}
 
     # Just ensure it doesn't raise and nothing is set
-    IdentityMQTTMessageProcessor.extract_hidden_fields(hello, user_properties)
+    IdentityMQTTCloudEventProcessor.extract_hidden_fields(hello, user_properties)
     assert hello._hidden_str is None
     assert hello._hidden_obj is None

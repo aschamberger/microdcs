@@ -3,7 +3,7 @@ import logging
 import os
 
 from app import RuntimeConfig, SystemEventTaskGroup
-from app.identity_processor import IdentityMQTTMessageProcessor
+from app.identity_processor import IdentityMQTTCloudEventProcessor
 from app.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
 from app.msgpack import MessagePackHandler, OTELInstrumentedMessagePackHandler
 
@@ -27,7 +27,7 @@ async def main():
         # Register MQTT processors as needed
         # e.g., mqtt_handler.register_processor(your_processor_instance)
         mqtt_handler.register_processor(
-            IdentityMQTTMessageProcessor(
+            IdentityMQTTCloudEventProcessor(
                 runtime_config.instance_id, runtime_config.processing
             )
         )

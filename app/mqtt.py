@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import enum
 import logging
+import typing
 from asyncio import Queue
 from typing import Any, Callable
 
@@ -27,8 +28,7 @@ class QoS(enum.IntEnum):
     EXACTLY_ONCE = 2
 
 
-class MQTTMessageProcessor(CloudEventProcessor):
-    runtime_config: ProcessingConfig
+class MQTTCloudEventProcessor(CloudEventProcessor):
     topics: set[str]
     response_topic: str
 
@@ -149,10 +149,12 @@ class MQTTMessageProcessor(CloudEventProcessor):
 
 class MQTTHandler(ProtocolHandler):
     _runtime_config: MQTTConfig
-    cloudevent_processors: list[CloudEventProcessor] = []
+    _expiration_timeout_tasks: dict[str, asyncio.Task]
 
     def __init__(self, runtime_config: MQTTConfig):
         self._runtime_config = runtime_config
+        self._expiration_timeout_tasks = {}
+        super().__init__()
 
     def _client(self) -> aiomqtt.Client:
         properties = None
@@ -187,6 +189,7 @@ class MQTTHandler(ProtocolHandler):
         self,
         client: aiomqtt.Client,
         cloudevent: CloudEvent,
+        processor: MQTTCloudEventProcessor | None = None,
     ) -> None:
         if (
             cloudevent.transportmetadata is None
@@ -234,6 +237,21 @@ class MQTTHandler(ProtocolHandler):
             properties=properties,
             timeout=self._runtime_config.publish_timeout,
         )
+        # schedule expiration handling if applicable
+        if (
+            processor is not None
+            and cloudevent.id is not None
+            and cloudevent.expiryinterval is not None
+            and int(cloudevent.expiryinterval) > 0
+        ):
+            self._expiration_timeout_tasks[cloudevent.id] = asyncio.create_task(
+                processor.handle_expiration(cloudevent, int(cloudevent.expiryinterval))
+            )
+            self._expiration_timeout_tasks[cloudevent.id].add_done_callback(
+                lambda _task, _id=cloudevent.id: self._expiration_timeout_tasks.pop(
+                    _id, None
+                )
+            )
 
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
@@ -276,35 +294,40 @@ class MQTTHandler(ProtocolHandler):
                 )
                 del cloudevent.custommetadata[field.name]
 
+        # cancel expiration timeout task if applicable
+        if cloudevent.id in self._expiration_timeout_tasks:
+            self._expiration_timeout_tasks[cloudevent.id].cancel()
+
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor
         # If multiple processors match the topic, all will be invoked sequentially
-        responses: list[CloudEvent] = []
-        for processor in self.cloudevent_processors:
-            if isinstance(processor, MQTTMessageProcessor):
+        for processor in self._cloudevent_processors:
+            if isinstance(processor, MQTTCloudEventProcessor):
                 if message.topic.matches(processor.response_topic):
                     processor_response = await processor.process_response_event(
                         cloudevent
                     )
                     if isinstance(processor_response, list):
-                        responses.extend(processor_response)
+                        for response in processor_response:
+                            await self._publish_message(client, response, processor)
                     elif isinstance(processor_response, CloudEvent):
-                        responses.append(processor_response)
+                        await self._publish_message(
+                            client, processor_response, processor
+                        )
                     elif processor_response is None:
                         continue
                 for topic in processor.topics:
                     if message.topic.matches(topic):
                         processor_response = await processor.process_event(cloudevent)
                         if isinstance(processor_response, list):
-                            responses.extend(processor_response)
+                            for response in processor_response:
+                                await self._publish_message(client, response, processor)
                         elif isinstance(processor_response, CloudEvent):
-                            responses.append(processor_response)
+                            await self._publish_message(
+                                client, processor_response, processor
+                            )
                         elif processor_response is None:
                             continue
-
-        # send responses back if any
-        for response in responses:
-            await self._publish_message(client, response)
 
         # FIXME: use the native ack method when https://github.com/empicano/aiomqtt/pull/346 is merged
         client._client.ack(message.mid, message.qos)  # type: ignore #
@@ -320,7 +343,9 @@ class MQTTHandler(ProtocolHandler):
     ) -> None:
         while True:
             message = await processor.outgoing_queue.get()
-            await self._publish_message(client, message)
+            await self._publish_message(
+                client, message, typing.cast(MQTTCloudEventProcessor, processor)
+            )
             processor.outgoing_queue.task_done()
 
     async def task(self) -> None:
@@ -330,8 +355,8 @@ class MQTTHandler(ProtocolHandler):
         while True:
             try:
                 async with client:
-                    for processor in self.cloudevent_processors:
-                        if isinstance(processor, MQTTMessageProcessor):
+                    for processor in self._cloudevent_processors:
+                        if isinstance(processor, MQTTCloudEventProcessor):
                             for topic in processor.topics:
                                 await client.subscribe(topic)
                                 logger.info("Subscribed to topic: %s", topic)
@@ -347,7 +372,7 @@ class MQTTHandler(ProtocolHandler):
                         )
                         for _ in range(self._runtime_config.message_workers):
                             tg.create_task(self._process_messages(client))
-                        for processor in self.cloudevent_processors:
+                        for processor in self._cloudevent_processors:
                             tg.create_task(
                                 self._outgoing_message_publisher(client, processor)
                             )

@@ -8,7 +8,7 @@ from typing import Any, Callable
 import msgpack
 
 from app import MessagePackConfig
-from app.common import CloudEvent, ErrorKind, ProtocolHandler
+from app.common import CloudEvent, CloudEventProcessor, ErrorKind, ProtocolHandler
 from app.dataclass import DataClassMixin
 from app.identity_processor import Hello
 
@@ -19,6 +19,10 @@ class RpcMessageType(IntEnum):
     REQUEST = 0  # [0, msgid, method, params]
     RESPONSE = 1  # [1, msgid, error, result]
     NOTIFICATION = 2  # [2, method, params]
+
+
+class MessagePackCloudEventProcessor(CloudEventProcessor):
+    pass
 
 
 class RpcDispatcher:

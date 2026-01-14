@@ -7,7 +7,7 @@ import orjson
 from app import MQTTConfig
 from app.common import CloudEvent
 from app.dataclass import DataClassMixin
-from app.identity_processor import Hello, HiddenObject, IdentityMQTTMessageProcessor
+from app.identity_processor import Hello, HiddenObject, IdentityMQTTCloudEventProcessor
 from app.mqtt import MQTTHandler
 
 
@@ -62,8 +62,8 @@ async def main():
             ],
         ] = {
             "com.github.aschamberger.micro-dcs.identity.hello.v1": (
-                IdentityMQTTMessageProcessor.extract_hidden_fields,
-                IdentityMQTTMessageProcessor.insert_hidden_fields,
+                IdentityMQTTCloudEventProcessor.extract_hidden_fields,
+                IdentityMQTTCloudEventProcessor.insert_hidden_fields,
             ),
         }
         bob_ce_1.serialize_payload(bob, hidden_field_processors)

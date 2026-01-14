@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Optional
 
 from mashumaro.config import BaseConfig
 
+from app import ProcessingConfig
 from app.dataclass import DataClassConfig, DataClassMixin
 
 logger = logging.getLogger("app.common")
@@ -298,7 +299,7 @@ class CloudEvent(DataClassMixin):
 
 class CloudEventProcessor(ABC):
     instance_id: str
-    runtime_config: Any
+    runtime_config: ProcessingConfig
     identifier: str
     type_classes: dict[str, type[DataClassMixin]] = {}
     type_callbacks_in: dict[str, Callable[..., Any]] = {}
@@ -352,7 +353,7 @@ class CloudEventProcessor(ABC):
             f"type_callbacks_{direction.value}",
         )[cloudevent_type] = callback
 
-    def message_has_callback(self, cloudevent: CloudEvent) -> bool:
+    def event_has_callback(self, cloudevent: CloudEvent) -> bool:
         return cloudevent.type in self.type_callbacks_in
 
     def register_hidden_field_processor(
@@ -367,6 +368,9 @@ class CloudEventProcessor(ABC):
             raise TypeError("inserter must be callable")
         self.hidden_field_processors[cloudevent_type] = (extractor, inserter)
 
+    def publish_event(self, cloudevent: CloudEvent) -> None:
+        self.outgoing_queue.put_nowait(cloudevent)
+
     @abstractmethod
     async def process_event(self, cloudevent: CloudEvent) -> Any:
         pass
@@ -377,12 +381,18 @@ class CloudEventProcessor(ABC):
     ) -> list[CloudEvent] | CloudEvent | None:
         pass
 
+    @abstractmethod
+    async def handle_expiration(
+        self, cloudevent: CloudEvent, timeout: int
+    ) -> list[CloudEvent] | CloudEvent | None:
+        pass
+
 
 class ProtocolHandler(ABC):
-    cloudevent_processors: list[CloudEventProcessor] = []
+    _cloudevent_processors: list[CloudEventProcessor] = []
 
     def register_processor(self, processor: CloudEventProcessor) -> None:
-        self.cloudevent_processors.append(processor)
+        self._cloudevent_processors.append(processor)
 
     @abstractmethod
     async def task(self) -> None:

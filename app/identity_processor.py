@@ -1,10 +1,11 @@
+import asyncio
 import logging
 from dataclasses import dataclass, field
 
 from app import ProcessingConfig
 from app.common import CloudEvent
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
-from app.mqtt import MQTTMessageProcessor
+from app.mqtt import MQTTCloudEventProcessor
 
 logger = logging.getLogger("processor.identity")
 
@@ -33,7 +34,7 @@ class Hello(DataClassMixin, DataClassValidationMixin):
         }
 
 
-class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
+class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
     @classmethod
     async def handle_hello(cls, hello: Hello) -> list[Hello] | Hello | None:
         logger.info("Received hello from: %s", hello.name)
@@ -98,7 +99,7 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
             cloudevent.transportmetadata.get("mqtt_topic"),
         )
 
-        if not self.message_has_callback(cloudevent):
+        if not self.event_has_callback(cloudevent):
             logger.info("No handler registered for message type: %s", cloudevent.type)
             # Special case: raw identity messages are echoed back
             # Normally, we would not do this here, but for identity messages it's acceptable
@@ -145,4 +146,11 @@ class IdentityMQTTMessageProcessor(MQTTMessageProcessor):
 
         # For error messages, we do not send any response here
         # however we could retry in some cases or log to an external system
+        return None
+
+    async def handle_expiration(
+        self, cloudevent: CloudEvent, timeout: int
+    ) -> list[CloudEvent] | CloudEvent | None:
+        await asyncio.sleep(timeout)  # yield control
+        logger.info("Message expired: %s", cloudevent.id)
         return None

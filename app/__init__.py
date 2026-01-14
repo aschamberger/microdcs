@@ -6,8 +6,8 @@ import signal
 import uuid
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from types import FrameType, UnionType
-from typing import Any, Union
+from types import FrameType
+from typing import Any
 
 logger = logging.getLogger("app.main")
 
