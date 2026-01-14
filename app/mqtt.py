@@ -4,6 +4,7 @@ import enum
 import logging
 import typing
 from asyncio import Queue
+from calendar import c
 from typing import Any, Callable
 
 import aiomqtt
@@ -29,51 +30,51 @@ class QoS(enum.IntEnum):
 
 
 class MQTTCloudEventProcessor(CloudEventProcessor):
-    topics: set[str]
-    response_topic: str
+    _topics: set[str]
+    _response_topic: str
 
     def __init__(
         self,
         instance_id: str,
         runtime_config: ProcessingConfig,
-        identifier: str,
+        topic_identifier: str,
         queue_size: int = 1,
     ):
-        self.instance_id = instance_id
-        self.runtime_config = runtime_config
-        self.identifier = identifier
-        self.topics = set()
-        for topic_str in self.runtime_config.topics:
+        self._instance_id = instance_id
+        self._runtime_config = runtime_config
+        self._topic_identifier = topic_identifier
+        self._topics = set()
+        for topic_str in self._runtime_config.topics:
             processor, topic = topic_str.split(":", 1)
-            if processor == self.identifier:
+            if processor == self._topic_identifier:
                 # add shared subscription prefix if applicable
-                if self.runtime_config.shared_subscription_name:
-                    topic = (
-                        f"$share/{self.runtime_config.shared_subscription_name}/{topic}"
-                    )
-                self.topics.add(topic)
-        for response_topic_str in self.runtime_config.response_topics:
+                if self._runtime_config.shared_subscription_name:
+                    topic = f"$share/{self._runtime_config.shared_subscription_name}/{topic}"
+                self._topics.add(topic)
+        for response_topic_str in self._runtime_config.response_topics:
             processor, topic = response_topic_str.split(":", 1)
-            if processor == self.identifier:
+            if processor == self._topic_identifier:
                 # do not add shared subscription prefix to response topic
                 # we want to receive direct responses here
-                self.response_topic = f"{topic}/{self.instance_id}"
+                self._response_topic = f"{topic}/{self._instance_id}"
                 break
         self.outgoing_queue = Queue(queue_size)
 
     async def message_callback(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
-        if cloudevent.type not in self.type_callbacks_in:
-            logger.error("No callback registered for message type: %s", cloudevent.type)
+        if cloudevent.type not in self._type_callbacks_in:
+            logger.error(
+                "No callback registered for cloud event type: %s", cloudevent.type
+            )
             return None
 
-        payload_type = self.type_classes[cloudevent.type]
-        callback: Callable[..., Any] = self.type_callbacks_in[cloudevent.type]
+        payload_type = self._type_classes[cloudevent.type]
+        callback: Callable[..., Any] = self._type_callbacks_in[cloudevent.type]
         try:
             request: DataClassMixin | bytes = cloudevent.unserialize_payload(
                 payload_type,
-                self.hidden_field_processors,
+                self._hidden_field_processors,
             )
         except ValueError as e:
             logger.error(e)
@@ -97,7 +98,7 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
         if not isinstance(responses, list):
             responses = [responses]
 
-        mqtt_responses: list[CloudEvent] = []
+        cloudevent_responses: list[CloudEvent] = []
         for response in responses:
             logger.debug("Response from callback: %s", response)
             # Get Config class by name
@@ -115,25 +116,25 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
                     ),
                 },
             )
-            if self.response_topic is not None and isinstance(
+            if self._response_topic is not None and isinstance(
                 response_message.transportmetadata, dict
             ):
                 response_message.transportmetadata["mqtt_response_topic"] = (
-                    self.response_topic
+                    self._response_topic
                 )
-            if self.runtime_config.cloudevent_source is not None:
-                response_message.source = self.runtime_config.cloudevent_source
+            if self._runtime_config.cloudevent_source is not None:
+                response_message.source = self._runtime_config.cloudevent_source
             if (
-                self.runtime_config.message_expiry_interval is not None
-                and int(self.runtime_config.message_expiry_interval) > 0
+                self._runtime_config.message_expiry_interval is not None
+                and int(self._runtime_config.message_expiry_interval) > 0
             ):
                 response_message.expiryinterval = (
-                    self.runtime_config.message_expiry_interval
+                    self._runtime_config.message_expiry_interval
                 )
             try:
                 response_message.serialize_payload(
                     response,
-                    self.hidden_field_processors,
+                    self._hidden_field_processors,
                 )
             except ValueError as e:
                 logger.exception(
@@ -143,8 +144,8 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
                 )
                 return None
 
-            mqtt_responses.append(response_message)
-        return mqtt_responses
+            cloudevent_responses.append(response_message)
+        return cloudevent_responses
 
 
 class MQTTHandler(ProtocolHandler):
@@ -303,7 +304,7 @@ class MQTTHandler(ProtocolHandler):
         # If multiple processors match the topic, all will be invoked sequentially
         for processor in self._cloudevent_processors:
             if isinstance(processor, MQTTCloudEventProcessor):
-                if message.topic.matches(processor.response_topic):
+                if message.topic.matches(processor._response_topic):
                     processor_response = await processor.process_response_event(
                         cloudevent
                     )
@@ -316,7 +317,7 @@ class MQTTHandler(ProtocolHandler):
                         )
                     elif processor_response is None:
                         continue
-                for topic in processor.topics:
+                for topic in processor._topics:
                     if message.topic.matches(topic):
                         processor_response = await processor.process_event(cloudevent)
                         if isinstance(processor_response, list):
@@ -357,13 +358,13 @@ class MQTTHandler(ProtocolHandler):
                 async with client:
                     for processor in self._cloudevent_processors:
                         if isinstance(processor, MQTTCloudEventProcessor):
-                            for topic in processor.topics:
+                            for topic in processor._topics:
                                 await client.subscribe(topic)
                                 logger.info("Subscribed to topic: %s", topic)
-                            await client.subscribe(processor.response_topic)
+                            await client.subscribe(processor._response_topic)
                             logger.info(
                                 "Subscribed to response topic: %s",
-                                processor.response_topic,
+                                processor._response_topic,
                             )
                     async with asyncio.TaskGroup() as tg:
                         logger.info(

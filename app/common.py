@@ -298,13 +298,13 @@ class CloudEvent(DataClassMixin):
 
 
 class CloudEventProcessor(ABC):
-    instance_id: str
-    runtime_config: ProcessingConfig
-    identifier: str
-    type_classes: dict[str, type[DataClassMixin]] = {}
-    type_callbacks_in: dict[str, Callable[..., Any]] = {}
-    type_callbacks_out: dict[str, Callable[..., Any]] = {}
-    hidden_field_processors: dict[
+    _instance_id: str
+    _runtime_config: ProcessingConfig
+    _topic_identifier: str
+    _type_classes: dict[str, type[DataClassMixin]] = {}
+    _type_callbacks_in: dict[str, Callable[..., Any]] = {}
+    _type_callbacks_out: dict[str, Callable[..., Any]] = {}
+    _hidden_field_processors: dict[
         str,
         tuple[
             Callable[[DataClassMixin, dict[str, str]], None] | None,
@@ -318,7 +318,7 @@ class CloudEventProcessor(ABC):
         self,
         instance_id: str,
         runtime_config: Any,
-        identifier: str,
+        topic_identifier: str,
         queue_size: int = 1,
     ):
         pass
@@ -347,14 +347,14 @@ class CloudEventProcessor(ABC):
                 "message_dataclass must have a Config subclass with cloudevent_type attribute"
             )
         cloudevent_type = getattr(config_class, "cloudevent_type")
-        self.type_classes[cloudevent_type] = cloudevent_dataclass
+        self._type_classes[cloudevent_type] = cloudevent_dataclass
         getattr(
             self,
             f"type_callbacks_{direction.value}",
         )[cloudevent_type] = callback
 
     def event_has_callback(self, cloudevent: CloudEvent) -> bool:
-        return cloudevent.type in self.type_callbacks_in
+        return cloudevent.type in self._type_callbacks_in
 
     def register_hidden_field_processor(
         self,
@@ -366,7 +366,7 @@ class CloudEventProcessor(ABC):
             raise TypeError("extractor must be callable")
         if not callable(inserter):
             raise TypeError("inserter must be callable")
-        self.hidden_field_processors[cloudevent_type] = (extractor, inserter)
+        self._hidden_field_processors[cloudevent_type] = (extractor, inserter)
 
     def publish_event(self, cloudevent: CloudEvent) -> None:
         self.outgoing_queue.put_nowait(cloudevent)
