@@ -26,11 +26,10 @@ async def main():
             mqtt_handler = OTELInstrumentedMQTTHandler(runtime_config.mqtt)
         # Register MQTT processors as needed
         # e.g., mqtt_handler.register_processor(your_processor_instance)
-        mqtt_handler.register_processor(
-            IdentityMQTTCloudEventProcessor(
-                runtime_config.instance_id, runtime_config.processing
-            )
+        ip = IdentityMQTTCloudEventProcessor(
+            runtime_config.instance_id, runtime_config.processing
         )
+        mqtt_handler.register_processor(ip)
         task_group.create_task(mqtt_handler.task())
         # MessagePackHandler setup based on OTEL instrumentation flag
         if runtime_config.processing.otel_instrumentation_enabled:
@@ -47,6 +46,7 @@ async def main():
         #     IdentityMessagePackMessageProcessor(runtime_config.processing)
         # )
         task_group.create_task(msgpack_handler.task())
+        task_group.create_task(ip.send_event())
     logger.info("Application shutdown complete")
 
 

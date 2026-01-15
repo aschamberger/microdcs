@@ -350,7 +350,7 @@ class CloudEventProcessor(ABC):
         self._type_classes[cloudevent_type] = cloudevent_dataclass
         getattr(
             self,
-            f"type_callbacks_{direction.value}",
+            f"_type_callbacks_{direction.value}",
         )[cloudevent_type] = callback
 
     def event_has_callback(self, cloudevent: CloudEvent) -> bool:
@@ -370,6 +370,25 @@ class CloudEventProcessor(ABC):
 
     def publish_event(self, cloudevent: CloudEvent) -> None:
         self.outgoing_queue.put_nowait(cloudevent)
+
+    def create_event(
+        self,
+        datacontenttype: str | None = "application/json; charset=utf-8",
+    ) -> CloudEvent:
+        cloudevent = CloudEvent(
+            datacontenttype=datacontenttype,
+        )
+        if self._runtime_config.cloudevent_source is not None and isinstance(
+            cloudevent, CloudEvent
+        ):
+            cloudevent.source = self._runtime_config.cloudevent_source
+        if (
+            self._runtime_config.message_expiry_interval is not None
+            and int(self._runtime_config.message_expiry_interval) > 0
+            and isinstance(cloudevent, CloudEvent)
+        ):
+            cloudevent.expiryinterval = self._runtime_config.message_expiry_interval
+        return cloudevent
 
     @abstractmethod
     async def process_event(self, cloudevent: CloudEvent) -> Any:

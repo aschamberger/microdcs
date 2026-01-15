@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app import ProcessingConfig
-from app.common import CloudEvent
+from app.common import CloudEvent, Direction
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
 from app.mqtt import MQTTCloudEventProcessor
 
@@ -34,6 +34,17 @@ class Hello(DataClassMixin, DataClassValidationMixin):
         }
 
 
+@dataclass
+class Bye(DataClassMixin, DataClassValidationMixin):
+    name: str = field(metadata={"min_length": 3, "max_length": 20})
+
+    class Config(DataClassConfig):
+        cloudevent_type: str = "com.github.aschamberger.micro-dcs.identity.bye.v1"
+        cloudevent_dataschema: str = (
+            "https://aschamberger.github.io/schemas/micro-dcs/identity/bye-v1"
+        )
+
+
 class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
     @classmethod
     async def handle_hello(cls, hello: Hello) -> list[Hello] | Hello | None:
@@ -47,6 +58,15 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
             _hidden_obj=hello._hidden_obj,
         )
         h2 = Hello(name="Alice")
+        return [
+            h1,
+            h2,
+        ]
+
+    @classmethod
+    async def handle_bye(cls, **kwargs) -> list[Bye] | Bye | None:
+        h1 = Bye(name="Bob")
+        h2 = Bye(name="Alice")
         return [
             h1,
             h2,
@@ -78,7 +98,10 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
 
     def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
         super().__init__(instance_id, runtime_config, "identity")
-        self.register_callback(Hello, __class__.handle_hello)
+        self.register_callback(
+            Hello, __class__.handle_hello, direction=Direction.INCOMING
+        )
+        self.register_callback(Bye, __class__.handle_bye, direction=Direction.OUTGOING)
         self.register_hidden_field_processor(
             "com.github.aschamberger.micro-dcs.identity.*",
             extractor=__class__.extract_hidden_fields,
@@ -147,6 +170,13 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
         # For error messages, we do not send any response here
         # however we could retry in some cases or log to an external system
         return None
+
+    async def send_event(self) -> None:
+        await asyncio.sleep(5)  # wait for system to be ready
+        logger.info("Sending bye event")
+        payload_type = Bye
+        topic = "app/identity/bye"
+        await self.type_callback(payload_type, topic)
 
     async def handle_expiration(
         self, cloudevent: CloudEvent, timeout: int

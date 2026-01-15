@@ -1,7 +1,7 @@
 # TODO
 
 * implement MessagePackCloudEventProcessor to align msgpack and mqtt
-* processer config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
+* implement OTELInstrumentedMQTTHandler / OTELInstrumentedMessagePackHandler
 
 * Read the bookmarks on DCS internals
 * OPC UA Job Spec
@@ -9,6 +9,7 @@
   * build dataset handler with key frame support: https://reference.opcfoundation.org/Core/Part14/v105/docs/5
   * redis example implementation
 * shutdown handling to unscribe topics and handle existing tasks in current instance before shutdown e.g. on redeploy etc.
+* processer config/plugin model: https://gist.github.com/dorneanu/cce1cd6711969d581873a88e0257e312
 * add more data model validations?
 
 * distroless container image python
@@ -16,7 +17,7 @@
   * uv pip install "git+https://github.com/empicano/aiomqtt@v3"
   * https://github.com/empicano/aiomqtt/pull/376#issuecomment-3508036687 >> check puback=0x00 to have subscriber
   * comment on github about missing ssl context parameter in v3
-* implement OTELInstrumentedMQTTHandler / OTELInstrumentedMessagePackHandler
+  * implement OTEL instrumentation lib
 * k8s deployment
 
 * Notes

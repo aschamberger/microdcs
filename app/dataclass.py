@@ -7,6 +7,16 @@ from mashumaro.mixins.msgpack import DataClassMessagePackMixin
 from mashumaro.mixins.orjson import DataClassORJSONMixin
 
 
+def type_has_config_class(cls: type) -> bool:
+    return hasattr(cls, "Config") and issubclass(cls.Config, DataClassConfig)
+
+
+def get_cloudevent_type(cls: type) -> str | None:
+    if type_has_config_class(cls):
+        return cls.Config.cloudevent_type
+    return None
+
+
 class DataClassValidationMixin:
     def get_field_metadata(self, name: str) -> Any:
         for field in dataclasses.fields(self.__class__.__mro__[0]):

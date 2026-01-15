@@ -3,8 +3,8 @@ import dataclasses
 import enum
 import logging
 import typing
+import uuid
 from asyncio import Queue
-from calendar import c
 from typing import Any, Callable
 
 import aiomqtt
@@ -18,7 +18,7 @@ from app.common import (
     CloudEventProcessor,
     ProtocolHandler,
 )
-from app.dataclass import DataClassMixin
+from app.dataclass import DataClassMixin, get_cloudevent_type, type_has_config_class
 
 logger = logging.getLogger("handler.mqtt")
 
@@ -60,19 +60,39 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
                 break
         self.outgoing_queue = Queue(queue_size)
 
+    def create_mqtt_event(
+        self,
+        topic: str,
+        response_topic: str | None = None,
+        retain: bool = False,
+        datacontenttype: str | None = "application/json; charset=utf-8",
+    ) -> CloudEvent:
+        transportmetadata: dict[str, Any] = {
+            "mqtt_topic": topic,
+            "mqtt_retain": retain,
+        }
+        if response_topic is not None:
+            transportmetadata["mqtt_response_topic"] = response_topic
+        cloudevent = self.create_event(
+            datacontenttype=datacontenttype,
+        )
+        cloudevent.transportmetadata = transportmetadata
+        return cloudevent
+
     async def message_callback(
-        self, cloudevent: CloudEvent
+        self, request_cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
-        if cloudevent.type not in self._type_callbacks_in:
+        if request_cloudevent.type not in self._type_callbacks_in:
             logger.error(
-                "No callback registered for cloud event type: %s", cloudevent.type
+                "No callback registered for cloud event type: %s",
+                request_cloudevent.type,
             )
             return None
 
-        payload_type = self._type_classes[cloudevent.type]
-        callback: Callable[..., Any] = self._type_callbacks_in[cloudevent.type]
+        payload_type = self._type_classes[request_cloudevent.type]
+        callback: Callable[..., Any] = self._type_callbacks_in[request_cloudevent.type]
         try:
-            request: DataClassMixin | bytes = cloudevent.unserialize_payload(
+            request: DataClassMixin | bytes = request_cloudevent.unserialize_payload(
                 payload_type,
                 self._hidden_field_processors,
             )
@@ -88,9 +108,9 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
         if responses is None:
             return None
 
-        if (
-            cloudevent.transportmetadata is None
-            or cloudevent.transportmetadata.get("mqtt_response_topic") is None
+        if not isinstance(request_cloudevent.transportmetadata, dict) or (
+            isinstance(request_cloudevent.transportmetadata, dict)
+            and request_cloudevent.transportmetadata.get("mqtt_response_topic") is None
         ):
             logger.warning("No response topic specified; cannot send response.")
             return None
@@ -98,54 +118,85 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
         if not isinstance(responses, list):
             responses = [responses]
 
-        cloudevent_responses: list[CloudEvent] = []
+        response_cloudevents: list[CloudEvent] = []
         for response in responses:
             logger.debug("Response from callback: %s", response)
-            # Get Config class by name
-            response_config = getattr(response, "Config", None)
-            if response_config is None:
+            if not type_has_config_class(type(response)):
                 logger.warning("Response has no Config class")
-                return None
+                continue
 
-            response_message = CloudEvent(
-                datacontenttype="application/json; charset=utf-8",
-                id=cloudevent.id,
-                transportmetadata={
-                    "mqtt_topic": cloudevent.transportmetadata.get(
-                        "mqtt_response_topic"
-                    ),
-                },
+            response_cloudevent = self.create_mqtt_event(
+                topic=str(
+                    request_cloudevent.transportmetadata.get("mqtt_response_topic")
+                ),
+                response_topic=self._response_topic,
             )
-            if self._response_topic is not None and isinstance(
-                response_message.transportmetadata, dict
-            ):
-                response_message.transportmetadata["mqtt_response_topic"] = (
-                    self._response_topic
-                )
-            if self._runtime_config.cloudevent_source is not None:
-                response_message.source = self._runtime_config.cloudevent_source
-            if (
-                self._runtime_config.message_expiry_interval is not None
-                and int(self._runtime_config.message_expiry_interval) > 0
-            ):
-                response_message.expiryinterval = (
-                    self._runtime_config.message_expiry_interval
-                )
+            response_cloudevent.id = request_cloudevent.id
             try:
-                response_message.serialize_payload(
+                response_cloudevent.serialize_payload(
                     response,
                     self._hidden_field_processors,
                 )
             except ValueError as e:
                 logger.exception(
                     "Error serializing payload for message type %s: %s",
-                    cloudevent.type,
+                    response_cloudevent.type,
                     e,
                 )
                 return None
 
-            cloudevent_responses.append(response_message)
-        return cloudevent_responses
+            response_cloudevents.append(response_cloudevent)
+        return response_cloudevents
+
+    async def type_callback(
+        self, payload_type: type, topic: str, **kwargs
+    ) -> list[CloudEvent] | CloudEvent | None:
+        cloudevent_type = get_cloudevent_type(payload_type)
+        if cloudevent_type is None or cloudevent_type not in self._type_callbacks_out:
+            logger.error(
+                "No callback registered for cloud event type: %s", cloudevent_type
+            )
+            return None
+
+        payload_type = self._type_classes[cloudevent_type]
+        callback: Callable[..., Any] = self._type_callbacks_out[cloudevent_type]
+        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
+            **kwargs
+        )
+
+        if responses is None:
+            return None
+
+        if not isinstance(responses, list):
+            responses = [responses]
+
+        response_cloudevents: list[CloudEvent] = []
+        for response in responses:
+            logger.debug("Response from callback: %s", response)
+            if not type_has_config_class(type(response)):
+                logger.warning("Response has no Config class")
+                continue
+
+            response_cloudevent = self.create_mqtt_event(
+                topic=topic,
+                response_topic=self._response_topic,
+            )
+            try:
+                response_cloudevent.serialize_payload(
+                    response,
+                    self._hidden_field_processors,
+                )
+            except ValueError as e:
+                logger.exception(
+                    "Error serializing payload for message type %s: %s",
+                    response_cloudevent.type,
+                    e,
+                )
+                return None
+
+            await self.outgoing_queue.put(response_cloudevent)
+            response_cloudevents.append(response_cloudevent)
+        return response_cloudevents
 
 
 class MQTTHandler(ProtocolHandler):
@@ -221,7 +272,7 @@ class MQTTHandler(ProtocolHandler):
             )
             qos = QoS.AT_LEAST_ONCE
         if cloudevent.id is not None:
-            properties.CorrelationData = cloudevent.id.encode("utf-8")
+            properties.CorrelationData = uuid.UUID(cloudevent.id).bytes
         # Convert dictionary to list of tuples
         properties.UserProperty = list(
             cloudevent.to_dict(
@@ -278,7 +329,7 @@ class MQTTHandler(ProtocolHandler):
                 message.properties.ResponseTopic  # type: ignore
             )
         if message.properties and hasattr(message.properties, "CorrelationData"):
-            cloudevent.id = message.properties.CorrelationData.decode("utf-8")  # type: ignore
+            cloudevent.id = str(uuid.UUID(bytes=message.properties.CorrelationData))  # type: ignore
         if message.properties and hasattr(message.properties, "UserProperty"):
             # Convert list of tuples to dictionary
             cloudevent.custommetadata = dict(message.properties.UserProperty)  # type: ignore
