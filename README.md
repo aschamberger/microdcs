@@ -103,6 +103,8 @@ In order to achieve high availabiliy or to increase capacity via multiple contai
 * `{ShareName}` is a character string that does not include "/", "+" or "#"
 * `{filter}` The remainder of the string has the same syntax and semantics as a Topic Filter in a non-shared subscription.
 
+MQTT shared subscriptions with QoS 1 offer load balancing, ensuring each message goes to only one client in the shared group, but QoS 1 inherently allows for duplicates (due to acknowledgments) and shared subscriptions can still see duplicates if publishers resend due to lack of ack, requiring clients to handle duplicates via message ID or content.
+
 #### [Quality of Service](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901234)
 
 The QoS level used to deliver an Application Message outbound to the Client could differ from that of the inbound Application Message.

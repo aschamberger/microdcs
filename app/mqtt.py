@@ -305,10 +305,25 @@ class MQTTHandler(ProtocolHandler):
                 )
             )
 
+    async def is_duplicate_message(self, message_id: int) -> bool:
+        logger.debug("Checking for duplicate message with ID %d", message_id)
+        # TODO: implement duplicate message detection
+        return False
+
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
     ) -> None:
-        logger.debug("Received message on topic %s", message.topic)
+        # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
+        if await self.is_duplicate_message(message.mid):
+            logger.info(
+                "Duplicate message received on topic %s with message ID %d",
+                message.topic,
+                message.mid,
+            )
+            return
+        else:
+            logger.debug("Received message on topic %s", message.topic)
+        # Construct CloudEvent from MQTT message
         cloudevent = CloudEvent(data=message.payload)
         # Populate transport metadata
         cloudevent.transportmetadata = {
