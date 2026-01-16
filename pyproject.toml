@@ -6,6 +6,8 @@ dependencies = [
     "aiomqtt>=2.4.0",
     "mashumaro[orjson]>=3.17",
     "msgpack>=1.1.2",
+    "opentelemetry-distro>=0.60b1",
+    "redis[hiredis]>=7.1.0",
 ]
 
 [dependency-groups]

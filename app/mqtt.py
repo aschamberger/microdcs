@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import enum
 import logging
+import time
 import typing
 import uuid
 from asyncio import Queue
@@ -9,6 +10,9 @@ from typing import Any, Callable
 
 import aiomqtt
 import paho.mqtt.client
+from opentelemetry import metrics, trace
+from opentelemetry.propagate import extract
+from opentelemetry.semconv._incubating.attributes import messaging_attributes
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -312,7 +316,7 @@ class MQTTHandler(ProtocolHandler):
 
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
-    ) -> None:
+    ) -> tuple[bool, str]:
         # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
         if await self.is_duplicate_message(message.mid):
             logger.info(
@@ -320,7 +324,14 @@ class MQTTHandler(ProtocolHandler):
                 message.topic,
                 message.mid,
             )
-            return
+            for processor in self._cloudevent_processors:
+                if isinstance(processor, MQTTCloudEventProcessor):
+                    if message.topic.matches(processor._response_topic):
+                        return False, processor._response_topic
+                    for topic in processor._topics:
+                        if message.topic.matches(topic):
+                            return False, topic
+            return False, ""
         else:
             logger.debug("Received message on topic %s", message.topic)
         # Construct CloudEvent from MQTT message
@@ -368,9 +379,11 @@ class MQTTHandler(ProtocolHandler):
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor
         # If multiple processors match the topic, all will be invoked sequentially
+        subscription: list[str] = []
         for processor in self._cloudevent_processors:
             if isinstance(processor, MQTTCloudEventProcessor):
                 if message.topic.matches(processor._response_topic):
+                    subscription.append(processor._response_topic)
                     processor_response = await processor.process_response_event(
                         cloudevent
                     )
@@ -385,6 +398,7 @@ class MQTTHandler(ProtocolHandler):
                         continue
                 for topic in processor._topics:
                     if message.topic.matches(topic):
+                        subscription.append(topic)
                         processor_response = await processor.process_event(cloudevent)
                         if isinstance(processor_response, list):
                             for response in processor_response:
@@ -398,6 +412,8 @@ class MQTTHandler(ProtocolHandler):
 
         # FIXME: use the native ack method when https://github.com/empicano/aiomqtt/pull/346 is merged
         client._client.ack(message.mid, message.qos)  # type: ignore #
+
+        return True, ", ".join(subscription)
 
     async def _process_messages(self, client: aiomqtt.Client) -> None:
         logger.info("Starting MQTT message processing")
@@ -451,10 +467,77 @@ class MQTTHandler(ProtocolHandler):
 
 
 class OTELInstrumentedMQTTHandler(MQTTHandler):
+    _tracer: trace.Tracer
+    _meter: metrics.Meter
+    _metrics: dict[str, metrics.Instrument]
+
     def __init__(self, runtime_config: MQTTConfig):
         super().__init__(runtime_config)
 
+        self._tracer = trace.get_tracer(__name__)
+        self._meter = metrics.get_meter(__name__)
+        self._metrics = {
+            "process_counter": self._meter.create_counter(
+                "messaging.process.counter",
+                description="Count of MQTT messages processed",
+            ),
+            "process_duration": self._meter.create_histogram(
+                "messaging.process.duration",
+                description="Duration of MQTT message processing in milliseconds",
+            ),
+        }
+
+    def record_metrics(
+        self, duration: float, error: bool = False, base_attributes: dict[str, str] = {}
+    ) -> None:
+        attributes = base_attributes | {"status": "error" if error else "success"}
+        self._metrics["process_counter"].add(1, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+        self._metrics["process_duration"].record(duration, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
-    ) -> None:
-        return await super()._process_message(client, message)
+    ) -> tuple[bool, str]:
+        # start timing
+        processing_start_time = time.time()
+        # extract context from MQTT message properties
+        context = None
+        if message.properties and hasattr(message.properties, "UserProperty"):
+            user_properties = dict(message.properties.UserProperty)  # type: ignore
+            context = extract(user_properties) if user_properties else None
+        # define base attributes for both trace and metrics
+        base_attributes = {
+            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
+            messaging_attributes.MESSAGING_OPERATION_TYPE: "process",
+            messaging_attributes.MESSAGING_OPERATION_NAME: "process receive",
+            messaging_attributes.MESSAGING_DESTINATION_NAME: str(message.topic),
+            "messaging.mqtt.qos": str(message.qos),
+            "messaging.mqtt.retain": str(message.retain),
+        }
+        # start trace span and call parent method
+        with self._tracer.start_as_current_span(
+            "process MQTT {messaging.destination.name}",
+            kind=trace.SpanKind.CONSUMER,
+            context=context,
+        ) as span:
+            span.set_attributes(base_attributes)
+            span.set_attribute(
+                messaging_attributes.MESSAGING_MESSAGE_ID, str(message.mid)
+            )
+
+            error, subscription = await super()._process_message(client, message)
+
+            span.set_attribute(
+                messaging_attributes.MESSAGING_DESTINATION_SUBSCRIPTION_NAME,
+                subscription,
+            )
+            if error:
+                span.set_status(
+                    trace.Status(
+                        trace.StatusCode.ERROR,
+                        "Error processing MQTT message",
+                    )
+                )
+            processing_duration = time.time() - processing_start_time
+            self.record_metrics(processing_duration, error, base_attributes)
+
+            return error, subscription

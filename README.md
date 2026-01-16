@@ -5,10 +5,13 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 ## Features
 
 * Transport protocols: MQTTv5 RPC/CloudEvents & MessagePack-RPC over TCP/CloudEvents
+* High-availability, horizontal scalability leveraging MQTTv5 shared subscriptions
+* Deduplication of messages with at least once delivery guaranties and flow control with expiry intervals
 * Generic handling of JSON/MessagePack payloads via content type
 * De-/serialization to Python dataclasses with handling of custom user properties
+* Multiple CloudEventProcessors handling incoming requests
 * ...
-* OpenTelemetry
+* OpenTelemetry auto instrumentation plus manual instrumentation of internals (logging, metrics and tracing)
 
 ## Overall Design
 

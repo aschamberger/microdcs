@@ -1,8 +1,10 @@
 # TODO
 
 * implement MessagePackCloudEventProcessor to align msgpack and mqtt
-* implement OTELInstrumentedMQTTHandler / OTELInstrumentedMessagePackHandler
+* implement OTELInstrumentedMessagePackHandler
 * implement MQTT deduplication logic: https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/docker/
+
+corellation data = id + subject???
 
 * Read the bookmarks on DCS internals
 * OPC UA Job Spec
