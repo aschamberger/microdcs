@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 import aiomqtt
 import paho.mqtt.client
+import redis.asyncio as redis
 from opentelemetry import metrics, trace
 from opentelemetry.propagate import extract
 from opentelemetry.semconv._incubating.attributes import messaging_attributes
@@ -205,10 +206,14 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
 
 class MQTTHandler(ProtocolHandler):
     _runtime_config: MQTTConfig
+    _redis: redis.Redis
     _expiration_timeout_tasks: dict[str, asyncio.Task]
 
-    def __init__(self, runtime_config: MQTTConfig):
+    def __init__(
+        self, runtime_config: MQTTConfig, redis_connection_pool: redis.ConnectionPool
+    ):
         self._runtime_config = runtime_config
+        self._redis = redis.Redis(connection_pool=redis_connection_pool)
         self._expiration_timeout_tasks = {}
         super().__init__()
 
@@ -433,6 +438,11 @@ class MQTTHandler(ProtocolHandler):
 
     async def task(self) -> None:
         logger.info("Starting MQTT handler task")
+        logger.info(
+            "Connecting to MQTT Server running on %s:%d",
+            self._runtime_config.hostname,
+            self._runtime_config.port,
+        )
         client: aiomqtt.Client = self._client()
         interval = 1  # seconds
         while True:
@@ -464,6 +474,10 @@ class MQTTHandler(ProtocolHandler):
                     f"Connection lost; Reconnecting in {interval} seconds ..."
                 )
                 await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                logger.info("MQTT handler task cancelled; shutting down")
+                await self._redis.aclose()
+                raise
 
 
 class OTELInstrumentedMQTTHandler(MQTTHandler):
@@ -471,8 +485,10 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
     _meter: metrics.Meter
     _metrics: dict[str, metrics.Instrument]
 
-    def __init__(self, runtime_config: MQTTConfig):
-        super().__init__(runtime_config)
+    def __init__(
+        self, runtime_config: MQTTConfig, redis_connection_pool: redis.ConnectionPool
+    ):
+        super().__init__(runtime_config, redis_connection_pool)
 
         self._tracer = trace.get_tracer(__name__)
         self._meter = metrics.get_meter(__name__)

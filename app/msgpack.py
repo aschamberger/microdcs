@@ -6,6 +6,7 @@ from enum import IntEnum
 from typing import Any, Callable
 
 import msgpack
+import redis.asyncio as redis
 
 from app import MessagePackConfig
 from app.common import CloudEvent, CloudEventProcessor, ErrorKind, ProtocolHandler
@@ -49,7 +50,8 @@ class RpcDispatcher:
 
 class MessagePackHandler(ProtocolHandler):
     _runtime_config: MessagePackConfig
-    dispatcher: RpcDispatcher
+    _redis: redis.Redis
+    _dispatcher: RpcDispatcher
 
     async def publish(
         self,
@@ -91,15 +93,31 @@ class MessagePackHandler(ProtocolHandler):
     def __init__(
         self,
         runtime_config: MessagePackConfig,
+        redis_connection_pool: redis.ConnectionPool,
         dispatcher: RpcDispatcher = RpcDispatcher(),
     ):
         self._runtime_config = runtime_config
-        self.dispatcher = dispatcher
+        self._redis = redis.Redis(connection_pool=redis_connection_pool)
+        self._dispatcher = dispatcher
         self.register_method("publish", self.publish)
         self.register_method("heartbeat", self.heartbeat)
 
+    async def _server(self) -> asyncio.Server:
+        ssl_context = None
+        if self._runtime_config.tls_cert_path.exists():
+            ssl_context = ssl.create_default_context(
+                cafile=str(self._runtime_config.tls_cert_path)
+            )
+        return await asyncio.start_server(
+            self._handle_client,
+            self._runtime_config.hostname,
+            self._runtime_config.port,
+            ssl=ssl_context,
+            backlog=self._runtime_config.max_queued_connections,
+        )
+
     def register_method(self, name, func):
-        self.dispatcher.register(name, func)
+        self._dispatcher.register(name, func)
 
     async def _send_response(self, writer, lock, msg_id, error, result):
         """Sends the response safely using the Write Lock."""
@@ -127,7 +145,7 @@ class MessagePackHandler(ProtocolHandler):
 
             try:
                 # Execute business logic
-                result = await self.dispatcher.dispatch(method, params)
+                result = await self._dispatcher.dispatch(method, params)
             except asyncio.CancelledError:
                 # If the server cancels us (client disconnect), we stop immediately.
                 logger.info("Task cancelled for %s", method)
@@ -257,30 +275,29 @@ class MessagePackHandler(ProtocolHandler):
 
     async def task(self) -> None:
         logger.info("Starting MessagePack handler task")
-        ssl_context = None
-        if self._runtime_config.tls_cert_path.exists():
-            ssl_context = ssl.create_default_context(
-                cafile=str(self._runtime_config.tls_cert_path)
-            )
-        server = await asyncio.start_server(
-            self._handle_client,
-            self._runtime_config.hostname,
-            self._runtime_config.port,
-            ssl=ssl_context,
-            backlog=self._runtime_config.max_queued_connections,
-        )
         logger.info(
             "MessagePack-RPC Server running on %s:%d",
             self._runtime_config.hostname,
             self._runtime_config.port,
         )
-        async with server:
-            await server.serve_forever()
+        server = await self._server()
+        try:
+            async with server:
+                await server.serve_forever()
+        except asyncio.CancelledError:
+            logger.info("MessagePack handler task cancelled; shutting down")
+            await self._redis.aclose()
+            raise
 
 
 class OTELInstrumentedMessagePackHandler(MessagePackHandler):
-    def __init__(self, runtime_config: MessagePackConfig):
-        super().__init__(runtime_config)
+    def __init__(
+        self,
+        runtime_config: MessagePackConfig,
+        redis_connection_pool: redis.ConnectionPool,
+        rpc_dispatcher: RpcDispatcher = RpcDispatcher(),
+    ):
+        super().__init__(runtime_config, redis_connection_pool, rpc_dispatcher)
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

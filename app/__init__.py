@@ -13,6 +13,12 @@ logger = logging.getLogger("app.main")
 
 
 @dataclass
+class RedisConfig:
+    hostname: str = "localhost"
+    port: int = 6379
+
+
+@dataclass
 class MQTTConfig:
     hostname: str = "localhost"
     port: int = 1883
@@ -94,6 +100,7 @@ class ProcessingConfig:
 @dataclass
 class RuntimeConfig:
     instance_id: str
+    redis: RedisConfig
     mqtt: MQTTConfig
     msgpack: MessagePackConfig
     logging: LoggingConfig
