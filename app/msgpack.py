@@ -2,13 +2,21 @@ import asyncio
 import inspect
 import logging
 import ssl
+import time
 from enum import IntEnum
 from typing import Any, Callable
 
 import msgpack
 import redis.asyncio as redis
+from opentelemetry import metrics, trace
+from opentelemetry.propagate import extract
+from opentelemetry.semconv._incubating.attributes import (
+    network_attributes,
+    rpc_attributes,
+    server_attributes,
+)
 
-from app import MessagePackConfig, ProcessingConfig
+from app import MessagePackConfig
 from app.common import CloudEvent, CloudEventProcessor, ProtocolHandler
 from app.dataclass import DataClassMixin, type_has_config_class
 
@@ -353,6 +361,10 @@ class MessagePackHandler(ProtocolHandler):
 
 
 class OTELInstrumentedMessagePackHandler(MessagePackHandler):
+    _tracer: trace.Tracer
+    _meter: metrics.Meter
+    _metrics: dict[str, metrics.Instrument]
+
     def __init__(
         self,
         runtime_config: MessagePackConfig,
@@ -361,7 +373,64 @@ class OTELInstrumentedMessagePackHandler(MessagePackHandler):
     ):
         super().__init__(runtime_config, redis_connection_pool, rpc_dispatcher)
 
-    async def _handle_client(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        self._tracer = trace.get_tracer(__name__)
+        self._meter = metrics.get_meter(__name__)
+        self._metrics = {
+            "call_counter": self._meter.create_counter(
+                "rpc.server.call.count",
+                description="Count of MessagePack RPC calls processed",
+            ),
+            "call_duration": self._meter.create_histogram(
+                "rpc.server.call.duration",
+                description="Duration of MessagePack RPC calls in milliseconds",
+            ),
+        }
+
+    def record_metrics(
+        self, duration: float, error: bool = False, base_attributes: dict[str, str] = {}
     ) -> None:
-        return await super()._handle_client(reader, writer)
+        attributes = base_attributes | {"status": "error" if error else "success"}
+        self._metrics["call_counter"].add(1, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+        self._metrics["call_duration"].record(duration, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+
+    async def _handle_rpc_task(
+        self, writer, lock, semaphore, msg_type, msg_id, method, params
+    ):
+        # start timing
+        processing_start_time = time.time()
+        # extract context from MessagePack message properties
+        context = None
+        if len(params) > 0 and isinstance(params[0], dict):
+            context = extract(params[0])
+        # define base attributes for both trace and metrics
+        base_attributes = {
+            rpc_attributes.RPC_SYSTEM: "messagepack",
+            rpc_attributes.RPC_SERVICE: "micro-dcs",
+            rpc_attributes.RPC_METHOD: method,
+            network_attributes.NETWORK_TRANSPORT: "tcp",
+            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
+            server_attributes.SERVER_PORT: self._runtime_config.port,
+        }
+        # start trace span and call parent method
+        with self._tracer.start_as_current_span(
+            "{rpc.method}",
+            kind=trace.SpanKind.CONSUMER,
+            context=context,
+        ) as span:
+            span.set_attributes(base_attributes)
+
+        error = False
+        try:
+            await super()._handle_rpc_task(
+                writer, lock, semaphore, msg_type, msg_id, method, params
+            )
+        except Exception:
+            span.set_status(
+                trace.Status(
+                    trace.StatusCode.ERROR,
+                    "Error processing MessagePack message",
+                )
+            )
+            error = True
+        processing_duration = time.time() - processing_start_time
+        self.record_metrics(processing_duration, error, base_attributes)

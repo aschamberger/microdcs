@@ -1,7 +1,5 @@
 # TODO
 
-* implement OTELInstrumentedMessagePackHandler
-
 * Read the bookmarks on DCS internals
 * OPC UA Job Spec
   * publish opc ua meta object with retain on app startup for dicovery functionality
