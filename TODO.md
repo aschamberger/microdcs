@@ -1,6 +1,5 @@
 # TODO
 
-* implement MessagePackCloudEventProcessor to align msgpack and mqtt
 * implement OTELInstrumentedMessagePackHandler
 
 * Read the bookmarks on DCS internals

@@ -8,10 +8,9 @@ from typing import Any, Callable
 import msgpack
 import redis.asyncio as redis
 
-from app import MessagePackConfig
-from app.common import CloudEvent, CloudEventProcessor, ErrorKind, ProtocolHandler
-from app.dataclass import DataClassMixin
-from app.identity_processor import Hello
+from app import MessagePackConfig, ProcessingConfig
+from app.common import CloudEvent, CloudEventProcessor, ProtocolHandler
+from app.dataclass import DataClassMixin, type_has_config_class
 
 logger = logging.getLogger("handler.msgpack")
 
@@ -23,7 +22,73 @@ class RpcMessageType(IntEnum):
 
 
 class MessagePackCloudEventProcessor(CloudEventProcessor):
-    pass
+    def __init__(
+        self,
+        instance_id: str,
+        runtime_config: Any,
+        topic_identifier: str | None = None,
+        queue_size: int = 1,
+    ):
+        self._instance_id = instance_id
+        self._runtime_config = runtime_config
+
+    async def message_callback(
+        self, request_cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        if request_cloudevent.type not in self._type_callbacks_in:
+            logger.error(
+                "No callback registered for cloud event type: %s",
+                request_cloudevent.type,
+            )
+            return None
+
+        payload_type = self._type_classes[request_cloudevent.type]
+        callback: Callable[..., Any] = self._type_callbacks_in[request_cloudevent.type]
+        try:
+            request: DataClassMixin | bytes = request_cloudevent.unserialize_payload(
+                payload_type,
+                self._hidden_field_processors,
+            )
+        except ValueError as e:
+            logger.error(e)
+            return None
+        logger.debug("Request before callback: %s", request)
+
+        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
+            request
+        )
+
+        if responses is None:
+            return None
+
+        if not isinstance(responses, list):
+            responses = [responses]
+
+        response_cloudevents: list[CloudEvent] = []
+        for response in responses:
+            logger.debug("Response from callback: %s", response)
+            if not type_has_config_class(type(response)):
+                logger.warning("Response has no Config class")
+                continue
+
+            response_cloudevent = self.create_event()
+            response_cloudevent.correlationid = request_cloudevent.correlationid
+            response_cloudevent.causationid = request_cloudevent.id
+            try:
+                response_cloudevent.serialize_payload(
+                    response,
+                    self._hidden_field_processors,
+                )
+            except ValueError as e:
+                logger.exception(
+                    "Error serializing payload for message type %s: %s",
+                    response_cloudevent.type,
+                    e,
+                )
+                return None
+
+            response_cloudevents.append(response_cloudevent)
+        return response_cloudevents
 
 
 class RpcDispatcher:
@@ -55,36 +120,32 @@ class MessagePackHandler(ProtocolHandler):
 
     async def publish(
         self,
-        cloud_event: dict[str, Any],
-        user_properties: dict[str, str],
+        cloudevent_dict: dict[str, Any],
+        transportmetadata: dict[str, str] | None = None,
     ):
         logger.debug(
-            "Publishing message %s with user properties: %s",
-            cloud_event,
-            user_properties,
+            "Publishing message %s with transport metadata: %s",
+            cloudevent_dict,
+            transportmetadata,
         )
 
-        cloudevent = CloudEvent.from_dict(cloud_event)
+        # deserialize CloudEvent and add transport metadata
+        cloudevent = CloudEvent.from_dict(cloudevent_dict)
+        cloudevent.transportmetadata = transportmetadata
 
-        # For example purposes, we assume Hello is the expected type
-        # todo: derive from message.cloudevent.type
-        if cloudevent.data is not None:
-            payload_type = Hello
-            try:
-                request: DataClassMixin | bytes = cloudevent.unserialize_payload(
-                    payload_type
-                )
-            except ValueError as e:
-                logger.error(e)
-                return CloudEvent(
-                    mdcserrorkind=ErrorKind.UNSUPPORTED_CONTENT_TYPE,
-                    mdcserrormessage=f"Unsupported content type: {cloudevent.datacontenttype}",
-                ).to_dict()
-            logger.info("Processed publish request for: %s", request)
-        else:
-            logger.warning("No payload to publish")
+        # Process the event through registered CloudEvent processors
+        responses: list[dict[str, Any]] = []
+        for processor in self._cloudevent_processors:
+            if isinstance(processor, MessagePackCloudEventProcessor):
+                processor_response = await processor.process_event(cloudevent)
+                if processor_response:
+                    if isinstance(processor_response, list):
+                        for response in processor_response:
+                            responses.append(response.to_dict())
+                    else:
+                        responses.append(processor_response.to_dict())
 
-        return CloudEvent(mdcserrorkind=None).to_dict()
+        return responses
 
     async def heartbeat(self, timestamp):
         logger.debug("Heartbeat: %s", timestamp)
@@ -139,6 +200,7 @@ class MessagePackHandler(ProtocolHandler):
         Executes business logic.
         CRITICAL: Wraps everything in try/finally to ensure the semaphore is ALWAYS released.
         """
+        logger.debug("Handling RPC task: %s, %s, %s", msg_type, msg_id, method)
         try:
             error = None
             result = None

@@ -8,7 +8,12 @@ import redis.asyncio as redis
 from app import MQTTConfig, RedisConfig
 from app.common import CloudEvent
 from app.dataclass import DataClassMixin
-from app.identity_processor import Hello, HiddenObject, IdentityMQTTCloudEventProcessor
+from app.identity_processor import (
+    Hello,
+    HiddenObject,
+    IdentityCloudEventDelegate,
+    IdentityMQTTCloudEventProcessor,
+)
 from app.mqtt import MQTTHandler
 
 
@@ -70,8 +75,8 @@ async def main():
             ],
         ] = {
             "com.github.aschamberger.micro-dcs.identity.hello.v1": (
-                IdentityMQTTCloudEventProcessor.extract_hidden_fields,
-                IdentityMQTTCloudEventProcessor.insert_hidden_fields,
+                IdentityCloudEventDelegate.extract_hidden_fields,
+                IdentityCloudEventDelegate.insert_hidden_fields,
             ),
         }
         bob_ce_1.serialize_payload(bob, hidden_field_processors)

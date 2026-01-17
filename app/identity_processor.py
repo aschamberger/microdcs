@@ -6,6 +6,7 @@ from app import ProcessingConfig
 from app.common import CloudEvent, Direction
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
 from app.mqtt import MQTTCloudEventProcessor
+from app.msgpack import MessagePackCloudEventProcessor
 
 logger = logging.getLogger("processor.identity")
 
@@ -45,7 +46,7 @@ class Bye(DataClassMixin, DataClassValidationMixin):
         )
 
 
-class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
+class IdentityCloudEventDelegate:
     @classmethod
     async def handle_hello(cls, hello: Hello) -> list[Hello] | Hello | None:
         logger.info("Received hello from: %s", hello.name)
@@ -74,38 +75,42 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
 
     @classmethod
     def extract_hidden_fields(
-        cls, dclass: DataClassMixin, user_properties: dict[str, str]
+        cls, dclass: DataClassMixin, custommetadata: dict[str, str]
     ):
         if hasattr(dclass, "_hidden_str"):
-            setattr(dclass, "_hidden_str", user_properties.get("x-hidden-str", None))
+            setattr(dclass, "_hidden_str", custommetadata.get("x-hidden-str", None))
         if hasattr(dclass, "_hidden_obj"):
-            obj_data = user_properties.get("x-hidden-obj", None)
+            obj_data = custommetadata.get("x-hidden-obj", None)
             if obj_data is not None:
                 setattr(dclass, "_hidden_obj", HiddenObject.from_json(obj_data))
 
     @classmethod
     def insert_hidden_fields(
-        cls, dclass: DataClassMixin, user_properties: dict[str, str]
+        cls, dclass: DataClassMixin, custommetadata: dict[str, str]
     ) -> None:
-        if user_properties is None:
-            user_properties = {}
+        if custommetadata is None:
+            custommetadata = {}
         str_data = getattr(dclass, "_hidden_str", None)
         if str_data is not None:
-            user_properties["x-hidden-str"] = str_data
+            custommetadata["x-hidden-str"] = str_data
         obj_data = getattr(dclass, "_hidden_obj", None)
         if obj_data is not None:
-            user_properties["x-hidden-obj"] = obj_data.to_json()
+            custommetadata["x-hidden-obj"] = obj_data.to_json()
 
+
+class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
     def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
         super().__init__(instance_id, runtime_config, "identity")
         self.register_callback(
-            Hello, __class__.handle_hello, direction=Direction.INCOMING
+            Hello, IdentityCloudEventDelegate.handle_hello, direction=Direction.INCOMING
         )
-        self.register_callback(Bye, __class__.handle_bye, direction=Direction.OUTGOING)
+        self.register_callback(
+            Bye, IdentityCloudEventDelegate.handle_bye, direction=Direction.OUTGOING
+        )
         self.register_hidden_field_processor(
             "com.github.aschamberger.micro-dcs.identity.*",
-            extractor=__class__.extract_hidden_fields,
-            inserter=__class__.insert_hidden_fields,
+            extractor=IdentityCloudEventDelegate.extract_hidden_fields,
+            inserter=IdentityCloudEventDelegate.insert_hidden_fields,
         )
 
     async def process_event(
@@ -125,7 +130,7 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
         if not self.event_has_callback(cloudevent):
             logger.info("No handler registered for message type: %s", cloudevent.type)
             # Special case: raw identity messages are echoed back
-            # Normally, we would not do this here, but for identity messages it's acceptable
+            # Normally, we would not do this here, this is just to demo the functionality
             if (
                 cloudevent.transportmetadata is None
                 or cloudevent.transportmetadata.get("mqtt_response_topic") is None
@@ -185,3 +190,58 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
         await asyncio.sleep(timeout)  # yield control
         logger.info("Message expired: %s", cloudevent.id)
         return None
+
+
+class IdentityMessagePackCloudEventProcessor(MessagePackCloudEventProcessor):
+    def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
+        super().__init__(instance_id, runtime_config)
+        self.register_callback(
+            Hello, IdentityCloudEventDelegate.handle_hello, direction=Direction.INCOMING
+        )
+        self.register_callback(
+            Bye, IdentityCloudEventDelegate.handle_bye, direction=Direction.OUTGOING
+        )
+        self.register_hidden_field_processor(
+            "com.github.aschamberger.micro-dcs.identity.*",
+            extractor=IdentityCloudEventDelegate.extract_hidden_fields,
+            inserter=IdentityCloudEventDelegate.insert_hidden_fields,
+        )
+
+    async def process_event(
+        self, cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        if not self.event_has_callback(cloudevent):
+            logger.info("No handler registered for message type: %s", cloudevent.type)
+            # Special case: raw identity messages are echoed back
+            # Normally, we would not do this here, this is just to demo the functionality
+            response = CloudEvent(
+                data=cloudevent.data,
+                type="com.github.aschamberger.micro-dcs.identity.raw.v1",
+                dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
+                datacontenttype=cloudevent.datacontenttype,
+                correlationid=cloudevent.correlationid,
+                causationid=cloudevent.id,
+            )
+            return response
+
+        result = await self.message_callback(cloudevent)
+        return result
+
+    async def process_response_event(
+        self, cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        raise NotImplementedError(
+            "MessagePack identity processor does not process response events."
+        )
+
+    async def send_event(self) -> None:
+        raise NotImplementedError(
+            "MessagePack identity processor does not send events."
+        )
+
+    async def handle_expiration(
+        self, cloudevent: CloudEvent, timeout: int
+    ) -> list[CloudEvent] | CloudEvent | None:
+        raise NotImplementedError(
+            "MessagePack identity processor does not handle expirations."
+        )

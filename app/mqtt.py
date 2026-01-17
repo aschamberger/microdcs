@@ -36,6 +36,7 @@ class QoS(enum.IntEnum):
 
 
 class MQTTCloudEventProcessor(CloudEventProcessor):
+    _topic_identifier: str
     _topics: set[str]
     _response_topic: str
 
@@ -492,9 +493,10 @@ class MQTTHandler(ProtocolHandler):
                         for _ in range(self._runtime_config.message_workers):
                             tg.create_task(self._process_messages(client))
                         for processor in self._cloudevent_processors:
-                            tg.create_task(
-                                self._outgoing_message_publisher(client, processor)
-                            )
+                            if isinstance(processor, MQTTCloudEventProcessor):
+                                tg.create_task(
+                                    self._outgoing_message_publisher(client, processor)
+                                )
             except aiomqtt.MqttError:
                 logger.warning(
                     f"Connection lost; Reconnecting in {interval} seconds ..."

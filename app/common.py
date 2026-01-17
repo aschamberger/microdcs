@@ -187,7 +187,7 @@ class CloudEvent(DataClassMixin):
         }
         for k in list(dict.keys()):
             if k not in cls.__dataclass_fields__:
-                if dict["custommetadata"] is None:
+                if "custommetadata" not in dict or dict["custommetadata"] is None:
                     dict["custommetadata"] = {}
                 dict["custommetadata"][k] = dict[k]
                 del dict[k]
@@ -309,7 +309,6 @@ class CloudEvent(DataClassMixin):
 class CloudEventProcessor(ABC):
     _instance_id: str
     _runtime_config: ProcessingConfig
-    _topic_identifier: str
     _type_classes: dict[str, type[DataClassMixin]] = {}
     _type_callbacks_in: dict[str, Callable[..., Any]] = {}
     _type_callbacks_out: dict[str, Callable[..., Any]] = {}
@@ -327,7 +326,7 @@ class CloudEventProcessor(ABC):
         self,
         instance_id: str,
         runtime_config: Any,
-        topic_identifier: str,
+        topic_identifier: str | None = None,
         queue_size: int = 1,
     ):
         pass

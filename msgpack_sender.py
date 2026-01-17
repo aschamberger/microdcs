@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 
 import msgpack
+import orjson
 
 from app import MessagePackConfig
 from app.common import CloudEvent
@@ -139,7 +140,7 @@ async def main():
         print("\n--- Sequential Call ---")
         hello = Hello(name="Alice")
 
-        cloud_event = CloudEvent(
+        cloudevent = CloudEvent(
             data=hello.to_msgpack(),
             source="https://example.com/sender",
             type="com.github.aschamberger.micro-dcs.identity.hello.v1",
@@ -147,11 +148,21 @@ async def main():
             dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
             subject="test",
             time=datetime.now(),
+            custommetadata={
+                "x-hidden-str": "This is a hidden string",
+                "x-hidden-obj": str(
+                    orjson.dumps({"field": "This is a hidden object field"}), "utf-8"
+                ),
+            },
+            transportmetadata={"example-transport-key": "example-transport-value"},
         )
-        user_properties: dict[str, str] = {}
 
-        # We pass the DICT version of the user because MsgPack expects basic types
-        response = await client.call("publish", cloud_event.to_dict(), user_properties)
+        # We pass the dict version of the cloudevent because we want the
+        # serialization logic of the cloudvent to be used
+        # the transportmetadata is passed separately and not part of the dict
+        response = await client.call(
+            "publish", cloudevent.to_dict(), cloudevent.transportmetadata
+        )
         print(f"Result: {response}")
 
         # --- 3. Parallel Calls (High Performance) ---
@@ -162,7 +173,7 @@ async def main():
         tasks = []
         for i in range(5):
             h = Hello(name=f"Bot-{i}")
-            cloud_event = CloudEvent(
+            cloudevent = CloudEvent(
                 data=h.to_msgpack(),
                 source="https://example.com/sender",
                 type="com.github.aschamberger.micro-dcs.identity.hello.v1",
@@ -170,9 +181,14 @@ async def main():
                 dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
                 subject="test",
                 time=datetime.now(),
+                custommetadata={"example-metadata-key": "example-metadata-value"},
+                transportmetadata={"example-transport-key": "example-transport-value"},
             )
-            user_properties: dict[str, str] = {}
-            tasks.append(client.call("publish", cloud_event.to_dict(), user_properties))
+            tasks.append(
+                client.call(
+                    "publish", cloudevent.to_dict(), cloudevent.transportmetadata
+                )
+            )
 
         # Wait for all of them to finish
         results = await asyncio.gather(*tasks)
