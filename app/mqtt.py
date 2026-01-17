@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import enum
+import hashlib
 import logging
 import time
 import typing
@@ -314,31 +315,29 @@ class MQTTHandler(ProtocolHandler):
                 )
             )
 
-    async def is_duplicate_message(self, message_id: int) -> bool:
-        logger.debug("Checking for duplicate message with ID %d", message_id)
-        # TODO: implement duplicate message detection
-        return False
-
-    async def _process_message(
-        self, client: aiomqtt.Client, message: aiomqtt.Message
-    ) -> tuple[bool, str]:
-        # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
-        if await self.is_duplicate_message(message.mid):
-            logger.info(
-                "Duplicate message received on topic %s with message ID %d",
-                message.topic,
-                message.mid,
+    async def is_duplicate_message(self, cloudevent: CloudEvent) -> bool:
+        logger.debug(
+            "Checking for duplicate message with source %s ID %s",
+            cloudevent.source,
+            cloudevent.id,
+        )
+        # create deduplication key based on CloudEvent source and ID
+        # hash it to keep the Redis key size consistent and small
+        dedupe_raw = f"{cloudevent.source}:{cloudevent.id}"
+        dedupe_key = f"{self._runtime_config.dedupe_key_prefix}{hashlib.md5(dedupe_raw.encode()).hexdigest()}"
+        # atomic SET NX (Set if Not eXists) with expiration
+        return (
+            False
+            if await self._redis.set(
+                dedupe_key,
+                "1",
+                ex=self._runtime_config.dedupe_ttl_seconds,
+                nx=True,
             )
-            for processor in self._cloudevent_processors:
-                if isinstance(processor, MQTTCloudEventProcessor):
-                    if message.topic.matches(processor._response_topic):
-                        return False, processor._response_topic
-                    for topic in processor._topics:
-                        if message.topic.matches(topic):
-                            return False, topic
-            return False, ""
-        else:
-            logger.debug("Received message on topic %s", message.topic)
+            else True
+        )
+
+    def cloudevent_from_message(self, message: aiomqtt.Message) -> CloudEvent:
         # Construct CloudEvent from MQTT message
         cloudevent = CloudEvent(data=message.payload)
         # Populate transport metadata
@@ -376,6 +375,30 @@ class MQTTHandler(ProtocolHandler):
                     cloudevent.custommetadata[field.name],
                 )
                 del cloudevent.custommetadata[field.name]
+        return cloudevent
+
+    async def _process_message(
+        self, client: aiomqtt.Client, message: aiomqtt.Message
+    ) -> tuple[bool, str]:
+        # extract CloudEvent from MQTT message
+        cloudevent = self.cloudevent_from_message(message)
+        # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
+        if await self.is_duplicate_message(cloudevent):
+            logger.info(
+                "Duplicate message received on topic %s with message ID %d",
+                message.topic,
+                message.mid,
+            )
+            for processor in self._cloudevent_processors:
+                if isinstance(processor, MQTTCloudEventProcessor):
+                    if message.topic.matches(processor._response_topic):
+                        return False, processor._response_topic
+                    for topic in processor._topics:
+                        if message.topic.matches(topic):
+                            return False, topic
+            return False, ""
+        else:
+            logger.debug("Received message on topic %s", message.topic)
 
         # cancel expiration timeout task if applicable
         if cloudevent.id in self._expiration_timeout_tasks:

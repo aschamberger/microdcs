@@ -3,8 +3,9 @@ from typing import Any, Callable
 
 import aiomqtt
 import orjson
+import redis.asyncio as redis
 
-from app import MQTTConfig
+from app import MQTTConfig, RedisConfig
 from app.common import CloudEvent
 from app.dataclass import DataClassMixin
 from app.identity_processor import Hello, HiddenObject, IdentityMQTTCloudEventProcessor
@@ -12,14 +13,19 @@ from app.mqtt import MQTTHandler
 
 
 async def main():
+    redis_config: RedisConfig = RedisConfig()
+    redis_connection_pool = redis.ConnectionPool(
+        host=redis_config.hostname, port=redis_config.port, protocol=3
+    )
     mqtt_config: MQTTConfig = MQTTConfig()
     mqtt_config.identifier = "test-sender"
-    mh: MQTTHandler = MQTTHandler(mqtt_config)
+    mh: MQTTHandler = MQTTHandler(mqtt_config, redis_connection_pool)
 
     mqtt_client: aiomqtt.Client = mh._client()
 
     topic: str = "app/identity/request"
     response_topic: str = "app/identity/response"
+    ce_source = "https://aschamberger.github.com/micro-dcs/test-sender"
 
     async with mqtt_client:
         # Send a raw identity message
@@ -30,6 +36,7 @@ async def main():
             "list_example": [1, 2, 3],
         }
         raw_ce = CloudEvent(
+            source=ce_source,
             data=orjson.dumps(payload),
             type="com.github.aschamberger.micro-dcs.identity.raw.v1",
             dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
@@ -48,6 +55,7 @@ async def main():
             _hidden_obj=HiddenObject(field="This is a hidden object field"),
         )
         bob_ce_1 = CloudEvent(
+            source=ce_source,
             datacontenttype="application/json; charset=utf-8",
             transportmetadata={
                 "mqtt_topic": topic,
@@ -75,6 +83,7 @@ async def main():
             "addition": "42",
         }
         bob_ce_2 = CloudEvent(
+            source=ce_source,
             data=orjson.dumps(payload),
             type="com.github.aschamberger.micro-dcs.identity.hello.v1",
             dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
