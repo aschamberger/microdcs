@@ -128,6 +128,7 @@ Setting a response topic in the application sets QoS=1 (at least once delivery) 
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/extensions/distributed-tracing.md
 * https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/expirytime.md
 * https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/recordedtime.md
+  * https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/correlation.md
 
 #### MQTT and MessagePack
 

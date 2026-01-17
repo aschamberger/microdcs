@@ -137,7 +137,8 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
                 ),
                 response_topic=self._response_topic,
             )
-            response_cloudevent.id = request_cloudevent.id
+            response_cloudevent.correlationid = request_cloudevent.correlationid
+            response_cloudevent.causationid = request_cloudevent.id
             try:
                 response_cloudevent.serialize_payload(
                     response,
@@ -281,8 +282,8 @@ class MQTTHandler(ProtocolHandler):
                 "mqtt_response_topic"
             )
             qos = QoS.AT_LEAST_ONCE
-        if cloudevent.id is not None:
-            properties.CorrelationData = uuid.UUID(cloudevent.id).bytes
+        if cloudevent.correlationid is not None:
+            properties.CorrelationData = uuid.UUID(cloudevent.correlationid).bytes  # type: ignore
         # Convert dictionary to list of tuples
         properties.UserProperty = list(
             cloudevent.to_dict(
@@ -359,7 +360,9 @@ class MQTTHandler(ProtocolHandler):
                 message.properties.ResponseTopic  # type: ignore
             )
         if message.properties and hasattr(message.properties, "CorrelationData"):
-            cloudevent.id = str(uuid.UUID(bytes=message.properties.CorrelationData))  # type: ignore
+            cloudevent.correlationid = str(
+                uuid.UUID(bytes=message.properties.CorrelationData)  # type: ignore
+            )
         if message.properties and hasattr(message.properties, "UserProperty"):
             # Convert list of tuples to dictionary
             cloudevent.custommetadata = dict(message.properties.UserProperty)  # type: ignore

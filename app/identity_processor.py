@@ -139,7 +139,8 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
                 type="com.github.aschamberger.micro-dcs.identity.raw.v1",
                 dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
                 datacontenttype=cloudevent.datacontenttype,
-                id=cloudevent.id,
+                correlationid=cloudevent.correlationid,
+                causationid=cloudevent.id,
                 transportmetadata={
                     "mqtt_topic": cloudevent.transportmetadata.get(
                         "mqtt_response_topic"

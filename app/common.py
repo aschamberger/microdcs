@@ -84,6 +84,7 @@ class CloudEvent(DataClassMixin):
     - Expiry Time
     - custom: Expiry Interval (to map to MQTT message expiry interval)
     - Recorded Time
+    - Correlation
 
     Also adds MicroDCS-specific extensions for error handling and custom metadata.
 
@@ -147,6 +148,14 @@ class CloudEvent(DataClassMixin):
     in this CloudEvent, i.e. when the CloudEvent was created by a producer.
     MUST adhere to the format specified in RFC 3339, SHOULD be equal to or
     later than the occurrence time."""
+    correlationid: str | None = field(default_factory=lambda: str(uuid.uuid4()))
+    """If present, identifier that groups related events within the same logical
+    flow or business transaction. All events sharing the same correlation ID are
+    part of the same workflow. MUST be a non-empty string."""
+    causationid: str | None = None
+    """If present, unique identifier of the event that directly caused this event
+    to be generated. This SHOULD be the id value of the causing event.
+    MUST be a non-empty string."""
 
     mdcserrorkind: ErrorKind | None = None
     """Machine readable error kind."""
