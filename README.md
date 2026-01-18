@@ -128,21 +128,26 @@ Setting a response topic in the application sets QoS=1 (at least once delivery) 
 * https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/extensions/distributed-tracing.md
 * https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/expirytime.md
 * https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/recordedtime.md
-  * https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/correlation.md
+* https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/correlation.md
 
 #### MQTT and MessagePack
 
 For MQTT there is a [binding](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md) defined.
 
-As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT protocol binding! `id` and `datacontenttype` are mapped to MQTT5 properties `CorrelationData` and `ContentType`. `source`, `subject`, `type`, `dataschema` and all items within `custommetadata` are transported via `UserProperty`.
+As only MQTT v5 is supported only `Binary Content Mode` is implemented from MQTT protocol binding! `correlationid`, `expiryinterval` and `datacontenttype` are mapped to MQTT5 properties `CorrelationData`, `MessageExpiryInterval` and `ContentType`. All other MQTT properties are put/read from `transportmetadata`. `id`, `source`, `subject`, `type`, `dataschema`, ... and all items within `custommetadata` are transported via `UserProperty`.
 
-For MessagePack the CloudEvent is transported as is with the `custommetadata` serialized to individual attributes.
+For MessagePack the CloudEvent is transported as is with the `custommetadata` serialized to individual attributes. `transportmetadata` are put into a second param besides the cloudevent.
 
 ### JSON Schema
 
 * https://json-schema.org/
 
 ### OpenTelemetry
+
+* https://opentelemetry.io/docs/zero-code/python/
+* https://opentelemetry.io/docs/languages/python/
+* https://opentelemetry.io/docs/specs/semconv/messaging/
+* https://opentelemetry.io/docs/specs/semconv/rpc/
 
 ## Information Model Standards
 
