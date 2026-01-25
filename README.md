@@ -156,6 +156,7 @@ For MessagePack the CloudEvent is transported as is with the `custommetadata` se
 #### OPC 40001-3: Machinery Job Mgmt
 
 * https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/
+* https://youtu.be/KOhYcezpJCw
 
 #### EUInformation:
 
@@ -165,6 +166,18 @@ For MessagePack the CloudEvent is transported as is with the `custommetadata` se
 
 ### ISA-88/ISA-95
 
+#### ISA-95 Introduction
+
+* https://docs.rhize.com/isa-95/how-to-speak-isa-95/
+* https://youtu.be/OobhzbQoUnA
+
+#### ISA-95 vs. ISA-88
+
+* https://iacsengineering.com/isa-88-and-isa-95-integrated-consulting/
+* https://mdcplus.fi/blog/what-is-isa-88-manufacturing/
+* https://www.isa.org/products/isa-tr88-95-01-2008-using-isa-88-and-isa-95-togeth
+
+
 ## Python Libs
 
 * https://github.com/empicano/aiomqtt // https://github.com/eclipse-paho/paho.mqtt.python
@@ -172,12 +185,6 @@ For MessagePack the CloudEvent is transported as is with the `custommetadata` se
 * https://github.com/koxudaxi/datamodel-code-generator
 
 ## Misc
-
-### ISA-95 vs. ISA-88
-
-* https://iacsengineering.com/isa-88-and-isa-95-integrated-consulting/
-* https://mdcplus.fi/blog/what-is-isa-88-manufacturing/
-* https://www.isa.org/products/isa-tr88-95-01-2008-using-isa-88-and-isa-95-togeth
 
 ### Distroless Container
 
