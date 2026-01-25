@@ -217,6 +217,11 @@ class MQTTHandler(ProtocolHandler):
     ):
         self._runtime_config = runtime_config
         self._redis = redis.Redis(connection_pool=redis_connection_pool)
+        try:
+            self._redis.ping()
+        except redis.RedisError as e:
+            logger.error(f"Error connecting to Redis: {e}")
+            raise
         self._expiration_timeout_tasks = {}
         super().__init__()
 
