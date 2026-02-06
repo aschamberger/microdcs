@@ -16,6 +16,7 @@ logger = logging.getLogger("app.main")
 class RedisConfig:
     hostname: str = "localhost"
     port: int = 6379
+    key_prefix: str = "microdcs"
 
 
 @dataclass
@@ -97,7 +98,6 @@ class ProcessingConfig:
     shared_subscription_name: str | None = None
     topics: set[str] = field(default_factory=lambda: {"app/events/#", "app/invoke/#"})
     response_topics: set[str] = field(default_factory=lambda: {"app/errors/delivery"})
-    redis_key_prefix: str = "microdcs-app"
 
 
 @dataclass

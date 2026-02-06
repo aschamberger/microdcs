@@ -28,7 +28,7 @@ Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, O
 * OPC UA information models/companion specs are used for communication over MQTT
 * Meta information is transported via MQTT user properties/cloud event headers to identify the message payload
 * Implementations must only work via the generated dataclasses and not directly with the MQTT payloads (they are decoded/encoded in the background)
-* There is an app UNS that has at least subtopics for `data` (variable publication/maybe setting), `events` and `invoke` (method calls); optionally `meta`to publish what is offered by the app in a retained topic
+* There is an app UNS that has at least subtopics for `data` (variable publication/maybe setting), `events` and `command` (method calls); optionally `meta`to publish what is offered by the app in a retained topic
 
 ## Technical Standards
 

@@ -1,3 +1,5 @@
+import hashlib
+
 DEFAULT_KEY_PREFIX = "microdcs-test"
 
 
@@ -28,12 +30,21 @@ class RedisKeySchema:
         self.prefix = prefix
 
     @prefixed_key
-    def joborder_json_key(self, joborder_id: int) -> str:
+    def cloudevent_dedupe_key(self, cloudevent_source: str, cloudevent_id: str) -> str:
         """
-        joborder:object:[joborder_id]
+        cededupe:[hash]
+        Redis type: string
+        """
+        raw = f"{cloudevent_source}:{cloudevent_id}"
+        return f"cededupe:{hashlib.md5(raw.encode()).hexdigest()}"
+
+    @prefixed_key
+    def joborder_key(self, job_order_id: int) -> str:
+        """
+        joborder:[joborder_id]
         Redis type: json
         """
-        return f"joborder:object:{joborder_id}"
+        return f"joborder:{job_order_id}"
 
     @prefixed_key
     def joborder_list_key(self) -> str:

@@ -20,3 +20,5 @@ dev = [
 pythonpath = "."
 testpaths = ["tests"]
 
+[tool.ruff]
+target-version = "py314"
