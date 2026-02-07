@@ -177,6 +177,25 @@ For MessagePack the CloudEvent is transported as is with the `custommetadata` se
 * https://mdcplus.fi/blog/what-is-isa-88-manufacturing/
 * https://www.isa.org/products/isa-tr88-95-01-2008-using-isa-88-and-isa-95-togeth
 
+## Persistance
+
+### Persistance requirements
+
+The dataclasses from the OPC UA Job Mgmt need to be persistet. With a document oriented persistance layer they can be directly stored as is. Schema evolution needs to be possible.
+
+The other requirements are deduplication of cloudevents and passing changed variable state to a single publisher.
+
+### Redis
+
+Dataclasses are stored to Redis data type JSON. The dataschema is added to an additional field `_dataschema`.
+It is derived from the `Config` classes on serialization.
+
+The event data type is used for the OPC UA Job Mgmt implementation to trigger the single instance publisher from the multi instance reciever/event publisher. Events are published directly to MQTT. The state variables however are published with the OPC UA pub/sub mechanism (to not always send unchanged values).
+
+* https://medium.com/@krushnakr9/l3-l5-redis-course-3ebc9843925c
+* https://github.com/redislabs-training/ru-dev-path-py
+* https://redis.io/docs/latest/develop/ai/redisvl/user_guide/hash_vs_json/ >> JSON as we have multi level
+* https://redis.io/blog/introducing-redis-om-for-python/#Globally_unique_primary_keys >> not required as we do not create any new PK
 
 ## Python Libs
 

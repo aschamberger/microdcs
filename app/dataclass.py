@@ -1,6 +1,6 @@
 import dataclasses
 import fnmatch
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.msgpack import DataClassMessagePackMixin
@@ -14,6 +14,12 @@ def type_has_config_class(cls: type) -> bool:
 def get_cloudevent_type(cls: type) -> str | None:
     if type_has_config_class(cls):
         return cls.Config.cloudevent_type
+    return None
+
+
+def get_cloudevent_dataschema(cls: type) -> str | None:
+    if type_has_config_class(cls):
+        return cls.Config.cloudevent_dataschema
     return None
 
 
@@ -44,14 +50,23 @@ class DataClassValidationMixin:
 
 class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
     # remove hidden fields starting with "_" from serialization
-    def __post_serialize__(self, d: Dict[Any, Any]) -> Dict[Any, Any]:
+    # if context has "add_cloudevent_dataschema" set to True, add "dataschema" field with value from Config.cloudevent_dataschema
+    # this is used for persisting in Redis with the correct dataschema for later retrieval and processing
+    def __post_serialize__(
+        self, d: dict[Any, Any], context: Optional[Dict] = None
+    ) -> dict[Any, Any]:
         for key in list(d.keys()):
             if key.startswith("_"):
                 d.pop(key)
+        if context and context.get("add_cloudevent_dataschema", False):
+            cloudevent_dataschema = get_cloudevent_dataschema(self.__class__)
+            if cloudevent_dataschema:
+                d["_dataschema"] = cloudevent_dataschema
         return d
 
 
 class DataClassConfig(BaseConfig):
+    code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
     allow_deserialization_not_by_alias = True
     serialize_by_alias = True
     omit_none = True
