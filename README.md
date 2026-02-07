@@ -201,6 +201,8 @@ The event data type is used for the OPC UA Job Mgmt implementation to trigger th
 
 * https://github.com/empicano/aiomqtt // https://github.com/eclipse-paho/paho.mqtt.python
 * https://github.com/Fatal1ty/mashumaro
+* https://github.com/msgpack/msgpack-python
+* https://github.com/redis/redis-py
 * https://github.com/koxudaxi/datamodel-code-generator
 
 ## Misc

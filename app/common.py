@@ -203,14 +203,15 @@ class CloudEvent(DataClassMixin):
         )
         if len(pairs) > 0:
             dict["mdcserrorcontext"] = ",".join(pairs)
-        if dict["custommetadata"] is not None:
-            for k, v in dict["custommetadata"].items():
+        else:
+            dict.pop("mdcserrorcontext", None)
+        custommetadata = dict.pop("custommetadata", None)
+        if custommetadata is not None:
+            for k, v in custommetadata.items():
                 dict[k] = v
-            del dict["custommetadata"]
-        if dict["transportmetadata"] is not None:
-            del dict["transportmetadata"]
+        dict.pop("transportmetadata", None)
         if context and context.get("remove_data"):
-            del dict["data"]
+            dict.pop("data", None)
         if context and context.get("make_str_values"):
             for k, v in dict.items():
                 if v is not None and not isinstance(v, str):

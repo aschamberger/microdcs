@@ -1,9 +1,11 @@
 import asyncio
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app import MessagePackConfig
 from app.msgpack import MessagePackHandler, RpcDispatcher
+from app.redis import RedisKeySchema
 
 
 class MockMessagePackConfig(MessagePackConfig):
@@ -42,7 +44,12 @@ async def test_dispatcher_not_found():
 @pytest.mark.asyncio
 async def test_handler_log_heartbeat():
     config = MockMessagePackConfig()
-    handler = MessagePackHandler(config)
+    mock_pool = MagicMock()
+    key_schema = RedisKeySchema()
+
+    with patch("app.msgpack.redis.Redis") as mock_redis_cls:
+        mock_redis_cls.return_value = MagicMock()
+        handler = MessagePackHandler(config, mock_pool, key_schema)
 
     # Just ensure it doesn't raise
     await handler.heartbeat("2023-01-01")

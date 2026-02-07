@@ -1,39 +1,37 @@
-from app.mqtt import MQTTProcessorMessage, QoS
+from app.common import CloudEvent
+from app.mqtt import QoS
 
 
-def test_mqtt_message_defaults():
-    msg = MQTTProcessorMessage(topic="test/topic", payload=b"payload")
+def test_cloudevent_defaults():
+    ce = CloudEvent()
 
-    assert msg.topic == "test/topic"
-    assert msg.payload == b"payload"
-    assert msg.qos == QoS.AT_LEAST_ONCE
-    assert msg.cloudevent.id is not None
-    assert msg.cloudevent.time is not None
+    assert ce.id is not None
+    assert ce.recordedtime is not None
+    assert ce.specversion == "1.0"
+    assert ce.correlationid is not None
 
 
 def test_cloudevent_to_user_properties():
-    msg = MQTTProcessorMessage(topic="test/topic", payload=b"")
-    msg.cloudevent.type = "com.example.test"
-    msg.cloudevent.source = "test-source"
+    ce = CloudEvent(
+        type="com.example.test",
+        source="test-source",
+    )
 
-    msg.cloudevent_to_user_properties()
+    props = ce.to_dict(context={"remove_data": True, "make_str_values": True})
 
-    assert msg.user_properties is not None
-    assert msg.user_properties["type"] == "com.example.test"
-    assert msg.user_properties["source"] == "test-source"
-    assert "id" in msg.user_properties
-    assert "time" in msg.user_properties
-    assert "specversion" in msg.user_properties
+    assert props["type"] == "com.example.test"
+    assert props["source"] == "test-source"
+    assert "id" in props
+    assert "specversion" in props
 
 
 def test_custom_user_properties():
-    msg = MQTTProcessorMessage(
-        topic="test", payload=b"", user_properties={"custom": "value"}
+    ce = CloudEvent(
+        type="type",
+        custommetadata={"custom": "value"},
     )
-    msg.cloudevent.type = "type"
 
-    msg.cloudevent_to_user_properties()
+    props = ce.to_dict(context={"remove_data": True, "make_str_values": True})
 
-    assert msg.user_properties is not None
-    assert msg.user_properties["custom"] == "value"
-    assert msg.user_properties["type"] == "type"
+    assert props["custom"] == "value"
+    assert props["type"] == "type"

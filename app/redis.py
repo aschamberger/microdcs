@@ -1,13 +1,14 @@
 import functools
 import hashlib
 import logging
-from dataclasses.machinery_jobs import (
+
+import redis.asyncio as redis
+
+from app.dataclasses.machinery_jobs import (
     ISA95JobOrderAndStateDataType,
     ISA95JobResponseDataType,
     ISA95WorkMasterDataType,
 )
-
-import redis.asyncio as redis
 
 logger = logging.getLogger("redis")
 
