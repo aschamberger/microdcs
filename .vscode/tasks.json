@@ -100,5 +100,12 @@
             "group": "none",
             "problemMatcher": [],
         },
+        {
+            "label": "Run test coverage",
+            "type": "shell",
+            "command": "${command:python.interpreterPath} -m pytest --cov=app --cov-report=term-missing tests/",
+            "group": "test",
+            "problemMatcher": [],
+        },
     ]
 }

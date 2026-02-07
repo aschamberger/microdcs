@@ -1,5 +1,4 @@
 from app.common import CloudEvent
-from app.mqtt import QoS
 
 
 def test_cloudevent_defaults():
