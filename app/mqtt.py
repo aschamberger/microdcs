@@ -1,7 +1,6 @@
 import asyncio
 import dataclasses
 import enum
-import hashlib
 import logging
 import time
 import typing
@@ -25,6 +24,7 @@ from app.common import (
     ProtocolHandler,
 )
 from app.dataclass import DataClassMixin, get_cloudevent_type, type_has_config_class
+from app.redis import CloudEventDedupeDAO, RedisKeySchema
 
 logger = logging.getLogger("handler.mqtt")
 
@@ -209,21 +209,31 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
 
 class MQTTHandler(ProtocolHandler):
     _runtime_config: MQTTConfig
-    _redis: redis.Redis
+    _redis_client: redis.Redis
+    _redis_key_schema: RedisKeySchema
+    _cloudevent_dedupe_dao: CloudEventDedupeDAO
     _expiration_timeout_tasks: dict[str, asyncio.Task]
 
     def __init__(
-        self, runtime_config: MQTTConfig, redis_connection_pool: redis.ConnectionPool
+        self,
+        runtime_config: MQTTConfig,
+        redis_connection_pool: redis.ConnectionPool,
+        redis_key_schema: RedisKeySchema,
     ):
         self._runtime_config = runtime_config
-        self._redis = redis.Redis(connection_pool=redis_connection_pool)
+        self._redis_client = redis.Redis(connection_pool=redis_connection_pool)
         try:
-            self._redis.ping()
+            self._redis_client.ping()
         except redis.RedisError as e:
             logger.error(f"Error connecting to Redis: {e}")
             raise
+        self._redis_key_schema = redis_key_schema
+        self._cloudevent_dedupe_dao = CloudEventDedupeDAO(
+            self._redis_client,
+            redis_key_schema,
+            ttl=self._runtime_config.dedupe_ttl_seconds,
+        )
         self._expiration_timeout_tasks = {}
-        super().__init__()
 
     def _client(self) -> aiomqtt.Client:
         properties = None
@@ -328,20 +338,8 @@ class MQTTHandler(ProtocolHandler):
             cloudevent.source,
             cloudevent.id,
         )
-        # create deduplication key based on CloudEvent source and ID
-        # hash it to keep the Redis key size consistent and small
-        dedupe_raw = f"{cloudevent.source}:{cloudevent.id}"
-        dedupe_key = f"{self._runtime_config.dedupe_key_prefix}{hashlib.md5(dedupe_raw.encode()).hexdigest()}"
-        # atomic SET NX (Set if Not eXists) with expiration
-        return (
-            False
-            if await self._redis.set(
-                dedupe_key,
-                "1",
-                ex=self._runtime_config.dedupe_ttl_seconds,
-                nx=True,
-            )
-            else True
+        return await self._cloudevent_dedupe_dao.is_duplicate(
+            str(cloudevent.source), str(cloudevent.id)
         )
 
     def cloudevent_from_message(self, message: aiomqtt.Message) -> CloudEvent:
@@ -509,7 +507,7 @@ class MQTTHandler(ProtocolHandler):
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 logger.info("MQTT handler task cancelled; shutting down")
-                await self._redis.aclose()
+                await self._redis_client.aclose()
                 raise
 
 
@@ -519,9 +517,12 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
     _metrics: dict[str, metrics.Instrument]
 
     def __init__(
-        self, runtime_config: MQTTConfig, redis_connection_pool: redis.ConnectionPool
+        self,
+        runtime_config: MQTTConfig,
+        redis_connection_pool: redis.ConnectionPool,
+        redis_key_schema: "RedisKeySchema",
     ):
-        super().__init__(runtime_config, redis_connection_pool)
+        super().__init__(runtime_config, redis_connection_pool, redis_key_schema)
 
         self._tracer = trace.get_tracer(__name__)
         self._meter = metrics.get_meter(__name__)

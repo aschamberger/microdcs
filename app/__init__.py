@@ -31,7 +31,6 @@ class MQTTConfig:
     incoming_queue_size: int = 0
     outgoing_queue_size: int = 0
     message_workers: int = 5
-    dedupe_key_prefix: str = "dedupe:"
     dedupe_ttl_seconds: int = 60 * 10  # 10 minutes
 
 

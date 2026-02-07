@@ -19,6 +19,7 @@ from opentelemetry.semconv._incubating.attributes import (
 from app import MessagePackConfig
 from app.common import CloudEvent, CloudEventProcessor, ProtocolHandler
 from app.dataclass import DataClassMixin, type_has_config_class
+from app.redis import RedisKeySchema
 
 logger = logging.getLogger("handler.msgpack")
 
@@ -123,7 +124,8 @@ class RpcDispatcher:
 
 class MessagePackHandler(ProtocolHandler):
     _runtime_config: MessagePackConfig
-    _redis: redis.Redis
+    _redis_client: redis.Redis
+    _redis_key_schema: RedisKeySchema
     _dispatcher: RpcDispatcher
 
     async def publish(
@@ -163,10 +165,17 @@ class MessagePackHandler(ProtocolHandler):
         self,
         runtime_config: MessagePackConfig,
         redis_connection_pool: redis.ConnectionPool,
+        redis_key_schema: RedisKeySchema,
         dispatcher: RpcDispatcher = RpcDispatcher(),
     ):
         self._runtime_config = runtime_config
-        self._redis = redis.Redis(connection_pool=redis_connection_pool)
+        self._redis_client = redis.Redis(connection_pool=redis_connection_pool)
+        try:
+            self._redis_client.ping()
+        except redis.RedisError as e:
+            logger.error(f"Error connecting to Redis: {e}")
+            raise
+        self._redis_key_schema = redis_key_schema
         self._dispatcher = dispatcher
         self.register_method("publish", self.publish)
         self.register_method("heartbeat", self.heartbeat)
@@ -356,7 +365,7 @@ class MessagePackHandler(ProtocolHandler):
                 await server.serve_forever()
         except asyncio.CancelledError:
             logger.info("MessagePack handler task cancelled; shutting down")
-            await self._redis.aclose()
+            await self._redis_client.aclose()
             raise
 
 
@@ -369,9 +378,12 @@ class OTELInstrumentedMessagePackHandler(MessagePackHandler):
         self,
         runtime_config: MessagePackConfig,
         redis_connection_pool: redis.ConnectionPool,
+        redis_key_schema: RedisKeySchema,
         rpc_dispatcher: RpcDispatcher = RpcDispatcher(),
     ):
-        super().__init__(runtime_config, redis_connection_pool, rpc_dispatcher)
+        super().__init__(
+            runtime_config, redis_connection_pool, redis_key_schema, rpc_dispatcher
+        )
 
         self._tracer = trace.get_tracer(__name__)
         self._meter = metrics.get_meter(__name__)

@@ -11,6 +11,7 @@ from app.identity_processor import (
 )
 from app.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
 from app.msgpack import MessagePackHandler, OTELInstrumentedMessagePackHandler
+from app.redis import RedisKeySchema
 
 logger = logging.getLogger("app.main")
 
@@ -24,6 +25,7 @@ async def main():
     redis_connection_pool = redis.ConnectionPool(
         host=runtime_config.redis.hostname, port=runtime_config.redis.port, protocol=3
     )
+    redis_key_schema = RedisKeySchema(runtime_config.redis.key_prefix)
 
     logger.info("Starting main application logic")
     async with SystemEventTaskGroup() as task_group:
@@ -31,11 +33,13 @@ async def main():
         if runtime_config.processing.otel_instrumentation_enabled:
             logger.info("Starting MQTTHandler with OTEL instrumentation enabled")
             mqtt_handler = OTELInstrumentedMQTTHandler(
-                runtime_config.mqtt, redis_connection_pool
+                runtime_config.mqtt, redis_connection_pool, redis_key_schema
             )
         else:
             logger.info("Starting MQTTHandler with OTEL instrumentation disabled")
-            mqtt_handler = MQTTHandler(runtime_config.mqtt, redis_connection_pool)
+            mqtt_handler = MQTTHandler(
+                runtime_config.mqtt, redis_connection_pool, redis_key_schema
+            )
         # Register MQTT processors as needed
         # e.g., mqtt_handler.register_processor(your_processor_instance)
         mqtt_ip = IdentityMQTTCloudEventProcessor(
@@ -47,14 +51,14 @@ async def main():
         if runtime_config.processing.otel_instrumentation_enabled:
             logger.info("Starting MessagePackHandler with OTEL instrumentation enabled")
             msgpack_handler = OTELInstrumentedMessagePackHandler(
-                runtime_config.msgpack, redis_connection_pool
+                runtime_config.msgpack, redis_connection_pool, redis_key_schema
             )
         else:
             logger.info(
                 "Starting MessagePackHandler with OTEL instrumentation disabled"
             )
             msgpack_handler = MessagePackHandler(
-                runtime_config.msgpack, redis_connection_pool
+                runtime_config.msgpack, redis_connection_pool, redis_key_schema
             )
         # Register MessagePack processors as needed
         # e.g., msgpack_handler.register_processor(your_processor_instance)
