@@ -153,9 +153,29 @@ For MessagePack the CloudEvent is transported as is with the `custommetadata` se
 
 ### OPC UA
 
-#### OPC 40001-3: Machinery Job Mgmt
+JSON Schemas representing the OPC UA information models can be generated from nodeset XMLs. These schemas are used to generate Python dataclasses via `datamodel-code-generator`. A custom template is used to generate:
+  * `Config` inner class for mashumaro
+  * custom attributes "x-*" in `Config` inner class
 
-* https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/
+```
+uv run ./scripts/dataclassgen.py dataclasses machinery_jobs.jsonschema.json
+```
+
+#### [OPC 40001-3: Machinery Job Mgmt](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/)
+
+The custom template also creates:
+  * `opcua_state_machine` with serialized python dict from JSON Schema (use `ast.literal_eval()` to deserialize str to dict)
+  * custom attributes `opcua_state_machine_states` and `opcua_state_machine_transitions` with ready to use dictionaries for usage with `transitions` library
+  * custom attribute `opcua_state_machine_effects` storing transition events
+
+Manual additions for Machinery Job Management are required:
+* `MethodReturnStatus` enum
+* additional `JobOrderControlExt` class that adds "the dotted states and transitions" from the spec (without the meta state `Prepared`)
+* fix missing transition name for `Run`
+* add initial states to sub statemachines
+* helpers to map to/from state names to ids
+
+Links:
 * https://youtu.be/KOhYcezpJCw
 
 #### EUInformation:
@@ -204,6 +224,7 @@ The event data type is used for the OPC UA Job Mgmt implementation to trigger th
 * https://github.com/msgpack/msgpack-python
 * https://github.com/redis/redis-py
 * https://github.com/koxudaxi/datamodel-code-generator
+* https://github.com/fastapi/typer
 
 ## Misc
 

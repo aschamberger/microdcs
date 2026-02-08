@@ -1,6 +1,6 @@
 from enum import IntEnum
 
-from machinery_jobs import JobOrderControl
+from app.dataclasses.machinery_jobs import JobOrderControl
 
 
 class MethodReturnStatus(IntEnum):

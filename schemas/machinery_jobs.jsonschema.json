@@ -1,0 +1,1683 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/",
+  "title": "OPC 40001-3: Machinery Job Mgmt for MQTT",
+  "description": "A JSON Schema to represent the OPC 40001-3: Machinery Job Mgmt information model for a MQTT environment.",
+  "$defs": {
+    "LocalizedText": {
+      "type": "object",
+      "properties": {
+        "Locale": {
+          "type": "string"
+        },
+        "Text": {
+          "type": "string"
+        }
+      },
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part5/12.2.7"
+    },
+    "AbortCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.10",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.AbortResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.AbortCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/AbortCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "AbortResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.10",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.AbortResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/AbortResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "EUInformation": {
+      "type": "object",
+      "properties": {
+        "NamespaceUri": {
+          "type": "string"
+        },
+        "UnitId": {
+          "type": "integer"
+        },
+        "DisplayName": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText"
+        }
+      },
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part8/5.6.3/#5.6.3.3"
+    },
+    "OutputInfoType": {
+      "type": "integer",
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.4"
+    },
+    "OutputInformationDataType": {
+      "type": "object",
+      "properties": {
+        "ItemNumber": {
+          "type": "string",
+          "description": "ItemNumber defines an Identifier to identify the Type of the item (Material Identifier)."
+        },
+        "OutputInfo": {
+          "$ref": "#/$defs/OutputInfoType",
+          "description": "Bitmask indicating which of the optional fields are used for identification. If none is selected, only ItemNumber is used. Each selected optional field shall provide a value."
+        },
+        "OrderNumber": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "OrderNumber defines an Identifier to identify the order. Shall be provided if defined in OutputInfo."
+        },
+        "LotNumber": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "LotNumber defines an Identifier to identify the production-group of the item (Lot Identifier). Shall be provided if defined in OutputInfo."
+        },
+        "SerialNumber": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SerialNumber defines an Identifier to identify the one entity of the item (Product Identifier). Shall be provided if defined in OutputInfo."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.3"
+    },
+    "BOMComponentInformationDataType": {
+      "type": "object",
+      "properties": {
+        "Identification": {
+          "$ref": "#/$defs/OutputInformationDataType",
+          "description": "Identification of the output."
+        },
+        "Quantity": {
+          "type": "number",
+          "description": "Quantity defines the amount of material. This quantity can be specified in different ways, e.g. weight or number."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The engineering unit of the quantity."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.5"
+    },
+    "BOMInformationDataType": {
+      "type": "object",
+      "properties": {
+        "Identification": {
+          "$ref": "#/$defs/OutputInformationDataType",
+          "description": "Identification of the output."
+        },
+        "ComponentInformation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BOMComponentInformationDataType"
+          },
+          "description": "Contains information about components."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.6"
+    },
+    "CancelCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.12",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.CancelResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.CancelCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/CancelCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "CancelResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.12",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.CancelResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/CancelResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "ClearCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.13",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ClearResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ClearCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/ClearCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "ClearResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.13",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ClearResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/ClearResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "ISA95PropertyDataType": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "description": "Unique identifier for a property within the scope of the associated resource"
+        },
+        "Value": {
+          "description": "Value for the property"
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "An optional description of the parameter."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The Unit Of Measure of the value"
+        },
+        "Subproperties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PropertyDataType"
+          }
+        }
+      },
+      "description": "A subtype of OPC UA Structure that defines two linked data items: an ID, which is a unique identifier for a property within the scope of the associated resource, and the value, which is the data for the property.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.9"
+    },
+    "ISA95EquipmentDataType": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "description": "An identification of an EquipmentClass or Equipment."
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "Additional information and description about the resource."
+        },
+        "EquipmentUse": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Information about the expected use of the equipment, see the ISA 95 Part 2 standard for defined values."
+        },
+        "Quantity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The quantity of the resource"
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The Unit Of Measure of the quantity"
+        },
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PropertyDataType"
+          },
+          "description": "Any associated properties, or empty if there are no properties defined."
+        }
+      },
+      "description": "Defines an equipment resource or a piece of equipment, a quantity, an optional description, and an optional collection of properties.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.1"
+    },
+    "ISA95MaterialDataType": {
+      "type": "object",
+      "properties": {
+        "MaterialClassID": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An identification of the resource, or null if the Material Class is not used to identify the material."
+        },
+        "MaterialDefinitionID": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An identification of the resource, or null if the Material Definition is not used to identify the material."
+        },
+        "MaterialLotID": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An identification of the resource, or null if the Material Lot is not used to identify the material."
+        },
+        "MaterialSublotID": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An identification of the resource, or null if the Material Sublot is not used to identify the material."
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "Additional information and description about the resource."
+        },
+        "MaterialUse": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Information about the expected use of the material, see the ISA 95 Part 2 standard for defined values."
+        },
+        "Quantity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The quantity of the resource"
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The Unit Of Measure of the quantity"
+        },
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PropertyDataType"
+          },
+          "description": "Any associated properties, or empty if there are no properties defined."
+        }
+      },
+      "description": "Defines a material resource, a quantity, an optional description, and an optional collection of properties.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.6"
+    },
+    "ISA95ParameterDataType": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "description": "A unique identifier for a parameter"
+        },
+        "Value": {
+          "description": "Value of the parameter."
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "An optional description of the parameter. The array allows to provide descriptions in different languages when writing. When accessing, the server shall only provide one entry in the array."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The Unit Of Measure of the value"
+        },
+        "Subparameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95ParameterDataType"
+          }
+        }
+      },
+      "description": "A subtype of OPC UA Structure that defines three linked data items: the ID, which is a unique identifier for a property, the value, which is the data that is identified, and an optional description of the parameter.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.10"
+    },
+    "ISA95PersonnelDataType": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "description": "An identification of a Personnel Class or Person."
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "Additional information and description about the resource."
+        },
+        "PersonnelUse": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Information about the expected use of the personnel, see the ISA 95 Part 2 standard for defined values."
+        },
+        "Quantity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The quantity of the resource"
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The Unit Of Measure of the quantity"
+        },
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PropertyDataType"
+          },
+          "description": "Any associated properties, or empty if there are no properties defined."
+        }
+      },
+      "description": "Defines a personnel resource or a person, a quantity, an optional description, and an optional collection of properties.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.7"
+    },
+    "ISA95PhysicalAssetDataType": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "description": "An identification of a Physical Asset Class or Physical Asset."
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "Additional information and description about the resource."
+        },
+        "PhysicalAssetUse": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Information about the expected use of the physical asset, see the ISA 95 Part 2 standard for defined values."
+        },
+        "Quantity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The quantity of the resource"
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "The Unit Of Measure of the quantity"
+        },
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PropertyDataType"
+          },
+          "description": "Any associated properties, or empty if there are no properties defined."
+        }
+      },
+      "description": "Defines a physical asset, a quantity, an optional description, and an optional collection of properties.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.8"
+    },
+    "ISA95WorkMasterDataType": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "description": "An identification of the Work Master."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "Additional information and description about the Work Master."
+        },
+        "Parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95ParameterDataType"
+          },
+          "description": "Defined parameters for the Work Master."
+        }
+      },
+      "description": "Defines a Work Master ID and the defined parameters for the Work Master.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.11"
+    },
+    "ISA95JobOrderDataType": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "An identification of the Job Order."
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "Addition information about the Job Order The array allows to provide descriptions in different languages."
+        },
+        "WorkMasterID": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95WorkMasterDataType"
+          },
+          "description": "Work Master associated with the job order. If multiple work masters are defined, then the execution system can select the work master based on the availability of resources."
+        },
+        "StartTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "The proposed start time for the order, may be empty if not specified"
+        },
+        "EndTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "The proposed end time for the order, may be empty if not specified"
+        },
+        "Priority": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The priority of the job order, may be empty of not specified. Higher numbers have higher priority.  This type allows the Job Order clients to pick their own ranges, and the Job Order server only has to pick the highest number."
+        },
+        "JobOrderParameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95ParameterDataType"
+          },
+          "description": "Key value pair with values, not associated with a resource that is provided as part of the job order, may be empty if not specified."
+        },
+        "PersonnelRequirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PersonnelDataType"
+          },
+          "description": "A specification of any personnel requirements associated with the job order, may be empty if not specified"
+        },
+        "EquipmentRequirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95EquipmentDataType"
+          },
+          "description": "A specification of any equipment requirements associated with the job order, may be empty if not specified."
+        },
+        "PhysicalAssetRequirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PhysicalAssetDataType"
+          },
+          "description": "A specification of any physical asset requirements associated with the job order, may be empty if not specified."
+        },
+        "MaterialRequirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95MaterialDataType"
+          },
+          "description": "A specification of any material requirements associated with the job order, may be empty if not specified."
+        }
+      },
+      "description": "Defines the information needed to schedule and execute a job.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.4"
+    },
+    "RelativePathElement": {
+      "type": "object",
+      "properties": {
+        "ReferenceTypeId": {
+          "type": "string"
+        },
+        "IsInverse": {
+          "type": "boolean"
+        },
+        "IncludeSubtypes": {
+          "type": "boolean"
+        },
+        "TargetName": {
+          "type": "string"
+        }
+      },
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part4/7.30"
+    },
+    "RelativePath": {
+      "type": "object",
+      "properties": {
+        "Elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelativePathElement"
+          }
+        }
+      },
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part4/7.30"
+    },
+    "ISA95StateDataType": {
+      "type": "object",
+      "properties": {
+        "BrowsePath": {
+          "$ref": "#/$defs/RelativePath",
+          "description": "The browse path of substates. Shall be null when the top-level state is represented."
+        },
+        "StateText": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "The state represented as human readable text. Shall represent the same text as the CurrentState Variable of a StateMachine would."
+        },
+        "StateNumber": {
+          "type": "integer",
+          "description": "The state represented as number. Shall represent the same number as the Number subvariable of the CurrentState Variable of a StateMachine would."
+        }
+      },
+      "description": "Defines the information needed to schedule and execute a job.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.2"
+    },
+    "ISA95JobOrderAndStateDataType": {
+      "type": "object",
+      "properties": {
+        "JobOrder": {
+          "$ref": "#/$defs/ISA95JobOrderDataType",
+          "description": "The job order"
+        },
+        "State": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95StateDataType"
+          },
+          "description": "The State of the job order. The array shall provide at least one entry representing the top level state and potentially additional entries representing substates. The first entry shall be the top level entry, having the BrowsePath set to Null. The order of the subtstates is not defined."
+        }
+      },
+      "description": "Defines the information needed to schedule and execute a job.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.3"
+    },
+    "ISA95JobResponseDataType": {
+      "type": "object",
+      "properties": {
+        "JobResponseID": {
+          "type": "string",
+          "description": "An identification of the Job Response"
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "Additional information about the Job Response"
+        },
+        "JobOrderID": {
+          "type": "string",
+          "description": "An identification of the job order associated with the job response."
+        },
+        "StartTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "The actual start time for the order."
+        },
+        "EndTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "The actual end time for the order."
+        },
+        "JobState": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95StateDataType"
+          },
+          "description": "The current state of the job. The array shall provide at least one entry representing the top level state and potentially additional entries representing substates. The first entry shall be the top level entry, having the BrowsePath set to Null. The order of the subtstates is not defined."
+        },
+        "JobResponseData": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95ParameterDataType"
+          },
+          "description": "Key value pair with values, not associated with a resource that is provided as part of the job response, may be empty if not specified."
+        },
+        "PersonnelActuals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PersonnelDataType"
+          },
+          "description": "A specification of any personnel requirements associated with the job response, may be empty if not specified."
+        },
+        "EquipmentActuals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95EquipmentDataType"
+          },
+          "description": "A specification of any equipment requirements associated with the job response, may be empty if not specified."
+        },
+        "PhysicalAssetActuals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95PhysicalAssetDataType"
+          },
+          "description": "A specification of any physical asset requirements associated with the job response, may be empty if not specified."
+        },
+        "MaterialActuals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95MaterialDataType"
+          },
+          "description": "A specification of any material requirements associated with the job response, may be empty if not specified."
+        }
+      },
+      "description": "Defines the information needed to schedule and execute a job.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.5"
+    },
+    "ISA95JobOrderStatusEventType": {
+      "type": "object",
+      "properties": {
+        "JobOrder": {
+          "$ref": "#/$defs/ISA95JobOrderDataType"
+        },
+        "JobResponse": {
+          "$ref": "#/$defs/ISA95JobResponseDataType"
+        },
+        "JobState": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95StateDataType"
+          }
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.6",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ISA95JobOrderStatusEventType",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/ISA95JobOrderStatusEventType/",
+      "x-opc-ua-type": "Event"
+    },
+    "JobExecutionMode": {
+      "anyOf": [
+        {
+          "const": 0,
+          "title": "SimulationMode",
+          "description": "Machine running in simulation mode with no workpiece involved."
+        },
+        {
+          "const": 1,
+          "title": "TestMode",
+          "description": "Machine running in test mode with a workpiece involved."
+        },
+        {
+          "const": 2,
+          "title": "ProductionMode",
+          "description": "Machine running in production mode."
+        }
+      ],
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.1"
+    },
+    "JobOrderControl": {
+      "type": "object",
+      "properties": {
+        "CurrentState": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "LastTransition": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "AvailableStates": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "AvailableTransitions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "EquipmentID": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Defines a read-only set of Equipment Class IDs and Equipment IDs that may be specified in a job order."
+        },
+        "JobOrderList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95JobOrderAndStateDataType"
+          },
+          "description": "Defines a read-only list of job order information available from the server."
+        },
+        "MaterialClassID": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Defines a read-only set of Material Classes IDs that may be specified in a job order."
+        },
+        "MaterialDefinitionID": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Defines a read-only set of Material Classes IDs that may be specified in a job order."
+        },
+        "MaxDownloadableJobOrders": {
+          "type": "integer"
+        },
+        "PersonnelID": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Defines a read-only set of Personnel IDs and Person IDs that may be specified in a job order."
+        },
+        "PhysicalAssetID": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Defines a read-only set of Physical Asset Class IDs and Physical Asset IDs that may be specified in a job order."
+        },
+        "WorkMaster": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95WorkMasterDataType"
+          },
+          "description": "Defines a read-only set of work master IDs that may be specified in a job order, and the read-only set of parameters that may be specified for a specific work master."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.2/#7.2.2.2",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.JobOrderControl",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/JobOrderControl/",
+      "x-opc-ua-type": "DataSet",
+      "x-opc-ua-state-machine": {
+        "states": {
+          "Aborted": {
+            "description": "The job order is aborted.",
+            "number": 6
+          },
+          "AllowedToStart": {
+            "description": "The job order is stored and may be executed.",
+            "subStateMachine": {
+              "description": "Substates of AllowedToStart",
+              "states": {
+                "Loaded": {
+                  "description": "In situations where only one job may be in active memory and is able to be run, then the job is loaded in active memory, the necessary pre-conditions have been met, and the job order is ready to run, awaiting a Start command.",
+                  "number": 3
+                },
+                "Ready": {
+                  "description": "The necessary pre-conditions have been met and the job order is ready to run, awaiting a Start command.",
+                  "number": 2
+                },
+                "Waiting": {
+                  "description": "The necessary pre-conditions have not been met and the job order is not ready to run.",
+                  "number": 1
+                }
+              },
+              "transitions": {
+                "FromLoadedToReady": {
+                  "description": "This transition is triggered when the program or configuration to execute the job order is unloaded.",
+                  "fromState": "Loaded",
+                  "toState": "Ready",
+                  "number": 4
+                },
+                "FromLoadedToWaiting": {
+                  "description": "This transition is triggered when the system is not ready to start the execution of the job order anymore.",
+                  "fromState": "Loaded",
+                  "number": 5,
+                  "toState": "Waiting"
+                },
+                "FromReadyToLoaded": {
+                  "description": "This transition is triggered when the program or configuration to execute the job order is loaded.",
+                  "toState": "Loaded",
+                  "fromState": "Ready",
+                  "number": 2
+                },
+                "FromReadyToWaiting": {
+                  "description": "This transition is triggered when the system is not ready to start the execution of the job order anymore.",
+                  "fromState": "Ready",
+                  "number": 3,
+                  "toState": "Waiting"
+                },
+                "FromWaitingToReady": {
+                  "description": "This transition is triggered when the system is ready to start the execution of the job order.",
+                  "toState": "Ready",
+                  "number": 1,
+                  "fromState": "Waiting"
+                }
+              }
+            },
+            "number": 2
+          },
+          "Ended": {
+            "description": "The job order has been completed and is no longer in execution.",
+            "subStateMachine": {
+              "description": "Substates of Ended",
+              "states": {
+                "Closed": {
+                  "description": "The job order has been completed and no further post processing is performed.",
+                  "number": 2
+                },
+                "Completed": {
+                  "description": "The job order has been completed and is no longer in execution.",
+                  "number": 1
+                }
+              },
+              "transitions": {
+                "FromCompletedToClosed": {
+                  "description": "This transition is triggered when the system has finalized post processing of a ended job order.",
+                  "toState": "Closed",
+                  "fromState": "Completed",
+                  "number": 1
+                }
+              }
+            },
+            "number": 5
+          },
+          "Interrupted": {
+            "description": "The job order has been temporarily stopped.",
+            "subStateMachine": {
+              "description": "Substates of Interrupted",
+              "states": {
+                "Held": {
+                  "description": "The job order has been temporarily stopped due to a constraint of some form.",
+                  "number": 1
+                },
+                "Suspended": {
+                  "description": "The job order has been temporarily stopped due to a deliberate decision within the execution system.",
+                  "number": 2
+                }
+              },
+              "transitions": {
+                "FromHeldToSuspended": {
+                  "description": "This transition is triggered when the system has switched the job order from internally held to externally suspended, for example by a call of the Pause Method.",
+                  "fromState": "Held",
+                  "toState": "Suspended",
+                  "number": 1
+                },
+                "FromSuspendedToHeld": {
+                  "description": "This transition is triggered when the system has switched the job order from externally suspended to an internal held, for example by a call of the Resume Method.",
+                  "toState": "Held",
+                  "fromState": "Suspended",
+                  "number": 2
+                }
+              }
+            },
+            "number": 4
+          },
+          "NotAllowedToStart": {
+            "description": "The job order is stored but may not be executed.",
+            "subStateMachine": {
+              "description": "Substates of NotAllowedToStart",
+              "states": {
+                "Loaded": {
+                  "description": "In situations where only one job may be in active memory and is able to be run, then the job is loaded in active memory, the necessary pre-conditions have been met, and the job order is ready to run, awaiting a Start command.",
+                  "number": 3
+                },
+                "Ready": {
+                  "description": "The necessary pre-conditions have been met and the job order is ready to run, awaiting a Start command.",
+                  "number": 2
+                },
+                "Waiting": {
+                  "description": "The necessary pre-conditions have not been met and the job order is not ready to run.",
+                  "number": 1
+                }
+              },
+              "transitions": {
+                "FromLoadedToReady": {
+                  "description": "This transition is triggered when the program or configuration to execute the job order is unloaded.",
+                  "fromState": "Loaded",
+                  "toState": "Ready",
+                  "number": 4
+                },
+                "FromLoadedToWaiting": {
+                  "description": "This transition is triggered when the system is not ready to start the execution of the job order anymore.",
+                  "fromState": "Loaded",
+                  "number": 5,
+                  "toState": "Waiting"
+                },
+                "FromReadyToLoaded": {
+                  "description": "This transition is triggered when the program or configuration to execute the job order is loaded.",
+                  "toState": "Loaded",
+                  "fromState": "Ready",
+                  "number": 2
+                },
+                "FromReadyToWaiting": {
+                  "description": "This transition is triggered when the system is not ready to start the execution of the job order anymore.",
+                  "fromState": "Ready",
+                  "number": 3,
+                  "toState": "Waiting"
+                },
+                "FromWaitingToReady": {
+                  "description": "This transition is triggered when the system is ready to start the execution of the job order.",
+                  "toState": "Ready",
+                  "number": 1,
+                  "fromState": "Waiting"
+                }
+              }
+            },
+            "number": 1
+          },
+          "Running": {
+            "description": "The job order is executing.",
+            "number": 3
+          }
+        },
+        "transitions": {
+          "FromAllowedToStartToAborted": {
+            "description": "This transition is triggered when Abort Method is called.",
+            "cause": "Abort",
+            "toState": "Aborted",
+            "fromState": "AllowedToStart",
+            "effect": "ISA95JobOrderStatusEventType",
+            "number": 13
+          },
+          "FromAllowedToStartToAllowedToStart": {
+            "description": "This transition is triggered when the Update Method is called and the job order is modified.",
+            "fromState": "AllowedToStart",
+            "toState": "AllowedToStart",
+            "effect": "ISA95JobOrderStatusEventType",
+            "number": 4,
+            "cause": "Update"
+          },
+          "FromAllowedToStartToNotAllowedToStart": {
+            "description": "This transition is triggered when the RevokeStart Method is called.",
+            "fromState": "AllowedToStart",
+            "effect": "ISA95JobOrderStatusEventType",
+            "toState": "NotAllowedToStart",
+            "cause": "RevokeStart",
+            "number": 3
+          },
+          "FromAllowedToStartToRunning": {
+            "description": "This transition is triggered when a job order is started to be executed.",
+            "fromState": "AllowedToStart",
+            "effect": "ISA95JobOrderStatusEventType",
+            "toState": "Running",
+            "number": 5
+          },
+          "FromInterruptedToAborted": {
+            "description": "This transition is triggered when Abort Method is called.",
+            "cause": "Abort",
+            "toState": "Aborted",
+            "fromState": "Interrupted",
+            "effect": "ISA95JobOrderStatusEventType",
+            "number": 9
+          },
+          "FromInterruptedToEnded": {
+            "description": "This transition is triggered when Stop Method is called.",
+            "toState": "Ended",
+            "fromState": "Interrupted",
+            "effect": "ISA95JobOrderStatusEventType",
+            "cause": "Stop",
+            "number": 11
+          },
+          "FromInterruptedToRunning": {
+            "description": "This transition is triggered when Resume Method is called.",
+            "fromState": "Interrupted",
+            "effect": "ISA95JobOrderStatusEventType",
+            "cause": "Resume",
+            "toState": "Running",
+            "number": 10
+          },
+          "FromNotAllowedToStartToAborted": {
+            "description": "This transition is triggered when Abort Method is called.",
+            "cause": "Abort",
+            "toState": "Aborted",
+            "effect": "ISA95JobOrderStatusEventType",
+            "fromState": "NotAllowedToStart",
+            "number": 12
+          },
+          "FromNotAllowedToStartToAllowedToStart": {
+            "description": "This transition is triggered when the Start Method is called.",
+            "toState": "AllowedToStart",
+            "effect": "ISA95JobOrderStatusEventType",
+            "fromState": "NotAllowedToStart",
+            "cause": "Start",
+            "number": 2
+          },
+          "FromNotAllowedToStartToNotAllowedToStart": {
+            "description": "This transition is triggered when the Update Method is called and the job order is modified.",
+            "effect": "ISA95JobOrderStatusEventType",
+            "fromState": "NotAllowedToStart",
+            "toState": "NotAllowedToStart",
+            "number": 1,
+            "cause": "Update"
+          },
+          "FromRunningToAborted": {
+            "description": "This transition is triggered when Abort Method is called.",
+            "cause": "Abort",
+            "toState": "Aborted",
+            "effect": "ISA95JobOrderStatusEventType",
+            "fromState": "Running",
+            "number": 8
+          },
+          "FromRunningToEnded": {
+            "description": "This transition is triggered when the execution of a job order has finished, either internally or by the Stop Method.",
+            "toState": "Ended",
+            "effect": "ISA95JobOrderStatusEventType",
+            "fromState": "Running",
+            "cause": "Stop",
+            "number": 7
+          },
+          "FromRunningToInterrupted": {
+            "description": "This transition is triggered when an executing job order gets interrupted, either internally or by the Pause Method.",
+            "toState": "Interrupted",
+            "effect": "ISA95JobOrderStatusEventType",
+            "cause": "Pause",
+            "fromState": "Running",
+            "number": 6
+          }
+        }
+      }
+    },
+    "JobOrderResults": {
+      "type": "object",
+      "properties": {
+        "JobOrderResponseList": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ISA95JobResponseDataType"
+          }
+        }
+      },
+      "description": "The OPENSCSJobResponseProviderObjectType contains a method to receive unsolicited job response requests.\nhttps://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.7/#7.2.7.1",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.JobOrderResults",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/JobOrderResults/",
+      "x-opc-ua-type": "DataSet"
+    },
+    "JobResult": {
+      "anyOf": [
+        {
+          "const": 0,
+          "title": "Unknown",
+          "description": "Unknown state. Used when result is not known, e.g. because job order is still running."
+        },
+        {
+          "const": 1,
+          "title": "Successful",
+          "description": "Job order was executed successful"
+        },
+        {
+          "const": 2,
+          "title": "Unsuccessful",
+          "description": "Job order was not executed successful."
+        }
+      ],
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.2"
+    },
+    "OutputInfoTypeMasks": {
+      "anyOf": [
+        {
+          "const": 1,
+          "title": "OrderNumber",
+          "description": "Identifier identifies the order (order identifier)."
+        },
+        {
+          "const": 2,
+          "title": "LotNumber",
+          "description": "Identifier identifies the production group of the item (lot identifier)."
+        },
+        {
+          "const": 4,
+          "title": "SerialNumber",
+          "description": "Identifier identifies the one entity of the item (product identifier)."
+        }
+      ]
+    },
+    "OutputPerformanceInfoDataType": {
+      "type": "object",
+      "properties": {
+        "Identification": {
+          "$ref": "#/$defs/OutputInformationDataType",
+          "description": "Identification of the output."
+        },
+        "StartTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Output of first item from order."
+        },
+        "EndTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Output of last item from order."
+        },
+        "Parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95ParameterDataType"
+          },
+          "description": "Parameters specific to the performance like pressure or temperature."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.7"
+    },
+    "PauseCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.7",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.PauseResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.PauseCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/PauseCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "PauseResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.7",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.PauseResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/PauseResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "ProcessIrregularity": {
+      "anyOf": [
+        {
+          "const": 0,
+          "title": "CapabilityUnavailable",
+          "description": "The machine is not able to give a statement about process irregularities."
+        },
+        {
+          "const": 1,
+          "title": "Detected",
+          "description": "A process irregularity has been detected."
+        },
+        {
+          "const": 2,
+          "title": "NotDetected",
+          "description": "There was no process irregularity detected."
+        },
+        {
+          "const": 3,
+          "title": "NotYetDetermined",
+          "description": "A statement about the process irregularity is to be expected."
+        }
+      ],
+      "description": "https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.8"
+    },
+    "RequestJobResponseByJobOrderIDCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains an ID of the job order, as specified by the method caller."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.7/#7.2.7.2",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RequestJobResponseByJobOrderIDResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RequestJobResponseByJobOrderIDCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/RequestJobResponseByJobOrderIDCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestJobResponseByJobOrderIDResponse": {
+      "type": "object",
+      "properties": {
+        "JobResponse": {
+          "$ref": "#/$defs/ISA95JobResponseDataType",
+          "description": "Contains information about the execution of a job order, such as the current status of the job, actual material consumed, actual material produced, actual equipment used, and job specific data."
+        },
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.7/#7.2.7.2",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RequestJobResponseByJobOrderIDResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/RequestJobResponseByJobOrderIDResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestJobResponseByJobOrderStateCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderState": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95StateDataType"
+          },
+          "description": "Contains a job status of the JobResponse to be returned. The array shall provide at least one entry representing the top level state and potentially additional entries representing substates. The first entry shall be the top level entry, having the BrowsePath set to null. The order of the substates is not defined."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.7/#7.2.7.3",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RequestJobResponseByJobOrderStateResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RequestJobResponseByJobOrderStateCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/RequestJobResponseByJobOrderStateCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestJobResponseByJobOrderStateResponse": {
+      "type": "object",
+      "properties": {
+        "JobResponses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ISA95JobResponseDataType"
+          },
+          "description": "Contains a list of information about the execution of a job order, such as the current status of the job, actual material consumed, actual material produced, actual equipment used, and job specific data."
+        },
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.7/#7.2.7.3",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RequestJobResponseByJobOrderStateResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/RequestJobResponseByJobOrderStateResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "ResumeCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.8",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ResumeResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ResumeCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/ResumeCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "ResumeResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.8",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.ResumeResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/ResumeResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "RevokeStartCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.6",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RevokeStartResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RevokeStartCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/RevokeStartCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "RevokeStartResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.6",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.RevokeStartResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/RevokeStartResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "StartCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.5",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StartResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StartCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StartCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "StartResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.5",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StartResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StartResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "StopCall": {
+      "type": "object",
+      "properties": {
+        "JobOrderID": {
+          "type": "string",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.11",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StopResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StopCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StopCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "StopResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.11",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StopResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StopResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "StoreAndStartCall": {
+      "type": "object",
+      "properties": {
+        "JobOrder": {
+          "$ref": "#/$defs/ISA95JobOrderDataType",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.4",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StoreAndStartResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StoreAndStartCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StoreAndStartCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "StoreAndStartResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.4",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StoreAndStartResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StoreAndStartResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "StoreCall": {
+      "type": "object",
+      "properties": {
+        "JobOrder": {
+          "$ref": "#/$defs/ISA95JobOrderDataType",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.3",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StoreResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StoreCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StoreCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "StoreResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.3",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.StoreResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/StoreResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "UpdateCall": {
+      "type": "object",
+      "properties": {
+        "JobOrder": {
+          "$ref": "#/$defs/ISA95JobOrderDataType",
+          "description": "Contains information defining the job order with all parameters and any material, equipment, or physical asset requirements associated with the order."
+        },
+        "Comment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalizedText"
+          },
+          "description": "The comment provides a description of why the method was called. In order to provide the comment in several languages, it is an array of LocalizedText. The array may be empty, when no comment is provided."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.9",
+      "x-response-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.UpdateResponse",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.UpdateCall",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/UpdateCall/",
+      "x-opc-ua-type": "Method"
+    },
+    "UpdateResponse": {
+      "type": "object",
+      "properties": {
+        "ReturnStatus": {
+          "type": "integer",
+          "description": "Returns the status of the method execution."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.2.1/#7.2.1.9",
+      "x-cloudevent-type": "com.github.aschamberger.ua.Machinery.Jobs.v1.UpdateResponse",
+      "x-cloudevent-dataschema": "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/UpdateResponse/",
+      "x-opc-ua-type": "Method"
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "modelUri": {
+          "type": "string",
+          "default": "http://opcfoundation.org/UA/Machinery/Jobs/"
+        },
+        "modelVersion": {
+          "type": "string",
+          "default": "1.0.1"
+        },
+        "modelDate": {
+          "format": "date-time",
+          "default": "2024-05-01T00:00:00"
+        },
+        "additionalAttributes": {
+          "type": "array",
+          "items": {}
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/meta"
+    },
+    {
+      "$ref": "#/$defs/JobOrderControl"
+    },
+    {
+      "$ref": "#/$defs/AbortCall"
+    },
+    {
+      "$ref": "#/$defs/AbortResponse"
+    },
+    {
+      "$ref": "#/$defs/CancelCall"
+    },
+    {
+      "$ref": "#/$defs/CancelResponse"
+    },
+    {
+      "$ref": "#/$defs/ClearCall"
+    },
+    {
+      "$ref": "#/$defs/ClearResponse"
+    },
+    {
+      "$ref": "#/$defs/PauseCall"
+    },
+    {
+      "$ref": "#/$defs/PauseResponse"
+    },
+    {
+      "$ref": "#/$defs/ResumeCall"
+    },
+    {
+      "$ref": "#/$defs/ResumeResponse"
+    },
+    {
+      "$ref": "#/$defs/RevokeStartCall"
+    },
+    {
+      "$ref": "#/$defs/RevokeStartResponse"
+    },
+    {
+      "$ref": "#/$defs/StartCall"
+    },
+    {
+      "$ref": "#/$defs/StartResponse"
+    },
+    {
+      "$ref": "#/$defs/StopCall"
+    },
+    {
+      "$ref": "#/$defs/StopResponse"
+    },
+    {
+      "$ref": "#/$defs/StoreCall"
+    },
+    {
+      "$ref": "#/$defs/StoreResponse"
+    },
+    {
+      "$ref": "#/$defs/StoreAndStartCall"
+    },
+    {
+      "$ref": "#/$defs/StoreAndStartResponse"
+    },
+    {
+      "$ref": "#/$defs/UpdateCall"
+    },
+    {
+      "$ref": "#/$defs/UpdateResponse"
+    },
+    {
+      "$ref": "#/$defs/JobOrderResults"
+    },
+    {
+      "$ref": "#/$defs/RequestJobResponseByJobOrderIDCall"
+    },
+    {
+      "$ref": "#/$defs/RequestJobResponseByJobOrderIDResponse"
+    },
+    {
+      "$ref": "#/$defs/RequestJobResponseByJobOrderStateCall"
+    },
+    {
+      "$ref": "#/$defs/RequestJobResponseByJobOrderStateResponse"
+    },
+    {
+      "$ref": "#/$defs/ISA95JobOrderStatusEventType"
+    }
+  ]
+}

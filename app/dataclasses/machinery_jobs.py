@@ -1,9 +1,8 @@
 # Auto-generated from "machinery_jobs.jsonschema.json". Do not modify!
-from dataclasses import dataclass
-from enum import IntEnum
-from typing import Any
-
 from app.dataclass import DataClassConfig, DataClassMixin
+from dataclasses import dataclass
+from typing import Any
+from enum import IntEnum
 
 
 @dataclass(kw_only=True)
