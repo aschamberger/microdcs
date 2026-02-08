@@ -87,9 +87,23 @@
             "problemMatcher": [],
         },
         {
-            "label": "Line count stats",
+            "label": "Line count stats (app)",
             "type": "shell",
-            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],processor",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],tests,deploy,schemas,scripts",
+            "windows": {
+                "options": {
+                    "env": {
+                        "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
+                    }
+                },
+            },
+            "group": "none",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Line count stats (other)",
+            "type": "shell",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],app",
             "windows": {
                 "options": {
                     "env": {
