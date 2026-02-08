@@ -12,9 +12,9 @@ from app.identity_processor import (
     Hello,
     HiddenObject,
     IdentityCloudEventDelegate,
-    IdentityMQTTCloudEventProcessor,
 )
 from app.mqtt import MQTTHandler
+from app.redis import RedisKeySchema
 
 
 async def main():
@@ -22,9 +22,10 @@ async def main():
     redis_connection_pool = redis.ConnectionPool(
         host=redis_config.hostname, port=redis_config.port, protocol=3
     )
+    redis_key_schema = RedisKeySchema()
     mqtt_config: MQTTConfig = MQTTConfig()
     mqtt_config.identifier = "test-sender"
-    mh: MQTTHandler = MQTTHandler(mqtt_config, redis_connection_pool)
+    mh: MQTTHandler = MQTTHandler(mqtt_config, redis_connection_pool, redis_key_schema)
 
     mqtt_client: aiomqtt.Client = mh._client()
 

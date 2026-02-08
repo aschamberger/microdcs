@@ -4,7 +4,7 @@ import logging
 
 import redis.asyncio as redis
 
-from app.dataclasses.machinery_jobs import (
+from app.models.machinery_jobs import (
     ISA95JobOrderAndStateDataType,
     ISA95JobResponseDataType,
     ISA95WorkMasterDataType,

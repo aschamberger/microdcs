@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 app = typer.Typer()
 
 schemas_path = pathlib.Path(__file__).parent.parent / "schemas"
-dataclass_path = pathlib.Path(__file__).parent.parent / "app" / "dataclasses"
+dataclass_path = pathlib.Path(__file__).parent.parent / "app" / "models"
 
 
 @app.command()

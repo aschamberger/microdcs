@@ -4,7 +4,7 @@ import pytest
 import transitions
 from transitions.extensions import HierarchicalGraphMachine
 
-from app.dataclasses.machinery_jobs_ext import JobOrderControlExt
+from app.models.machinery_jobs_ext import JobOrderControlExt
 
 
 class Job:

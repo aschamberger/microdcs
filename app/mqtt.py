@@ -222,11 +222,6 @@ class MQTTHandler(ProtocolHandler):
     ):
         self._runtime_config = runtime_config
         self._redis_client = redis.Redis(connection_pool=redis_connection_pool)
-        try:
-            self._redis_client.ping()
-        except redis.RedisError as e:
-            logger.error(f"Error connecting to Redis: {e}")
-            raise
         self._redis_key_schema = redis_key_schema
         self._cloudevent_dedupe_dao = CloudEventDedupeDAO(
             self._redis_client,
@@ -477,6 +472,13 @@ class MQTTHandler(ProtocolHandler):
         interval = 1  # seconds
         while True:
             try:
+                # redis is required for message deduplication and expiration handling,
+                # so we check the connection before starting the MQTT client
+                try:
+                    await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
+                except redis.RedisError as e:
+                    logger.error(f"Error connecting to Redis: {e}")
+                    raise
                 async with client:
                     for processor in self._cloudevent_processors:
                         if isinstance(processor, MQTTCloudEventProcessor):
