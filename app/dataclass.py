@@ -1,6 +1,9 @@
 import dataclasses
 import fnmatch
-from typing import Any, Dict, Optional
+import inspect
+import sys
+import typing
+from typing import Any, Dict, Generic, Optional, Type, TypeVar, get_args, get_origin
 
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.msgpack import DataClassMessagePackMixin
@@ -63,6 +66,53 @@ class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
             if cloudevent_dataschema:
                 d["_dataschema"] = cloudevent_dataschema
         return d
+
+
+R = TypeVar("R")
+
+
+class DataClassResponseMixin(Generic[R]):
+    """
+    Mixin that adds .response() and automatically injects the request instance
+    if the response class asks for '__request_object__'.
+    """
+
+    @classmethod
+    def _get_response_class(cls) -> Type[R]:
+        """Introspects MRO to find the Generic[R] type."""
+        for base in cls.__mro__:
+            for orig_base in getattr(base, "__orig_bases__", []):
+                if get_origin(orig_base) is DataClassResponseMixin:
+                    args = get_args(orig_base)
+                    if args:
+                        result: Type[R] = args[0]
+                        if isinstance(result, typing.ForwardRef):
+                            module = sys.modules.get(cls.__module__, None)
+                            if module:
+                                result = getattr(module, result.__forward_arg__, result)
+                        return result
+        raise TypeError(f"Could not determine Response type for {cls.__name__}")
+
+    def response(self, **kwargs) -> R:
+        """
+        Creates the response object.
+        Automatically injects 'self' if the response class has a '__request_object__' argument.
+        """
+        response_cls = self._get_response_class()
+
+        # 1. Handle Void/None
+        if response_cls is type(None):
+            return None  # type: ignore[return-value]
+
+        # 2. Inspect the Response Class Constructor
+        # We check if '__request_object__' is in the __init__ arguments
+        sig = inspect.signature(response_cls)
+
+        if "__request_object__" in sig.parameters:
+            # inject self (the request instance) into the arguments
+            kwargs["__request_object__"] = self
+
+        return response_cls(**kwargs)
 
 
 class DataClassConfig(BaseConfig):

@@ -1,10 +1,16 @@
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
+from typing import Any
 
 from app import ProcessingConfig
 from app.common import CloudEvent, Direction
-from app.dataclass import DataClassConfig, DataClassMixin, DataClassValidationMixin
+from app.dataclass import (
+    DataClassConfig,
+    DataClassMixin,
+    DataClassResponseMixin,
+    DataClassValidationMixin,
+)
 from app.mqtt import MQTTCloudEventProcessor
 from app.msgpack import MessagePackCloudEventProcessor
 
@@ -19,8 +25,22 @@ class HiddenObject(DataClassMixin):
         pass
 
 
-@dataclass
-class Hello(DataClassMixin, DataClassValidationMixin):
+class InitDataClassMixin(DataClassMixin):
+    def __post_init__(self, __request_object__: Any = None) -> None:
+        super_post_init = getattr(super(), "__post_init__", None)
+        if super_post_init is not None:
+            super_post_init()
+        # Copy hidden fields from request object only when one is provided
+        if __request_object__ is not None:
+            self._hidden_str = getattr(__request_object__, "_hidden_str", None)
+            self._hidden_obj = getattr(__request_object__, "_hidden_obj", None)
+
+
+@dataclass(kw_only=True)
+class Hello(
+    InitDataClassMixin, DataClassValidationMixin, DataClassResponseMixin["Hello"]
+):
+    __request_object__: InitVar[Hello | None] = None
     _hidden_str: str | None = field(kw_only=True, default=None)
     _hidden_obj: HiddenObject | None = field(kw_only=True, default=None)
     name: str = field(metadata={"min_length": 3, "max_length": 20})
@@ -35,7 +55,7 @@ class Hello(DataClassMixin, DataClassValidationMixin):
         }
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Bye(DataClassMixin, DataClassValidationMixin):
     name: str = field(metadata={"min_length": 3, "max_length": 20})
 
@@ -53,11 +73,7 @@ class IdentityCloudEventDelegate:
 
         logger.debug("Processing %s %s %s", hello, hello._hidden_str, hello._hidden_obj)
 
-        h1 = Hello(
-            name=hello.name,
-            _hidden_str=hello._hidden_str,
-            _hidden_obj=hello._hidden_obj,
-        )
+        h1 = hello.response(name=hello.name)
         h2 = Hello(name="Alice")
         return [
             h1,

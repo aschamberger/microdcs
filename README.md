@@ -1,4 +1,4 @@
-# micro-dcs
+# MicroDCS
 
 MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
