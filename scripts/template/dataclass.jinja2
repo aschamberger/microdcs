@@ -12,12 +12,19 @@
 {%- else %}
 @dataclass
 {%- endif %}
-{%- if base_class %}
+{%- set bases = [] %}
 {%- if validation_mixin_class %}
-class {{ class_name }}({{ validation_mixin_class }}, {{ base_class }}):
-{%- else %}
-class {{ class_name }}({{ base_class }}):
+    {%- set _ = bases.append(validation_mixin_class) %}
 {%- endif %}
+{%- if extensions is defined and extensions.get('x-response-type') %}
+    {%- set _response_class = extensions['x-response-type']['$ref'].split('/')[-1] %}
+    {%- set _ = bases.append("DataClassResponseMixin['" + _response_class + "']") %}
+{%- endif %}
+{%- if base_class %}
+    {%- set _ = bases.append(base_class) %}
+{%- endif %}
+{%- if bases %}
+class {{ class_name }}({{ bases | join(', ') }}):
 {%- else %}
 class {{ class_name }}:
 {%- endif %}
@@ -26,8 +33,12 @@ class {{ class_name }}:
     {{ description | escape_docstring | indent(4) }}
     """
 {%- endif %}
-{%- if not fields and not description %}
+{%- if not fields and not description and not (request_object and extensions is defined and extensions.get('x-request-type')) %}
     pass
+{%- endif %}
+{%- if request_object and extensions is defined and extensions.get('x-request-type') %}
+    {%- set _request_class = extensions['x-request-type']['$ref'].split('/')[-1] %}
+    __request_object__: InitVar[{{ _request_class }} | None] = None
 {%- endif %}
 {%- for field in fields -%}
     {%- if field.field %}
@@ -60,7 +71,7 @@ class {{ class_name }}:
     class Config:
     {%- endif %}
     {%- if extensions is defined and extensions.get('x-response-type') %}
-        response_type: str = "{{ extensions['x-response-type'] }}"
+        response_type: str = "{{ extensions['x-response-type']['$ref'].split('/')[-1] }}"
     {%- endif %}
     {%- if extensions is defined and extensions.get('x-cloudevent-type') %}
         cloudevent_type: str = "{{ extensions['x-cloudevent-type'] }}"

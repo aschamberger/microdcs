@@ -42,6 +42,7 @@ def dataclasses(
     imports: Annotated[list[str], typer.Argument()] = [
         "app.dataclass.DataClassMixin",
         "app.dataclass.DataClassConfig",
+        "app.dataclass.DataClassResponseMixin",
     ],
     base_class: Annotated[str, typer.Argument()] = "app.dataclass.DataClassMixin",
     config_base_class: Annotated[
@@ -49,6 +50,12 @@ def dataclasses(
     ] = "app.dataclass.DataClassConfig",
     validation: Annotated[
         bool, typer.Option(help="Add DataClassValidationMixin to generated classes")
+    ] = False,
+    request_object: Annotated[
+        bool,
+        typer.Option(
+            help="Add __request_object__ InitVar to generated response classes"
+        ),
     ] = False,
 ):
     schema_file_path = schemas_path / schema_file
@@ -64,6 +71,9 @@ def dataclasses(
     validation_mixin_import = "app.dataclass.DataClassValidationMixin"
     if validation and validation_mixin_import not in imports:
         imports.append(validation_mixin_import)
+    initvar_import = "dataclasses.InitVar"
+    if request_object and initvar_import not in imports:
+        imports.append(initvar_import)
 
     extra_template_data = {
         ALL_MODEL: {
@@ -73,6 +83,7 @@ def dataclasses(
             "validation_mixin_class": "DataClassValidationMixin"
             if validation
             else None,
+            "request_object": request_object,
         }
     }
     config = JSONSchemaParserConfig(
