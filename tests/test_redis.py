@@ -19,6 +19,7 @@ from app.redis import (
     PersonnelListDAO,
     PhysicalAssetListDAO,
     RedisKeySchema,
+    TransactionDedupeDAO,
     WorkMasterDAO,
     prefixed_key,
 )
@@ -93,6 +94,22 @@ class TestRedisKeySchema:
     def test_cloudevent_dedupe_key_uniqueness(self):
         k1 = self.schema.cloudevent_dedupe_key("src", "id-1")
         k2 = self.schema.cloudevent_dedupe_key("src", "id-2")
+        assert k1 != k2
+
+    def test_transaction_dedupe_key(self):
+        key = self.schema.transaction_dedupe_key("scope1", "tx-1")
+        raw = "scope1:tx-1"
+        expected_hash = hashlib.md5(raw.encode()).hexdigest()
+        assert key == f"test:transdedupe:{expected_hash}"
+
+    def test_transaction_dedupe_key_consistency(self):
+        k1 = self.schema.transaction_dedupe_key("s", "t")
+        k2 = self.schema.transaction_dedupe_key("s", "t")
+        assert k1 == k2
+
+    def test_transaction_dedupe_key_uniqueness(self):
+        k1 = self.schema.transaction_dedupe_key("scope", "tx-1")
+        k2 = self.schema.transaction_dedupe_key("scope", "tx-2")
         assert k1 != k2
 
     def test_joborder_key(self):
@@ -192,6 +209,47 @@ class TestCloudEventDedupeDAO:
         dao = CloudEventDedupeDAO(self.redis, self.schema, ttl=60)
         self.redis.set.return_value = True
         await dao.is_duplicate("src", "id-1")
+        call_kwargs = self.redis.set.call_args.kwargs
+        assert call_kwargs["ex"] == 60
+
+
+# ---------------------------------------------------------------------------
+# TransactionDedupeDAO
+# ---------------------------------------------------------------------------
+
+
+class TestTransactionDedupeDAO:
+    def setup_method(self) -> None:
+        self.redis = _make_redis_mock()
+        self.schema = _make_schema()
+        self.dao = TransactionDedupeDAO(self.redis, self.schema, ttl=300)
+
+    @pytest.mark.asyncio
+    async def test_is_duplicate_returns_false_on_first_set(self):
+        # SET NX returns True (key was set) → not a duplicate
+        self.redis.set.return_value = True
+        result = await self.dao.is_duplicate("scope1", "tx-1")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_is_duplicate_returns_true_when_already_exists(self):
+        # SET NX returns None/False (key already exists) → duplicate
+        self.redis.set.return_value = None
+        result = await self.dao.is_duplicate("scope1", "tx-1")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_set_called_with_correct_args(self):
+        self.redis.set.return_value = True
+        await self.dao.is_duplicate("scope1", "tx-1")
+        key = self.schema.transaction_dedupe_key("scope1", "tx-1")
+        self.redis.set.assert_awaited_once_with(key, "1", ex=300, nx=True)
+
+    @pytest.mark.asyncio
+    async def test_custom_ttl(self):
+        dao = TransactionDedupeDAO(self.redis, self.schema, ttl=60)
+        self.redis.set.return_value = True
+        await dao.is_duplicate("scope1", "tx-1")
         call_kwargs = self.redis.set.call_args.kwargs
         assert call_kwargs["ex"] == 60
 

@@ -53,6 +53,16 @@ class RedisKeySchema:
         return f"cededupe:{hashlib.md5(raw.encode()).hexdigest()}"
 
     @prefixed_key
+    def transaction_dedupe_key(self, scope: str, transaction_id: str) -> str:
+        """
+        transdedupe:[hash]
+        Redis type: string
+        """
+        # hash key to keep the Redis key size consistent and small
+        raw = f"{scope}:{transaction_id}"
+        return f"transdedupe:{hashlib.md5(raw.encode()).hexdigest()}"
+
+    @prefixed_key
     def joborder_key(self, job_order_id: str) -> str:
         """
         joborder:[job_order_id]
@@ -183,6 +193,45 @@ class CloudEventDedupeDAO:
         """
         # create deduplication key based on CloudEvent source and ID
         key = self.key_schema.cloudevent_dedupe_key(cloudevent_source, cloudevent_id)
+        # atomic SET NX (Set if Not eXists) with expiration
+        return (
+            False
+            if await self.redis.set(
+                key,
+                "1",
+                ex=self.ttl,
+                nx=True,
+            )
+            else True
+        )
+
+
+class TransactionDedupeDAO:
+    """
+    Data Access Object for transaction deduplication.
+
+    This class provides methods to interact with Redis for the purpose of
+    deduplicating transactions based on their scope and transaction ID.
+    """
+
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        key_schema: RedisKeySchema,
+        ttl: int = 600,
+    ):
+        self.redis = redis_client
+        self.key_schema = key_schema
+        self.ttl = ttl
+
+    async def is_duplicate(self, scope: str, transaction_id: str) -> bool:
+        """
+        Check if a transaction with the given scope and ID has already been seen.
+
+        Returns True if the transaction is a duplicate, False otherwise.
+        """
+        # create deduplication key based on scope and transaction ID
+        key = self.key_schema.transaction_dedupe_key(scope, transaction_id)
         # atomic SET NX (Set if Not eXists) with expiration
         return (
             False
