@@ -13,7 +13,11 @@
 @dataclass
 {%- endif %}
 {%- if base_class %}
+{%- if validation_mixin_class %}
+class {{ class_name }}({{ validation_mixin_class }}, {{ base_class }}):
+{%- else %}
 class {{ class_name }}({{ base_class }}):
+{%- endif %}
 {%- else %}
 class {{ class_name }}:
 {%- endif %}

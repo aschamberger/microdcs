@@ -47,6 +47,9 @@ def dataclasses(
     config_base_class: Annotated[
         str, typer.Argument()
     ] = "app.dataclass.DataClassConfig",
+    validation: Annotated[
+        bool, typer.Option(help="Add DataClassValidationMixin to generated classes")
+    ] = False,
 ):
     schema_file_path = schemas_path / schema_file
     if not schema_file_path.exists():
@@ -58,10 +61,17 @@ def dataclasses(
     data_model_types = get_data_model_types(
         DataModelType.DataclassesDataclass, target_python_version=PythonVersion.PY_314
     )
+    validation_mixin_import = "app.dataclass.DataClassValidationMixin"
+    if validation and validation_mixin_import not in imports:
+        imports.append(validation_mixin_import)
+
     extra_template_data = {
         ALL_MODEL: {
             "config_base_class": config_base_class.split(".")[-1]
             if config_base_class
+            else None,
+            "validation_mixin_class": "DataClassValidationMixin"
+            if validation
             else None,
         }
     }

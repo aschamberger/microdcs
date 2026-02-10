@@ -18,7 +18,7 @@ from app.dataclass import (
 
 
 @dataclass
-class ModelForTest(DataClassMixin, DataClassValidationMixin):
+class ModelForTest(DataClassValidationMixin, DataClassMixin):
     name: str = field(metadata={"min_length": 3, "max_length": 10})
     _hidden: str = "secret"
 
