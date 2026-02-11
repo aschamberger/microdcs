@@ -43,6 +43,7 @@ def dataclasses(
         "app.dataclass.DataClassMixin",
         "app.dataclass.DataClassConfig",
         "app.dataclass.DataClassResponseMixin",
+        "dataclasses.field",
     ],
     base_class: Annotated[str, typer.Argument()] = "app.dataclass.DataClassMixin",
     config_base_class: Annotated[
@@ -97,6 +98,7 @@ def dataclasses(
         data_model_field_type=data_model_types.field_model,
         data_type_manager_type=data_model_types.data_type_manager,
         dump_resolve_reference_action=data_model_types.dump_resolve_reference_action,
+        field_constraints=True,
         keyword_only=True,
         use_subclass_enum=True,
         capitalise_enum_members=True,

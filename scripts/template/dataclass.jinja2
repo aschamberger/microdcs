@@ -41,7 +41,23 @@ class {{ class_name }}:
     __request_object__: InitVar[{{ _request_class }} | None] = None
 {%- endif %}
 {%- for field in fields -%}
-    {%- if field.field %}
+    {%- set _meta = {} %}
+    {%- if field.constraints and field.constraints.has_constraints %}
+        {%- if field.constraints.min_length is not none %}
+            {%- set _ = _meta.update({"min_length": field.constraints.min_length}) %}
+        {%- endif %}
+        {%- if field.constraints.max_length is not none %}
+            {%- set _ = _meta.update({"max_length": field.constraints.max_length}) %}
+        {%- endif %}
+    {%- endif %}
+    {%- if _meta %}
+        {%- set _field_args = [] %}
+        {%- if not (field.required or (field.represented_default == 'None' and field.strip_default_none)) %}
+            {%- set _ = _field_args.append('default=' ~ field.represented_default) %}
+        {%- endif %}
+        {%- set _ = _field_args.append('metadata=' ~ (_meta | pprint)) %}
+    {{ field.name }}: {{ field.type_hint }} = field({{ _field_args | join(', ') }})
+    {%- elif field.field %}
     {{ field.name }}: {{ field.type_hint }} = {{ field.field }}
     {%- else %}
     {{ field.name }}: {{ field.type_hint }}
