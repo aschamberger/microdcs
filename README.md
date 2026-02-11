@@ -10,7 +10,8 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 * Generic handling of JSON/MessagePack payloads via content type
 * De-/serialization to Python dataclasses with handling of custom user properties
 * Multiple CloudEventProcessors handling incoming requests
-* ...
+* Dataclass generation from JSON Schema with request/response handling mechanisms
+* OPC UA Machinery Job Management: TODO(Request/Response/Publisher) & Redis DAOs
 * OpenTelemetry auto instrumentation plus manual instrumentation of internals (logging, metrics and tracing)
 
 ## Overall Design

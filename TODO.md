@@ -9,10 +9,7 @@
   * publish opc ua meta object with retain on app startup for discovery functionality
   * build dataset handler with key frame support: https://reference.opcfoundation.org/Core/Part14/v105/docs/5
 
-
-* redis example implementation
-  * schema version?!
-  * create index on app init >> later do this in init container
+* redis: create index on app init >> later do this in init container
 
 * Read the bookmarks on DCS internals
 * shutdown handling to unscribe topics and handle existing tasks in current instance before shutdown e.g. on redeploy etc.

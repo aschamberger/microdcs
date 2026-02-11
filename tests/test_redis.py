@@ -22,9 +22,44 @@ from app.redis import (
     TransactionDedupeDAO,
     WorkMasterDAO,
     prefixed_key,
+    sanitize_scope,
 )
 
 DEFAULT_PREFIX = "microdcs-test"
+
+
+# ---------------------------------------------------------------------------
+# sanitize_scope helper
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeScope:
+    def test_leading_slash_topic(self):
+        assert sanitize_scope("/app/jobs/myscope") == "app.jobs.myscope"
+
+    def test_no_leading_slash(self):
+        assert sanitize_scope("app/jobs/myscope") == "app.jobs.myscope"
+
+    def test_trailing_slash(self):
+        assert sanitize_scope("/app/jobs/myscope/") == "app.jobs.myscope"
+
+    def test_multiple_slashes(self):
+        assert sanitize_scope("/app//jobs///myscope/") == "app.jobs.myscope"
+
+    def test_single_segment(self):
+        assert sanitize_scope("myscope") == "myscope"
+
+    def test_preserves_dots(self):
+        assert sanitize_scope("app.jobs/myscope") == "app.jobs.myscope"
+
+    def test_empty_string(self):
+        assert sanitize_scope("") == ""
+
+    def test_only_slashes(self):
+        assert sanitize_scope("///") == ""
+
+    def test_special_chars_replaced(self):
+        assert sanitize_scope("/app/jobs+my scope") == "app.jobs.my.scope"
 
 
 # ---------------------------------------------------------------------------
@@ -116,35 +151,36 @@ class TestRedisKeySchema:
         assert self.schema.joborder_key("jo-1") == "test:joborder:jo-1"
 
     def test_joborder_list_key(self):
-        assert self.schema.joborder_list_key() == "test:joborder:list"
+        assert self.schema.joborder_list_key("s1") == "test:joborder:list:s1"
 
     def test_jobresponse_key(self):
         assert self.schema.jobresponse_key("jr-1") == "test:jobresponse:jr-1"
 
     def test_jobresponse_list_key(self):
-        assert self.schema.jobresponse_list_key() == "test:jobresponse:list"
+        assert self.schema.jobresponse_list_key("s1") == "test:jobresponse:list:s1"
 
     def test_workmaster_key(self):
         assert self.schema.workmaster_key("wm-1") == "test:workmaster:wm-1"
 
     def test_workmaster_list_key(self):
-        assert self.schema.workmaster_list_key() == "test:workmaster:list"
+        assert self.schema.workmaster_list_key("s1") == "test:workmaster:list:s1"
 
     def test_equipment_list_key(self):
-        assert self.schema.equipment_list_key() == "test:equipment:list"
+        assert self.schema.equipment_list_key("s1") == "test:equipment:list:s1"
 
     def test_materialclass_list_key(self):
-        assert self.schema.materialclass_list_key() == "test:materialclass:list"
+        assert self.schema.materialclass_list_key("s1") == "test:materialclass:list:s1"
 
     def test_personnel_list_key(self):
-        assert self.schema.personnel_list_key() == "test:personnel:list"
+        assert self.schema.personnel_list_key("s1") == "test:personnel:list:s1"
 
     def test_physicalasset_list_key(self):
-        assert self.schema.physicalasset_list_key() == "test:physicalasset:list"
+        assert self.schema.physicalasset_list_key("s1") == "test:physicalasset:list:s1"
 
     def test_materialdefinition_list_key(self):
         assert (
-            self.schema.materialdefinition_list_key() == "test:materialdefinition:list"
+            self.schema.materialdefinition_list_key("s1")
+            == "test:materialdefinition:list:s1"
         )
 
     def test_event_receiver_key(self):
@@ -283,7 +319,7 @@ class TestJobOrderAndStateDAO:
         with patch.object(
             jo, "to_json", return_value='{"JobOrder":{"JobOrderID":"jo-1"}}'
         ):
-            await self.dao.save(jo)
+            await self.dao.save(jo, scope="s1")
 
         json_mock = self.redis.json()
         json_mock.set.assert_awaited_once()
@@ -292,14 +328,14 @@ class TestJobOrderAndStateDAO:
         assert call_args.args[1] == "$"
 
         self.redis.zadd.assert_awaited_once_with(
-            self.schema.joborder_list_key(), {"jo-1": 5}
+            self.schema.joborder_list_key("s1"), {"jo-1": 5}
         )
 
     @pytest.mark.asyncio
     async def test_save_raises_when_no_job_order(self):
         jo = ISA95JobOrderAndStateDataType()
         with pytest.raises(ValueError, match="job_order_id"):
-            await self.dao.save(jo)
+            await self.dao.save(jo, scope="s1")
 
     @pytest.mark.asyncio
     async def test_save_raises_when_no_job_order_id(self):
@@ -307,15 +343,15 @@ class TestJobOrderAndStateDAO:
             job_order=ISA95JobOrderDataType(job_order_id=None),
         )
         with pytest.raises(ValueError, match="job_order_id"):
-            await self.dao.save(jo)
+            await self.dao.save(jo, scope="s1")
 
     @pytest.mark.asyncio
     async def test_save_with_zero_priority(self):
         jo = self._make_job_order_and_state(priority=None)  # type: ignore[arg-type]
         with patch.object(jo, "to_json", return_value="{}"):
-            await self.dao.save(jo)
+            await self.dao.save(jo, scope="s1")
         self.redis.zadd.assert_awaited_once_with(
-            self.schema.joborder_list_key(), {"jo-1": 0}
+            self.schema.joborder_list_key("s1"), {"jo-1": 0}
         )
 
     @pytest.mark.asyncio
@@ -347,26 +383,26 @@ class TestJobOrderAndStateDAO:
 
     @pytest.mark.asyncio
     async def test_delete_removes_key_and_list_entry(self):
-        await self.dao.delete("jo-1")
+        await self.dao.delete("jo-1", scope="s1")
         self.redis.delete.assert_awaited_once_with(self.schema.joborder_key("jo-1"))
         self.redis.zrem.assert_awaited_once_with(
-            self.schema.joborder_list_key(), "jo-1"
+            self.schema.joborder_list_key("s1"), "jo-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("jo-1")
+        await self.dao.remove_from_list("jo-1", scope="s1")
         self.redis.zrem.assert_awaited_once_with(
-            self.schema.joborder_list_key(), "jo-1"
+            self.schema.joborder_list_key("s1"), "jo-1"
         )
 
     @pytest.mark.asyncio
     async def test_list_returns_ids(self):
         self.redis.zrange.return_value = ["jo-1", "jo-2"]
-        result = await self.dao.list()
+        result = await self.dao.list(scope="s1")
         assert result == ["jo-1", "jo-2"]
         self.redis.zrange.assert_awaited_once_with(
-            self.schema.joborder_list_key(), 0, -1
+            self.schema.joborder_list_key("s1"), 0, -1
         )
 
 
@@ -395,7 +431,7 @@ class TestJobResponseDAO:
     async def test_save_stores_json_and_adds_to_sorted_set(self):
         jr = self._make_job_response()
         with patch.object(jr, "to_json", return_value='{"JobResponseID":"jr-1"}'):
-            await self.dao.save(jr)
+            await self.dao.save(jr, scope="s1")
 
         json_mock = self.redis.json()
         json_mock.set.assert_awaited_once()
@@ -404,14 +440,14 @@ class TestJobResponseDAO:
         assert call_args.args[1] == "$"
 
         self.redis.zadd.assert_awaited_once_with(
-            self.schema.jobresponse_list_key(), {"jr-1": 0}
+            self.schema.jobresponse_list_key("s1"), {"jr-1": 0}
         )
 
     @pytest.mark.asyncio
     async def test_save_raises_when_no_response_id(self):
         jr = ISA95JobResponseDataType()
         with pytest.raises(ValueError, match="job_response_id"):
-            await self.dao.save(jr)
+            await self.dao.save(jr, scope="s1")
 
     @pytest.mark.asyncio
     async def test_retrieve_returns_object_when_found(self):
@@ -442,26 +478,26 @@ class TestJobResponseDAO:
 
     @pytest.mark.asyncio
     async def test_delete_removes_key_and_list_entry(self):
-        await self.dao.delete("jr-1")
+        await self.dao.delete("jr-1", scope="s1")
         self.redis.delete.assert_awaited_once_with(self.schema.jobresponse_key("jr-1"))
         self.redis.zrem.assert_awaited_once_with(
-            self.schema.jobresponse_list_key(), "jr-1"
+            self.schema.jobresponse_list_key("s1"), "jr-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("jr-1")
+        await self.dao.remove_from_list("jr-1", scope="s1")
         self.redis.zrem.assert_awaited_once_with(
-            self.schema.jobresponse_list_key(), "jr-1"
+            self.schema.jobresponse_list_key("s1"), "jr-1"
         )
 
     @pytest.mark.asyncio
     async def test_list_returns_ids(self):
         self.redis.zrange.return_value = ["jr-2", "jr-1"]
-        result = await self.dao.list()
+        result = await self.dao.list(scope="s1")
         assert result == ["jr-2", "jr-1"]
         self.redis.zrange.assert_awaited_once_with(
-            self.schema.jobresponse_list_key(), 0, -1
+            self.schema.jobresponse_list_key("s1"), 0, -1
         )
 
 
@@ -485,7 +521,7 @@ class TestWorkMasterDAO:
     async def test_save_stores_json_and_adds_to_set(self):
         wm = self._make_work_master()
         with patch.object(wm, "to_json", return_value='{"ID":"wm-1"}'):
-            await self.dao.save(wm)
+            await self.dao.save(wm, scope="s1")
 
         json_mock = self.redis.json()
         json_mock.set.assert_awaited_once()
@@ -494,14 +530,14 @@ class TestWorkMasterDAO:
         assert call_args.args[1] == "$"
 
         self.redis.sadd.assert_awaited_once_with(
-            self.schema.workmaster_list_key(), "wm-1"
+            self.schema.workmaster_list_key("s1"), "wm-1"
         )
 
     @pytest.mark.asyncio
     async def test_save_raises_when_no_id(self):
         wm = ISA95WorkMasterDataType()
         with pytest.raises(ValueError, match="id"):
-            await self.dao.save(wm)
+            await self.dao.save(wm, scope="s1")
 
     @pytest.mark.asyncio
     async def test_retrieve_returns_object_when_found(self):
@@ -532,25 +568,27 @@ class TestWorkMasterDAO:
 
     @pytest.mark.asyncio
     async def test_delete_removes_key_and_set_entry(self):
-        await self.dao.delete("wm-1")
+        await self.dao.delete("wm-1", scope="s1")
         self.redis.delete.assert_awaited_once_with(self.schema.workmaster_key("wm-1"))
         self.redis.srem.assert_awaited_once_with(
-            self.schema.workmaster_list_key(), "wm-1"
+            self.schema.workmaster_list_key("s1"), "wm-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("wm-1")
+        await self.dao.remove_from_list("wm-1", scope="s1")
         self.redis.srem.assert_awaited_once_with(
-            self.schema.workmaster_list_key(), "wm-1"
+            self.schema.workmaster_list_key("s1"), "wm-1"
         )
 
     @pytest.mark.asyncio
     async def test_list_returns_ids(self):
         self.redis.smembers.return_value = {"wm-1", "wm-2"}
-        result = await self.dao.list()
+        result = await self.dao.list(scope="s1")
         assert set(result) == {"wm-1", "wm-2"}
-        self.redis.smembers.assert_awaited_once_with(self.schema.workmaster_list_key())
+        self.redis.smembers.assert_awaited_once_with(
+            self.schema.workmaster_list_key("s1")
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -567,16 +605,16 @@ class TestEquipmentListDAO:
 
     @pytest.mark.asyncio
     async def test_add_to_list(self):
-        await self.dao.add_to_list("eq-1")
+        await self.dao.add_to_list("eq-1", scope="s1")
         self.redis.sadd.assert_awaited_once_with(
-            self.schema.equipment_list_key(), "eq-1"
+            self.schema.equipment_list_key("s1"), "eq-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("eq-1")
+        await self.dao.remove_from_list("eq-1", scope="s1")
         self.redis.srem.assert_awaited_once_with(
-            self.schema.equipment_list_key(), "eq-1"
+            self.schema.equipment_list_key("s1"), "eq-1"
         )
 
 
@@ -588,16 +626,16 @@ class TestMaterialClassListDAO:
 
     @pytest.mark.asyncio
     async def test_add_to_list(self):
-        await self.dao.add_to_list("mc-1")
+        await self.dao.add_to_list("mc-1", scope="s1")
         self.redis.sadd.assert_awaited_once_with(
-            self.schema.materialclass_list_key(), "mc-1"
+            self.schema.materialclass_list_key("s1"), "mc-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("mc-1")
+        await self.dao.remove_from_list("mc-1", scope="s1")
         self.redis.srem.assert_awaited_once_with(
-            self.schema.materialclass_list_key(), "mc-1"
+            self.schema.materialclass_list_key("s1"), "mc-1"
         )
 
 
@@ -609,16 +647,16 @@ class TestPersonnelListDAO:
 
     @pytest.mark.asyncio
     async def test_add_to_list(self):
-        await self.dao.add_to_list("p-1")
+        await self.dao.add_to_list("p-1", scope="s1")
         self.redis.sadd.assert_awaited_once_with(
-            self.schema.personnel_list_key(), "p-1"
+            self.schema.personnel_list_key("s1"), "p-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("p-1")
+        await self.dao.remove_from_list("p-1", scope="s1")
         self.redis.srem.assert_awaited_once_with(
-            self.schema.personnel_list_key(), "p-1"
+            self.schema.personnel_list_key("s1"), "p-1"
         )
 
 
@@ -630,16 +668,16 @@ class TestPhysicalAssetListDAO:
 
     @pytest.mark.asyncio
     async def test_add_to_list(self):
-        await self.dao.add_to_list("pa-1")
+        await self.dao.add_to_list("pa-1", scope="s1")
         self.redis.sadd.assert_awaited_once_with(
-            self.schema.physicalasset_list_key(), "pa-1"
+            self.schema.physicalasset_list_key("s1"), "pa-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("pa-1")
+        await self.dao.remove_from_list("pa-1", scope="s1")
         self.redis.srem.assert_awaited_once_with(
-            self.schema.physicalasset_list_key(), "pa-1"
+            self.schema.physicalasset_list_key("s1"), "pa-1"
         )
 
 
@@ -651,14 +689,14 @@ class TestMaterialDefinitionListDAO:
 
     @pytest.mark.asyncio
     async def test_add_to_list(self):
-        await self.dao.add_to_list("md-1")
+        await self.dao.add_to_list("md-1", scope="s1")
         self.redis.sadd.assert_awaited_once_with(
-            self.schema.materialdefinition_list_key(), "md-1"
+            self.schema.materialdefinition_list_key("s1"), "md-1"
         )
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
-        await self.dao.remove_from_list("md-1")
+        await self.dao.remove_from_list("md-1", scope="s1")
         self.redis.srem.assert_awaited_once_with(
-            self.schema.materialdefinition_list_key(), "md-1"
+            self.schema.materialdefinition_list_key("s1"), "md-1"
         )

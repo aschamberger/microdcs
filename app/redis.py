@@ -1,6 +1,7 @@
 import functools
 import hashlib
 import logging
+import re
 
 import redis.asyncio as redis
 
@@ -13,6 +14,26 @@ from app.models.machinery_jobs import (
 logger = logging.getLogger("redis")
 
 DEFAULT_KEY_PREFIX = "microdcs-test"
+
+
+def sanitize_scope(topic: str) -> str:
+    """
+    Sanitize an MQTT topic path into a dot-separated scope string.
+
+    Strips leading/trailing separators, then replaces any non-alphanumeric
+    character sequences (except dots) with a single dot.
+
+    Examples:
+        >>> sanitize_scope("/app/jobs/myscope")
+        'app.jobs.myscope'
+        >>> sanitize_scope("app/jobs/myscope")
+        'app.jobs.myscope'
+        >>> sanitize_scope("/app//jobs///myscope/")
+        'app.jobs.myscope'
+    """
+    # strip leading/trailing non-alnum chars, then replace remaining sequences
+    stripped = topic.strip("/")
+    return re.sub(r"[^a-zA-Z0-9.]+", ".", stripped).strip(".")
 
 
 def prefixed_key(f):
@@ -71,12 +92,12 @@ class RedisKeySchema:
         return f"joborder:{job_order_id}"
 
     @prefixed_key
-    def joborder_list_key(self) -> str:
+    def joborder_list_key(self, scope: str) -> str:
         """
-        joborder:list
+        joborder:list:[scope]
         Redis type: sorted set (score: priority)
         """
-        return "joborder:list"
+        return f"joborder:list:{scope}"
 
     @prefixed_key
     def jobresponse_key(self, job_response_id: str) -> str:
@@ -87,12 +108,12 @@ class RedisKeySchema:
         return f"jobresponse:{job_response_id}"
 
     @prefixed_key
-    def jobresponse_list_key(self) -> str:
+    def jobresponse_list_key(self, scope: str) -> str:
         """
-        jobresponse:list
+        jobresponse:list:[scope]
         Redis type: sorted set (score: start_time)
         """
-        return "jobresponse:list"
+        return f"jobresponse:list:{scope}"
 
     @prefixed_key
     def workmaster_key(self, work_master_id: str) -> str:
@@ -103,52 +124,52 @@ class RedisKeySchema:
         return f"workmaster:{work_master_id}"
 
     @prefixed_key
-    def workmaster_list_key(self) -> str:
+    def workmaster_list_key(self, scope: str) -> str:
         """
-        workmaster:list
+        workmaster:list:[scope]
         Redis type: set
         """
-        return "workmaster:list"
+        return f"workmaster:list:{scope}"
 
     @prefixed_key
-    def equipment_list_key(self) -> str:
+    def equipment_list_key(self, scope: str) -> str:
         """
-        equipment:list
+        equipment:list:[scope]
         Redis type: set
         """
-        return "equipment:list"
+        return f"equipment:list:{scope}"
 
     @prefixed_key
-    def materialclass_list_key(self) -> str:
+    def materialclass_list_key(self, scope: str) -> str:
         """
-        materialclass:list
+        materialclass:list:[scope]
         Redis type: set
         """
-        return "materialclass:list"
+        return f"materialclass:list:{scope}"
 
     @prefixed_key
-    def personnel_list_key(self) -> str:
+    def personnel_list_key(self, scope: str) -> str:
         """
-        personnel:list
+        personnel:list:[scope]
         Redis type: set
         """
-        return "personnel:list"
+        return f"personnel:list:{scope}"
 
     @prefixed_key
-    def physicalasset_list_key(self) -> str:
+    def physicalasset_list_key(self, scope: str) -> str:
         """
-        physicalasset:list
+        physicalasset:list:[scope]
         Redis type: set
         """
-        return "physicalasset:list"
+        return f"physicalasset:list:{scope}"
 
     @prefixed_key
-    def materialdefinition_list_key(self) -> str:
+    def materialdefinition_list_key(self, scope: str) -> str:
         """
-        materialdefinition:list
+        materialdefinition:list:[scope]
         Redis type: set
         """
-        return "materialdefinition:list"
+        return f"materialdefinition:list:{scope}"
 
     @prefixed_key
     def event_receiver_key(self) -> str:
@@ -261,7 +282,9 @@ class JobOrderAndStateDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def save(self, job_order_and_state: ISA95JobOrderAndStateDataType) -> None:
+    async def save(
+        self, job_order_and_state: ISA95JobOrderAndStateDataType, scope: str
+    ) -> None:
         """
         Save a Job Order to Redis.
 
@@ -284,7 +307,7 @@ class JobOrderAndStateDAO:
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the sorted set with priority as score
         priority = getattr(job_order_and_state.job_order, "priority", 0) or 0
-        list_key = self.key_schema.joborder_list_key()
+        list_key = self.key_schema.joborder_list_key(scope)
         await self.redis.zadd(list_key, {job_order_id: priority})  # type: ignore[reportGeneralTypeIssues]
 
     async def retrieve(self, job_order_id: str) -> ISA95JobOrderAndStateDataType | None:
@@ -309,27 +332,27 @@ class JobOrderAndStateDAO:
         else:
             return None
 
-    async def delete(self, job_order_id: str) -> None:
+    async def delete(self, job_order_id: str, scope: str) -> None:
         """
         Delete a Job Order from Redis and remove it from the sorted set.
         """
         logger.debug(f"Deleting Job Order with ID {job_order_id} from Redis")
         key = self.key_schema.joborder_key(job_order_id)
         await self.redis.delete(key)
-        await self.remove_from_list(job_order_id)
+        await self.remove_from_list(job_order_id, scope)
 
-    async def remove_from_list(self, job_order_id: str) -> None:
+    async def remove_from_list(self, job_order_id: str, scope: str) -> None:
         """
         Remove a Job Order ID from the sorted set.
         """
-        list_key = self.key_schema.joborder_list_key()
+        list_key = self.key_schema.joborder_list_key(scope)
         await self.redis.zrem(list_key, job_order_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def list(self) -> list[str]:
+    async def list(self, scope: str) -> list[str]:
         """
         List all Job Order IDs from the sorted set, ordered by priority.
         """
-        key = self.key_schema.joborder_list_key()
+        key = self.key_schema.joborder_list_key(scope)
         return await self.redis.zrange(key, 0, -1)  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -349,7 +372,7 @@ class JobResponseDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def save(self, job_response: ISA95JobResponseDataType) -> None:
+    async def save(self, job_response: ISA95JobResponseDataType, scope: str) -> None:
         """
         Save a Job Response to Redis.
 
@@ -369,7 +392,7 @@ class JobResponseDAO:
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the sorted set with start_time as score
         start_time = getattr(job_response, "start_time", 0) or 0
-        list_key = self.key_schema.jobresponse_list_key()
+        list_key = self.key_schema.jobresponse_list_key(scope)
         await self.redis.zadd(list_key, {job_response_id: start_time})  # type: ignore[reportGeneralTypeIssues]
 
     async def retrieve(self, job_response_id: str):
@@ -392,27 +415,27 @@ class JobResponseDAO:
         else:
             return None
 
-    async def delete(self, job_response_id: str) -> None:
+    async def delete(self, job_response_id: str, scope: str) -> None:
         """
         Delete a Job Response from Redis and remove it from the sorted set.
         """
         logger.debug(f"Deleting Job Response with ID {job_response_id} from Redis")
         key = self.key_schema.jobresponse_key(job_response_id)
         await self.redis.delete(key)
-        await self.remove_from_list(job_response_id)
+        await self.remove_from_list(job_response_id, scope)
 
-    async def remove_from_list(self, job_response_id: str) -> None:
+    async def remove_from_list(self, job_response_id: str, scope: str) -> None:
         """
         Remove a Job Response ID from the sorted set.
         """
-        list_key = self.key_schema.jobresponse_list_key()
+        list_key = self.key_schema.jobresponse_list_key(scope)
         await self.redis.zrem(list_key, job_response_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def list(self) -> list[str]:
+    async def list(self, scope: str) -> list[str]:
         """
         List all Job Response IDs from the sorted set, ordered by start_time.
         """
-        key = self.key_schema.jobresponse_list_key()
+        key = self.key_schema.jobresponse_list_key(scope)
         return await self.redis.zrange(key, 0, -1)  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -432,7 +455,7 @@ class WorkMasterDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def save(self, work_master: ISA95WorkMasterDataType) -> None:
+    async def save(self, work_master: ISA95WorkMasterDataType, scope: str) -> None:
         """
         Save a Work Master to Redis.
 
@@ -451,7 +474,7 @@ class WorkMasterDAO:
             work_master.to_json(context={"add_cloudevent_dataschema": True}),
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the set
-        list_key = self.key_schema.workmaster_list_key()
+        list_key = self.key_schema.workmaster_list_key(scope)
         await self.redis.sadd(list_key, work_master_id)  # type: ignore[reportGeneralTypeIssues]
 
     async def retrieve(self, work_master_id: str):
@@ -474,27 +497,27 @@ class WorkMasterDAO:
         else:
             return None
 
-    async def delete(self, work_master_id: str) -> None:
+    async def delete(self, work_master_id: str, scope: str) -> None:
         """
         Delete a Work Master from Redis and remove it from the set.
         """
         logger.debug(f"Deleting Work Master with ID {work_master_id} from Redis")
         key = self.key_schema.workmaster_key(work_master_id)
         await self.redis.delete(key)
-        await self.remove_from_list(work_master_id)
+        await self.remove_from_list(work_master_id, scope)
 
-    async def remove_from_list(self, work_master_id: str) -> None:
+    async def remove_from_list(self, work_master_id: str, scope: str) -> None:
         """
         Remove a Work Master ID from the set.
         """
-        list_key = self.key_schema.workmaster_list_key()
+        list_key = self.key_schema.workmaster_list_key(scope)
         await self.redis.srem(list_key, work_master_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def list(self) -> list[str]:
+    async def list(self, scope: str) -> list[str]:
         """
         List all Work Master IDs from the set.
         """
-        key = self.key_schema.workmaster_list_key()
+        key = self.key_schema.workmaster_list_key(scope)
         return list(await self.redis.smembers(key))  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -514,18 +537,18 @@ class EquipmentListDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def add_to_list(self, equipment_id: str) -> None:
+    async def add_to_list(self, equipment_id: str, scope: str) -> None:
         """
         Add an equipment ID to the set.
         """
-        list_key = self.key_schema.equipment_list_key()
+        list_key = self.key_schema.equipment_list_key(scope)
         await self.redis.sadd(list_key, equipment_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def remove_from_list(self, equipment_id: str) -> None:
+    async def remove_from_list(self, equipment_id: str, scope: str) -> None:
         """
         Remove an equipment ID from the set.
         """
-        list_key = self.key_schema.equipment_list_key()
+        list_key = self.key_schema.equipment_list_key(scope)
         await self.redis.srem(list_key, equipment_id)  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -545,18 +568,18 @@ class MaterialClassListDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def add_to_list(self, material_class_id: str) -> None:
+    async def add_to_list(self, material_class_id: str, scope: str) -> None:
         """
         Add a material class ID to the set.
         """
-        list_key = self.key_schema.materialclass_list_key()
+        list_key = self.key_schema.materialclass_list_key(scope)
         await self.redis.sadd(list_key, material_class_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def remove_from_list(self, material_class_id: str) -> None:
+    async def remove_from_list(self, material_class_id: str, scope: str) -> None:
         """
         Remove a material class ID from the set.
         """
-        list_key = self.key_schema.materialclass_list_key()
+        list_key = self.key_schema.materialclass_list_key(scope)
         await self.redis.srem(list_key, material_class_id)  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -576,18 +599,18 @@ class PersonnelListDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def add_to_list(self, personnel_id: str) -> None:
+    async def add_to_list(self, personnel_id: str, scope: str) -> None:
         """
         Add a personnel ID to the set.
         """
-        list_key = self.key_schema.personnel_list_key()
+        list_key = self.key_schema.personnel_list_key(scope)
         await self.redis.sadd(list_key, personnel_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def remove_from_list(self, personnel_id: str) -> None:
+    async def remove_from_list(self, personnel_id: str, scope: str) -> None:
         """
         Remove a personnel ID from the set.
         """
-        list_key = self.key_schema.personnel_list_key()
+        list_key = self.key_schema.personnel_list_key(scope)
         await self.redis.srem(list_key, personnel_id)  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -607,18 +630,18 @@ class PhysicalAssetListDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def add_to_list(self, physical_asset_id: str) -> None:
+    async def add_to_list(self, physical_asset_id: str, scope: str) -> None:
         """
         Add a physical asset ID to the set.
         """
-        list_key = self.key_schema.physicalasset_list_key()
+        list_key = self.key_schema.physicalasset_list_key(scope)
         await self.redis.sadd(list_key, physical_asset_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def remove_from_list(self, physical_asset_id: str) -> None:
+    async def remove_from_list(self, physical_asset_id: str, scope: str) -> None:
         """
         Remove a physical asset ID from the set.
         """
-        list_key = self.key_schema.physicalasset_list_key()
+        list_key = self.key_schema.physicalasset_list_key(scope)
         await self.redis.srem(list_key, physical_asset_id)  # type: ignore[reportGeneralTypeIssues]
 
 
@@ -638,16 +661,16 @@ class MaterialDefinitionListDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def add_to_list(self, material_definition_id: str) -> None:
+    async def add_to_list(self, material_definition_id: str, scope: str) -> None:
         """
         Add a material definition ID to the set.
         """
-        list_key = self.key_schema.materialdefinition_list_key()
+        list_key = self.key_schema.materialdefinition_list_key(scope)
         await self.redis.sadd(list_key, material_definition_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def remove_from_list(self, material_definition_id: str) -> None:
+    async def remove_from_list(self, material_definition_id: str, scope: str) -> None:
         """
         Remove a material definition ID from the set.
         """
-        list_key = self.key_schema.materialdefinition_list_key()
+        list_key = self.key_schema.materialdefinition_list_key(scope)
         await self.redis.srem(list_key, material_definition_id)  # type: ignore[reportGeneralTypeIssues]
