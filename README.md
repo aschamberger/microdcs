@@ -11,7 +11,7 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 * De-/serialization to Python dataclasses with handling of custom user properties
 * Multiple CloudEventProcessors handling incoming requests
 * Dataclass generation from JSON Schema with request/response handling mechanisms
-* OPC UA Machinery Job Management: TODO(Request/Response/Publisher) & Redis DAOs
+* OPC UA Machinery Job Management: TODO(Reciever/Event Publisher/State Publisher) & Redis DAOs
 * OpenTelemetry auto instrumentation plus manual instrumentation of internals (logging, metrics and tracing)
 
 ## Overall Design
@@ -206,7 +206,7 @@ The dataclasses from the OPC UA Job Mgmt need to be persistet. With a document o
 
 The other requirements are deduplication of cloudevents and passing changed variable state to a single publisher.
 
-### Redis
+### [Redis](https://redis.io/docs/latest/)
 
 Dataclasses are stored to Redis data type JSON. The dataschema is added to an additional field `_dataschema`.
 It is derived from the `Config` classes on serialization.
@@ -229,13 +229,16 @@ The event data type is used for the OPC UA Job Mgmt implementation to trigger th
 
 ## Misc
 
-### Distroless Container
+### [Distroless Container](https://github.com/GoogleContainerTools/distroless)
 
-https://labs.iximiuz.com/tutorials/gcr-distroless-container-images
-https://github.com/GoogleContainerTools/distroless
+Local build
+```
+docker build -t aschamberger/microdcs .
+```
 
-Add Python builds to gcr.io/distroless/base-debian13 from:
-https://gregoryszorc.com/docs/python-build-standalone/main/running.html
+* https://labs.iximiuz.com/tutorials/gcr-distroless-container-images
+* https://www.joshkasuboski.com/posts/distroless-python-uv/
+* https://docs.astral.sh/uv/guides/integration/docker/#available-images
 
 ### Links
 

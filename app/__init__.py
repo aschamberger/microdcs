@@ -95,8 +95,8 @@ class ProcessingConfig:
     cloudevent_source: str | None = None
     message_expiry_interval: int | None = None
     shared_subscription_name: str | None = None
-    topics: set[str] = field(default_factory=lambda: {"app/events/#", "app/invoke/#"})
-    response_topics: set[str] = field(default_factory=lambda: {"app/errors/delivery"})
+    topics: set[str] = field(default_factory=set)
+    response_topics: set[str] = field(default_factory=set)
 
 
 @dataclass

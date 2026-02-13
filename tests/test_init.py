@@ -61,8 +61,8 @@ class TestProcessingConfig:
         assert cfg.cloudevent_source is None
         assert cfg.message_expiry_interval is None
         assert cfg.shared_subscription_name is None
-        assert cfg.topics == {"app/events/#", "app/invoke/#"}
-        assert cfg.response_topics == {"app/errors/delivery"}
+        assert cfg.topics == set()
+        assert cfg.response_topics == set()
 
 
 # ---------------------------------------------------------------------------
