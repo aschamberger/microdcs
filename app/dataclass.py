@@ -10,6 +10,10 @@ from mashumaro.mixins.msgpack import DataClassMessagePackMixin
 from mashumaro.mixins.orjson import DataClassORJSONMixin
 
 
+def type_has_dataclass_mixin(cls: type) -> bool:
+    return issubclass(cls.Config, DataClassMixin)
+
+
 def type_has_config_class(cls: type) -> bool:
     return hasattr(cls, "Config") and issubclass(cls.Config, DataClassConfig)
 
