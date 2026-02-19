@@ -33,22 +33,30 @@ class {{ class_name }}:
     {{ description | escape_docstring | indent(4) }}
     """
 {%- endif %}
-{%- if not fields and not description and not (request_object and extensions is defined and extensions.get('x-request-type')) and not custom_metadata and not hidden_fields and not init_fields %}
+{%- set _has_request_object = request_object is defined and request_object and extensions is defined and extensions.get('x-request-type') %}
+{%- set _has_custom_metadata = custom_metadata is defined and custom_metadata %}
+{%- set _has_hidden_fields = hidden_fields is defined and hidden_fields %}
+{%- set _has_init_fields = init_fields is defined and init_fields %}
+{%- if not fields and not description and not _has_request_object and not _has_custom_metadata and not _has_hidden_fields and not _has_init_fields %}
     pass
 {%- endif %}
-{%- if request_object and extensions is defined and extensions.get('x-request-type') %}
+{%- if _has_request_object %}
     {%- set _request_class = extensions['x-request-type']['$ref'].split('/')[-1] %}
     __request_object__: InitVar[{{ _request_class }} | None] = None
 {%- endif %}
-{%- if custom_metadata %}
+{%- if _has_custom_metadata %}
     __custom_metadata__: InitVar[dict[str, Any] | None] = None
 {%- endif %}
+{%- if _has_hidden_fields %}
 {%- for hf in hidden_fields %}
     {{ hf.name }}: {{ hf.type }} | None = None
 {%- endfor %}
+{%- endif %}
+{%- if _has_init_fields %}
 {%- for ivf in init_fields %}
     {{ ivf.name }}: InitVar[{{ ivf.type }} | None] = None
 {%- endfor %}
+{%- endif %}
 {%- for field in fields -%}
     {%- set _meta = {} %}
     {%- if field.constraints and field.constraints.has_constraints %}

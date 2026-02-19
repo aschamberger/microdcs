@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/schemas/micro-dcs/greetings/",
+  "title": "Greetings",
+  "description": "JSON Schema for HiddenObject, Hello and Bye types.",
+  "$defs": {
+    "HiddenObject": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field"
+      ]
+    },
+    "Hello": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        }
+      },
+      "required": [
+        "Name"
+      ],
+      "x-request-type": {
+        "$ref": "#/$defs/Hello"
+      },
+      "x-response-type": {
+        "$ref": "#/$defs/Hello"
+      },
+      "x-cloudevent-type": "com.github.aschamberger.microdcs.identity.hello.v1",
+      "x-cloudevent-dataschema": "https://aschamberger.github.io/schemas/microdcs/identity/v1.0.0/hello"
+    },
+    "Bye": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "x-cloudevent-type": "com.github.aschamberger.microdcs.identity.bye.v1",
+      "x-cloudevent-dataschema": "https://aschamberger.github.io/schemas/microdcs/identity/v1.0.0/bye"
+    }
+  }
+}

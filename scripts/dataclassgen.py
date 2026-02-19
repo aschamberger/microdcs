@@ -1,3 +1,4 @@
+import json
 import pathlib
 import sys
 from collections import defaultdict
@@ -39,16 +40,14 @@ def index():
 @app.command()
 def dataclasses(
     schema_file: Annotated[pathlib.Path, typer.Argument()],
-    imports: Annotated[list[str], typer.Argument()] = [
+    imports: Annotated[list[str], typer.Option()] = [
         "app.dataclass.DataClassMixin",
         "app.dataclass.DataClassConfig",
         "app.dataclass.DataClassResponseMixin",
         "dataclasses.field",
     ],
-    base_class: Annotated[str, typer.Argument()] = "app.dataclass.DataClassMixin",
-    config_base_class: Annotated[
-        str, typer.Argument()
-    ] = "app.dataclass.DataClassConfig",
+    base_class: Annotated[str, typer.Option()] = "app.dataclass.DataClassMixin",
+    config_base_class: Annotated[str, typer.Option()] = "app.dataclass.DataClassConfig",
     validation: Annotated[
         bool, typer.Option(help="Add DataClassValidationMixin to generated classes")
     ] = False,
@@ -119,6 +118,21 @@ def dataclasses(
         name, type_hint = ivf.split("->", 1)
         parsed_init_fields.append({"name": name.strip(), "type": type_hint.strip()})
 
+    # Parse schema to find $defs with x-cloudevent-type
+    schema_data = json.loads(schema_file_path.read_text())
+    cloudevent_defs = {
+        name
+        for name, defn in schema_data.get("$defs", {}).items()
+        if "x-cloudevent-type" in defn
+    }
+    if cloudevent_defs:
+        print(
+            f"[bold cyan]Cloud event types found: {', '.join(sorted(cloudevent_defs))}[/bold cyan]"
+        )
+
+    # Apply config_base_class and validation_mixin_class to all models.
+    # Apply hidden_fields, init_fields, request_object, custom_metadata
+    # only to models that have x-cloudevent-type.
     extra_template_data = {
         ALL_MODEL: {
             "config_base_class": config_base_class.split(".")[-1]
@@ -127,12 +141,16 @@ def dataclasses(
             "validation_mixin_class": "DataClassValidationMixin"
             if validation
             else None,
-            "request_object": request_object,
-            "custom_metadata": custom_metadata,
-            "hidden_fields": parsed_hidden_fields,
-            "init_fields": parsed_init_fields,
         }
     }
+    cloudevent_model_data = {
+        "request_object": request_object,
+        "custom_metadata": custom_metadata,
+        "hidden_fields": parsed_hidden_fields,
+        "init_fields": parsed_init_fields,
+    }
+    for def_name in cloudevent_defs:
+        extra_template_data[def_name] = cloudevent_model_data
     config = JSONSchemaParserConfig(
         target_python_version=PythonVersion.PY_314,
         use_union_operator=True,

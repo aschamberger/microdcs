@@ -198,6 +198,50 @@ Links:
 * https://mdcplus.fi/blog/what-is-isa-88-manufacturing/
 * https://www.isa.org/products/isa-tr88-95-01-2008-using-isa-88-and-isa-95-togeth
 
+### Custom Models
+
+The code generator has some options to support customization for other protocols/messages:
+
+* Add `__custom_metadata__: InitVar[dict[str, Any] | None] = None` for usage in `__post_init__()``. It is populated from cloudevent.
+
+  ```
+  uv run ./scripts/dataclassgen.py dataclasses --custom-metadata my.jsonschema.json
+  ```
+
+* Add additional `InitVar` fields for usage in `__post_init__()`. You can populate them via `event.response(mystatus=MyStatus.OKAY)`.
+  ```
+  uv run ./scripts/dataclassgen.py dataclasses \
+    --init-fields 'mystatus->MyStatus' \
+    --init-fields 'init->dict[str,str]' \
+    my.jsonschema.json
+  ```
+
+* Add hidden fields.
+  ```
+  uv run ./scripts/dataclassgen.py dataclasses \
+    --hidden-fields '_hidden_str->str' \
+    --hidden-fields '_hidden_obj->Obj1|Obj2' \
+    my.jsonschema.json
+  ```
+
+Generate greetings:
+```
+uv run ./scripts/dataclassgen.py dataclasses \
+  --imports app.dataclass.DataClassConfig \
+  --imports app.dataclass.DataClassResponseMixin \
+  --imports app.identity_processor.InitDataClassMixin \
+  --imports dataclasses.field \
+  --base-class app.identity_processor.InitDataClassMixin \
+  --config-base-class app.dataclass.DataClassConfig \
+  --hidden-fields '_hidden_str->str' \
+  --hidden-fields '_hidden_obj->HiddenObject' \
+  --validation \
+  --request-object \
+  greetings.jsonschema.json
+```
+
+
+
 ## Persistance
 
 ### Persistance requirements
