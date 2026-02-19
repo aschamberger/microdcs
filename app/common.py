@@ -3,6 +3,7 @@ import typing
 import uuid
 from abc import ABC, abstractmethod
 from asyncio import Queue
+from collections import namedtuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -15,6 +16,19 @@ from app import ProcessingConfig
 from app.dataclass import DataClassConfig, DataClassMixin
 
 logger = logging.getLogger("app.common")
+
+
+def get_deep_attr(obj, path) -> Any:
+    """
+    Navigates through attributes and dictionary keys.
+    Example path: 'transportmetadata.mqtt_topic'
+    """
+    for part in path.split("."):
+        if isinstance(obj, dict):
+            obj = obj.get(part)
+        elif obj is not None:
+            obj = getattr(obj, part, None)
+    return obj
 
 
 class Direction(StrEnum):
@@ -307,6 +321,9 @@ class CloudEvent(DataClassMixin):
         omit_none = True
 
 
+CloudeventAttributeTuple = namedtuple("CloudeventAttributeTuple", ["attribute", "path"])
+
+
 class CloudEventProcessor(ABC):
     _instance_id: str
     _runtime_config: ProcessingConfig
@@ -320,6 +337,7 @@ class CloudEventProcessor(ABC):
             Callable[[DataClassMixin, dict[str, str]], None] | None,
         ],
     ] = {}
+    _event_attributes: list[CloudeventAttributeTuple] = []
     outgoing_queue: Queue[CloudEvent]
 
     @abstractmethod
@@ -398,6 +416,12 @@ class CloudEventProcessor(ABC):
         ):
             cloudevent.expiryinterval = self._runtime_config.message_expiry_interval
         return cloudevent
+
+    def get_event_args(self, cloudevent: CloudEvent) -> dict[str, Any]:
+        kwargs = {}
+        for arg in self._event_attributes:
+            kwargs[arg.attribute] = get_deep_attr(cloudevent, arg.path)
+        return kwargs
 
     @abstractmethod
     async def process_event(self, cloudevent: CloudEvent) -> Any:

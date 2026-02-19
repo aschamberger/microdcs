@@ -108,8 +108,9 @@ class MQTTCloudEventProcessor(CloudEventProcessor):
             return None
         logger.debug("Request before callback: %s", request)
 
+        kwargs = self.get_event_args(request_cloudevent)
         responses: list[DataClassMixin] | DataClassMixin | None = await callback(
-            request
+            request, **kwargs
         )
 
         if responses is None:
