@@ -830,9 +830,9 @@ class JobExecutionMode(IntEnum):
     https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.1
     """
 
-    INTEGER_0 = 0
-    INTEGER_1 = 1
-    INTEGER_2 = 2
+    SIMULATION_MODE = 0
+    TEST_MODE = 1
+    PRODUCTION_MODE = 2
 
 
 @dataclass(kw_only=True)
@@ -1129,15 +1129,15 @@ class JobResult(IntEnum):
     https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.2
     """
 
-    INTEGER_0 = 0
-    INTEGER_1 = 1
-    INTEGER_2 = 2
+    UNKNOWN = 0
+    SUCCESSFUL = 1
+    UNSUCCESSFUL = 2
 
 
 class OutputInfoTypeMasks(IntEnum):
-    INTEGER_1 = 1
-    INTEGER_2 = 2
-    INTEGER_4 = 4
+    ORDER_NUMBER = 1
+    LOT_NUMBER = 2
+    SERIAL_NUMBER = 4
 
 
 @dataclass(kw_only=True)
@@ -1226,10 +1226,10 @@ class ProcessIrregularity(IntEnum):
     https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.8
     """
 
-    INTEGER_0 = 0
-    INTEGER_1 = 1
-    INTEGER_2 = 2
-    INTEGER_3 = 3
+    CAPABILITY_UNAVAILABLE = 0
+    DETECTED = 1
+    NOT_DETECTED = 2
+    NOT_YET_DETERMINED = 3
 
 
 @dataclass(kw_only=True)
