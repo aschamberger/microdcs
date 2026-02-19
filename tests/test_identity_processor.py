@@ -5,13 +5,11 @@ import pytest
 from app import ProcessingConfig
 from app.common import CloudEvent
 from app.identity_processor import (
-    Bye,
-    Hello,
-    HiddenObject,
     IdentityCloudEventDelegate,
     IdentityMessagePackCloudEventProcessor,
     IdentityMQTTCloudEventProcessor,
 )
+from app.models.greetings import Bye, Hello, HiddenObject
 
 # ===================================================================
 # Helpers
@@ -50,8 +48,8 @@ def _make_msgpack_processor() -> IdentityMessagePackCloudEventProcessor:
     return proc
 
 
-HELLO_CE_TYPE = "com.github.aschamberger.micro-dcs.identity.hello.v1"
-BYE_CE_TYPE = "com.github.aschamberger.micro-dcs.identity.bye.v1"
+HELLO_CE_TYPE = "com.github.aschamberger.microdcs.identity.hello.v1"
+BYE_CE_TYPE = "com.github.aschamberger.microdcs.identity.bye.v1"
 
 
 # ===================================================================
@@ -84,7 +82,7 @@ class TestHello:
         assert Hello.Config.cloudevent_type == HELLO_CE_TYPE
 
     def test_config_aliases(self):
-        assert Hello.Config.aliases == {"name": "NameField"}
+        assert Hello.Config.aliases == {"name": "Name"}
 
 
 class TestBye:
@@ -266,7 +264,7 @@ class TestIdentityMQTTCloudEventProcessor:
         result = await proc.process_event(ce)
         assert isinstance(result, CloudEvent)
         assert result.data == b"raw-data"
-        assert result.type == "com.github.aschamberger.micro-dcs.identity.raw.v1"
+        assert result.type == "com.github.aschamberger.microdcs.identity.raw.v1"
         assert result.datacontenttype == "application/octet-stream"
         assert result.correlationid == "corr-1"
         assert result.causationid == ce.id
@@ -367,7 +365,7 @@ class TestIdentityMessagePackCloudEventProcessor:
         result = await proc.process_event(ce)
         assert isinstance(result, CloudEvent)
         assert result.data == b"raw-data"
-        assert result.type == "com.github.aschamberger.micro-dcs.identity.raw.v1"
+        assert result.type == "com.github.aschamberger.microdcs.identity.raw.v1"
         assert result.correlationid == "corr-1"
         assert result.causationid == ce.id
 

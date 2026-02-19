@@ -1,28 +1,14 @@
 import asyncio
 import logging
-from dataclasses import InitVar, dataclass, field
 from typing import Any
 
 from app import ProcessingConfig
 from app.common import CloudEvent, Direction
-from app.dataclass import (
-    DataClassConfig,
-    DataClassMixin,
-    DataClassResponseMixin,
-    DataClassValidationMixin,
-)
+from app.dataclass import DataClassMixin
 from app.mqtt import MQTTCloudEventProcessor
 from app.msgpack import MessagePackCloudEventProcessor
 
 logger = logging.getLogger("processor.identity")
-
-
-@dataclass
-class HiddenObject(DataClassMixin):
-    field: str
-
-    class Config(DataClassConfig):
-        pass
 
 
 class InitDataClassMixin(DataClassMixin):
@@ -36,34 +22,8 @@ class InitDataClassMixin(DataClassMixin):
             self._hidden_obj = getattr(__request_object__, "_hidden_obj", None)
 
 
-@dataclass(kw_only=True)
-class Hello(
-    InitDataClassMixin, DataClassValidationMixin, DataClassResponseMixin["Hello"]
-):
-    __request_object__: InitVar[Hello | None] = None
-    _hidden_str: str | None = field(kw_only=True, default=None)
-    _hidden_obj: HiddenObject | None = field(kw_only=True, default=None)
-    name: str = field(metadata={"min_length": 3, "max_length": 20})
-
-    class Config(DataClassConfig):
-        cloudevent_type: str = "com.github.aschamberger.micro-dcs.identity.hello.v1"
-        cloudevent_dataschema: str = (
-            "https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1"
-        )
-        aliases = {
-            "name": "NameField",
-        }
-
-
-@dataclass(kw_only=True)
-class Bye(DataClassMixin, DataClassValidationMixin):
-    name: str = field(metadata={"min_length": 3, "max_length": 20})
-
-    class Config(DataClassConfig):
-        cloudevent_type: str = "com.github.aschamberger.micro-dcs.identity.bye.v1"
-        cloudevent_dataschema: str = (
-            "https://aschamberger.github.io/schemas/micro-dcs/identity/bye-v1"
-        )
+# Import model classes after InitDataClassMixin is defined (greetings imports it)
+from app.models.greetings import Bye, Hello, HiddenObject  # noqa: E402
 
 
 class IdentityCloudEventDelegate:
@@ -124,7 +84,7 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
             Bye, IdentityCloudEventDelegate.handle_bye, direction=Direction.OUTGOING
         )
         self.register_hidden_field_processor(
-            "com.github.aschamberger.micro-dcs.identity.*",
+            "com.github.aschamberger.microdcs.identity.*",
             extractor=IdentityCloudEventDelegate.extract_hidden_fields,
             inserter=IdentityCloudEventDelegate.insert_hidden_fields,
         )
@@ -157,8 +117,8 @@ class IdentityMQTTCloudEventProcessor(MQTTCloudEventProcessor):
                 return None
             response = CloudEvent(
                 data=cloudevent.data,
-                type="com.github.aschamberger.micro-dcs.identity.raw.v1",
-                dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
+                type="com.github.aschamberger.microdcs.identity.raw.v1",
+                dataschema="https://aschamberger.github.io/schemas/microdcs/identity/v1.0.0/raw",
                 datacontenttype=cloudevent.datacontenttype,
                 correlationid=cloudevent.correlationid,
                 causationid=cloudevent.id,
@@ -218,7 +178,7 @@ class IdentityMessagePackCloudEventProcessor(MessagePackCloudEventProcessor):
             Bye, IdentityCloudEventDelegate.handle_bye, direction=Direction.OUTGOING
         )
         self.register_hidden_field_processor(
-            "com.github.aschamberger.micro-dcs.identity.*",
+            "com.github.aschamberger.microdcs.identity.*",
             extractor=IdentityCloudEventDelegate.extract_hidden_fields,
             inserter=IdentityCloudEventDelegate.insert_hidden_fields,
         )
@@ -232,8 +192,8 @@ class IdentityMessagePackCloudEventProcessor(MessagePackCloudEventProcessor):
             # Normally, we would not do this here, this is just to demo the functionality
             response = CloudEvent(
                 data=cloudevent.data,
-                type="com.github.aschamberger.micro-dcs.identity.raw.v1",
-                dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
+                type="com.github.aschamberger.microdcs.identity.raw.v1",
+                dataschema="https://aschamberger.github.io/schemas/microdcs/identity/v1.0.0/raw",
                 datacontenttype=cloudevent.datacontenttype,
                 correlationid=cloudevent.correlationid,
                 causationid=cloudevent.id,
