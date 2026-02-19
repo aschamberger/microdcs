@@ -11,6 +11,7 @@ from app.models.machinery_jobs import (
 )
 from app.redis import (
     CloudEventDedupeDAO,
+    CounterDAO,
     EquipmentListDAO,
     JobOrderAndStateDAO,
     JobResponseDAO,
@@ -145,6 +146,14 @@ class TestRedisKeySchema:
     def test_transaction_dedupe_key_uniqueness(self):
         k1 = self.schema.transaction_dedupe_key("scope", "tx-1")
         k2 = self.schema.transaction_dedupe_key("scope", "tx-2")
+        assert k1 != k2
+
+    def test_counter_key(self):
+        assert self.schema.counter_key("my-counter") == "test:counter:my-counter"
+
+    def test_counter_key_different_names(self):
+        k1 = self.schema.counter_key("a")
+        k2 = self.schema.counter_key("b")
         assert k1 != k2
 
     def test_joborder_key(self):
@@ -288,6 +297,57 @@ class TestTransactionDedupeDAO:
         await dao.is_duplicate("scope1", "tx-1")
         call_kwargs = self.redis.set.call_args.kwargs
         assert call_kwargs["ex"] == 60
+
+
+# ---------------------------------------------------------------------------
+# CounterDAO
+# ---------------------------------------------------------------------------
+
+
+class TestCounterDAO:
+    def setup_method(self) -> None:
+        self.redis = _make_redis_mock()
+        self.schema = _make_schema()
+        self.dao = CounterDAO(self.redis, self.schema)
+
+    @pytest.mark.asyncio
+    async def test_increment_returns_new_value(self):
+        self.redis.incr.return_value = 1
+        result = await self.dao.increment("my-counter")
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_increment_calls_incr_with_correct_key(self):
+        self.redis.incr.return_value = 1
+        await self.dao.increment("my-counter")
+        key = self.schema.counter_key("my-counter")
+        self.redis.incr.assert_awaited_once_with(key)
+
+    @pytest.mark.asyncio
+    async def test_increment_successive_calls(self):
+        self.redis.incr.side_effect = [1, 2, 3]
+        assert await self.dao.increment("c") == 1
+        assert await self.dao.increment("c") == 2
+        assert await self.dao.increment("c") == 3
+
+    @pytest.mark.asyncio
+    async def test_get_returns_value(self):
+        self.redis.get.return_value = b"42"
+        result = await self.dao.get("my-counter")
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_get_calls_get_with_correct_key(self):
+        self.redis.get.return_value = b"1"
+        await self.dao.get("my-counter")
+        key = self.schema.counter_key("my-counter")
+        self.redis.get.assert_awaited_once_with(key)
+
+    @pytest.mark.asyncio
+    async def test_get_returns_zero_when_not_exists(self):
+        self.redis.get.return_value = None
+        result = await self.dao.get("missing")
+        assert result == 0
 
 
 # ---------------------------------------------------------------------------
