@@ -4,12 +4,12 @@ import pytest
 
 from app import ProcessingConfig
 from app.common import CloudEvent
-from app.identity_processor import (
-    IdentityCloudEventDelegate,
-    IdentityMessagePackCloudEventProcessor,
-    IdentityMQTTCloudEventProcessor,
-)
 from app.models.greetings import Bye, Hello, HiddenObject
+from app.processors.greetings import (
+    GreetingsCloudEventDelegate,
+    GreetingsMessagePackCloudEventProcessor,
+    GreetingsMQTTCloudEventProcessor,
+)
 
 # ===================================================================
 # Helpers
@@ -17,20 +17,20 @@ from app.models.greetings import Bye, Hello, HiddenObject
 
 
 def _processing_config() -> ProcessingConfig:
-    """Return a ProcessingConfig with topics that match 'identity:…'."""
+    """Return a ProcessingConfig with topics that match 'greetings:…'."""
     cfg = ProcessingConfig()
     cfg.topics = {
-        "identity:app/events/#",
-        "identity:app/invoke/#",
+        "greetings:app/events/#",
+        "greetings:app/invoke/#",
     }
     cfg.response_topics = {
-        "identity:app/errors/delivery",
+        "greetings:app/errors/delivery",
     }
     return cfg
 
 
-def _make_mqtt_processor() -> IdentityMQTTCloudEventProcessor:
-    proc = IdentityMQTTCloudEventProcessor("test-id", _processing_config())
+def _make_mqtt_processor() -> GreetingsMQTTCloudEventProcessor:
+    proc = GreetingsMQTTCloudEventProcessor("test-id", _processing_config())
     # Reset shared class-level dicts to isolate tests
     proc._type_classes = dict(proc._type_classes)
     proc._type_callbacks_in = dict(proc._type_callbacks_in)
@@ -39,8 +39,8 @@ def _make_mqtt_processor() -> IdentityMQTTCloudEventProcessor:
     return proc
 
 
-def _make_msgpack_processor() -> IdentityMessagePackCloudEventProcessor:
-    proc = IdentityMessagePackCloudEventProcessor("test-id", _processing_config())
+def _make_msgpack_processor() -> GreetingsMessagePackCloudEventProcessor:
+    proc = GreetingsMessagePackCloudEventProcessor("test-id", _processing_config())
     proc._type_classes = dict(proc._type_classes)
     proc._type_callbacks_in = dict(proc._type_callbacks_in)
     proc._type_callbacks_out = dict(proc._type_callbacks_out)
@@ -48,8 +48,8 @@ def _make_msgpack_processor() -> IdentityMessagePackCloudEventProcessor:
     return proc
 
 
-HELLO_CE_TYPE = "com.github.aschamberger.microdcs.identity.hello.v1"
-BYE_CE_TYPE = "com.github.aschamberger.microdcs.identity.bye.v1"
+HELLO_CE_TYPE = "com.github.aschamberger.microdcs.greetings.hello.v1"
+BYE_CE_TYPE = "com.github.aschamberger.microdcs.greetings.bye.v1"
 
 
 # ===================================================================
@@ -107,15 +107,15 @@ class TestHiddenObject:
 
 
 # ===================================================================
-# IdentityCloudEventDelegate
+# GreetingsCloudEventDelegate
 # ===================================================================
 
 
-class TestIdentityCloudEventDelegate:
+class TestGreetingsCloudEventDelegate:
     @pytest.mark.asyncio
     async def test_handle_hello(self):
         hello = Hello(name="World")
-        results = await IdentityCloudEventDelegate.handle_hello(hello)
+        results = await GreetingsCloudEventDelegate.handle_hello(hello)
         assert isinstance(results, list)
         assert len(results) == 2
         assert results[0].name == "World"
@@ -125,14 +125,14 @@ class TestIdentityCloudEventDelegate:
     async def test_handle_hello_preserves_hidden_fields(self):
         obj = HiddenObject(field="x")
         hello = Hello(name="Test", _hidden_str="s", _hidden_obj=obj)
-        results = await IdentityCloudEventDelegate.handle_hello(hello)
+        results = await GreetingsCloudEventDelegate.handle_hello(hello)
         assert isinstance(results, list)
         assert results[0]._hidden_str == "s"
         assert results[0]._hidden_obj is obj
 
     @pytest.mark.asyncio
     async def test_handle_bye(self):
-        results = await IdentityCloudEventDelegate.handle_bye()
+        results = await GreetingsCloudEventDelegate.handle_bye()
         assert isinstance(results, list)
         assert len(results) == 2
         assert results[0].name == "Bob"
@@ -143,20 +143,20 @@ class TestIdentityCloudEventDelegate:
     def test_extract_hidden_str(self):
         hello = Hello(name="Test")
         meta = {"x-hidden-str": "secret"}
-        IdentityCloudEventDelegate.extract_hidden_fields(hello, meta)
+        GreetingsCloudEventDelegate.extract_hidden_fields(hello, meta)
         assert hello._hidden_str == "secret"
 
     def test_extract_hidden_obj(self):
         hello = Hello(name="Test")
         obj = HiddenObject(field="val")
         meta = {"x-hidden-obj": obj.to_json()}
-        IdentityCloudEventDelegate.extract_hidden_fields(hello, meta)
+        GreetingsCloudEventDelegate.extract_hidden_fields(hello, meta)
         assert isinstance(hello._hidden_obj, HiddenObject)
         assert hello._hidden_obj.field == "val"
 
     def test_extract_hidden_none_values(self):
         hello = Hello(name="Test")
-        IdentityCloudEventDelegate.extract_hidden_fields(hello, {})
+        GreetingsCloudEventDelegate.extract_hidden_fields(hello, {})
         assert hello._hidden_str is None
         assert hello._hidden_obj is None
 
@@ -165,41 +165,41 @@ class TestIdentityCloudEventDelegate:
     def test_insert_hidden_str(self):
         hello = Hello(name="Test", _hidden_str="sec")
         meta: dict[str, str] = {}
-        IdentityCloudEventDelegate.insert_hidden_fields(hello, meta)
+        GreetingsCloudEventDelegate.insert_hidden_fields(hello, meta)
         assert meta["x-hidden-str"] == "sec"
 
     def test_insert_hidden_obj(self):
         obj = HiddenObject(field="v")
         hello = Hello(name="Test", _hidden_obj=obj)
         meta: dict[str, str] = {}
-        IdentityCloudEventDelegate.insert_hidden_fields(hello, meta)
+        GreetingsCloudEventDelegate.insert_hidden_fields(hello, meta)
         assert "x-hidden-obj" in meta
 
     def test_insert_hidden_none_values(self):
         hello = Hello(name="Test")
         meta: dict[str, str] = {}
-        IdentityCloudEventDelegate.insert_hidden_fields(hello, meta)
+        GreetingsCloudEventDelegate.insert_hidden_fields(hello, meta)
         assert "x-hidden-str" not in meta
         assert "x-hidden-obj" not in meta
 
     def test_insert_hidden_fields_none_custommetadata(self):
         """When custommetadata is None the method creates a local dict (no crash)."""
         hello = Hello(name="Test", _hidden_str="s")
-        IdentityCloudEventDelegate.insert_hidden_fields(hello, None)  # type: ignore[arg-type]
+        GreetingsCloudEventDelegate.insert_hidden_fields(hello, None)  # type: ignore[arg-type]
 
 
 # ===================================================================
-# IdentityMQTTCloudEventProcessor
+# GreetingsMQTTCloudEventProcessor
 # ===================================================================
 
 
-class TestIdentityMQTTCloudEventProcessor:
+class TestGreetingsMQTTCloudEventProcessor:
     def test_init_registers_callbacks(self):
         proc = _make_mqtt_processor()
         assert HELLO_CE_TYPE in proc._type_callbacks_in
         assert BYE_CE_TYPE in proc._type_callbacks_out
         # hidden field processor registered with wildcard
-        assert any("identity" in k for k in proc._hidden_field_processors)
+        assert any("greetings" in k for k in proc._hidden_field_processors)
 
     def test_init_parses_topics(self):
         proc = _make_mqtt_processor()
@@ -249,7 +249,7 @@ class TestIdentityMQTTCloudEventProcessor:
 
     @pytest.mark.asyncio
     async def test_process_event_raw_echo(self):
-        """Unknown type with response_topic → echoed as raw identity response."""
+        """Unknown type with response_topic → echoed as raw greetings response."""
         proc = _make_mqtt_processor()
         ce = CloudEvent(
             type="com.unknown",
@@ -264,7 +264,7 @@ class TestIdentityMQTTCloudEventProcessor:
         result = await proc.process_event(ce)
         assert isinstance(result, CloudEvent)
         assert result.data == b"raw-data"
-        assert result.type == "com.github.aschamberger.microdcs.identity.raw.v1"
+        assert result.type == "com.github.aschamberger.microdcs.greetings.raw.v1"
         assert result.datacontenttype == "application/octet-stream"
         assert result.correlationid == "corr-1"
         assert result.causationid == ce.id
@@ -281,7 +281,7 @@ class TestIdentityMQTTCloudEventProcessor:
             data=hello.to_jsonb(),
             datacontenttype="application/json; charset=utf-8",
             transportmetadata={
-                "mqtt_topic": "app/events/identity",
+                "mqtt_topic": "app/events/greetings",
                 "mqtt_response_topic": "app/errors/delivery/test-id",
             },
         )
@@ -323,9 +323,11 @@ class TestIdentityMQTTCloudEventProcessor:
         with patch.object(
             proc, "type_callback", new_callable=AsyncMock
         ) as mock_type_cb:
-            with patch("app.identity_processor.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.processors.greetings.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await proc.send_event()
-            mock_type_cb.assert_awaited_once_with(Bye, "app/identity/bye")
+            mock_type_cb.assert_awaited_once_with(Bye, "app/greetings/bye")
 
     # --- handle_expiration ---
 
@@ -333,28 +335,28 @@ class TestIdentityMQTTCloudEventProcessor:
     async def test_handle_expiration(self):
         proc = _make_mqtt_processor()
         ce = CloudEvent()
-        with patch("app.identity_processor.asyncio.sleep", new_callable=AsyncMock):
+        with patch("app.processors.greetings.asyncio.sleep", new_callable=AsyncMock):
             result = await proc.handle_expiration(ce, 10)
         assert result is None
 
 
 # ===================================================================
-# IdentityMessagePackCloudEventProcessor
+# GreetingsMessagePackCloudEventProcessor
 # ===================================================================
 
 
-class TestIdentityMessagePackCloudEventProcessor:
+class TestGreetingsMessagePackCloudEventProcessor:
     def test_init_registers_callbacks(self):
         proc = _make_msgpack_processor()
         assert HELLO_CE_TYPE in proc._type_callbacks_in
         assert BYE_CE_TYPE in proc._type_callbacks_out
-        assert any("identity" in k for k in proc._hidden_field_processors)
+        assert any("greetings" in k for k in proc._hidden_field_processors)
 
     # --- process_event ---
 
     @pytest.mark.asyncio
     async def test_process_event_raw_echo(self):
-        """Unknown type → echoed as raw identity response."""
+        """Unknown type → echoed as raw greetings response."""
         proc = _make_msgpack_processor()
         ce = CloudEvent(
             type="com.unknown",
@@ -365,7 +367,7 @@ class TestIdentityMessagePackCloudEventProcessor:
         result = await proc.process_event(ce)
         assert isinstance(result, CloudEvent)
         assert result.data == b"raw-data"
-        assert result.type == "com.github.aschamberger.microdcs.identity.raw.v1"
+        assert result.type == "com.github.aschamberger.microdcs.greetings.raw.v1"
         assert result.correlationid == "corr-1"
         assert result.causationid == ce.id
 

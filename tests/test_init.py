@@ -207,11 +207,11 @@ class TestRuntimeConfig:
     def test_env_override_set(self):
         with patch.dict(
             os.environ,
-            {"APP_PROCESSING_TOPICS": "identity:t/a/#,identity:t/b/#"},
+            {"APP_PROCESSING_TOPICS": "greetings:t/a/#,greetings:t/b/#"},
             clear=False,
         ):
             cfg = RuntimeConfig()
-        assert cfg.processing.topics == {"identity:t/a/#", "identity:t/b/#"}
+        assert cfg.processing.topics == {"greetings:t/a/#", "greetings:t/b/#"}
 
     def test_env_override_str_or_none(self):
         with patch.dict(

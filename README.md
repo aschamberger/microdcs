@@ -229,9 +229,9 @@ Generate greetings:
 uv run ./scripts/dataclassgen.py dataclasses \
   --imports app.dataclass.DataClassConfig \
   --imports app.dataclass.DataClassResponseMixin \
-  --imports app.identity_processor.InitDataClassMixin \
+  --imports app.dataclass.InitDataClassMixin \
   --imports dataclasses.field \
-  --base-class app.identity_processor.InitDataClassMixin \
+  --base-class app.dataclass.InitDataClassMixin \
   --config-base-class app.dataclass.DataClassConfig \
   --hidden-fields '_hidden_str->str' \
   --hidden-fields '_hidden_obj->HiddenObject' \

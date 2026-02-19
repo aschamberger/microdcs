@@ -69,9 +69,9 @@ class TestMain:
             ),
             patch.object(mod, "MQTTHandler") as mock_mqtt_cls,
             patch.object(mod, "MessagePackHandler") as mock_mp_cls,
-            patch.object(mod, "IdentityMQTTCloudEventProcessor") as mock_mqtt_proc_cls,
+            patch.object(mod, "GreetingsMQTTCloudEventProcessor") as mock_mqtt_proc_cls,
             patch.object(
-                mod, "IdentityMessagePackCloudEventProcessor"
+                mod, "GreetingsMessagePackCloudEventProcessor"
             ) as mock_mp_proc_cls,
             patch.object(mod, "redis") as mock_redis_mod,
             patch.object(mod, "SystemEventTaskGroup") as mock_tg_cls,
@@ -116,9 +116,9 @@ class TestMain:
             ),
             patch.object(mod, "OTELInstrumentedMQTTHandler") as mock_otel_mqtt_cls,
             patch.object(mod, "OTELInstrumentedMessagePackHandler") as mock_otel_mp_cls,
-            patch.object(mod, "IdentityMQTTCloudEventProcessor") as mock_mqtt_proc_cls,
+            patch.object(mod, "GreetingsMQTTCloudEventProcessor") as mock_mqtt_proc_cls,
             patch.object(
-                mod, "IdentityMessagePackCloudEventProcessor"
+                mod, "GreetingsMessagePackCloudEventProcessor"
             ) as mock_mp_proc_cls,
             patch.object(mod, "redis") as mock_redis_mod,
             patch.object(mod, "SystemEventTaskGroup") as mock_tg_cls,

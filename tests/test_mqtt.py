@@ -54,13 +54,13 @@ class ConcreteMQTTProcessor(MQTTCloudEventProcessor):
 
 def _make_processor(**kwargs) -> ConcreteMQTTProcessor:
     cfg = ProcessingConfig(
-        topics={"identity:test/events/#"},
-        response_topics={"identity:test/responses"},
+        topics={"greetings:test/events/#"},
+        response_topics={"greetings:test/responses"},
     )
     return ConcreteMQTTProcessor(
         instance_id="test-id",
         runtime_config=cfg,
-        topic_identifier="identity",
+        topic_identifier="greetings",
         **kwargs,
     )
 
@@ -134,14 +134,14 @@ class TestMQTTCloudEventProcessor:
 
     def test_init_with_shared_subscription(self):
         cfg = ProcessingConfig(
-            topics={"identity:test/events/#"},
-            response_topics={"identity:test/responses"},
+            topics={"greetings:test/events/#"},
+            response_topics={"greetings:test/responses"},
             shared_subscription_name="mygroup",
         )
         proc = ConcreteMQTTProcessor(
             instance_id="test-id",
             runtime_config=cfg,
-            topic_identifier="identity",
+            topic_identifier="greetings",
         )
         for topic in proc._topics:
             assert topic.startswith("$share/mygroup/")

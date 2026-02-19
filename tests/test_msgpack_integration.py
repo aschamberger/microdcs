@@ -7,15 +7,15 @@ import pytest
 
 from app import MessagePackConfig
 from app.common import CloudEvent
-from app.identity_processor import Hello
+from app.models.greetings import Hello
 from app.msgpack import MessagePackRpcClient
 from tests.conftest import integration, msgpack_server_available
 
 MSGPACK_CONFIG = MessagePackConfig()
 
 CE_SOURCE = "https://example.com/sender"
-CE_TYPE = "com.github.aschamberger.micro-dcs.identity.hello.v1"
-CE_DATASCHEMA = "https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1"
+CE_TYPE = "com.github.aschamberger.microdcs.greetings.hello.v1"
+CE_DATASCHEMA = "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello"
 
 
 @pytest.mark.asyncio

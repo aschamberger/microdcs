@@ -1,14 +1,13 @@
 # Auto-generated from "greetings.jsonschema.json". Do not modify!
+from dataclasses import InitVar, dataclass, field
+from typing import Any
+
 from app.dataclass import (
     DataClassConfig,
     DataClassResponseMixin,
     DataClassValidationMixin,
+    InitDataClassMixin,
 )
-from app.identity_processor import InitDataClassMixin
-from dataclasses import InitVar, field
-from typing import Any
-from dataclasses import dataclass
-
 
 type Greetings = Any
 """
@@ -37,9 +36,9 @@ class Hello(
     # mashumaro config class
     class Config(DataClassConfig):
         response_type: str = "Hello"
-        cloudevent_type: str = "com.github.aschamberger.microdcs.identity.hello.v1"
+        cloudevent_type: str = "com.github.aschamberger.microdcs.greetings.hello.v1"
         cloudevent_dataschema: str = (
-            "https://aschamberger.github.io/schemas/microdcs/identity/v1.0.0/hello"
+            "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello"
         )
         aliases: dict[str, str] = {
             "name": "Name",
@@ -54,7 +53,7 @@ class Bye(DataClassValidationMixin, InitDataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.github.aschamberger.microdcs.identity.bye.v1"
+        cloudevent_type: str = "com.github.aschamberger.microdcs.greetings.bye.v1"
         cloudevent_dataschema: str = (
-            "https://aschamberger.github.io/schemas/microdcs/identity/v1.0.0/bye"
+            "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/bye"
         )

@@ -8,12 +8,11 @@ import redis.asyncio as redis
 from app import MQTTConfig, RedisConfig
 from app.common import CloudEvent
 from app.dataclass import DataClassMixin
-from app.identity_processor import (
-    Hello,
-    HiddenObject,
-    IdentityCloudEventDelegate,
-)
+from app.models.greetings import Hello, HiddenObject
 from app.mqtt import MQTTHandler
+from app.processors.greetings import (
+    GreetingsCloudEventDelegate,
+)
 from app.redis import RedisKeySchema
 from tests.conftest import integration, mqtt_available, redis_available
 
@@ -21,8 +20,8 @@ MQTT_CONFIG = MQTTConfig()
 REDIS_CONFIG = RedisConfig()
 
 
-TOPIC = "app/identity/request"
-RESPONSE_TOPIC = "app/identity/response"
+TOPIC = "app/greetings/request"
+RESPONSE_TOPIC = "app/greetings/response"
 CE_SOURCE = "https://aschamberger.github.com/micro-dcs/test-sender"
 
 
@@ -43,8 +42,8 @@ async def mqtt_handler():
 @integration
 @mqtt_available
 @redis_available
-async def test_publish_raw_identity_message(mqtt_handler: MQTTHandler):
-    """Send a raw identity message via MQTT."""
+async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
+    """Send a raw greetings message via MQTT."""
     mqtt_client = mqtt_handler._client()
 
     payload: dict[str, Any] = {
@@ -56,8 +55,8 @@ async def test_publish_raw_identity_message(mqtt_handler: MQTTHandler):
     raw_ce = CloudEvent(
         source=CE_SOURCE,
         data=orjson.dumps(payload),
-        type="com.github.aschamberger.micro-dcs.identity.raw.v1",
-        dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/raw-v1",
+        type="com.github.aschamberger.microdcs.greetings.raw.v1",
+        dataschema="https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/raw",
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
             "mqtt_topic": TOPIC,
@@ -73,8 +72,8 @@ async def test_publish_raw_identity_message(mqtt_handler: MQTTHandler):
 @integration
 @mqtt_available
 @redis_available
-async def test_publish_hello_identity_message(mqtt_handler: MQTTHandler):
-    """Send a Hello identity message with hidden fields via MQTT."""
+async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
+    """Send a Hello greetings message with hidden fields via MQTT."""
     mqtt_client = mqtt_handler._client()
 
     bob = Hello(
@@ -97,9 +96,9 @@ async def test_publish_hello_identity_message(mqtt_handler: MQTTHandler):
             Callable[[DataClassMixin, dict[str, str]], None] | None,
         ],
     ] = {
-        "com.github.aschamberger.micro-dcs.identity.hello.v1": (
-            IdentityCloudEventDelegate.extract_hidden_fields,
-            IdentityCloudEventDelegate.insert_hidden_fields,
+        "com.github.aschamberger.microdcs.greetings.hello.v1": (
+            GreetingsCloudEventDelegate.extract_hidden_fields,
+            GreetingsCloudEventDelegate.insert_hidden_fields,
         ),
     }
     bob_ce.serialize_payload(bob, hidden_field_processors)
@@ -115,7 +114,7 @@ async def test_publish_hello_identity_message(mqtt_handler: MQTTHandler):
 async def test_publish_hello_with_additional_payload_fields(
     mqtt_handler: MQTTHandler,
 ):
-    """Send a Hello identity message with additional fields in payload via MQTT."""
+    """Send a Hello greetings message with additional fields in payload via MQTT."""
     mqtt_client = mqtt_handler._client()
 
     payload: dict[str, Any] = {
@@ -125,8 +124,8 @@ async def test_publish_hello_with_additional_payload_fields(
     bob_ce = CloudEvent(
         source=CE_SOURCE,
         data=orjson.dumps(payload),
-        type="com.github.aschamberger.micro-dcs.identity.hello.v1",
-        dataschema="https://aschamberger.github.io/schemas/micro-dcs/identity/hello-v1",
+        type="com.github.aschamberger.microdcs.greetings.hello.v1",
+        dataschema="https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello",
         datacontenttype="application/json; charset=utf-8",
         custommetadata={
             "x-hidden-str": "This is a hidden string",

@@ -2,9 +2,9 @@ import asyncio
 import logging
 import os
 
-from app.identity_processor import (
-    IdentityMessagePackCloudEventProcessor,
-    IdentityMQTTCloudEventProcessor,
+from app.processors.greetings import (
+    GreetingsMessagePackCloudEventProcessor,
+    GreetingsMQTTCloudEventProcessor,
 )
 from app.microdcs import MicroDCS
 
@@ -15,14 +15,14 @@ microdcs = MicroDCS()
 
 # Register MQTT processors as needed
 microdcs.processor(
-    IdentityMQTTCloudEventProcessor(
+    GreetingsMQTTCloudEventProcessor(
         microdcs.runtime_config.instance_id, microdcs.runtime_config.processing
     )
 )
 
 # Register MessagePack processors as needed
 microdcs.processor(
-    IdentityMessagePackCloudEventProcessor(
+    GreetingsMessagePackCloudEventProcessor(
         microdcs.runtime_config.instance_id, microdcs.runtime_config.processing
     )
 )
