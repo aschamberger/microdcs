@@ -70,6 +70,12 @@ def dataclasses(
             help="Add hidden fields to generated classes (format: name->type, e.g. _header_type->str)"
         ),
     ] = [],
+    init_fields: Annotated[
+        list[str],
+        typer.Option(
+            help="Add InitVar fields to generated classes (format: name->type, e.g. mystatus->MyStatus)"
+        ),
+    ] = [],
 ):
     schema_file_path = schemas_path / schema_file
     if not schema_file_path.exists():
@@ -85,7 +91,9 @@ def dataclasses(
     if validation and validation_mixin_import not in imports:
         imports.append(validation_mixin_import)
     initvar_import = "dataclasses.InitVar"
-    if (request_object or custom_metadata) and initvar_import not in imports:
+    if (
+        request_object or custom_metadata or init_fields
+    ) and initvar_import not in imports:
         imports.append(initvar_import)
     typing_any_import = "typing.Any"
     if custom_metadata and typing_any_import not in imports:
@@ -101,6 +109,16 @@ def dataclasses(
         name, type_hint = hf.split("->", 1)
         parsed_hidden_fields.append({"name": name.strip(), "type": type_hint.strip()})
 
+    parsed_init_fields = []
+    for ivf in init_fields:
+        if "->" not in ivf:
+            print(
+                f"[bold red]Invalid init field format: {ivf} (expected name->type)[/bold red]"
+            )
+            raise typer.Exit(code=1)
+        name, type_hint = ivf.split("->", 1)
+        parsed_init_fields.append({"name": name.strip(), "type": type_hint.strip()})
+
     extra_template_data = {
         ALL_MODEL: {
             "config_base_class": config_base_class.split(".")[-1]
@@ -112,6 +130,7 @@ def dataclasses(
             "request_object": request_object,
             "custom_metadata": custom_metadata,
             "hidden_fields": parsed_hidden_fields,
+            "init_fields": parsed_init_fields,
         }
     }
     config = JSONSchemaParserConfig(

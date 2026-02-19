@@ -33,7 +33,7 @@ class {{ class_name }}:
     {{ description | escape_docstring | indent(4) }}
     """
 {%- endif %}
-{%- if not fields and not description and not (request_object and extensions is defined and extensions.get('x-request-type')) and not custom_metadata and not hidden_fields %}
+{%- if not fields and not description and not (request_object and extensions is defined and extensions.get('x-request-type')) and not custom_metadata and not hidden_fields and not init_fields %}
     pass
 {%- endif %}
 {%- if request_object and extensions is defined and extensions.get('x-request-type') %}
@@ -45,6 +45,9 @@ class {{ class_name }}:
 {%- endif %}
 {%- for hf in hidden_fields %}
     {{ hf.name }}: {{ hf.type }} | None = None
+{%- endfor %}
+{%- for ivf in init_fields %}
+    {{ ivf.name }}: InitVar[{{ ivf.type }} | None] = None
 {%- endfor %}
 {%- for field in fields -%}
     {%- set _meta = {} %}
