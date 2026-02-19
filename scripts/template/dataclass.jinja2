@@ -33,12 +33,15 @@ class {{ class_name }}:
     {{ description | escape_docstring | indent(4) }}
     """
 {%- endif %}
-{%- if not fields and not description and not (request_object and extensions is defined and extensions.get('x-request-type')) %}
+{%- if not fields and not description and not (request_object and extensions is defined and extensions.get('x-request-type')) and not custom_metadata %}
     pass
 {%- endif %}
 {%- if request_object and extensions is defined and extensions.get('x-request-type') %}
     {%- set _request_class = extensions['x-request-type']['$ref'].split('/')[-1] %}
     __request_object__: InitVar[{{ _request_class }} | None] = None
+{%- endif %}
+{%- if custom_metadata %}
+    __custom_metadata__: InitVar[dict[str, Any] | None] = None
 {%- endif %}
 {%- for field in fields -%}
     {%- set _meta = {} %}

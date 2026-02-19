@@ -58,6 +58,12 @@ def dataclasses(
             help="Add __request_object__ InitVar to generated response classes"
         ),
     ] = False,
+    custom_metadata: Annotated[
+        bool,
+        typer.Option(
+            help="Add __custom_metadata__ InitVar[dict[str, Any]] to generated classes"
+        ),
+    ] = False,
 ):
     schema_file_path = schemas_path / schema_file
     if not schema_file_path.exists():
@@ -73,8 +79,11 @@ def dataclasses(
     if validation and validation_mixin_import not in imports:
         imports.append(validation_mixin_import)
     initvar_import = "dataclasses.InitVar"
-    if request_object and initvar_import not in imports:
+    if (request_object or custom_metadata) and initvar_import not in imports:
         imports.append(initvar_import)
+    typing_any_import = "typing.Any"
+    if custom_metadata and typing_any_import not in imports:
+        imports.append(typing_any_import)
 
     extra_template_data = {
         ALL_MODEL: {
@@ -85,6 +94,7 @@ def dataclasses(
             if validation
             else None,
             "request_object": request_object,
+            "custom_metadata": custom_metadata,
         }
     }
     config = JSONSchemaParserConfig(
