@@ -84,6 +84,14 @@ class RedisKeySchema:
         return f"transdedupe:{hashlib.md5(raw.encode()).hexdigest()}"
 
     @prefixed_key
+    def counter_key(self, name: str) -> str:
+        """
+        counter:[name]
+        Redis type: string (integer value)
+        """
+        return f"counter:{name}"
+
+    @prefixed_key
     def joborder_key(self, job_order_id: str) -> str:
         """
         joborder:[job_order_id]
@@ -264,6 +272,40 @@ class TransactionDedupeDAO:
             )
             else True
         )
+
+
+class CounterDAO:
+    """
+    Data Access Object for named counters.
+
+    This class provides methods to interact with Redis for the purpose of
+    incrementing and retrieving counters identified by name.
+    """
+
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        key_schema: RedisKeySchema,
+    ):
+        self.redis = redis_client
+        self.key_schema = key_schema
+
+    async def increment(self, name: str) -> int:
+        """
+        Increment a counter by 1 and return the new value.
+        """
+        key = self.key_schema.counter_key(name)
+        return await self.redis.incr(key)
+
+    async def get(self, name: str) -> int:
+        """
+        Get the current value of a counter.
+
+        Returns 0 if the counter does not exist.
+        """
+        key = self.key_schema.counter_key(name)
+        value = await self.redis.get(key)
+        return int(value) if value is not None else 0
 
 
 class JobOrderAndStateDAO:
