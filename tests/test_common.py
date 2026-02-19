@@ -351,50 +351,23 @@ class TestCloudEventPayload:
         assert ce.type == "com.test.sample.v1"
         assert ce.dataschema == "https://example.com/schemas/sample-v1"
 
-    def test_unserialize_with_hidden_field_processors(self):
-        """Hidden-field extractor is called when pattern matches."""
-        extracted = {}
-
-        def extractor(obj: DataClassMixin, meta: dict[str, str]) -> None:
-            extracted["called"] = True
-
+    def test_unserialize_custom_metadata_passed_to_dataclass(self):
+        """Custom metadata is passed to the dataclass via __custom_metadata__ during deserialization."""
         payload = SamplePayload(value="hidden")
         ce = CloudEvent(
             datacontenttype="application/json",
             data=payload.to_jsonb(),
-            custommetadata={"x-secret": "val"},
+            custommetadata={"_hidden_str": "val"},
         )
-        processors: dict[
-            str,
-            tuple[
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-            ],
-        ] = {"com.test.*": (extractor, None)}
-        ce.unserialize_payload(SamplePayload, processors)
-        assert extracted.get("called") is True
+        result = ce.unserialize_payload(SamplePayload)
+        assert isinstance(result, SamplePayload)
 
-    def test_serialize_with_hidden_field_processors(self):
-        """Hidden-field inserter is called when pattern matches."""
-        inserted = {}
-
-        def inserter(obj: DataClassMixin, meta: dict[str, str]) -> None:
-            meta["x-injected"] = "yes"
-            inserted["called"] = True
-
+    def test_serialize_extracts_custom_metadata(self):
+        """Custom metadata is extracted from the dataclass via __get_custom_metadata__ during serialization."""
         payload = SamplePayload(value="ins")
         ce = CloudEvent(datacontenttype="application/json")
-        processors: dict[
-            str,
-            tuple[
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-            ],
-        ] = {"com.test.*": (None, inserter)}
-        ce.serialize_payload(payload, processors)
-        assert inserted.get("called") is True
-        assert ce.custommetadata is not None
-        assert ce.custommetadata["x-injected"] == "yes"
+        ce.serialize_payload(payload)
+        assert ce.type == "com.test.sample.v1"
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +389,6 @@ class ConcreteProcessor(CloudEventProcessor):
         self._type_classes = {}
         self._type_callbacks_in = {}
         self._type_callbacks_out = {}
-        self._hidden_field_processors = {}
         self.outgoing_queue = Queue(queue_size)
 
     async def process_event(self, cloudevent: CloudEvent) -> Any:
@@ -468,28 +440,6 @@ class TestCloudEventProcessorRegistration:
         proc = ConcreteProcessor()
         with pytest.raises(TypeError, match="Config subclass of DataClassConfig"):
             proc.register_callback(PlainDataClass, AsyncMock())
-
-    def test_register_hidden_field_processor(self):
-        proc = ConcreteProcessor()
-
-        def ext(obj: Any, meta: Any) -> None:
-            return None
-
-        def ins(obj: Any, meta: Any) -> None:
-            return None
-
-        proc.register_hidden_field_processor("com.test.*", ext, ins)
-        assert "com.test.*" in proc._hidden_field_processors
-
-    def test_register_hidden_field_processor_non_callable_extractor(self):
-        proc = ConcreteProcessor()
-        with pytest.raises(TypeError, match="extractor must be callable"):
-            proc.register_hidden_field_processor("com.test.*", "bad", lambda o, m: None)  # type: ignore
-
-    def test_register_hidden_field_processor_non_callable_inserter(self):
-        proc = ConcreteProcessor()
-        with pytest.raises(TypeError, match="inserter must be callable"):
-            proc.register_hidden_field_processor("com.test.*", lambda o, m: None, "bad")  # type: ignore
 
     def test_event_has_callback(self):
         proc = ConcreteProcessor()

@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any
 
 import orjson
 import pytest
@@ -7,12 +7,8 @@ import redis.asyncio as redis
 
 from app import MQTTConfig, RedisConfig
 from app.common import CloudEvent
-from app.dataclass import DataClassMixin
 from app.models.greetings import Hello, HiddenObject
 from app.mqtt import MQTTHandler
-from app.processors.greetings import (
-    GreetingsCloudEventDelegate,
-)
 from app.redis import RedisKeySchema
 from tests.conftest import integration, mqtt_available, redis_available
 
@@ -89,19 +85,7 @@ async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
             "mqtt_response_topic": RESPONSE_TOPIC,
         },
     )
-    hidden_field_processors: dict[
-        str,
-        tuple[
-            Callable[[DataClassMixin, dict[str, str]], None] | None,
-            Callable[[DataClassMixin, dict[str, str]], None] | None,
-        ],
-    ] = {
-        "com.github.aschamberger.microdcs.greetings.hello.v1": (
-            GreetingsCloudEventDelegate.extract_hidden_fields,
-            GreetingsCloudEventDelegate.insert_hidden_fields,
-        ),
-    }
-    bob_ce.serialize_payload(bob, hidden_field_processors)
+    bob_ce.serialize_payload(bob)
 
     async with mqtt_client:
         await mqtt_handler._publish_message(mqtt_client, bob_ce)

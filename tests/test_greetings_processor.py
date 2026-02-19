@@ -35,7 +35,6 @@ def _make_mqtt_processor() -> GreetingsMQTTCloudEventProcessor:
     proc._type_classes = dict(proc._type_classes)
     proc._type_callbacks_in = dict(proc._type_callbacks_in)
     proc._type_callbacks_out = dict(proc._type_callbacks_out)
-    proc._hidden_field_processors = dict(proc._hidden_field_processors)
     return proc
 
 
@@ -44,7 +43,6 @@ def _make_msgpack_processor() -> GreetingsMessagePackCloudEventProcessor:
     proc._type_classes = dict(proc._type_classes)
     proc._type_callbacks_in = dict(proc._type_callbacks_in)
     proc._type_callbacks_out = dict(proc._type_callbacks_out)
-    proc._hidden_field_processors = dict(proc._hidden_field_processors)
     return proc
 
 
@@ -138,54 +136,49 @@ class TestGreetingsCloudEventDelegate:
         assert results[0].name == "Bob"
         assert results[1].name == "Alice"
 
-    # --- extract_hidden_fields ---
+    # --- hidden fields via __custom_metadata__ / __get_custom_metadata__ ---
 
     def test_extract_hidden_str(self):
-        hello = Hello(name="Test")
-        meta = {"x-hidden-str": "secret"}
-        GreetingsCloudEventDelegate.extract_hidden_fields(hello, meta)
+        """Hidden str is populated from __custom_metadata__ during construction."""
+        hello = Hello(name="Test", __custom_metadata__={"x-hidden-str": "secret"})
         assert hello._hidden_str == "secret"
 
     def test_extract_hidden_obj(self):
-        hello = Hello(name="Test")
+        """Hidden obj is populated from __custom_metadata__ during construction."""
         obj = HiddenObject(field="val")
-        meta = {"x-hidden-obj": obj.to_json()}
-        GreetingsCloudEventDelegate.extract_hidden_fields(hello, meta)
+        hello = Hello(name="Test", __custom_metadata__={"x-hidden-obj": obj.to_json()})
         assert isinstance(hello._hidden_obj, HiddenObject)
         assert hello._hidden_obj.field == "val"
 
     def test_extract_hidden_none_values(self):
-        hello = Hello(name="Test")
-        GreetingsCloudEventDelegate.extract_hidden_fields(hello, {})
+        hello = Hello(name="Test", __custom_metadata__={})
         assert hello._hidden_str is None
         assert hello._hidden_obj is None
 
-    # --- insert_hidden_fields ---
+    # --- __get_custom_metadata__ (insert hidden fields) ---
 
     def test_insert_hidden_str(self):
         hello = Hello(name="Test", _hidden_str="sec")
-        meta: dict[str, str] = {}
-        GreetingsCloudEventDelegate.insert_hidden_fields(hello, meta)
+        meta = hello.__get_custom_metadata__()
         assert meta["x-hidden-str"] == "sec"
 
     def test_insert_hidden_obj(self):
         obj = HiddenObject(field="v")
         hello = Hello(name="Test", _hidden_obj=obj)
-        meta: dict[str, str] = {}
-        GreetingsCloudEventDelegate.insert_hidden_fields(hello, meta)
+        meta = hello.__get_custom_metadata__()
         assert "x-hidden-obj" in meta
 
     def test_insert_hidden_none_values(self):
         hello = Hello(name="Test")
-        meta: dict[str, str] = {}
-        GreetingsCloudEventDelegate.insert_hidden_fields(hello, meta)
+        meta = hello.__get_custom_metadata__()
         assert "x-hidden-str" not in meta
         assert "x-hidden-obj" not in meta
 
     def test_insert_hidden_fields_none_custommetadata(self):
-        """When custommetadata is None the method creates a local dict (no crash)."""
-        hello = Hello(name="Test", _hidden_str="s")
-        GreetingsCloudEventDelegate.insert_hidden_fields(hello, None)  # type: ignore[arg-type]
+        """__get_custom_metadata__ returns empty dict when no hidden fields are set."""
+        hello = Hello(name="Test")
+        meta = hello.__get_custom_metadata__()
+        assert isinstance(meta, dict)
 
 
 # ===================================================================
@@ -198,8 +191,6 @@ class TestGreetingsMQTTCloudEventProcessor:
         proc = _make_mqtt_processor()
         assert HELLO_CE_TYPE in proc._type_callbacks_in
         assert BYE_CE_TYPE in proc._type_callbacks_out
-        # hidden field processor registered with wildcard
-        assert any("greetings" in k for k in proc._hidden_field_processors)
 
     def test_init_parses_topics(self):
         proc = _make_mqtt_processor()
@@ -350,7 +341,6 @@ class TestGreetingsMessagePackCloudEventProcessor:
         proc = _make_msgpack_processor()
         assert HELLO_CE_TYPE in proc._type_callbacks_in
         assert BYE_CE_TYPE in proc._type_callbacks_out
-        assert any("greetings" in k for k in proc._hidden_field_processors)
 
     # --- process_event ---
 
