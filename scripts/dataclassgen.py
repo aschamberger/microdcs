@@ -64,6 +64,12 @@ def dataclasses(
             help="Add __custom_metadata__ InitVar[dict[str, Any]] to generated classes"
         ),
     ] = False,
+    hidden_fields: Annotated[
+        list[str],
+        typer.Option(
+            help="Add hidden fields to generated classes (format: name->type, e.g. _header_type->str)"
+        ),
+    ] = [],
 ):
     schema_file_path = schemas_path / schema_file
     if not schema_file_path.exists():
@@ -85,6 +91,16 @@ def dataclasses(
     if custom_metadata and typing_any_import not in imports:
         imports.append(typing_any_import)
 
+    parsed_hidden_fields = []
+    for hf in hidden_fields:
+        if "->" not in hf:
+            print(
+                f"[bold red]Invalid hidden field format: {hf} (expected name->type)[/bold red]"
+            )
+            raise typer.Exit(code=1)
+        name, type_hint = hf.split("->", 1)
+        parsed_hidden_fields.append({"name": name.strip(), "type": type_hint.strip()})
+
     extra_template_data = {
         ALL_MODEL: {
             "config_base_class": config_base_class.split(".")[-1]
@@ -95,6 +111,7 @@ def dataclasses(
             else None,
             "request_object": request_object,
             "custom_metadata": custom_metadata,
+            "hidden_fields": parsed_hidden_fields,
         }
     }
     config = JSONSchemaParserConfig(
