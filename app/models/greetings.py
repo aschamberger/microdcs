@@ -6,8 +6,8 @@ from app.dataclass import (
     DataClassConfig,
     DataClassResponseMixin,
     DataClassValidationMixin,
-    InitDataClassMixin,
 )
+from app.models.greetings_mixin import GreetingsDataClassMixin
 
 type Greetings = Any
 """
@@ -16,7 +16,7 @@ JSON Schema for HiddenObject, Hello and Bye types.
 
 
 @dataclass(kw_only=True)
-class HiddenObject(DataClassValidationMixin, InitDataClassMixin):
+class HiddenObject(DataClassValidationMixin, GreetingsDataClassMixin):
     field: str
 
     # mashumaro config class
@@ -26,7 +26,7 @@ class HiddenObject(DataClassValidationMixin, InitDataClassMixin):
 
 @dataclass(kw_only=True)
 class Hello(
-    DataClassValidationMixin, DataClassResponseMixin["Hello"], InitDataClassMixin
+    DataClassValidationMixin, DataClassResponseMixin["Hello"], GreetingsDataClassMixin
 ):
     __request_object__: InitVar[Hello | None] = None
     _hidden_str: str | None = None
@@ -46,7 +46,7 @@ class Hello(
 
 
 @dataclass(kw_only=True)
-class Bye(DataClassValidationMixin, InitDataClassMixin):
+class Bye(DataClassValidationMixin, GreetingsDataClassMixin):
     _hidden_str: str | None = None
     _hidden_obj: HiddenObject | None = None
     name: str = field(metadata={"max_length": 20, "min_length": 3})
