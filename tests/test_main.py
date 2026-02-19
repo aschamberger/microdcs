@@ -1,31 +1,18 @@
 import asyncio
-import importlib
-import sys
+from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-def _close_coroutine(coro, **_kwargs):
-    """Close a coroutine so it doesn't trigger 'was never awaited' warnings."""
-    coro.close()
+from app.microdcs import MicroDCS
+from app.mqtt import MQTTCloudEventProcessor
+from app.msgpack import MessagePackCloudEventProcessor
 
 
 def _close_coroutine_arg(coro, *_args, **_kwargs):
     """Side-effect for create_task that closes the coroutine argument."""
     if asyncio.iscoroutine(coro):
         coro.close()
-
-
-def _import_main_module():
-    """Import (or re-import) app.__main__ with asyncio.run patched out
-    so the module-level asyncio.run() call is a no-op."""
-    with patch(
-        "asyncio.run", side_effect=_close_coroutine
-    ):  # prevent real execution at import time
-        if "app.__main__" in sys.modules:
-            return importlib.reload(sys.modules["app.__main__"])
-        return importlib.import_module("app.__main__")
 
 
 def _setup_task_group_mock(mock_tg_cls: MagicMock) -> AsyncMock:
@@ -43,51 +30,41 @@ def _setup_handler_mock(handler_cls: MagicMock) -> MagicMock:
     return handler
 
 
-def _setup_processor_mock(
-    proc_cls: MagicMock, *, has_send_event: bool = False
-) -> MagicMock:
-    proc = MagicMock()
-    if has_send_event:
-        proc.send_event = AsyncMock()
-    proc_cls.return_value = proc
-    return proc
+def _create_microdcs(otel_enabled: bool) -> MicroDCS:
+    """Create a MicroDCS instance with mocked configuration."""
+    with patch.object(MicroDCS, "__init__", lambda self: None):
+        dcs = MicroDCS()
+    dcs.runtime_config = MagicMock()
+    dcs.runtime_config.processing.otel_instrumentation_enabled = otel_enabled
+    dcs.redis_connection_pool = AsyncMock()
+    dcs.redis_key_schema = MagicMock()
+    dcs._processors = defaultdict(list)
+    return dcs
 
 
 class TestMain:
-    """Tests for the main() coroutine in app.__main__."""
+    """Tests for MicroDCS.main() coroutine."""
 
     @pytest.mark.asyncio
     async def test_main_runs_with_otel_disabled(self):
         """main() wires up handlers and starts tasks (OTEL off)."""
-        mod = _import_main_module()
+        dcs = _create_microdcs(otel_enabled=False)
+
+        mock_mqtt_proc = MagicMock()
+        mock_mp_proc = MagicMock()
+        dcs._processors[MQTTCloudEventProcessor].append(mock_mqtt_proc)
+        dcs._processors[MessagePackCloudEventProcessor].append(mock_mp_proc)
 
         with (
-            patch.dict(
-                "os.environ",
-                {"APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "false"},
-                clear=False,
-            ),
-            patch.object(mod, "MQTTHandler") as mock_mqtt_cls,
-            patch.object(mod, "MessagePackHandler") as mock_mp_cls,
-            patch.object(mod, "GreetingsMQTTCloudEventProcessor") as mock_mqtt_proc_cls,
-            patch.object(
-                mod, "GreetingsMessagePackCloudEventProcessor"
-            ) as mock_mp_proc_cls,
-            patch.object(mod, "redis") as mock_redis_mod,
-            patch.object(mod, "SystemEventTaskGroup") as mock_tg_cls,
+            patch("app.microdcs.MQTTHandler") as mock_mqtt_cls,
+            patch("app.microdcs.MessagePackHandler") as mock_mp_cls,
+            patch("app.microdcs.SystemEventTaskGroup") as mock_tg_cls,
         ):
             mock_tg = _setup_task_group_mock(mock_tg_cls)
             mock_mqtt_handler = _setup_handler_mock(mock_mqtt_cls)
             mock_mp_handler = _setup_handler_mock(mock_mp_cls)
-            mock_mqtt_proc = _setup_processor_mock(
-                mock_mqtt_proc_cls, has_send_event=True
-            )
-            mock_mp_proc = _setup_processor_mock(mock_mp_proc_cls)
 
-            mock_pool = AsyncMock()
-            mock_redis_mod.ConnectionPool.return_value = mock_pool
-
-            await mod.main()
+            await dcs.main()
 
             # Non-OTEL handlers were used
             mock_mqtt_cls.assert_called_once()
@@ -97,48 +74,40 @@ class TestMain:
             mock_mqtt_handler.register_processor.assert_called_once_with(mock_mqtt_proc)
             mock_mp_handler.register_processor.assert_called_once_with(mock_mp_proc)
 
-            # Tasks created: mqtt_handler.task, msgpack_handler.task, mqtt_ip.send_event
-            assert mock_tg.create_task.call_count == 3
+            # Tasks created: mqtt_handler.task, msgpack_handler.task
+            assert mock_tg.create_task.call_count == 2
 
             # Connection pool closed
-            mock_pool.aclose.assert_awaited_once()
+            dcs.redis_connection_pool.aclose.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_main_runs_with_otel_enabled(self):
         """main() uses OTEL-instrumented handlers when flag is set."""
-        mod = _import_main_module()
+        dcs = _create_microdcs(otel_enabled=True)
+
+        mock_mqtt_proc = MagicMock()
+        mock_mp_proc = MagicMock()
+        dcs._processors[MQTTCloudEventProcessor].append(mock_mqtt_proc)
+        dcs._processors[MessagePackCloudEventProcessor].append(mock_mp_proc)
 
         with (
-            patch.dict(
-                "os.environ",
-                {"APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true"},
-                clear=False,
-            ),
-            patch.object(mod, "OTELInstrumentedMQTTHandler") as mock_otel_mqtt_cls,
-            patch.object(mod, "OTELInstrumentedMessagePackHandler") as mock_otel_mp_cls,
-            patch.object(mod, "GreetingsMQTTCloudEventProcessor") as mock_mqtt_proc_cls,
-            patch.object(
-                mod, "GreetingsMessagePackCloudEventProcessor"
-            ) as mock_mp_proc_cls,
-            patch.object(mod, "redis") as mock_redis_mod,
-            patch.object(mod, "SystemEventTaskGroup") as mock_tg_cls,
+            patch("app.microdcs.OTELInstrumentedMQTTHandler") as mock_otel_mqtt_cls,
+            patch(
+                "app.microdcs.OTELInstrumentedMessagePackHandler"
+            ) as mock_otel_mp_cls,
+            patch("app.microdcs.SystemEventTaskGroup") as mock_tg_cls,
         ):
             mock_tg = _setup_task_group_mock(mock_tg_cls)
             _setup_handler_mock(mock_otel_mqtt_cls)
             _setup_handler_mock(mock_otel_mp_cls)
-            _setup_processor_mock(mock_mqtt_proc_cls, has_send_event=True)
-            _setup_processor_mock(mock_mp_proc_cls)
 
-            mock_pool = AsyncMock()
-            mock_redis_mod.ConnectionPool.return_value = mock_pool
-
-            await mod.main()
+            await dcs.main()
 
             # OTEL-instrumented handlers were used
             mock_otel_mqtt_cls.assert_called_once()
             mock_otel_mp_cls.assert_called_once()
 
             # Tasks created
-            assert mock_tg.create_task.call_count == 3
+            assert mock_tg.create_task.call_count == 2
 
-            mock_pool.aclose.assert_awaited_once()
+            dcs.redis_connection_pool.aclose.assert_awaited_once()

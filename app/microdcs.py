@@ -1,5 +1,5 @@
-from collections import defaultdict
 import logging
+from collections import defaultdict
 
 import redis.asyncio as redis
 
@@ -36,12 +36,8 @@ class MicroDCS:
         self.redis_key_schema = RedisKeySchema(self.runtime_config.redis.key_prefix)
 
     def processor(self, processor: CloudEventProcessor):
-        def wrapper(cls):
-            processor_type = type(processor)
-            self._processors[processor_type].append(processor)
-            return cls
-
-        return wrapper
+        processor_type = type(processor)
+        self._processors[processor_type].append(processor)
 
     async def main(self):
         logger.info("Starting main application logic")
