@@ -1,13 +1,14 @@
 # Auto-generated from "greetings.jsonschema.json". Do not modify!
-from dataclasses import InitVar, dataclass, field
-from typing import Any
-
 from app.dataclass import (
     DataClassConfig,
     DataClassResponseMixin,
     DataClassValidationMixin,
 )
 from app.models.greetings_mixin import GreetingsDataClassMixin
+from dataclasses import InitVar, field
+from typing import Any
+from dataclasses import dataclass
+
 
 type Greetings = Any
 """
@@ -29,6 +30,7 @@ class Hello(
     DataClassValidationMixin, DataClassResponseMixin["Hello"], GreetingsDataClassMixin
 ):
     __request_object__: InitVar[Hello | None] = None
+    __custom_metadata__: InitVar[dict[str, Any] | None] = None
     _hidden_str: str | None = None
     _hidden_obj: HiddenObject | None = None
     name: str = field(metadata={"max_length": 20, "min_length": 3})
@@ -47,6 +49,7 @@ class Hello(
 
 @dataclass(kw_only=True)
 class Bye(DataClassValidationMixin, GreetingsDataClassMixin):
+    __custom_metadata__: InitVar[dict[str, Any] | None] = None
     _hidden_str: str | None = None
     _hidden_obj: HiddenObject | None = None
     name: str = field(metadata={"max_length": 20, "min_length": 3})

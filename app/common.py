@@ -10,6 +10,8 @@ from enum import StrEnum
 from types import UnionType
 from typing import Any, Callable, Dict, Optional
 
+import msgpack
+import orjson
 from mashumaro.config import BaseConfig
 
 from app import ProcessingConfig
@@ -232,61 +234,47 @@ class CloudEvent(DataClassMixin):
                     dict[k] = str(v)
         return dict
 
-    def unserialize_payload(
-        self,
-        payload_type: type,
-        hidden_field_processors: dict[
-            str,
-            tuple[
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-            ],
-        ]
-        | None = None,
-    ) -> DataClassMixin | bytes:
+    def unserialize_payload(self, payload_type: type) -> DataClassMixin | bytes:
         match self.datacontenttype:
             case "application/octet-stream":
                 request = typing.cast(bytes, self.data)
-            case "application/json" | "application/json; charset=utf-8":
+            case (
+                "application/json"
+                | "application/json; charset=utf-8"
+                | "application/msgpack"
+                | "application/msgpack; charset=utf-8"
+            ):
                 if self.data:
-                    request = payload_type.from_json(self.data)
+                    # In case of the main payload we manually decode the payload before passing it
+                    # to mashumaro. By default it is not possible to pass the custom metadata to the
+                    # from_*() methods, so we add it to the raw payload dict before deserialization
+                    # and let the dataclass handle it in the __post_init__ method.
+                    # In other cases the normal from_*() method is sufficient.
+                    if (
+                        self.datacontenttype == "application/msgpack"
+                        or self.datacontenttype == "application/msgpack; charset=utf-8"
+                    ):
+                        raw = msgpack.unpackb(self.data)
+                    else:
+                        raw = orjson.loads(self.data)
+                    if self.custommetadata is not None and hasattr(
+                        payload_type, "__custom_metadata__"
+                    ):
+                        raw["__custom_metadata__"] = self.custommetadata
+                    request = payload_type.from_dict(raw)
                 else:
-                    request = payload_type()
-            case "application/msgpack" | "application/msgpack; charset=utf-8":
-                if self.data:
-                    request = payload_type.from_msgpack(self.data)
-                else:
-                    request = payload_type()
+                    if self.custommetadata is not None and hasattr(
+                        payload_type, "__custom_metadata__"
+                    ):
+                        request = payload_type(__custom_metadata__=self.custommetadata)
+                    else:
+                        request = payload_type()
             case _:
                 raise ValueError(f"Unsupported content type: {self.datacontenttype}")
-        # extract hidden fields from user properties
-        if (
-            hidden_field_processors is not None
-            and isinstance(request, DataClassMixin)
-            and self.custommetadata is not None
-        ):
-            for cloudevent_type, (extractor, _) in hidden_field_processors.items():
-                if extractor is not None:
-                    if payload_type.Config.matches_cloudevent_type_pattern(
-                        cloudevent_type
-                    ):
-                        logger.debug("Extracting hidden field %s", cloudevent_type)
-                        extractor(request, self.custommetadata)
 
         return request
 
-    def serialize_payload(
-        self,
-        payload: DataClassMixin | str,
-        hidden_field_processors: dict[
-            str,
-            tuple[
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-                Callable[[DataClassMixin, dict[str, str]], None] | None,
-            ],
-        ]
-        | None = None,
-    ) -> None:
+    def serialize_payload(self, payload: DataClassMixin | str) -> None:
         match self.datacontenttype:
             case "application/octet-stream":
                 self.data = typing.cast(bytes, payload)
@@ -304,17 +292,16 @@ class CloudEvent(DataClassMixin):
                     self.type = getattr(config_class, "cloudevent_type")
                 if hasattr(config_class, "cloudevent_dataschema"):
                     self.dataschema = getattr(config_class, "cloudevent_dataschema")
-        # insert hidden fields from user properties
-        payload_type = type(payload)
-        if hidden_field_processors is not None and isinstance(payload, DataClassMixin):
-            if self.custommetadata is None:
-                self.custommetadata = {}
-            for cloudevent_type, (_, inserter) in hidden_field_processors.items():
-                if inserter is not None:
-                    if hasattr(payload_type, "Config"):
-                        config = getattr(payload_type, "Config")
-                        if config.matches_cloudevent_type_pattern(cloudevent_type):
-                            inserter(payload, self.custommetadata)
+        # extract hidden fields from object
+        hidden_fields = None
+        if hasattr(payload, "__get_custom_metadata__") and callable(
+            getattr(payload, "__get_custom_metadata__")
+        ):
+            hidden_fields = payload.__get_custom_metadata__()  # type: ignore
+        if self.custommetadata is None:
+            self.custommetadata = hidden_fields
+        elif hidden_fields is not None:
+            self.custommetadata.update(hidden_fields)
 
     class Config(BaseConfig):
         code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
@@ -330,13 +317,6 @@ class CloudEventProcessor(ABC):
     _type_classes: dict[str, type[DataClassMixin]] = {}
     _type_callbacks_in: dict[str, Callable[..., Any]] = {}
     _type_callbacks_out: dict[str, Callable[..., Any]] = {}
-    _hidden_field_processors: dict[
-        str,
-        tuple[
-            Callable[[DataClassMixin, dict[str, str]], None] | None,
-            Callable[[DataClassMixin, dict[str, str]], None] | None,
-        ],
-    ] = {}
     _event_attributes: list[CloudeventAttributeTuple] = []
     outgoing_queue: Queue[CloudEvent]
 
@@ -382,18 +362,6 @@ class CloudEventProcessor(ABC):
 
     def event_has_callback(self, cloudevent: CloudEvent) -> bool:
         return cloudevent.type in self._type_callbacks_in
-
-    def register_hidden_field_processor(
-        self,
-        cloudevent_type: str,
-        extractor: Callable[..., Any] | None = None,
-        inserter: Callable[..., Any] | None = None,
-    ) -> None:
-        if not callable(extractor):
-            raise TypeError("extractor must be callable")
-        if not callable(inserter):
-            raise TypeError("inserter must be callable")
-        self._hidden_field_processors[cloudevent_type] = (extractor, inserter)
 
     def publish_event(self, cloudevent: CloudEvent) -> None:
         self.outgoing_queue.put_nowait(cloudevent)

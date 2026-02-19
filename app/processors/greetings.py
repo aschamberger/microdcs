@@ -3,8 +3,7 @@ import logging
 
 from app import ProcessingConfig
 from app.common import CloudEvent, Direction
-from app.dataclass import DataClassMixin
-from app.models.greetings import Bye, Hello, HiddenObject
+from app.models.greetings import Bye, Hello
 from app.mqtt import MQTTCloudEventProcessor
 from app.msgpack import MessagePackCloudEventProcessor
 
@@ -34,30 +33,6 @@ class GreetingsCloudEventDelegate:
             h2,
         ]
 
-    @classmethod
-    def extract_hidden_fields(
-        cls, dclass: DataClassMixin, custommetadata: dict[str, str]
-    ):
-        if hasattr(dclass, "_hidden_str"):
-            setattr(dclass, "_hidden_str", custommetadata.get("x-hidden-str", None))
-        if hasattr(dclass, "_hidden_obj"):
-            obj_data = custommetadata.get("x-hidden-obj", None)
-            if obj_data is not None:
-                setattr(dclass, "_hidden_obj", HiddenObject.from_json(obj_data))
-
-    @classmethod
-    def insert_hidden_fields(
-        cls, dclass: DataClassMixin, custommetadata: dict[str, str]
-    ) -> None:
-        if custommetadata is None:
-            custommetadata = {}
-        str_data = getattr(dclass, "_hidden_str", None)
-        if str_data is not None:
-            custommetadata["x-hidden-str"] = str_data
-        obj_data = getattr(dclass, "_hidden_obj", None)
-        if obj_data is not None:
-            custommetadata["x-hidden-obj"] = obj_data.to_json()
-
 
 class GreetingsMQTTCloudEventProcessor(MQTTCloudEventProcessor):
     def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
@@ -69,11 +44,6 @@ class GreetingsMQTTCloudEventProcessor(MQTTCloudEventProcessor):
         )
         self.register_callback(
             Bye, GreetingsCloudEventDelegate.handle_bye, direction=Direction.OUTGOING
-        )
-        self.register_hidden_field_processor(
-            "com.github.aschamberger.microdcs.greetings.*",
-            extractor=GreetingsCloudEventDelegate.extract_hidden_fields,
-            inserter=GreetingsCloudEventDelegate.insert_hidden_fields,
         )
 
     async def process_event(
@@ -165,11 +135,6 @@ class GreetingsMessagePackCloudEventProcessor(MessagePackCloudEventProcessor):
         )
         self.register_callback(
             Bye, GreetingsCloudEventDelegate.handle_bye, direction=Direction.OUTGOING
-        )
-        self.register_hidden_field_processor(
-            "com.github.aschamberger.microdcs.greetings.*",
-            extractor=GreetingsCloudEventDelegate.extract_hidden_fields,
-            inserter=GreetingsCloudEventDelegate.insert_hidden_fields,
         )
 
     async def process_event(

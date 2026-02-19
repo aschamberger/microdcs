@@ -56,8 +56,7 @@ class MessagePackCloudEventProcessor(CloudEventProcessor):
         callback: Callable[..., Any] = self._type_callbacks_in[request_cloudevent.type]
         try:
             request: DataClassMixin | bytes = request_cloudevent.unserialize_payload(
-                payload_type,
-                self._hidden_field_processors,
+                payload_type
             )
         except ValueError as e:
             logger.error(e)
@@ -86,10 +85,7 @@ class MessagePackCloudEventProcessor(CloudEventProcessor):
             response_cloudevent.correlationid = request_cloudevent.correlationid
             response_cloudevent.causationid = request_cloudevent.id
             try:
-                response_cloudevent.serialize_payload(
-                    response,
-                    self._hidden_field_processors,
-                )
+                response_cloudevent.serialize_payload(response)
             except ValueError as e:
                 logger.exception(
                     "Error serializing payload for message type %s: %s",

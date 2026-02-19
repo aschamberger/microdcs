@@ -237,6 +237,7 @@ uv run ./scripts/dataclassgen.py dataclasses \
   --hidden-fields '_hidden_obj->HiddenObject' \
   --validation \
   --request-object \
+  --custom-metadata \
   greetings.jsonschema.json
 ```
 
