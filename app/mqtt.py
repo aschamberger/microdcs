@@ -373,6 +373,8 @@ class MQTTHandler(ProtocolHandler):
             # Enrich with MQTT transport metadata from the binding
             if message.transportmetadata is None:
                 message.transportmetadata = {}
+            if "mqtt_topic" not in message.transportmetadata and binding.response_topic:
+                message.transportmetadata["mqtt_topic"] = binding.response_topic
             if (
                 "mqtt_response_topic" not in message.transportmetadata
                 and binding.response_topic
@@ -382,6 +384,12 @@ class MQTTHandler(ProtocolHandler):
                 )
             if "mqtt_retain" not in message.transportmetadata:
                 message.transportmetadata["mqtt_retain"] = False
+            if not message.transportmetadata.get("mqtt_topic"):
+                logger.warning(
+                    "No event topic configured for binding; dropping outgoing event."
+                )
+                binding.outgoing_queue.task_done()
+                continue
             await self._publish_message(client, message, binding.processor)
             binding.outgoing_queue.task_done()
 

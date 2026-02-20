@@ -812,6 +812,75 @@ class TestMQTTHandler:
             with pytest.raises(asyncio.CancelledError):
                 await handler._outgoing_message_publisher(client, binding)
 
+    @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_uses_response_topic_as_fallback(self):
+        """When no mqtt_topic is set, the binding's response_topic is used."""
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        binding = _make_binding(handler, proc, response_topic="test/responses/test-id")
+
+        ce = CloudEvent()  # no transportmetadata / mqtt_topic
+        await binding.outgoing_queue.put(ce)
+
+        published: list[CloudEvent] = []
+
+        async def capture_and_stop(client, message, processor):
+            published.append(message)
+            raise asyncio.CancelledError()
+
+        with patch.object(
+            handler,
+            "_publish_message",
+            new_callable=AsyncMock,
+            side_effect=capture_and_stop,
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await handler._outgoing_message_publisher(client, binding)
+
+        assert len(published) == 1
+        assert published[0].transportmetadata is not None
+        assert published[0].transportmetadata["mqtt_topic"] == "test/responses/test-id"
+        assert (
+            published[0].transportmetadata["mqtt_response_topic"]
+            == "test/responses/test-id"
+        )
+
+    @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_drops_when_no_topic(self, caplog):
+        """Events are dropped with a warning when no mqtt_topic and no response_topic."""
+        import logging
+
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        binding = _make_binding(handler, proc, response_topic="")
+
+        ce = CloudEvent()  # no transportmetadata / mqtt_topic
+        # Use put_nowait on an unbounded queue copy so we don't block
+        unbounded: Queue[CloudEvent] = Queue()
+        binding.outgoing_queue = unbounded
+        await unbounded.put(ce)
+
+        with patch.object(
+            handler, "_publish_message", new_callable=AsyncMock
+        ) as mock_publish:
+            with caplog.at_level(logging.WARNING, logger="handler.mqtt"):
+                task = asyncio.create_task(
+                    handler._outgoing_message_publisher(client, binding)
+                )
+                # Let the event loop process the dropped message, then cancel
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError, Exception:
+                    pass
+
+        mock_publish.assert_not_called()
+        assert any("No event topic configured" in r.message for r in caplog.records)
+
     # --- task ---
 
     @pytest.mark.asyncio

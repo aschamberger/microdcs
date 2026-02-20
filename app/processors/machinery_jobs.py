@@ -117,6 +117,25 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
     # ── helpers ──────────────────────────────────────────────────────────
 
+    @staticmethod
+    def reconstruct_state_name(
+        state: list[ISA95StateDataType] | None,
+    ) -> str | None:
+        """Reconstruct the compound state-machine state name from the stored state list.
+
+        Returns a string like ``'NotAllowedToStart_Ready'`` or ``'Running'``
+        that can be fed to ``add_model(initial=...)``.
+        Returns *None* when the state list is empty or missing text.
+        """
+        if not state:
+            return None
+        parts = [
+            s.state_text.text
+            for s in state
+            if s.state_text and s.state_text.text
+        ]
+        return "_".join(parts) if parts else None
+
     async def is_job_acceptable(
         self, job_order: ISA95JobOrderDataType, scope: str
     ) -> bool:
@@ -128,7 +147,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             main_state, sub_state = state.split("_")
             main_state_number, sub_state_number = (
                 JobOrderControlExt.Config.opcua_state_machine_state_ids[
-                    main_state
+                    state
                 ].split("_")
             )
             return [
@@ -275,7 +294,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
                 return_status=MethodReturnStatus.UNKNOWN_JOB_ORDER_ID
             )
 
-        self._state_machine.add_model(job_order_and_state.job_order)
+        # Reconstruct state-machine state from persisted state list
+        current_state = self.reconstruct_state_name(job_order_and_state.state)
+        self._state_machine.add_model(
+            job_order_and_state.job_order,
+            initial=current_state or "InitialState",
+        )
         try:
             if not job_order_and_state.job_order.may_trigger(transition):
                 logger.warning(
@@ -343,7 +367,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             )
 
         # Use the existing job order for state machine validation
-        self._state_machine.add_model(job_order_and_state.job_order)
+        # Reconstruct state-machine state from persisted state list
+        persisted_state = self.reconstruct_state_name(job_order_and_state.state)
+        self._state_machine.add_model(
+            job_order_and_state.job_order,
+            initial=persisted_state or "InitialState",
+        )
         try:
             if not job_order_and_state.job_order.may_trigger(transition):
                 logger.warning(
