@@ -2,7 +2,6 @@ import logging
 import typing
 import uuid
 from abc import ABC, abstractmethod
-from asyncio import Queue
 from collections import namedtuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,8 +13,12 @@ import msgpack
 import orjson
 from mashumaro.config import BaseConfig
 
-from app import ProcessingConfig
-from app.dataclass import DataClassConfig, DataClassMixin
+from app.dataclass import (
+    DataClassConfig,
+    DataClassMixin,
+    get_cloudevent_type,
+    type_has_config_class,
+)
 
 logger = logging.getLogger("app.common")
 
@@ -312,23 +315,18 @@ CloudeventAttributeTuple = namedtuple("CloudeventAttributeTuple", ["attribute", 
 
 
 class CloudEventProcessor(ABC):
-    _instance_id: str
-    _runtime_config: ProcessingConfig
-    _type_classes: dict[str, type[DataClassMixin]] = {}
-    _type_callbacks_in: dict[str, Callable[..., Any]] = {}
-    _type_callbacks_out: dict[str, Callable[..., Any]] = {}
-    _event_attributes: list[CloudeventAttributeTuple] = []
-    outgoing_queue: Queue[CloudEvent]
-
-    @abstractmethod
     def __init__(
         self,
         instance_id: str,
         runtime_config: Any,
-        topic_identifier: str | None = None,
-        queue_size: int = 1,
     ):
-        pass
+        self._instance_id: str = instance_id
+        self._runtime_config: Any = runtime_config
+        self._type_classes: dict[str, type] = {}
+        self._type_callbacks_in: dict[str, Callable[..., Any]] = {}
+        self._type_callbacks_out: dict[str, Callable[..., Any]] = {}
+        self._event_attributes: list[Any] = []
+        self._publish_handlers: list[Callable[[CloudEvent], None]] = []
 
     def register_callback(
         self,
@@ -363,8 +361,20 @@ class CloudEventProcessor(ABC):
     def event_has_callback(self, cloudevent: CloudEvent) -> bool:
         return cloudevent.type in self._type_callbacks_in
 
+    def register_publish_handler(self, handler: Callable[[CloudEvent], None]) -> None:
+        """Register a transport-specific publish handler.
+
+        Each registered handler will be called when the processor publishes
+        an outbound event, allowing multiple transports to receive the event.
+        """
+        self._publish_handlers.append(handler)
+
     def publish_event(self, cloudevent: CloudEvent) -> None:
-        self.outgoing_queue.put_nowait(cloudevent)
+        if not self._publish_handlers:
+            logger.warning("No publish handlers registered; cannot publish event.")
+            return
+        for handler in self._publish_handlers:
+            handler(cloudevent)
 
     def create_event(
         self,
@@ -391,6 +401,109 @@ class CloudEventProcessor(ABC):
             kwargs[arg.attribute] = get_deep_attr(cloudevent, arg.path)
         return kwargs
 
+    async def callback_incoming(
+        self, request_cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        if request_cloudevent.type not in self._type_callbacks_in:
+            logger.error(
+                "No callback registered for cloud event type: %s",
+                request_cloudevent.type,
+            )
+            return None
+
+        payload_type = self._type_classes[request_cloudevent.type]
+        callback: Callable[..., Any] = self._type_callbacks_in[request_cloudevent.type]
+        try:
+            request: DataClassMixin | bytes = request_cloudevent.unserialize_payload(
+                payload_type
+            )
+        except ValueError as e:
+            logger.error(e)
+            return None
+        logger.debug("Request before callback: %s", request)
+
+        kwargs = self.get_event_args(request_cloudevent)
+        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
+            request, **kwargs
+        )
+
+        if responses is None:
+            return None
+
+        if not isinstance(responses, list):
+            responses = [responses]
+
+        response_cloudevents: list[CloudEvent] = []
+        for response in responses:
+            logger.debug("Response from callback: %s", response)
+            if not type_has_config_class(type(response)):
+                logger.warning("Response has no Config class")
+                continue
+
+            response_cloudevent = self.create_event()
+            response_cloudevent.correlationid = request_cloudevent.correlationid
+            response_cloudevent.causationid = request_cloudevent.id
+            try:
+                response_cloudevent.serialize_payload(response)
+            except ValueError as e:
+                logger.exception(
+                    "Error serializing payload for message type %s: %s",
+                    response_cloudevent.type,
+                    e,
+                )
+                return None
+
+            response_cloudevents.append(response_cloudevent)
+        return response_cloudevents
+
+    async def callback_outgoing(
+        self, payload_type: type, topic: str | None = None, **kwargs
+    ) -> list[CloudEvent] | CloudEvent | None:
+        cloudevent_type = get_cloudevent_type(payload_type)
+        if cloudevent_type is None or cloudevent_type not in self._type_callbacks_out:
+            logger.error(
+                "No callback registered for cloud event type: %s", cloudevent_type
+            )
+            return None
+
+        payload_type = self._type_classes[cloudevent_type]
+        callback: Callable[..., Any] = self._type_callbacks_out[cloudevent_type]
+        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
+            **kwargs
+        )
+
+        if responses is None:
+            return None
+
+        if not isinstance(responses, list):
+            responses = [responses]
+
+        response_cloudevents: list[CloudEvent] = []
+        for response in responses:
+            logger.debug("Response from callback: %s", response)
+            if not type_has_config_class(type(response)):
+                logger.warning("Response has no Config class")
+                continue
+
+            response_cloudevent = self.create_event()
+            if topic is not None:
+                if response_cloudevent.transportmetadata is None:
+                    response_cloudevent.transportmetadata = {}
+                response_cloudevent.transportmetadata["mqtt_topic"] = topic
+            try:
+                response_cloudevent.serialize_payload(response)
+            except ValueError as e:
+                logger.exception(
+                    "Error serializing payload for message type %s: %s",
+                    response_cloudevent.type,
+                    e,
+                )
+                return None
+
+            self.publish_event(response_cloudevent)
+            response_cloudevents.append(response_cloudevent)
+        return response_cloudevents
+
     @abstractmethod
     async def process_event(self, cloudevent: CloudEvent) -> Any:
         pass
@@ -409,7 +522,8 @@ class CloudEventProcessor(ABC):
 
 
 class ProtocolHandler(ABC):
-    _cloudevent_processors: list[CloudEventProcessor] = []
+    def __init__(self):
+        self._cloudevent_processors: list[CloudEventProcessor] = []
 
     def register_processor(self, processor: CloudEventProcessor) -> None:
         self._cloudevent_processors.append(processor)

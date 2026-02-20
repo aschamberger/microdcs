@@ -1,12 +1,9 @@
 import asyncio
-from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.microdcs import MicroDCS
-from app.mqtt import MQTTCloudEventProcessor
-from app.msgpack import MessagePackCloudEventProcessor
 
 
 def _close_coroutine_arg(coro, *_args, **_kwargs):
@@ -38,7 +35,8 @@ def _create_microdcs(otel_enabled: bool) -> MicroDCS:
     dcs.runtime_config.processing.otel_instrumentation_enabled = otel_enabled
     dcs.redis_connection_pool = AsyncMock()
     dcs.redis_key_schema = MagicMock()
-    dcs._processors = defaultdict(list)
+    dcs._mqtt_processors = []
+    dcs._msgpack_processors = []
     return dcs
 
 
@@ -52,8 +50,8 @@ class TestMain:
 
         mock_mqtt_proc = MagicMock()
         mock_mp_proc = MagicMock()
-        dcs._processors[MQTTCloudEventProcessor].append(mock_mqtt_proc)
-        dcs._processors[MessagePackCloudEventProcessor].append(mock_mp_proc)
+        dcs._mqtt_processors.append((mock_mqtt_proc, "greetings"))
+        dcs._msgpack_processors.append(mock_mp_proc)
 
         with (
             patch("app.microdcs.MQTTHandler") as mock_mqtt_cls,
@@ -70,15 +68,18 @@ class TestMain:
             mock_mqtt_cls.assert_called_once()
             mock_mp_cls.assert_called_once()
 
-            # Processors registered
-            mock_mqtt_handler.register_processor.assert_called_once_with(mock_mqtt_proc)
+            # MQTT processor registered via register_mqtt_processor
+            mock_mqtt_handler.register_mqtt_processor.assert_called_once_with(
+                mock_mqtt_proc, "greetings", dcs.runtime_config.processing
+            )
+            # MessagePack processor registered via register_processor
             mock_mp_handler.register_processor.assert_called_once_with(mock_mp_proc)
 
             # Tasks created: mqtt_handler.task, msgpack_handler.task
             assert mock_tg.create_task.call_count == 2
 
             # Connection pool closed
-            dcs.redis_connection_pool.aclose.assert_awaited_once()
+            dcs.redis_connection_pool.aclose.assert_awaited_once()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_main_runs_with_otel_enabled(self):
@@ -87,8 +88,8 @@ class TestMain:
 
         mock_mqtt_proc = MagicMock()
         mock_mp_proc = MagicMock()
-        dcs._processors[MQTTCloudEventProcessor].append(mock_mqtt_proc)
-        dcs._processors[MessagePackCloudEventProcessor].append(mock_mp_proc)
+        dcs._mqtt_processors.append((mock_mqtt_proc, "greetings"))
+        dcs._msgpack_processors.append(mock_mp_proc)
 
         with (
             patch("app.microdcs.OTELInstrumentedMQTTHandler") as mock_otel_mqtt_cls,
@@ -110,4 +111,4 @@ class TestMain:
             # Tasks created
             assert mock_tg.create_task.call_count == 2
 
-            dcs.redis_connection_pool.aclose.assert_awaited_once()
+            dcs.redis_connection_pool.aclose.assert_awaited_once()  # type: ignore[union-attr]

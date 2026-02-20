@@ -102,7 +102,7 @@ async def test_publish_hello_with_additional_payload_fields(
     mqtt_client = mqtt_handler._client()
 
     payload: dict[str, Any] = {
-        "NameField": "Bob",
+        "Name": "Bob",
         "addition": "42",
     }
     bob_ce = CloudEvent(

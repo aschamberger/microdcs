@@ -1,6 +1,5 @@
-from asyncio import Queue
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -384,12 +383,9 @@ class ConcreteProcessor(CloudEventProcessor):
         runtime_config: ProcessingConfig | None = None,
         queue_size: int = 1,
     ):
-        self._instance_id = instance_id
-        self._runtime_config = runtime_config or _make_processing_config()
-        self._type_classes = {}
-        self._type_callbacks_in = {}
-        self._type_callbacks_out = {}
-        self.outgoing_queue = Queue(queue_size)
+        super().__init__(instance_id, runtime_config or _make_processing_config())
+        self.published_events: list[CloudEvent] = []
+        self.register_publish_handler(self.published_events.append)
 
     async def process_event(self, cloudevent: CloudEvent) -> Any:
         return None
@@ -455,7 +451,15 @@ class TestCloudEventProcessorPublishAndCreate:
         proc = ConcreteProcessor(queue_size=5)
         ce = CloudEvent(source="test")
         proc.publish_event(ce)
-        assert proc.outgoing_queue.qsize() == 1
+        assert len(proc.published_events) == 1
+        assert proc.published_events[0] is ce
+
+    def test_publish_event_no_handlers_logs_warning(self, caplog):
+        proc = ConcreteProcessor()
+        proc._publish_handlers.clear()
+        ce = CloudEvent(source="test")
+        proc.publish_event(ce)
+        assert "No publish handlers registered" in caplog.text
 
     def test_create_event_sets_source(self):
         cfg = _make_processing_config(cloudevent_source="my-source")
@@ -505,7 +509,7 @@ class TestCloudEventProcessorPublishAndCreate:
 
 class ConcreteHandler(ProtocolHandler):
     def __init__(self):
-        self._cloudevent_processors = []
+        super().__init__()
 
     async def task(self) -> None:
         pass

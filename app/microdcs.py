@@ -1,13 +1,11 @@
 import logging
-from collections import defaultdict
 
 import redis.asyncio as redis
 
 from app import RuntimeConfig, SystemEventTaskGroup
 from app.common import CloudEventProcessor
-from app.mqtt import MQTTCloudEventProcessor, MQTTHandler, OTELInstrumentedMQTTHandler
+from app.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
 from app.msgpack import (
-    MessagePackCloudEventProcessor,
     MessagePackHandler,
     OTELInstrumentedMessagePackHandler,
 )
@@ -17,27 +15,30 @@ logger = logging.getLogger("app.main")
 
 
 class MicroDCS:
-    runtime_config: RuntimeConfig
-    redis_connection_pool: redis.ConnectionPool
-    redis_key_schema: RedisKeySchema
-    _processors: dict[type, list[CloudEventProcessor]] = defaultdict(list)
-
     def __init__(self) -> None:
         logger.info("Setting up runtime configuration")
-        self.runtime_config = RuntimeConfig()
+        self.runtime_config: RuntimeConfig = RuntimeConfig()
         logger.debug("Runtime config: %s", self.runtime_config)
 
         logger.info("Initializing Redis connection pool")
-        self.redis_connection_pool = redis.ConnectionPool(
+        self.redis_connection_pool: redis.ConnectionPool = redis.ConnectionPool(
             host=self.runtime_config.redis.hostname,
             port=self.runtime_config.redis.port,
             protocol=3,
         )
-        self.redis_key_schema = RedisKeySchema(self.runtime_config.redis.key_prefix)
+        self.redis_key_schema: RedisKeySchema = RedisKeySchema(
+            self.runtime_config.redis.key_prefix
+        )
+        self._mqtt_processors: list[tuple[CloudEventProcessor, str]] = []
+        self._msgpack_processors: list[CloudEventProcessor] = []
 
-    def processor(self, processor: CloudEventProcessor):
-        processor_type = type(processor)
-        self._processors[processor_type].append(processor)
+    def register_mqtt_processor(
+        self, processor: CloudEventProcessor, topic_identifier: str
+    ):
+        self._mqtt_processors.append((processor, topic_identifier))
+
+    def register_msgpack_processor(self, processor: CloudEventProcessor):
+        self._msgpack_processors.append(processor)
 
     async def main(self):
         logger.info("Starting main application logic")
@@ -57,8 +58,10 @@ class MicroDCS:
                     self.redis_connection_pool,
                     self.redis_key_schema,
                 )
-            for mqtt_processor in self._processors[MQTTCloudEventProcessor]:
-                mqtt_handler.register_processor(mqtt_processor)
+            for processor, topic_id in self._mqtt_processors:
+                mqtt_handler.register_mqtt_processor(
+                    processor, topic_id, self.runtime_config.processing
+                )
             task_group.create_task(mqtt_handler.task())
             # MessagePackHandler setup based on OTEL instrumentation flag
             if self.runtime_config.processing.otel_instrumentation_enabled:
@@ -79,8 +82,8 @@ class MicroDCS:
                     self.redis_connection_pool,
                     self.redis_key_schema,
                 )
-            for msgpack_processor in self._processors[MessagePackCloudEventProcessor]:
-                msgpack_handler.register_processor(msgpack_processor)
+            for processor in self._msgpack_processors:
+                msgpack_handler.register_processor(processor)
             task_group.create_task(msgpack_handler.task())
         logger.info("Main application logic has completed")
 

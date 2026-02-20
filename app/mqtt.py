@@ -3,10 +3,9 @@ import dataclasses
 import enum
 import logging
 import time
-import typing
 import uuid
 from asyncio import Queue
-from typing import Any, Callable
+from typing import Any
 
 import aiomqtt
 import paho.mqtt.client
@@ -23,7 +22,6 @@ from app.common import (
     CloudEventProcessor,
     ProtocolHandler,
 )
-from app.dataclass import DataClassMixin, get_cloudevent_type, type_has_config_class
 from app.redis import CloudEventDedupeDAO, RedisKeySchema
 
 logger = logging.getLogger("handler.mqtt")
@@ -35,194 +33,108 @@ class QoS(enum.IntEnum):
     EXACTLY_ONCE = 2
 
 
-class MQTTCloudEventProcessor(CloudEventProcessor):
-    _topic_identifier: str
-    _topics: set[str]
-    _response_topic: str
+class MQTTProcessorBinding:
+    """Associates a protocol-agnostic CloudEventProcessor with MQTT-specific
+    routing configuration (topics, response topic, outgoing queue)."""
 
     def __init__(
         self,
-        instance_id: str,
-        runtime_config: ProcessingConfig,
-        topic_identifier: str,
-        queue_size: int = 1,
+        processor: CloudEventProcessor,
+        topics: set[str],
+        response_topic: str,
+        outgoing_queue: Queue[CloudEvent],
     ):
-        self._instance_id = instance_id
-        self._runtime_config = runtime_config
-        self._topic_identifier = topic_identifier
-        self._topics = set()
-        for topic_str in self._runtime_config.topics:
-            processor, topic = topic_str.split(":", 1)
-            if processor == self._topic_identifier:
-                # add shared subscription prefix if applicable
-                if self._runtime_config.shared_subscription_name:
-                    topic = f"$share/{self._runtime_config.shared_subscription_name}/{topic}"
-                self._topics.add(topic)
-        for response_topic_str in self._runtime_config.response_topics:
-            processor, topic = response_topic_str.split(":", 1)
-            if processor == self._topic_identifier:
-                # do not add shared subscription prefix to response topic
-                # we want to receive direct responses here
-                self._response_topic = f"{topic}/{self._instance_id}"
-                break
-        self.outgoing_queue = Queue(queue_size)
-
-    def create_mqtt_event(
-        self,
-        topic: str,
-        response_topic: str | None = None,
-        retain: bool = False,
-        datacontenttype: str | None = "application/json; charset=utf-8",
-    ) -> CloudEvent:
-        transportmetadata: dict[str, Any] = {
-            "mqtt_topic": topic,
-            "mqtt_retain": retain,
-        }
-        if response_topic is not None:
-            transportmetadata["mqtt_response_topic"] = response_topic
-        cloudevent = self.create_event(
-            datacontenttype=datacontenttype,
-        )
-        cloudevent.transportmetadata = transportmetadata
-        return cloudevent
-
-    async def message_callback(
-        self, request_cloudevent: CloudEvent
-    ) -> list[CloudEvent] | CloudEvent | None:
-        if request_cloudevent.type not in self._type_callbacks_in:
-            logger.error(
-                "No callback registered for cloud event type: %s",
-                request_cloudevent.type,
-            )
-            return None
-
-        payload_type = self._type_classes[request_cloudevent.type]
-        callback: Callable[..., Any] = self._type_callbacks_in[request_cloudevent.type]
-        try:
-            request: DataClassMixin | bytes = request_cloudevent.unserialize_payload(
-                payload_type
-            )
-        except ValueError as e:
-            logger.error(e)
-            return None
-        logger.debug("Request before callback: %s", request)
-
-        kwargs = self.get_event_args(request_cloudevent)
-        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
-            request, **kwargs
-        )
-
-        if responses is None:
-            return None
-
-        if not isinstance(request_cloudevent.transportmetadata, dict) or (
-            isinstance(request_cloudevent.transportmetadata, dict)
-            and request_cloudevent.transportmetadata.get("mqtt_response_topic") is None
-        ):
-            logger.warning("No response topic specified; cannot send response.")
-            return None
-
-        if not isinstance(responses, list):
-            responses = [responses]
-
-        response_cloudevents: list[CloudEvent] = []
-        for response in responses:
-            logger.debug("Response from callback: %s", response)
-            if not type_has_config_class(type(response)):
-                logger.warning("Response has no Config class")
-                continue
-
-            response_cloudevent = self.create_mqtt_event(
-                topic=str(
-                    request_cloudevent.transportmetadata.get("mqtt_response_topic")
-                ),
-                response_topic=self._response_topic,
-            )
-            response_cloudevent.correlationid = request_cloudevent.correlationid
-            response_cloudevent.causationid = request_cloudevent.id
-            try:
-                response_cloudevent.serialize_payload(response)
-            except ValueError as e:
-                logger.exception(
-                    "Error serializing payload for message type %s: %s",
-                    response_cloudevent.type,
-                    e,
-                )
-                return None
-
-            response_cloudevents.append(response_cloudevent)
-        return response_cloudevents
-
-    async def type_callback(
-        self, payload_type: type, topic: str, **kwargs
-    ) -> list[CloudEvent] | CloudEvent | None:
-        cloudevent_type = get_cloudevent_type(payload_type)
-        if cloudevent_type is None or cloudevent_type not in self._type_callbacks_out:
-            logger.error(
-                "No callback registered for cloud event type: %s", cloudevent_type
-            )
-            return None
-
-        payload_type = self._type_classes[cloudevent_type]
-        callback: Callable[..., Any] = self._type_callbacks_out[cloudevent_type]
-        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
-            **kwargs
-        )
-
-        if responses is None:
-            return None
-
-        if not isinstance(responses, list):
-            responses = [responses]
-
-        response_cloudevents: list[CloudEvent] = []
-        for response in responses:
-            logger.debug("Response from callback: %s", response)
-            if not type_has_config_class(type(response)):
-                logger.warning("Response has no Config class")
-                continue
-
-            response_cloudevent = self.create_mqtt_event(
-                topic=topic,
-                response_topic=self._response_topic,
-            )
-            try:
-                response_cloudevent.serialize_payload(response)
-            except ValueError as e:
-                logger.exception(
-                    "Error serializing payload for message type %s: %s",
-                    response_cloudevent.type,
-                    e,
-                )
-                return None
-
-            await self.outgoing_queue.put(response_cloudevent)
-            response_cloudevents.append(response_cloudevent)
-        return response_cloudevents
+        self.processor = processor
+        self.topics = topics
+        self.response_topic = response_topic
+        self.outgoing_queue = outgoing_queue
 
 
 class MQTTHandler(ProtocolHandler):
-    _runtime_config: MQTTConfig
-    _redis_client: redis.Redis
-    _redis_key_schema: RedisKeySchema
-    _cloudevent_dedupe_dao: CloudEventDedupeDAO
-    _expiration_timeout_tasks: dict[str, asyncio.Task]
-
     def __init__(
         self,
         runtime_config: MQTTConfig,
         redis_connection_pool: redis.ConnectionPool,
         redis_key_schema: RedisKeySchema,
     ):
-        self._runtime_config = runtime_config
-        self._redis_client = redis.Redis(connection_pool=redis_connection_pool)
-        self._redis_key_schema = redis_key_schema
-        self._cloudevent_dedupe_dao = CloudEventDedupeDAO(
+        super().__init__()
+        self._runtime_config: MQTTConfig = runtime_config
+        self._redis_client: redis.Redis = redis.Redis(
+            connection_pool=redis_connection_pool
+        )
+        self._redis_key_schema: RedisKeySchema = redis_key_schema
+        self._cloudevent_dedupe_dao: CloudEventDedupeDAO = CloudEventDedupeDAO(
             self._redis_client,
             redis_key_schema,
             ttl=self._runtime_config.dedupe_ttl_seconds,
         )
-        self._expiration_timeout_tasks = {}
+        self._expiration_timeout_tasks: dict[str, Any] = {}
+        self._bindings: list[MQTTProcessorBinding] = []
+
+    def register_mqtt_processor(
+        self,
+        processor: CloudEventProcessor,
+        topic_identifier: str,
+        processing_config: ProcessingConfig,
+        queue_size: int = 1,
+    ) -> None:
+        """Register a processor with MQTT-specific routing configuration."""
+        topics: set[str] = set()
+        for topic_str in processing_config.topics:
+            proc_name, topic = topic_str.split(":", 1)
+            if proc_name == topic_identifier:
+                if processing_config.shared_subscription_name:
+                    topic = (
+                        f"$share/{processing_config.shared_subscription_name}/{topic}"
+                    )
+                topics.add(topic)
+        response_topic = ""
+        for response_topic_str in processing_config.response_topics:
+            proc_name, topic = response_topic_str.split(":", 1)
+            if proc_name == topic_identifier:
+                response_topic = f"{topic}/{processor._instance_id}"
+                break
+        outgoing_queue: Queue[CloudEvent] = Queue(queue_size)
+        processor.register_publish_handler(outgoing_queue.put_nowait)
+        binding = MQTTProcessorBinding(
+            processor=processor,
+            topics=topics,
+            response_topic=response_topic,
+            outgoing_queue=outgoing_queue,
+        )
+        self._bindings.append(binding)
+
+    def _enrich_response_transport(
+        self,
+        response: CloudEvent,
+        request: CloudEvent,
+        binding: MQTTProcessorBinding,
+    ) -> bool:
+        """Add MQTT transport metadata to a response CE.
+
+        Returns False if the response cannot be published (no target topic).
+        """
+        if response.transportmetadata is None:
+            response.transportmetadata = {}
+        # If the response already has a topic (e.g. raw echo), keep it
+        if "mqtt_topic" not in response.transportmetadata:
+            if request.transportmetadata and request.transportmetadata.get(
+                "mqtt_response_topic"
+            ):
+                response.transportmetadata["mqtt_topic"] = request.transportmetadata[
+                    "mqtt_response_topic"
+                ]
+            else:
+                logger.warning("No response topic specified; cannot publish response.")
+                return False
+        if (
+            "mqtt_response_topic" not in response.transportmetadata
+            and binding.response_topic
+        ):
+            response.transportmetadata["mqtt_response_topic"] = binding.response_topic
+        if "mqtt_retain" not in response.transportmetadata:
+            response.transportmetadata["mqtt_retain"] = False
+        return True
 
     def _client(self) -> aiomqtt.Client:
         properties = None
@@ -257,7 +169,7 @@ class MQTTHandler(ProtocolHandler):
         self,
         client: aiomqtt.Client,
         cloudevent: CloudEvent,
-        processor: MQTTCloudEventProcessor | None = None,
+        processor: CloudEventProcessor | None = None,
     ) -> None:
         if (
             cloudevent.transportmetadata is None
@@ -385,13 +297,12 @@ class MQTTHandler(ProtocolHandler):
                 message.topic,
                 message.mid,
             )
-            for processor in self._cloudevent_processors:
-                if isinstance(processor, MQTTCloudEventProcessor):
-                    if message.topic.matches(processor._response_topic):
-                        return False, processor._response_topic
-                    for topic in processor._topics:
-                        if message.topic.matches(topic):
-                            return False, topic
+            for binding in self._bindings:
+                if message.topic.matches(binding.response_topic):
+                    return False, binding.response_topic
+                for topic in binding.topics:
+                    if message.topic.matches(topic):
+                        return False, topic
             return False, ""
         else:
             logger.debug("Received message on topic %s", message.topic)
@@ -404,35 +315,44 @@ class MQTTHandler(ProtocolHandler):
         # It is assumed that each message is processed by only one processor
         # If multiple processors match the topic, all will be invoked sequentially
         subscription: list[str] = []
-        for processor in self._cloudevent_processors:
-            if isinstance(processor, MQTTCloudEventProcessor):
-                if message.topic.matches(processor._response_topic):
-                    subscription.append(processor._response_topic)
-                    processor_response = await processor.process_response_event(
+        for binding in self._bindings:
+            if message.topic.matches(binding.response_topic):
+                subscription.append(binding.response_topic)
+                processor_response = await binding.processor.process_response_event(
+                    cloudevent
+                )
+                if isinstance(processor_response, list):
+                    for response in processor_response:
+                        await self._publish_message(client, response, binding.processor)
+                elif isinstance(processor_response, CloudEvent):
+                    await self._publish_message(
+                        client, processor_response, binding.processor
+                    )
+                elif processor_response is None:
+                    continue
+            for topic in binding.topics:
+                if message.topic.matches(topic):
+                    subscription.append(topic)
+                    processor_response = await binding.processor.process_event(
                         cloudevent
                     )
                     if isinstance(processor_response, list):
                         for response in processor_response:
-                            await self._publish_message(client, response, processor)
+                            if self._enrich_response_transport(
+                                response, cloudevent, binding
+                            ):
+                                await self._publish_message(
+                                    client, response, binding.processor
+                                )
                     elif isinstance(processor_response, CloudEvent):
-                        await self._publish_message(
-                            client, processor_response, processor
-                        )
+                        if self._enrich_response_transport(
+                            processor_response, cloudevent, binding
+                        ):
+                            await self._publish_message(
+                                client, processor_response, binding.processor
+                            )
                     elif processor_response is None:
                         continue
-                for topic in processor._topics:
-                    if message.topic.matches(topic):
-                        subscription.append(topic)
-                        processor_response = await processor.process_event(cloudevent)
-                        if isinstance(processor_response, list):
-                            for response in processor_response:
-                                await self._publish_message(client, response, processor)
-                        elif isinstance(processor_response, CloudEvent):
-                            await self._publish_message(
-                                client, processor_response, processor
-                            )
-                        elif processor_response is None:
-                            continue
 
         # FIXME: use the native ack method when https://github.com/empicano/aiomqtt/pull/346 is merged
         client._client.ack(message.mid, message.qos)  # type: ignore #
@@ -446,14 +366,24 @@ class MQTTHandler(ProtocolHandler):
             await self._process_message(client, message)
 
     async def _outgoing_message_publisher(
-        self, client: aiomqtt.Client, processor: CloudEventProcessor
+        self, client: aiomqtt.Client, binding: MQTTProcessorBinding
     ) -> None:
         while True:
-            message = await processor.outgoing_queue.get()
-            await self._publish_message(
-                client, message, typing.cast(MQTTCloudEventProcessor, processor)
-            )
-            processor.outgoing_queue.task_done()
+            message = await binding.outgoing_queue.get()
+            # Enrich with MQTT transport metadata from the binding
+            if message.transportmetadata is None:
+                message.transportmetadata = {}
+            if (
+                "mqtt_response_topic" not in message.transportmetadata
+                and binding.response_topic
+            ):
+                message.transportmetadata["mqtt_response_topic"] = (
+                    binding.response_topic
+                )
+            if "mqtt_retain" not in message.transportmetadata:
+                message.transportmetadata["mqtt_retain"] = False
+            await self._publish_message(client, message, binding.processor)
+            binding.outgoing_queue.task_done()
 
     async def task(self) -> None:
         logger.info("Starting MQTT handler task")
@@ -474,16 +404,15 @@ class MQTTHandler(ProtocolHandler):
                     logger.error(f"Error connecting to Redis: {e}")
                     raise
                 async with client:
-                    for processor in self._cloudevent_processors:
-                        if isinstance(processor, MQTTCloudEventProcessor):
-                            for topic in processor._topics:
-                                await client.subscribe(topic)
-                                logger.info("Subscribed to topic: %s", topic)
-                            await client.subscribe(processor._response_topic)
-                            logger.info(
-                                "Subscribed to response topic: %s",
-                                processor._response_topic,
-                            )
+                    for binding in self._bindings:
+                        for topic in binding.topics:
+                            await client.subscribe(topic)
+                            logger.info("Subscribed to topic: %s", topic)
+                        await client.subscribe(binding.response_topic)
+                        logger.info(
+                            "Subscribed to response topic: %s",
+                            binding.response_topic,
+                        )
                     async with asyncio.TaskGroup() as tg:
                         logger.info(
                             "Starting %d message worker tasks",
@@ -491,11 +420,10 @@ class MQTTHandler(ProtocolHandler):
                         )
                         for _ in range(self._runtime_config.message_workers):
                             tg.create_task(self._process_messages(client))
-                        for processor in self._cloudevent_processors:
-                            if isinstance(processor, MQTTCloudEventProcessor):
-                                tg.create_task(
-                                    self._outgoing_message_publisher(client, processor)
-                                )
+                        for binding in self._bindings:
+                            tg.create_task(
+                                self._outgoing_message_publisher(client, binding)
+                            )
             except aiomqtt.MqttError:
                 logger.warning(
                     f"Connection lost; Reconnecting in {interval} seconds ..."
@@ -508,10 +436,6 @@ class MQTTHandler(ProtocolHandler):
 
 
 class OTELInstrumentedMQTTHandler(MQTTHandler):
-    _tracer: trace.Tracer
-    _meter: metrics.Meter
-    _metrics: dict[str, metrics.Instrument]
-
     def __init__(
         self,
         runtime_config: MQTTConfig,
@@ -522,7 +446,7 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
 
         self._tracer = trace.get_tracer(__name__)
         self._meter = metrics.get_meter(__name__)
-        self._metrics = {
+        self._metrics: dict[str, Any] = {
             "process_counter": self._meter.create_counter(
                 "messaging.process.counter",
                 description="Count of MQTT messages processed",

@@ -5,11 +5,7 @@ import pytest
 from app import ProcessingConfig
 from app.common import CloudEvent
 from app.models.greetings import Bye, Hello, HiddenObject
-from app.processors.greetings import (
-    GreetingsCloudEventDelegate,
-    GreetingsMessagePackCloudEventProcessor,
-    GreetingsMQTTCloudEventProcessor,
-)
+from app.processors.greetings import GreetingsCloudEventProcessor
 
 # ===================================================================
 # Helpers
@@ -17,33 +13,12 @@ from app.processors.greetings import (
 
 
 def _processing_config() -> ProcessingConfig:
-    """Return a ProcessingConfig with topics that match 'greetings:…'."""
-    cfg = ProcessingConfig()
-    cfg.topics = {
-        "greetings:app/events/#",
-        "greetings:app/invoke/#",
-    }
-    cfg.response_topics = {
-        "greetings:app/errors/delivery",
-    }
-    return cfg
+    """Return a ProcessingConfig suitable for greetings processor."""
+    return ProcessingConfig()
 
 
-def _make_mqtt_processor() -> GreetingsMQTTCloudEventProcessor:
-    proc = GreetingsMQTTCloudEventProcessor("test-id", _processing_config())
-    # Reset shared class-level dicts to isolate tests
-    proc._type_classes = dict(proc._type_classes)
-    proc._type_callbacks_in = dict(proc._type_callbacks_in)
-    proc._type_callbacks_out = dict(proc._type_callbacks_out)
-    return proc
-
-
-def _make_msgpack_processor() -> GreetingsMessagePackCloudEventProcessor:
-    proc = GreetingsMessagePackCloudEventProcessor("test-id", _processing_config())
-    proc._type_classes = dict(proc._type_classes)
-    proc._type_callbacks_in = dict(proc._type_callbacks_in)
-    proc._type_callbacks_out = dict(proc._type_callbacks_out)
-    return proc
+def _make_processor() -> GreetingsCloudEventProcessor:
+    return GreetingsCloudEventProcessor("test-id", _processing_config())
 
 
 HELLO_CE_TYPE = "com.github.aschamberger.microdcs.greetings.hello.v1"
@@ -105,15 +80,16 @@ class TestHiddenObject:
 
 
 # ===================================================================
-# GreetingsCloudEventDelegate
+# GreetingsCloudEventProcessor — handler methods
 # ===================================================================
 
 
-class TestGreetingsCloudEventDelegate:
+class TestGreetingsCloudEventProcessorHandlers:
     @pytest.mark.asyncio
     async def test_handle_hello(self):
+        proc = _make_processor()
         hello = Hello(name="World")
-        results = await GreetingsCloudEventDelegate.handle_hello(hello)
+        results = await proc.handle_hello(hello)
         assert isinstance(results, list)
         assert len(results) == 2
         assert results[0].name == "World"
@@ -121,16 +97,18 @@ class TestGreetingsCloudEventDelegate:
 
     @pytest.mark.asyncio
     async def test_handle_hello_preserves_hidden_fields(self):
+        proc = _make_processor()
         obj = HiddenObject(field="x")
         hello = Hello(name="Test", _hidden_str="s", _hidden_obj=obj)
-        results = await GreetingsCloudEventDelegate.handle_hello(hello)
+        results = await proc.handle_hello(hello)
         assert isinstance(results, list)
         assert results[0]._hidden_str == "s"
         assert results[0]._hidden_obj is obj
 
     @pytest.mark.asyncio
     async def test_handle_bye(self):
-        results = await GreetingsCloudEventDelegate.handle_bye()
+        proc = _make_processor()
+        results = await proc.handle_bye()
         assert isinstance(results, list)
         assert len(results) == 2
         assert results[0].name == "Bob"
@@ -182,75 +160,27 @@ class TestGreetingsCloudEventDelegate:
 
 
 # ===================================================================
-# GreetingsMQTTCloudEventProcessor
+# GreetingsCloudEventProcessor — process_event / response / send
 # ===================================================================
 
 
-class TestGreetingsMQTTCloudEventProcessor:
+class TestGreetingsCloudEventProcessor:
     def test_init_registers_callbacks(self):
-        proc = _make_mqtt_processor()
+        proc = _make_processor()
         assert HELLO_CE_TYPE in proc._type_callbacks_in
         assert BYE_CE_TYPE in proc._type_callbacks_out
-
-    def test_init_parses_topics(self):
-        proc = _make_mqtt_processor()
-        assert len(proc._topics) > 0
-        assert hasattr(proc, "_response_topic")
 
     # --- process_event ---
 
     @pytest.mark.asyncio
-    async def test_process_event_no_transport_metadata(self):
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(type=HELLO_CE_TYPE, transportmetadata=None)
-        result = await proc.process_event(ce)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_process_event_no_topic_in_metadata(self):
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(type=HELLO_CE_TYPE, transportmetadata={})
-        result = await proc.process_event(ce)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_process_event_raw_no_response_topic_metadata_none(self):
-        """Unknown type, transportmetadata is None → cannot echo."""
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(
-            type="com.unknown",
-            data=b"raw",
-            transportmetadata=None,
-        )
-        # process_event checks transport metadata first → None → returns None
-        result = await proc.process_event(ce)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_process_event_raw_no_response_topic(self):
-        """Unknown type with topic but no response_topic → warning, returns None."""
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(
-            type="com.unknown",
-            data=b"raw",
-            transportmetadata={"mqtt_topic": "some/topic"},
-        )
-        result = await proc.process_event(ce)
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_process_event_raw_echo(self):
-        """Unknown type with response_topic → echoed as raw greetings response."""
-        proc = _make_mqtt_processor()
+        """Unknown type → echoed as raw greetings response."""
+        proc = _make_processor()
         ce = CloudEvent(
             type="com.unknown",
             data=b"raw-data",
             datacontenttype="application/octet-stream",
             correlationid="corr-1",
-            transportmetadata={
-                "mqtt_topic": "some/topic",
-                "mqtt_response_topic": "resp/topic",
-            },
         )
         result = await proc.process_event(ce)
         assert isinstance(result, CloudEvent)
@@ -259,22 +189,16 @@ class TestGreetingsMQTTCloudEventProcessor:
         assert result.datacontenttype == "application/octet-stream"
         assert result.correlationid == "corr-1"
         assert result.causationid == ce.id
-        assert result.transportmetadata is not None
-        assert result.transportmetadata["mqtt_topic"] == "resp/topic"
 
     @pytest.mark.asyncio
     async def test_process_event_with_callback(self):
         """Known type triggers message_callback."""
-        proc = _make_mqtt_processor()
+        proc = _make_processor()
         hello = Hello(name="World")
         ce = CloudEvent(
             type=HELLO_CE_TYPE,
             data=hello.to_jsonb(),
             datacontenttype="application/json; charset=utf-8",
-            transportmetadata={
-                "mqtt_topic": "app/events/greetings",
-                "mqtt_response_topic": "app/errors/delivery/test-id",
-            },
         )
         result = await proc.process_event(ce)
         # handle_hello returns a list of 2 CloudEvents
@@ -284,25 +208,9 @@ class TestGreetingsMQTTCloudEventProcessor:
     # --- process_response_event ---
 
     @pytest.mark.asyncio
-    async def test_process_response_event_no_transport_metadata(self):
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(transportmetadata=None)
-        result = await proc.process_response_event(ce)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_process_response_event_no_topic(self):
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(transportmetadata={})
-        result = await proc.process_response_event(ce)
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_process_response_event_returns_none(self):
-        proc = _make_mqtt_processor()
-        ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "some/topic"},
-        )
+        proc = _make_processor()
+        ce = CloudEvent()
         result = await proc.process_response_event(ce)
         assert result is None
 
@@ -310,9 +218,9 @@ class TestGreetingsMQTTCloudEventProcessor:
 
     @pytest.mark.asyncio
     async def test_send_event(self):
-        proc = _make_mqtt_processor()
+        proc = _make_processor()
         with patch.object(
-            proc, "type_callback", new_callable=AsyncMock
+            proc, "callback_outgoing", new_callable=AsyncMock
         ) as mock_type_cb:
             with patch(
                 "app.processors.greetings.asyncio.sleep", new_callable=AsyncMock
@@ -324,73 +232,8 @@ class TestGreetingsMQTTCloudEventProcessor:
 
     @pytest.mark.asyncio
     async def test_handle_expiration(self):
-        proc = _make_mqtt_processor()
+        proc = _make_processor()
         ce = CloudEvent()
         with patch("app.processors.greetings.asyncio.sleep", new_callable=AsyncMock):
             result = await proc.handle_expiration(ce, 10)
         assert result is None
-
-
-# ===================================================================
-# GreetingsMessagePackCloudEventProcessor
-# ===================================================================
-
-
-class TestGreetingsMessagePackCloudEventProcessor:
-    def test_init_registers_callbacks(self):
-        proc = _make_msgpack_processor()
-        assert HELLO_CE_TYPE in proc._type_callbacks_in
-        assert BYE_CE_TYPE in proc._type_callbacks_out
-
-    # --- process_event ---
-
-    @pytest.mark.asyncio
-    async def test_process_event_raw_echo(self):
-        """Unknown type → echoed as raw greetings response."""
-        proc = _make_msgpack_processor()
-        ce = CloudEvent(
-            type="com.unknown",
-            data=b"raw-data",
-            datacontenttype="application/octet-stream",
-            correlationid="corr-1",
-        )
-        result = await proc.process_event(ce)
-        assert isinstance(result, CloudEvent)
-        assert result.data == b"raw-data"
-        assert result.type == "com.github.aschamberger.microdcs.greetings.raw.v1"
-        assert result.correlationid == "corr-1"
-        assert result.causationid == ce.id
-
-    @pytest.mark.asyncio
-    async def test_process_event_with_callback(self):
-        """Known type triggers message_callback."""
-        proc = _make_msgpack_processor()
-        hello = Hello(name="World")
-        ce = CloudEvent(
-            type=HELLO_CE_TYPE,
-            data=hello.to_jsonb(),
-            datacontenttype="application/json; charset=utf-8",
-        )
-        result = await proc.process_event(ce)
-        assert isinstance(result, list)
-        assert len(result) == 2
-
-    # --- NotImplementedError methods ---
-
-    @pytest.mark.asyncio
-    async def test_process_response_event_raises(self):
-        proc = _make_msgpack_processor()
-        with pytest.raises(NotImplementedError):
-            await proc.process_response_event(CloudEvent())
-
-    @pytest.mark.asyncio
-    async def test_send_event_raises(self):
-        proc = _make_msgpack_processor()
-        with pytest.raises(NotImplementedError):
-            await proc.send_event()
-
-    @pytest.mark.asyncio
-    async def test_handle_expiration_raises(self):
-        proc = _make_msgpack_processor()
-        with pytest.raises(NotImplementedError):
-            await proc.handle_expiration(CloudEvent(), 10)

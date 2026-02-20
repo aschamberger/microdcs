@@ -2,17 +2,18 @@
 
 import asyncio
 import uuid
+from asyncio import Queue
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app import MQTTConfig, ProcessingConfig
-from app.common import CloudEvent, Direction
+from app.common import CloudEvent, CloudEventProcessor, Direction
 from app.dataclass import DataClassConfig, DataClassMixin
 from app.mqtt import (
-    MQTTCloudEventProcessor,
     MQTTHandler,
+    MQTTProcessorBinding,
     OTELInstrumentedMQTTHandler,
     QoS,
 )
@@ -39,11 +40,11 @@ class PlainPayload(DataClassMixin):
     value: str = "plain"
 
 
-class ConcreteMQTTProcessor(MQTTCloudEventProcessor):
+class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass for testing."""
 
     async def process_event(self, cloudevent):
-        return await self.message_callback(cloudevent)
+        return await self.callback_incoming(cloudevent)
 
     async def process_response_event(self, cloudevent):
         return None
@@ -52,17 +53,15 @@ class ConcreteMQTTProcessor(MQTTCloudEventProcessor):
         return None
 
 
-def _make_processor(**kwargs) -> ConcreteMQTTProcessor:
-    cfg = ProcessingConfig(
-        topics={"greetings:test/events/#"},
-        response_topics={"greetings:test/responses"},
-    )
-    return ConcreteMQTTProcessor(
+def _make_processor(**kwargs) -> ConcreteProcessor:
+    cfg = ProcessingConfig()
+    kwargs.pop("queue_size", None)
+    proc = ConcreteProcessor(
         instance_id="test-id",
         runtime_config=cfg,
-        topic_identifier="greetings",
         **kwargs,
     )
+    return proc
 
 
 def _make_handler() -> MQTTHandler:
@@ -71,8 +70,28 @@ def _make_handler() -> MQTTHandler:
     key_schema = RedisKeySchema()
     with patch("app.mqtt.redis.Redis"):
         handler = MQTTHandler(config, pool, key_schema)
-    handler._cloudevent_processors = []  # fresh list — class attr is shared
     return handler
+
+
+def _make_binding(
+    handler: MQTTHandler,
+    processor: ConcreteProcessor | None = None,
+    topics: set[str] | None = None,
+    response_topic: str = "test/responses/test-id",
+    queue_size: int = 1,
+) -> MQTTProcessorBinding:
+    """Register a processor via the binding system and return the binding."""
+    if processor is None:
+        processor = _make_processor()
+    outgoing_queue: Queue[CloudEvent] = Queue(queue_size)
+    binding = MQTTProcessorBinding(
+        processor=processor,
+        topics=topics or {"test/events/#"},
+        response_topic=response_topic,
+        outgoing_queue=outgoing_queue,
+    )
+    handler._bindings.append(binding)
+    return binding
 
 
 def _make_mqtt_message(
@@ -122,55 +141,123 @@ class TestQoS:
 
 
 # ===================================================================
-# MQTTCloudEventProcessor
+# register_mqtt_processor and MQTTProcessorBinding
 # ===================================================================
 
 
-class TestMQTTCloudEventProcessor:
-    def test_init_parses_topics(self):
+class TestRegisterMQTTProcessor:
+    def test_parses_topics(self):
+        handler = _make_handler()
         proc = _make_processor()
-        assert len(proc._topics) > 0
-        assert proc._response_topic.endswith("/test-id")
+        cfg = ProcessingConfig(
+            topics={"greetings:test/events/#"},
+            response_topics={"greetings:test/responses"},
+        )
+        handler.register_mqtt_processor(proc, "greetings", cfg)
+        assert len(handler._bindings) == 1
+        binding = handler._bindings[0]
+        assert "test/events/#" in binding.topics
+        assert binding.response_topic.endswith("/test-id")
 
-    def test_init_with_shared_subscription(self):
+    def test_shared_subscription(self):
+        handler = _make_handler()
+        proc = _make_processor()
         cfg = ProcessingConfig(
             topics={"greetings:test/events/#"},
             response_topics={"greetings:test/responses"},
             shared_subscription_name="mygroup",
         )
-        proc = ConcreteMQTTProcessor(
-            instance_id="test-id",
-            runtime_config=cfg,
-            topic_identifier="greetings",
-        )
-        for topic in proc._topics:
+        handler.register_mqtt_processor(proc, "greetings", cfg)
+        binding = handler._bindings[0]
+        for topic in binding.topics:
             assert topic.startswith("$share/mygroup/")
         # Response topic does NOT get shared subscription prefix
-        assert not proc._response_topic.startswith("$share/")
+        assert not binding.response_topic.startswith("$share/")
 
-    def test_create_mqtt_event(self):
+    def test_sets_publish_handler_on_processor(self):
+        handler = _make_handler()
         proc = _make_processor()
-        ce = proc.create_mqtt_event(
-            topic="out/topic",
-            response_topic="out/resp",
-            retain=True,
+        cfg = ProcessingConfig(
+            topics={"greetings:test/events/#"},
+            response_topics={"greetings:test/responses"},
         )
-        assert ce.transportmetadata is not None
-        assert ce.transportmetadata["mqtt_topic"] == "out/topic"
-        assert ce.transportmetadata["mqtt_response_topic"] == "out/resp"
-        assert ce.transportmetadata["mqtt_retain"] is True
+        handler.register_mqtt_processor(proc, "greetings", cfg)
+        assert len(proc._publish_handlers) == 1
 
-    def test_create_mqtt_event_no_response_topic(self):
+
+class TestEnrichResponseTransport:
+    def test_adds_topic_from_request(self):
+        handler = _make_handler()
         proc = _make_processor()
-        ce = proc.create_mqtt_event(topic="out/topic")
-        assert ce.transportmetadata is not None
-        assert "mqtt_response_topic" not in ce.transportmetadata
+        outgoing_queue: Queue[CloudEvent] = Queue()
+        binding = MQTTProcessorBinding(
+            processor=proc,
+            topics={"test/events/#"},
+            response_topic="test/responses/test-id",
+            outgoing_queue=outgoing_queue,
+        )
+        request = CloudEvent(
+            transportmetadata={"mqtt_response_topic": "resp/topic"},
+        )
+        response = CloudEvent()
+        result = handler._enrich_response_transport(response, request, binding)
+        assert result is True
+        assert response.transportmetadata is not None
+        assert response.transportmetadata["mqtt_topic"] == "resp/topic"
+        assert (
+            response.transportmetadata["mqtt_response_topic"]
+            == "test/responses/test-id"
+        )
+        assert response.transportmetadata["mqtt_retain"] is False
 
+    def test_keeps_existing_topic(self):
+        handler = _make_handler()
+        proc = _make_processor()
+        outgoing_queue: Queue[CloudEvent] = Queue()
+        binding = MQTTProcessorBinding(
+            processor=proc,
+            topics=set(),
+            response_topic="",
+            outgoing_queue=outgoing_queue,
+        )
+        request = CloudEvent(
+            transportmetadata={"mqtt_response_topic": "other"},
+        )
+        response = CloudEvent(
+            transportmetadata={"mqtt_topic": "already/set"},
+        )
+        result = handler._enrich_response_transport(response, request, binding)
+        assert result is True
+        assert response.transportmetadata is not None
+        assert response.transportmetadata["mqtt_topic"] == "already/set"
+
+    def test_no_response_topic_returns_false(self):
+        handler = _make_handler()
+        proc = _make_processor()
+        outgoing_queue: Queue[CloudEvent] = Queue()
+        binding = MQTTProcessorBinding(
+            processor=proc,
+            topics=set(),
+            response_topic="",
+            outgoing_queue=outgoing_queue,
+        )
+        request = CloudEvent(transportmetadata=None)
+        response = CloudEvent()
+        result = handler._enrich_response_transport(response, request, binding)
+        assert result is False
+
+
+# ===================================================================
+# CloudEventProcessor message_callback / type_callback (base class)
+# ===================================================================
+
+
+class TestCloudEventProcessorCallbacks:
     @pytest.mark.asyncio
     async def test_message_callback_no_registered_type(self):
         proc = _make_processor()
         ce = CloudEvent(type="com.unknown", data=b"x")
-        assert await proc.message_callback(ce) is None
+        assert await proc.callback_incoming(ce) is None
 
     @pytest.mark.asyncio
     async def test_message_callback_unserialize_error(self):
@@ -185,7 +272,7 @@ class TestMQTTCloudEventProcessor:
             data=b"bad",
             datacontenttype="application/xml",
         )
-        assert await proc.message_callback(ce) is None
+        assert await proc.callback_incoming(ce) is None
 
     @pytest.mark.asyncio
     async def test_message_callback_handler_returns_none(self):
@@ -200,40 +287,7 @@ class TestMQTTCloudEventProcessor:
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json",
         )
-        assert await proc.message_callback(ce) is None
-
-    @pytest.mark.asyncio
-    async def test_message_callback_no_response_topic(self):
-        """Responses require mqtt_response_topic in transport metadata."""
-        proc = _make_processor()
-
-        async def handler(req):
-            return SamplePayload(value="resp")
-
-        proc.register_callback(SamplePayload, handler, direction=Direction.INCOMING)
-        ce = CloudEvent(
-            type="com.test.sample.v1",
-            data=SamplePayload().to_jsonb(),
-            datacontenttype="application/json",
-            transportmetadata=None,
-        )
-        assert await proc.message_callback(ce) is None
-
-    @pytest.mark.asyncio
-    async def test_message_callback_transport_meta_without_response_topic(self):
-        proc = _make_processor()
-
-        async def handler(req):
-            return SamplePayload(value="resp")
-
-        proc.register_callback(SamplePayload, handler, direction=Direction.INCOMING)
-        ce = CloudEvent(
-            type="com.test.sample.v1",
-            data=SamplePayload().to_jsonb(),
-            datacontenttype="application/json",
-            transportmetadata={"mqtt_topic": "t"},  # no mqtt_response_topic
-        )
-        assert await proc.message_callback(ce) is None
+        assert await proc.callback_incoming(ce) is None
 
     @pytest.mark.asyncio
     async def test_message_callback_single_response(self):
@@ -248,9 +302,8 @@ class TestMQTTCloudEventProcessor:
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json; charset=utf-8",
             correlationid="corr-1",
-            transportmetadata={"mqtt_response_topic": "resp/topic"},
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0].correlationid == "corr-1"
@@ -268,9 +321,8 @@ class TestMQTTCloudEventProcessor:
             type="com.test.sample.v1",
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json",
-            transportmetadata={"mqtt_response_topic": "resp/topic"},
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 2
 
@@ -286,9 +338,8 @@ class TestMQTTCloudEventProcessor:
             type="com.test.sample.v1",
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json",
-            transportmetadata={"mqtt_response_topic": "resp/topic"},
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 0
 
@@ -304,14 +355,13 @@ class TestMQTTCloudEventProcessor:
             type="com.test.sample.v1",
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json",
-            transportmetadata={"mqtt_response_topic": "resp/topic"},
         )
         with patch.object(
             proc,
-            "create_mqtt_event",
+            "create_event",
             return_value=CloudEvent(datacontenttype="application/xml"),
         ):
-            result = await proc.message_callback(ce)
+            result = await proc.callback_incoming(ce)
         assert result is None
 
     # --- type_callback tests ---
@@ -319,7 +369,7 @@ class TestMQTTCloudEventProcessor:
     @pytest.mark.asyncio
     async def test_type_callback_no_registered_type(self):
         proc = _make_processor()
-        result = await proc.type_callback(SamplePayload, "out/topic")
+        result = await proc.callback_outgoing(SamplePayload, "out/topic")
         assert result is None
 
     @pytest.mark.asyncio
@@ -330,7 +380,7 @@ class TestMQTTCloudEventProcessor:
             return None
 
         proc.register_callback(SamplePayload, handler, direction=Direction.OUTGOING)
-        result = await proc.type_callback(SamplePayload, "out/topic")
+        result = await proc.callback_outgoing(SamplePayload, "out/topic")
         assert result is None
 
     @pytest.mark.asyncio
@@ -341,7 +391,7 @@ class TestMQTTCloudEventProcessor:
             return PlainPayload(value="no-config")
 
         proc.register_callback(SamplePayload, handler, direction=Direction.OUTGOING)
-        result = await proc.type_callback(SamplePayload, "out/topic")
+        result = await proc.callback_outgoing(SamplePayload, "out/topic")
         assert isinstance(result, list)
         assert len(result) == 0
 
@@ -355,38 +405,42 @@ class TestMQTTCloudEventProcessor:
         proc.register_callback(SamplePayload, handler, direction=Direction.OUTGOING)
         with patch.object(
             proc,
-            "create_mqtt_event",
+            "create_event",
             return_value=CloudEvent(datacontenttype="application/xml"),
         ):
-            result = await proc.type_callback(SamplePayload, "out/topic")
+            result = await proc.callback_outgoing(SamplePayload, "out/topic")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_type_callback_success_puts_to_queue(self):
+    async def test_type_callback_success_publishes_event(self):
         proc = _make_processor()
+        published: list[CloudEvent] = []
+        proc.register_publish_handler(published.append)
 
         async def handler(**kwargs):
             return SamplePayload(value="outbound")
 
         proc.register_callback(SamplePayload, handler, direction=Direction.OUTGOING)
-        result = await proc.type_callback(SamplePayload, "out/topic")
+        result = await proc.callback_outgoing(SamplePayload, "out/topic")
         assert isinstance(result, list)
         assert len(result) == 1
-        # The event should also be in the outgoing queue
-        assert not proc.outgoing_queue.empty()
+        # The event should also have been sent to the publish handler
+        assert len(published) == 1
 
     @pytest.mark.asyncio
     async def test_type_callback_list_response(self):
-        proc = _make_processor(queue_size=10)
+        proc = _make_processor()
+        published: list[CloudEvent] = []
+        proc.register_publish_handler(published.append)
 
         async def handler(**kwargs):
             return [SamplePayload(value="a"), SamplePayload(value="b")]
 
         proc.register_callback(SamplePayload, handler, direction=Direction.OUTGOING)
-        result = await proc.type_callback(SamplePayload, "out/topic")
+        result = await proc.callback_outgoing(SamplePayload, "out/topic")
         assert isinstance(result, list)
         assert len(result) == 2
-        assert proc.outgoing_queue.qsize() == 2
+        assert len(published) == 2
 
 
 # ===================================================================
@@ -401,6 +455,7 @@ class TestMQTTHandler:
         assert handler._redis_key_schema is not None
         assert handler._cloudevent_dedupe_dao is not None
         assert handler._expiration_timeout_tasks == {}
+        assert handler._bindings == []
 
     def test_client_no_sat_no_tls(self):
         handler = _make_handler()
@@ -586,7 +641,7 @@ class TestMQTTHandler:
         handler = _make_handler()
         client = AsyncMock()
         proc = _make_processor()
-        handler.register_processor(proc)
+        _make_binding(handler, proc)
 
         msg = _make_mqtt_message()
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
@@ -602,7 +657,7 @@ class TestMQTTHandler:
         client._client.ack = MagicMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        # No processors registered → empty subscription
+        # No bindings registered → empty subscription
         msg = _make_mqtt_message()
         ok, sub = await handler._process_message(client, msg)
         assert ok is True
@@ -640,13 +695,17 @@ class TestMQTTHandler:
 
         proc = _make_processor()
         proc.process_event = AsyncMock(return_value=None)
-        proc._response_topic = "never/matches"
-        handler.register_processor(proc)
+        binding = _make_binding(
+            handler,
+            proc,
+            topics={"test/events/#"},
+            response_topic="never/matches",
+        )
 
         # Only match event topics, not the response topic
         msg = _make_mqtt_message(
             topic="test/events/foo",
-            match_topics=proc._topics,
+            match_topics=binding.topics,
         )
         await handler._process_message(client, msg)
         proc.process_event.assert_awaited_once()
@@ -662,10 +721,17 @@ class TestMQTTHandler:
 
         proc = _make_processor()
         proc.process_response_event = AsyncMock(return_value=None)
-        proc._response_topic = "test/events/foo"  # matches the topic
-        handler.register_processor(proc)
+        _make_binding(
+            handler,
+            proc,
+            topics=set(),
+            response_topic="test/events/foo",
+        )
 
-        msg = _make_mqtt_message(topic="test/events/foo")
+        msg = _make_mqtt_message(
+            topic="test/events/foo",
+            match_topics={"test/events/foo"},
+        )
         await handler._process_message(client, msg)
         proc.process_response_event.assert_awaited()
 
@@ -682,13 +748,17 @@ class TestMQTTHandler:
         resp1 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         resp2 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         proc.process_event = AsyncMock(return_value=[resp1, resp2])
-        proc._response_topic = "never/matches"
-        handler.register_processor(proc)
+        binding = _make_binding(
+            handler,
+            proc,
+            topics={"test/events/#"},
+            response_topic="never/matches",
+        )
 
         with patch.object(
             handler, "_publish_message", new_callable=AsyncMock
         ) as mock_pub:
-            msg = _make_mqtt_message(match_topics=proc._topics)
+            msg = _make_mqtt_message(match_topics=binding.topics)
             await handler._process_message(client, msg)
             assert mock_pub.await_count == 2
 
@@ -704,13 +774,17 @@ class TestMQTTHandler:
         proc = _make_processor()
         single_resp = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         proc.process_event = AsyncMock(return_value=single_resp)
-        proc._response_topic = "never/matches"
-        handler.register_processor(proc)
+        binding = _make_binding(
+            handler,
+            proc,
+            topics={"test/events/#"},
+            response_topic="never/matches",
+        )
 
         with patch.object(
             handler, "_publish_message", new_callable=AsyncMock
         ) as mock_pub:
-            msg = _make_mqtt_message(match_topics=proc._topics)
+            msg = _make_mqtt_message(match_topics=binding.topics)
             await handler._process_message(client, msg)
             mock_pub.assert_awaited_once()
 
@@ -721,9 +795,10 @@ class TestMQTTHandler:
         handler = _make_handler()
         client = AsyncMock()
         proc = _make_processor()
+        binding = _make_binding(handler, proc)
 
         ce = CloudEvent(transportmetadata={"mqtt_topic": "out"})
-        await proc.outgoing_queue.put(ce)
+        await binding.outgoing_queue.put(ce)
 
         async def stop_after_one(*args, **kwargs):
             raise asyncio.CancelledError()
@@ -735,7 +810,7 @@ class TestMQTTHandler:
             side_effect=stop_after_one,
         ):
             with pytest.raises(asyncio.CancelledError):
-                await handler._outgoing_message_publisher(client, proc)
+                await handler._outgoing_message_publisher(client, binding)
 
     # --- task ---
 

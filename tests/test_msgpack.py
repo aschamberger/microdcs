@@ -9,10 +9,9 @@ import msgpack
 import pytest
 
 from app import MessagePackConfig, ProcessingConfig
-from app.common import CloudEvent, Direction
+from app.common import CloudEvent, CloudEventProcessor, Direction
 from app.dataclass import DataClassConfig, DataClassMixin
 from app.msgpack import (
-    MessagePackCloudEventProcessor,
     MessagePackHandler,
     MessagePackRpcClient,
     OTELInstrumentedMessagePackHandler,
@@ -42,11 +41,11 @@ class PlainPayload(DataClassMixin):
     value: str = "plain"
 
 
-class ConcreteMessagePackProcessor(MessagePackCloudEventProcessor):
+class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass so we can test the ABC methods."""
 
     async def process_event(self, cloudevent):
-        return await self.message_callback(cloudevent)
+        return await self.callback_incoming(cloudevent)
 
     async def process_response_event(self, cloudevent):
         return None
@@ -55,12 +54,9 @@ class ConcreteMessagePackProcessor(MessagePackCloudEventProcessor):
         return None
 
 
-def _make_processor(**kwargs) -> ConcreteMessagePackProcessor:
-    cfg = ProcessingConfig(
-        topics={"msgpack:test/events/#"},
-        response_topics={"msgpack:test/responses"},
-    )
-    return ConcreteMessagePackProcessor(
+def _make_processor(**kwargs) -> ConcreteProcessor:
+    cfg = ProcessingConfig()
+    return ConcreteProcessor(
         instance_id="test-id",
         runtime_config=cfg,
         **kwargs,
@@ -73,7 +69,6 @@ def _make_handler(**kwargs) -> MessagePackHandler:
     key_schema = RedisKeySchema()
     with patch("app.msgpack.redis.Redis"):
         handler = MessagePackHandler(config, pool, key_schema, **kwargs)
-    handler._cloudevent_processors = []  # fresh list — class attr is shared
     return handler
 
 
@@ -147,16 +142,16 @@ class TestRpcDispatcher:
 
 
 # ===================================================================
-# MessagePackCloudEventProcessor
+# CloudEventProcessor (base class — message_callback via msgpack)
 # ===================================================================
 
 
-class TestMessagePackCloudEventProcessor:
+class TestCloudEventProcessorCallbacks:
     @pytest.mark.asyncio
     async def test_message_callback_no_registered_type(self):
         proc = _make_processor()
         ce = CloudEvent(type="com.unknown.type", data=b'{"value":"x"}')
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert result is None
 
     @pytest.mark.asyncio
@@ -173,7 +168,7 @@ class TestMessagePackCloudEventProcessor:
             data=b"bad",
             datacontenttype="application/xml",
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert result is None
 
     @pytest.mark.asyncio
@@ -189,7 +184,7 @@ class TestMessagePackCloudEventProcessor:
             data=SamplePayload(value="hi").to_jsonb(),
             datacontenttype="application/json",
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert result is None
 
     @pytest.mark.asyncio
@@ -206,7 +201,7 @@ class TestMessagePackCloudEventProcessor:
             datacontenttype="application/json; charset=utf-8",
             correlationid="corr-1",
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0].causationid == ce.id
@@ -225,7 +220,7 @@ class TestMessagePackCloudEventProcessor:
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json",
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 2
 
@@ -243,7 +238,7 @@ class TestMessagePackCloudEventProcessor:
             data=SamplePayload().to_jsonb(),
             datacontenttype="application/json",
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 0
 
@@ -266,7 +261,7 @@ class TestMessagePackCloudEventProcessor:
             "create_event",
             return_value=CloudEvent(datacontenttype="application/xml"),
         ):
-            result = await proc.message_callback(ce)
+            result = await proc.callback_incoming(ce)
         assert result is None
 
     @pytest.mark.asyncio
@@ -282,7 +277,7 @@ class TestMessagePackCloudEventProcessor:
             data=SamplePayload().to_msgpack(),
             datacontenttype="application/msgpack",
         )
-        result = await proc.message_callback(ce)
+        result = await proc.callback_incoming(ce)
         assert isinstance(result, list)
         assert len(result) == 1
 

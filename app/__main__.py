@@ -2,30 +2,24 @@ import asyncio
 import logging
 import os
 
-from app.processors.greetings import (
-    GreetingsMessagePackCloudEventProcessor,
-    GreetingsMQTTCloudEventProcessor,
-)
 from app.microdcs import MicroDCS
+from app.processors.greetings import GreetingsCloudEventProcessor
 
 logger = logging.getLogger("app.main")
 
 # Create MicroDCS application object
 microdcs = MicroDCS()
 
-# Register MQTT processors as needed
-microdcs.processor(
-    GreetingsMQTTCloudEventProcessor(
-        microdcs.runtime_config.instance_id, microdcs.runtime_config.processing
-    )
+# Create a single protocol-agnostic greetings processor
+greetings_processor = GreetingsCloudEventProcessor(
+    microdcs.runtime_config.instance_id, microdcs.runtime_config.processing
 )
 
-# Register MessagePack processors as needed
-microdcs.processor(
-    GreetingsMessagePackCloudEventProcessor(
-        microdcs.runtime_config.instance_id, microdcs.runtime_config.processing
-    )
-)
+# Register with MQTT handler (topic identifier selects config section)
+microdcs.register_mqtt_processor(greetings_processor, "greetings")
+
+# Register with MessagePack handler
+microdcs.register_msgpack_processor(greetings_processor)
 
 # Run MicroDCS main application logic
 loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None
