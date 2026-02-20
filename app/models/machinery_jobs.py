@@ -38,6 +38,8 @@ class LocalizedText(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = "org.opcfoundation.BaseModel.LocalizedText.v1"
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/LocalizedText/"
         aliases: dict[str, str] = {
             "locale": "Locale",
             "text": "Text",
@@ -84,6 +86,8 @@ class EUInformation(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = "org.opcfoundation.BaseModel.EUInformation.v1"
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/EUInformation/"
         aliases: dict[str, str] = {
             "namespace_uri": "NamespaceUri",
             "unit_id": "UnitId",
@@ -127,6 +131,10 @@ class OutputInformationDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.Machinery.Jobs.OutputInformationDataType.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/OutputInformationDataType/"
         aliases: dict[str, str] = {
             "item_number": "ItemNumber",
             "output_info": "OutputInfo",
@@ -157,6 +165,10 @@ class BOMComponentInformationDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.Machinery.Jobs.BOMComponentInformationDataType.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/BOMComponentInformationDataType/"
         aliases: dict[str, str] = {
             "identification": "Identification",
             "quantity": "Quantity",
@@ -181,6 +193,10 @@ class BOMInformationDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.Machinery.Jobs.BOMInformationDataType.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/BOMInformationDataType/"
         aliases: dict[str, str] = {
             "identification": "Identification",
             "component_information": "ComponentInformation",
@@ -310,6 +326,10 @@ class ISA95PropertyDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95PropertyDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95PropertyDataType/"
         aliases: dict[str, str] = {
             "id": "ID",
             "value": "Value",
@@ -353,6 +373,10 @@ class ISA95EquipmentDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95EquipmentDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95EquipmentDataType/"
         aliases: dict[str, str] = {
             "id": "ID",
             "description": "Description",
@@ -409,6 +433,10 @@ class ISA95MaterialDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95MaterialDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95MaterialDataType/"
         aliases: dict[str, str] = {
             "material_class_id": "MaterialClassID",
             "material_definition_id": "MaterialDefinitionID",
@@ -449,6 +477,10 @@ class ISA95ParameterDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95ParameterDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95ParameterDataType/"
         aliases: dict[str, str] = {
             "id": "ID",
             "value": "Value",
@@ -492,6 +524,10 @@ class ISA95PersonnelDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95PersonnelDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95PersonnelDataType/"
         aliases: dict[str, str] = {
             "id": "ID",
             "description": "Description",
@@ -536,6 +572,10 @@ class ISA95PhysicalAssetDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95PhysicalAssetDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95PhysicalAssetDataType/"
         aliases: dict[str, str] = {
             "id": "ID",
             "description": "Description",
@@ -568,6 +608,10 @@ class ISA95WorkMasterDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95WorkMasterDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95WorkMasterDataType/"
         aliases: dict[str, str] = {
             "id": "ID",
             "description": "Description",
@@ -629,6 +673,10 @@ class ISA95JobOrderDataType(JobStateMixin, DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobOrderDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95JobOrderDataType/"
         aliases: dict[str, str] = {
             "job_order_id": "JobOrderID",
             "description": "Description",
@@ -657,6 +705,8 @@ class RelativePathElement(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = "org.opcfoundation.BaseModel.RelativePathElement.v1"
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/RelativePathElement/"
         aliases: dict[str, str] = {
             "reference_type_id": "ReferenceTypeId",
             "is_inverse": "IsInverse",
@@ -675,6 +725,8 @@ class RelativePath(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = "org.opcfoundation.BaseModel.RelativePath.v1"
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/RelativePath/"
         aliases: dict[str, str] = {
             "elements": "Elements",
         }
@@ -702,6 +754,10 @@ class ISA95StateDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95StateDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95StateDataType/"
         aliases: dict[str, str] = {
             "browse_path": "BrowsePath",
             "state_text": "StateText",
@@ -727,6 +783,10 @@ class ISA95JobOrderAndStateDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobOrderAndStateDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95JobOrderAndStateDataType/"
         aliases: dict[str, str] = {
             "job_order": "JobOrder",
             "state": "State",
@@ -787,6 +847,10 @@ class ISA95JobResponseDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobResponseDataType.v2"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ISA95JobResponseDataType/"
         aliases: dict[str, str] = {
             "job_response_id": "JobResponseID",
             "description": "Description",
@@ -1166,6 +1230,10 @@ class OutputPerformanceInfoDataType(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "org.opcfoundation.Machinery.Jobs.OutputPerformanceInfoDataType.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/OutputPerformanceInfoDataType/"
         aliases: dict[str, str] = {
             "identification": "Identification",
             "start_time": "StartTime",

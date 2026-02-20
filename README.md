@@ -159,7 +159,7 @@ JSON Schemas representing the OPC UA information models can be generated from no
   * custom attributes "x-*" in `Config` inner class
 
 ```
-uv run ./scripts/dataclassgen.py dataclasses machinery_jobs.jsonschema.json \
+uv run ./scripts/dataclassgen.py dataclasses \
   --imports app.dataclass.DataClassConfig \
   --imports app.dataclass.DataClassResponseMixin \
   --imports app.dataclass.DataClassMixin \
@@ -167,7 +167,8 @@ uv run ./scripts/dataclassgen.py dataclasses machinery_jobs.jsonschema.json \
   --imports dataclasses.field \
   --base-class app.dataclass.DataClassMixin \
   --config-base-class app.dataclass.DataClassConfig \
-  --add-mixin ISA95JobOrderDataType->JobStateMixin
+  --add-mixin 'ISA95JobOrderDataType->JobStateMixin' \
+  machinery_jobs.jsonschema.json
 ```
 
 #### [OPC 40001-3: Machinery Job Mgmt](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/)
