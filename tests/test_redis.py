@@ -2,12 +2,15 @@ import hashlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import redis.asyncio as redis
 
 from app.models.machinery_jobs import (
     ISA95JobOrderAndStateDataType,
     ISA95JobOrderDataType,
     ISA95JobResponseDataType,
+    ISA95StateDataType,
     ISA95WorkMasterDataType,
+    LocalizedText,
 )
 from app.redis import (
     CloudEventDedupeDAO,
@@ -22,6 +25,7 @@ from app.redis import (
     RedisKeySchema,
     TransactionDedupeDAO,
     WorkMasterDAO,
+    _escape_tag,
     prefixed_key,
     sanitize_scope,
 )
@@ -98,6 +102,29 @@ class TestPrefixedKey:
                 return f"{a}-{b}"
 
         assert Dummy().key("x", "y") == "pfx:x-y"
+
+
+# ---------------------------------------------------------------------------
+# _escape_tag helper
+# ---------------------------------------------------------------------------
+
+
+class TestEscapeTag:
+    def test_plain_alphanumeric(self):
+        assert _escape_tag("abc123") == "abc123"
+
+    def test_underscores_unescaped(self):
+        assert _escape_tag("AllowedToStart_Ready") == "AllowedToStart_Ready"
+
+    def test_hyphens_escaped(self):
+        assert _escape_tag("jo-1") == "jo\\-1"
+
+    def test_dots_escaped(self):
+        assert _escape_tag("app.jobs.scope") == "app\\.jobs\\.scope"
+
+    def test_mixed_special_chars(self):
+        result = _escape_tag("a-b.c@d")
+        assert result == "a\\-b\\.c\\@d"
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +219,9 @@ class TestRedisKeySchema:
             == "test:materialdefinition:list:s1"
         )
 
+    def test_jobresponse_index_name(self):
+        assert self.schema.jobresponse_index_name() == "test:idx:jobresponse"
+
     def test_event_receiver_key(self):
         assert self.schema.event_receiver_key() == "test:event:receiver:list"
 
@@ -210,6 +240,9 @@ def _make_redis_mock() -> AsyncMock:
     # redis.json() is a sync call that returns a sub-client with async methods
     json_sub = AsyncMock()
     mock.json = MagicMock(return_value=json_sub)
+    # redis.ft() is a sync call that returns a sub-client with async methods
+    ft_sub = AsyncMock()
+    mock.ft = MagicMock(return_value=ft_sub)
     return mock
 
 
@@ -481,11 +514,21 @@ class TestJobResponseDAO:
         self,
         job_response_id: str = "jr-1",
         start_time: str | None = None,
+        job_order_id: str | None = None,
+        job_state: list[ISA95StateDataType] | None = None,
     ) -> ISA95JobResponseDataType:
         return ISA95JobResponseDataType(
             job_response_id=job_response_id,
             start_time=start_time,
+            job_order_id=job_order_id,
+            job_state=job_state,
         )
+
+    def _make_state(self, *state_names: str) -> list[ISA95StateDataType]:
+        return [
+            ISA95StateDataType(state_text=LocalizedText(text=name))
+            for name in state_names
+        ]
 
     @pytest.mark.asyncio
     async def test_save_stores_json_and_adds_to_sorted_set(self):
@@ -512,7 +555,7 @@ class TestJobResponseDAO:
     @pytest.mark.asyncio
     async def test_retrieve_returns_object_when_found(self):
         jr = self._make_job_response()
-        fake_data = {"JobResponseID": "jr-1", "_dataschema": "s"}
+        fake_data = {"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"}
 
         json_mock = self.redis.json()
         json_mock.get.side_effect = [
@@ -528,6 +571,32 @@ class TestJobResponseDAO:
             result = await self.dao.retrieve("jr-1")
             mock_from.assert_called_once()
             assert result is jr
+
+    @pytest.mark.asyncio
+    async def test_retrieve_strips_metadata_fields(self):
+        jr = self._make_job_response()
+        fake_data = {
+            "JobResponseID": "jr-1",
+            "_dataschema": "s",
+            "_scope": "s1",
+            "_normalized_state": "Running",
+        }
+
+        json_mock = self.redis.json()
+        json_mock.get.side_effect = [["some-schema"], fake_data]
+
+        with patch.object(
+            ISA95JobResponseDataType,
+            "from_json",
+            return_value=jr,
+        ) as mock_from:
+            await self.dao.retrieve("jr-1")
+            # Verify the three metadata fields were removed before from_json
+            passed_data = mock_from.call_args.args[0]
+            assert "_dataschema" not in passed_data
+            assert "_scope" not in passed_data
+            assert "_normalized_state" not in passed_data
+            assert "JobResponseID" in passed_data
 
     @pytest.mark.asyncio
     async def test_retrieve_returns_none_when_not_found(self):
@@ -559,6 +628,147 @@ class TestJobResponseDAO:
         self.redis.zrange.assert_awaited_once_with(
             self.schema.jobresponse_list_key("s1"), 0, -1
         )
+
+    # -- normalize_state -------------------------------------------------------
+
+    def test_normalize_state_single(self):
+        state = self._make_state("Running")
+        assert JobResponseDAO.normalize_state(state) == "Running"
+
+    def test_normalize_state_hierarchical(self):
+        state = self._make_state("AllowedToStart", "Ready")
+        assert JobResponseDAO.normalize_state(state) == "AllowedToStart_Ready"
+
+    def test_normalize_state_empty_list(self):
+        assert JobResponseDAO.normalize_state([]) == ""
+
+    def test_normalize_state_skips_none_text(self):
+        state = [ISA95StateDataType(state_text=None), *self._make_state("Running")]
+        assert JobResponseDAO.normalize_state(state) == "Running"
+
+    # -- save passes metadata via to_json context ----------------------------
+
+    @pytest.mark.asyncio
+    async def test_save_passes_scope_in_context(self):
+        jr = self._make_job_response()
+        with patch.object(
+            jr, "to_json", return_value='{"JobResponseID":"jr-1"}'
+        ) as mock_to_json:
+            await self.dao.save(jr, scope="s1")
+
+        ctx = mock_to_json.call_args.kwargs["context"]
+        assert ctx["add_scope"] == "s1"
+
+    @pytest.mark.asyncio
+    async def test_save_passes_normalized_state_in_context(self):
+        state = self._make_state("Running")
+        jr = self._make_job_response(job_state=state)
+        with patch.object(
+            jr, "to_json", return_value='{"JobResponseID":"jr-1"}'
+        ) as mock_to_json:
+            await self.dao.save(jr, scope="s1")
+
+        ctx = mock_to_json.call_args.kwargs["context"]
+        assert ctx["add_normalized_state"] == "Running"
+
+    @pytest.mark.asyncio
+    async def test_save_omits_normalized_state_when_no_state(self):
+        jr = self._make_job_response()
+        with patch.object(
+            jr, "to_json", return_value='{"JobResponseID":"jr-1"}'
+        ) as mock_to_json:
+            await self.dao.save(jr, scope="s1")
+
+        ctx = mock_to_json.call_args.kwargs["context"]
+        assert "add_normalized_state" not in ctx
+
+    # -- initialize -----------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_initialize_creates_index_when_not_exists(self):
+        ft_mock = self.redis.ft()
+        ft_mock.info.side_effect = redis.ResponseError("Unknown index")
+        await self.dao.initialize()
+        ft_mock.create_index.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_initialize_skips_when_index_exists(self):
+        ft_mock = self.redis.ft()
+        ft_mock.info.return_value = {"index_name": "test"}  # index exists
+        await self.dao.initialize()
+        ft_mock.create_index.assert_not_awaited()
+
+    # -- retrieve_by_job_order_id (FT.SEARCH) ---------------------------------
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_job_order_id_returns_response(self):
+        jr = self._make_job_response()
+        ft_mock = self.redis.ft()
+        # FT.SEARCH result with one matching doc
+        doc = MagicMock()
+        doc.id = self.schema.jobresponse_key("jr-1")
+        search_result = MagicMock(total=1, docs=[doc])
+        ft_mock.search.return_value = search_result
+
+        json_mock = self.redis.json()
+        json_mock.get.side_effect = [
+            ["some-schema"],
+            {"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"},
+        ]
+
+        with patch.object(ISA95JobResponseDataType, "from_json", return_value=jr):
+            result = await self.dao.retrieve_by_job_order_id("jo-1")
+
+        ft_mock.search.assert_awaited_once()
+        assert result is jr
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_job_order_id_returns_none_when_not_found(self):
+        ft_mock = self.redis.ft()
+        search_result = MagicMock(total=0, docs=[])
+        ft_mock.search.return_value = search_result
+        result = await self.dao.retrieve_by_job_order_id("jo-missing")
+        assert result is None
+
+    # -- retrieve_by_state (FT.SEARCH) ----------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_state_returns_list(self):
+        jr = self._make_job_response()
+        state = self._make_state("Running")
+
+        ft_mock = self.redis.ft()
+        doc = MagicMock()
+        doc.id = self.schema.jobresponse_key("jr-1")
+        search_result = MagicMock(total=1, docs=[doc])
+        ft_mock.search.return_value = search_result
+
+        json_mock = self.redis.json()
+        json_mock.get.side_effect = [
+            ["some-schema"],
+            {"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"},
+        ]
+
+        with patch.object(ISA95JobResponseDataType, "from_json", return_value=jr):
+            result = await self.dao.retrieve_by_state("s1", state)
+
+        ft_mock.search.assert_awaited_once()
+        assert result == [jr]
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_state_returns_empty_for_no_matches(self):
+        state = self._make_state("Running")
+        ft_mock = self.redis.ft()
+        search_result = MagicMock(total=0, docs=[])
+        ft_mock.search.return_value = search_result
+        result = await self.dao.retrieve_by_state("s1", state)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_state_returns_empty_for_empty_state(self):
+        result = await self.dao.retrieve_by_state("s1", [])
+        assert result == []
+        self.redis.ft().search.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

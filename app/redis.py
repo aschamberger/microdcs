@@ -4,14 +4,26 @@ import logging
 import re
 
 import redis.asyncio as redis
+from redis.commands.search.field import TagField
+from redis.commands.search.index_definition import IndexDefinition, IndexType
+from redis.commands.search.query import Query
 
 from app.models.machinery_jobs import (
     ISA95JobOrderAndStateDataType,
     ISA95JobResponseDataType,
+    ISA95StateDataType,
     ISA95WorkMasterDataType,
 )
 
 logger = logging.getLogger("redis")
+
+_TAG_SPECIAL_RE = re.compile(r"([^\w])")
+
+
+def _escape_tag(value: str) -> str:
+    """Escape special characters for RediSearch TAG field queries."""
+    return _TAG_SPECIAL_RE.sub(r"\\\1", value)
+
 
 DEFAULT_KEY_PREFIX = "microdcs-test"
 
@@ -122,6 +134,14 @@ class RedisKeySchema:
         Redis type: sorted set (score: start_time)
         """
         return f"jobresponse:list:{scope}"
+
+    @prefixed_key
+    def jobresponse_index_name(self) -> str:
+        """
+        idx:jobresponse
+        RediSearch index on jobresponse JSON documents.
+        """
+        return "idx:jobresponse"
 
     @prefixed_key
     def workmaster_key(self, work_master_id: str) -> str:
@@ -403,7 +423,8 @@ class JobResponseDAO:
     Data Access Object for Job Responses.
 
     This class provides methods to interact with Redis for storing and retrieving
-    Job Responses.
+    Job Responses.  Queries by job_order_id and state use a RediSearch index
+    on the JSON documents instead of manually maintained secondary keys.
     """
 
     def __init__(
@@ -414,6 +435,44 @@ class JobResponseDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
+    # -- helpers --------------------------------------------------------------
+
+    @staticmethod
+    def normalize_state(state: list[ISA95StateDataType]) -> str:
+        """Normalize a state list to a string key for indexing.
+
+        Joins the state_text.text values with '_' to produce a key like
+        'AllowedToStart_Ready' matching the state machine convention.
+        """
+        return "_".join(
+            s.state_text.text for s in state if s.state_text and s.state_text.text
+        )
+
+    async def initialize(self) -> None:
+        """Create the RediSearch index on job response documents (idempotent).
+
+        Must be called once before any save/query operations.  The method is
+        idempotent — calling it more than once is safe but unnecessary.
+        """
+        index_name = self.key_schema.jobresponse_index_name()
+        try:
+            await self.redis.ft(index_name).info()
+        except redis.ResponseError:
+            prefix = self.key_schema.jobresponse_key("")
+            await self.redis.ft(index_name).create_index(
+                [
+                    TagField("$.JobOrderID", as_name="job_order_id"),
+                    TagField("$._normalized_state", as_name="normalized_state"),
+                    TagField("$._scope", as_name="scope"),
+                ],
+                definition=IndexDefinition(
+                    prefix=[prefix],
+                    index_type=IndexType.JSON,
+                ),
+            )
+
+    # -- CRUD -----------------------------------------------------------------
+
     async def save(self, job_response: ISA95JobResponseDataType, scope: str) -> None:
         """
         Save a Job Response to Redis.
@@ -421,16 +480,27 @@ class JobResponseDAO:
         The Job Response is serialized to JSON using the `to_json` method,
         with context to add the CloudEvent dataschema.
         The Job Response ID is also added to the sorted set with start_time as score.
+        Metadata fields ``_scope`` and ``_normalized_state`` are stored alongside
+        the document for the RediSearch index.
         """
         if not job_response.job_response_id:
             raise ValueError("Job Response must have a job_response_id to be saved")
         job_response_id = job_response.job_response_id
         logger.debug(f"Saving Job Response with ID {job_response_id} to Redis")
         key = self.key_schema.jobresponse_key(job_response_id)
+        # Build serialization context with all metadata for the RediSearch index
+        ctx: dict[str, object] = {
+            "add_cloudevent_dataschema": True,
+            "add_scope": scope,
+        }
+        if job_response.job_state:
+            state_str = self.normalize_state(job_response.job_state)
+            if state_str:
+                ctx["add_normalized_state"] = state_str
         await self.redis.json().set(
             key,
             "$",
-            job_response.to_json(context={"add_cloudevent_dataschema": True}),
+            job_response.to_json(context=ctx),
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the sorted set with start_time as score
         start_time = getattr(job_response, "start_time", 0) or 0
@@ -452,14 +522,70 @@ class JobResponseDAO:
                 f"Found Job Response with ID {job_response_id} in Redis with dataschema {dataschema}"
             )
             data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
-            del data["_dataschema"]  # remove before deserialization
+            # Remove internal metadata fields before deserialization
+            del data["_dataschema"]
+            del data["_scope"]
+            data.pop("_normalized_state", None)  # conditionally stored
             return ISA95JobResponseDataType.from_json(data)
         else:
             return None
 
+    async def retrieve_by_job_order_id(
+        self, job_order_id: str
+    ) -> ISA95JobResponseDataType | None:
+        """
+        Retrieve the Job Response associated with a given Job Order ID
+        via the RediSearch index.
+        """
+        logger.debug(
+            f"Retrieving Job Response by Job Order ID {job_order_id} from Redis"
+        )
+        index_name = self.key_schema.jobresponse_index_name()
+        escaped = _escape_tag(job_order_id)
+        query = Query(f"@job_order_id:{{{escaped}}}").no_content().paging(0, 1)
+        results = await self.redis.ft(index_name).search(query)
+        if results.total == 0:  # type: ignore[reportAttributeAccessIssue]
+            return None
+        key_prefix = self.key_schema.jobresponse_key("")
+        job_response_id = results.docs[0].id.removeprefix(key_prefix)  # type: ignore[reportAttributeAccessIssue]
+        return await self.retrieve(job_response_id)
+
+    async def retrieve_by_state(
+        self, scope: str, state: list[ISA95StateDataType]
+    ) -> list[ISA95JobResponseDataType]:
+        """
+        Retrieve all Job Responses matching a given state within a scope
+        via the RediSearch index.
+        """
+        state_str = self.normalize_state(state)
+        if not state_str:
+            return []
+        logger.debug(
+            f"Retrieving Job Responses by state {state_str} in scope {scope} from Redis"
+        )
+        index_name = self.key_schema.jobresponse_index_name()
+        escaped_scope = _escape_tag(scope)
+        escaped_state = _escape_tag(state_str)
+        query = (
+            Query(f"@scope:{{{escaped_scope}}} @normalized_state:{{{escaped_state}}}")
+            .no_content()
+            .paging(0, 1000)
+        )
+        results = await self.redis.ft(index_name).search(query)
+        key_prefix = self.key_schema.jobresponse_key("")
+        responses: list[ISA95JobResponseDataType] = []
+        for doc in results.docs:  # type: ignore[reportAttributeAccessIssue]
+            job_response_id = doc.id.removeprefix(key_prefix)
+            response = await self.retrieve(job_response_id)
+            if response is not None:
+                responses.append(response)
+        return responses
+
     async def delete(self, job_response_id: str, scope: str) -> None:
         """
         Delete a Job Response from Redis and remove it from the sorted set.
+
+        The RediSearch index is updated automatically when the key is deleted.
         """
         logger.debug(f"Deleting Job Response with ID {job_response_id} from Redis")
         key = self.key_schema.jobresponse_key(job_response_id)

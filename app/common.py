@@ -411,6 +411,15 @@ class CloudEventProcessor(ABC):
     def event_has_callback(self, cloudevent: CloudEvent) -> bool:
         return cloudevent.type in self._type_callbacks_in
 
+    async def initialize(self) -> None:
+        """Optional async initialisation hook.
+
+        Called once by the protocol handler before the processor starts
+        receiving events. Override in subclasses that need async setup
+        (e.g. creating database indices). The default implementation is
+        a no-op.
+        """
+
     def register_publish_handler(self, handler: Callable[[CloudEvent], None]) -> None:
         """Register a transport-specific publish handler.
 

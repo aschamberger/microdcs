@@ -49,7 +49,9 @@ class TestMain:
         dcs = _create_microdcs(otel_enabled=False)
 
         mock_mqtt_proc = MagicMock()
+        mock_mqtt_proc.initialize = AsyncMock()
         mock_mp_proc = MagicMock()
+        mock_mp_proc.initialize = AsyncMock()
         dcs._mqtt_processors.append((mock_mqtt_proc, "greetings"))
         dcs._msgpack_processors.append(mock_mp_proc)
 
@@ -87,7 +89,9 @@ class TestMain:
         dcs = _create_microdcs(otel_enabled=True)
 
         mock_mqtt_proc = MagicMock()
+        mock_mqtt_proc.initialize = AsyncMock()
         mock_mp_proc = MagicMock()
+        mock_mp_proc.initialize = AsyncMock()
         dcs._mqtt_processors.append((mock_mqtt_proc, "greetings"))
         dcs._msgpack_processors.append(mock_mp_proc)
 

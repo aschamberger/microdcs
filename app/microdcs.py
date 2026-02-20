@@ -42,6 +42,17 @@ class MicroDCS:
 
     async def main(self):
         logger.info("Starting main application logic")
+        # Initialise every registered processor exactly once, even when a
+        # processor is shared across multiple protocol handlers.
+        seen: set[int] = set()
+        for processor, _ in self._mqtt_processors:
+            if id(processor) not in seen:
+                await processor.initialize()
+                seen.add(id(processor))
+        for processor in self._msgpack_processors:
+            if id(processor) not in seen:
+                await processor.initialize()
+                seen.add(id(processor))
         async with SystemEventTaskGroup() as task_group:
             # MQTTHandler setup based on OTEL instrumentation flag
             if self.runtime_config.processing.otel_instrumentation_enabled:

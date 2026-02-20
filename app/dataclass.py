@@ -57,18 +57,27 @@ class DataClassValidationMixin:
 
 class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
     # remove hidden fields starting with "_" from serialization
-    # if context has "add_cloudevent_dataschema" set to True, add "dataschema" field with value from Config.cloudevent_dataschema
-    # this is used for persisting in Redis with the correct dataschema for later retrieval and processing
+    # context keys for persisting metadata alongside the document in Redis:
+    #   add_cloudevent_dataschema: bool – inject _dataschema from Config
+    #   add_scope: str | None       – inject _scope with the given value
+    #   add_normalized_state: str | None – inject _normalized_state with the given value
     def __post_serialize__(
         self, d: dict[Any, Any], context: Optional[Dict] = None
     ) -> dict[Any, Any]:
         for key in list(d.keys()):
             if key.startswith("_"):
                 d.pop(key)
-        if context and context.get("add_cloudevent_dataschema", False):
-            cloudevent_dataschema = get_cloudevent_dataschema(self.__class__)
-            if cloudevent_dataschema:
-                d["_dataschema"] = cloudevent_dataschema
+        if context:
+            if context.get("add_cloudevent_dataschema", False):
+                cloudevent_dataschema = get_cloudevent_dataschema(self.__class__)
+                if cloudevent_dataschema:
+                    d["_dataschema"] = cloudevent_dataschema
+            scope = context.get("add_scope")
+            if scope:
+                d["_scope"] = scope
+            normalized_state = context.get("add_normalized_state")
+            if normalized_state:
+                d["_normalized_state"] = normalized_state
         return d
 
 

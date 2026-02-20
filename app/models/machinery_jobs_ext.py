@@ -97,6 +97,10 @@ class JobOrderControlExt(JobOrderControl):
                     {"trigger": "Clear", "source": "Ended", "dest": "EndState"},
                 ]
             )
+            # fix effect key for renamed trigger (FromAllowedToStartToRunning -> Run)
+            cls.opcua_state_machine_effects["Run"] = (
+                cls.opcua_state_machine_effects.pop("FromAllowedToStartToRunning")
+            )
             # add effects for additional transitions
             cls.opcua_state_machine_effects["Store"] = "ISA95JobOrderStatusEventType"
             cls.opcua_state_machine_effects["StoreAndStart"] = (

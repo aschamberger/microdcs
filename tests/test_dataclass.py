@@ -147,6 +147,39 @@ class TestDataClassMixinSerialization:
         data = model.to_dict()
         assert "_dataschema" not in data
 
+    def test_add_scope_context(self):
+        model = EventModel()
+        data = model.to_dict(context={"add_scope": "app.jobs.s1"})
+        assert data["_scope"] == "app.jobs.s1"
+
+    def test_add_scope_not_added_when_absent(self):
+        model = EventModel()
+        data = model.to_dict()
+        assert "_scope" not in data
+
+    def test_add_normalized_state_context(self):
+        model = EventModel()
+        data = model.to_dict(context={"add_normalized_state": "Running_Active"})
+        assert data["_normalized_state"] == "Running_Active"
+
+    def test_add_normalized_state_not_added_when_absent(self):
+        model = EventModel()
+        data = model.to_dict()
+        assert "_normalized_state" not in data
+
+    def test_all_metadata_context_combined(self):
+        model = EventModel()
+        data = model.to_dict(
+            context={
+                "add_cloudevent_dataschema": True,
+                "add_scope": "s1",
+                "add_normalized_state": "Running",
+            }
+        )
+        assert data["_dataschema"] == "https://example.com/schemas/event-v1"
+        assert data["_scope"] == "s1"
+        assert data["_normalized_state"] == "Running"
+
     def test_json_round_trip(self):
         model = EventModel()
         restored = EventModel.from_json(model.to_jsonb())
