@@ -11,6 +11,8 @@ from app.common import (
     Direction,
     ErrorKind,
     ProtocolHandler,
+    incoming,
+    outgoing,
 )
 from app.dataclass import DataClassConfig, DataClassMixin
 
@@ -453,6 +455,63 @@ class TestCloudEventProcessorPublishAndCreate:
         proc.publish_event(ce)
         assert len(proc.published_events) == 1
         assert proc.published_events[0] is ce
+
+
+class TestCloudEventProcessorDecorators:
+    def test_incoming_decorator_registers_callback(self):
+        class DecoratedProcessor(ConcreteProcessor):
+            @incoming(SamplePayload)
+            async def handle_sample(self, payload):
+                return None
+
+        proc = DecoratedProcessor()
+        assert "com.test.sample.v1" in proc._type_callbacks_in
+        assert proc._type_classes["com.test.sample.v1"] is SamplePayload
+
+    def test_outgoing_decorator_registers_callback(self):
+        class DecoratedProcessor(ConcreteProcessor):
+            @outgoing(SamplePayload)
+            async def handle_sample(self, **kwargs):
+                return None
+
+        proc = DecoratedProcessor()
+        assert "com.test.sample.v1" in proc._type_callbacks_out
+
+    def test_both_decorators_on_different_methods(self):
+        class DecoratedProcessor(ConcreteProcessor):
+            @incoming(SamplePayload)
+            async def handle_sample_in(self, payload):
+                return None
+
+            @outgoing(AnotherPayload)
+            async def handle_another_out(self, **kwargs):
+                return None
+
+        proc = DecoratedProcessor()
+        assert "com.test.sample.v1" in proc._type_callbacks_in
+        assert "com.test.another.v1" in proc._type_callbacks_out
+
+    def test_incoming_decorator_union_type(self):
+        class DecoratedProcessor(ConcreteProcessor):
+            @incoming(SamplePayload | AnotherPayload)
+            async def handle_both(self, payload):
+                return None
+
+        proc = DecoratedProcessor()
+        assert "com.test.sample.v1" in proc._type_callbacks_in
+        assert "com.test.another.v1" in proc._type_callbacks_in
+
+    def test_decorator_combined_with_manual_registration(self):
+        class DecoratedProcessor(ConcreteProcessor):
+            @incoming(SamplePayload)
+            async def handle_sample(self, payload):
+                return None
+
+        proc = DecoratedProcessor()
+        cb = AsyncMock()
+        proc.register_callback(AnotherPayload, cb, Direction.OUTGOING)
+        assert "com.test.sample.v1" in proc._type_callbacks_in
+        assert "com.test.another.v1" in proc._type_callbacks_out
 
     def test_publish_event_no_handlers_logs_warning(self, caplog):
         proc = ConcreteProcessor()

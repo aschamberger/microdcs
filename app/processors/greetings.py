@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from app import ProcessingConfig
-from app.common import CloudEvent, CloudEventProcessor, Direction
+from app.common import CloudEvent, CloudEventProcessor, incoming, outgoing
 from app.models.greetings import Bye, Hello
 
 logger = logging.getLogger("processor.greetings")
@@ -11,13 +11,8 @@ logger = logging.getLogger("processor.greetings")
 class GreetingsCloudEventProcessor(CloudEventProcessor):
     def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
         super().__init__(instance_id, runtime_config)
-        self.register_callback(
-            Hello,
-            self.handle_hello,
-            direction=Direction.INCOMING,
-        )
-        self.register_callback(Bye, self.handle_bye, direction=Direction.OUTGOING)
 
+    @incoming(Hello)
     async def handle_hello(self, hello: Hello) -> list[Hello] | Hello | None:
         logger.info("Received hello from: %s", hello.name)
 
@@ -30,6 +25,7 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
             h2,
         ]
 
+    @outgoing(Bye)
     async def handle_bye(self, **kwargs) -> list[Bye] | Bye | None:
         h1 = Bye(name="Bob")
         h2 = Bye(name="Alice")

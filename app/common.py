@@ -314,6 +314,44 @@ class CloudEvent(DataClassMixin):
 CloudeventAttributeTuple = namedtuple("CloudeventAttributeTuple", ["attribute", "path"])
 
 
+def incoming(cloudevent_dataclass: type | UnionType) -> Callable:
+    """Decorator to register a method as an incoming cloud event callback.
+
+    Usage::
+
+        @incoming(Hello)
+        async def handle_hello(self, hello: Hello) -> list[Hello] | Hello | None:
+            ...
+    """
+
+    def decorator(func: Callable) -> Callable:
+        if not hasattr(func, "_cloudevent_callbacks"):
+            func._cloudevent_callbacks = []  # type: ignore[attr-defined]
+        func._cloudevent_callbacks.append((cloudevent_dataclass, Direction.INCOMING))  # type: ignore[attr-defined]
+        return func
+
+    return decorator
+
+
+def outgoing(cloudevent_dataclass: type | UnionType) -> Callable:
+    """Decorator to register a method as an outgoing cloud event callback.
+
+    Usage::
+
+        @outgoing(Bye)
+        async def handle_bye(self, **kwargs) -> list[Bye] | Bye | None:
+            ...
+    """
+
+    def decorator(func: Callable) -> Callable:
+        if not hasattr(func, "_cloudevent_callbacks"):
+            func._cloudevent_callbacks = []  # type: ignore[attr-defined]
+        func._cloudevent_callbacks.append((cloudevent_dataclass, Direction.OUTGOING))  # type: ignore[attr-defined]
+        return func
+
+    return decorator
+
+
 class CloudEventProcessor(ABC):
     def __init__(
         self,
@@ -325,8 +363,20 @@ class CloudEventProcessor(ABC):
         self._type_classes: dict[str, type] = {}
         self._type_callbacks_in: dict[str, Callable[..., Any]] = {}
         self._type_callbacks_out: dict[str, Callable[..., Any]] = {}
-        self._event_attributes: list[Any] = []
+        self._event_attributes: list[CloudeventAttributeTuple] = []
         self._publish_handlers: list[Callable[[CloudEvent], None]] = []
+        self._register_decorated_callbacks()
+
+    def _register_decorated_callbacks(self) -> None:
+        """Scan for methods decorated with @incoming / @outgoing and register them."""
+        for cls in type(self).__mro__:
+            for name, func in vars(cls).items():
+                if callable(func) and hasattr(func, "_cloudevent_callbacks"):
+                    bound_method = getattr(self, name)
+                    for dataclass_type, direction in func._cloudevent_callbacks:  # type: ignore
+                        self.register_callback(
+                            dataclass_type, bound_method, direction=direction
+                        )
 
     def register_callback(
         self,
