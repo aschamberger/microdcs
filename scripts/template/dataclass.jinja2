@@ -16,6 +16,11 @@
 {%- if validation_mixin_class %}
     {%- set _ = bases.append(validation_mixin_class) %}
 {%- endif %}
+{%- if mixins is defined and mixins %}
+    {%- for mixin in mixins %}
+        {%- set _ = bases.append(mixin) %}
+    {%- endfor %}
+{%- endif %}
 {%- if extensions is defined and extensions.get('x-response-type') %}
     {%- set _response_class = extensions['x-response-type']['$ref'].split('/')[-1] %}
     {%- set _ = bases.append("DataClassResponseMixin['" + _response_class + "']") %}

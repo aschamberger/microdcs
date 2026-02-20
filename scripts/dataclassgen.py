@@ -2,7 +2,7 @@ import json
 import pathlib
 import sys
 from collections import defaultdict
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from datamodel_code_generator import PythonVersion
@@ -75,6 +75,12 @@ def dataclasses(
             help="Add InitVar fields to generated classes (format: name->type, e.g. mystatus->MyStatus)"
         ),
     ] = [],
+    add_mixin: Annotated[
+        list[str],
+        typer.Option(
+            help="Add a mixin to a specific class (format: ClassName->MixinName, e.g. ISA95JobOrderDataType->JobStateMixin)"
+        ),
+    ] = [],
 ):
     schema_file_path = schemas_path / schema_file
     if not schema_file_path.exists():
@@ -118,6 +124,21 @@ def dataclasses(
         name, type_hint = ivf.split("->", 1)
         parsed_init_fields.append({"name": name.strip(), "type": type_hint.strip()})
 
+    parsed_class_mixins: dict[str, list[str]] = defaultdict(list)
+    for am in add_mixin:
+        if "->" not in am:
+            print(
+                f"[bold red]Invalid mixin format: {am} (expected ClassName->MixinName)[/bold red]"
+            )
+            raise typer.Exit(code=1)
+        class_name, mixin_name = am.split("->", 1)
+        parsed_class_mixins[class_name.strip()].append(mixin_name.strip())
+    if parsed_class_mixins:
+        for class_name, mixins in parsed_class_mixins.items():
+            print(
+                f"[bold cyan]Adding mixin(s) {', '.join(mixins)} to class: {class_name}[/bold cyan]"
+            )
+
     # Parse schema to find $defs with x-cloudevent-type
     schema_data = json.loads(schema_file_path.read_text())
     cloudevent_defs = {
@@ -133,7 +154,7 @@ def dataclasses(
     # Apply config_base_class and validation_mixin_class to all models.
     # Apply hidden_fields, init_fields, request_object, custom_metadata
     # only to models that have x-cloudevent-type.
-    extra_template_data = {
+    extra_template_data: dict[str, dict[str, Any]] = {
         ALL_MODEL: {
             "config_base_class": config_base_class.split(".")[-1]
             if config_base_class
@@ -150,7 +171,11 @@ def dataclasses(
         "init_fields": parsed_init_fields,
     }
     for def_name in cloudevent_defs:
-        extra_template_data[def_name] = cloudevent_model_data
+        extra_template_data[def_name] = cloudevent_model_data.copy()
+    for class_name, mixins in parsed_class_mixins.items():
+        if class_name not in extra_template_data:
+            extra_template_data[class_name] = {}
+        extra_template_data[class_name]["mixins"] = mixins
     config = JSONSchemaParserConfig(
         target_python_version=PythonVersion.PY_314,
         use_union_operator=True,

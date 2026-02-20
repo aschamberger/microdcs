@@ -1,5 +1,6 @@
 # Auto-generated from "machinery_jobs.jsonschema.json". Do not modify!
 from app.dataclass import DataClassConfig, DataClassMixin, DataClassResponseMixin
+from app.models.machinery_jobs_mixin import JobStateMixin
 from dataclasses import dataclass
 from typing import Any
 from enum import IntEnum
@@ -575,7 +576,7 @@ class ISA95WorkMasterDataType(DataClassMixin):
 
 
 @dataclass(kw_only=True)
-class ISA95JobOrderDataType(DataClassMixin):
+class ISA95JobOrderDataType(JobStateMixin, DataClassMixin):
     """
     Defines the information needed to schedule and execute a job.
     https://reference.opcfoundation.org/ISA95JOBCONTROL/v200/docs/7.3.4
