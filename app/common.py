@@ -13,6 +13,7 @@ import msgpack
 import orjson
 from mashumaro.config import BaseConfig
 
+from app import ProcessingConfig
 from app.dataclass import (
     DataClassConfig,
     DataClassMixin,
@@ -448,10 +449,12 @@ class CloudEventProcessor(ABC):
     def __init__(
         self,
         instance_id: str,
-        runtime_config: Any,
+        runtime_config: ProcessingConfig,
+        config_identifier: str,
     ):
         self._instance_id: str = instance_id
-        self._runtime_config: Any = runtime_config
+        self._runtime_config: ProcessingConfig = runtime_config
+        self._config_identifier: str = config_identifier
         self._type_classes: dict[str, type] = {}
         self._type_callbacks_in: dict[str, Callable[..., Any]] = {}
         self._type_callbacks_out: dict[str, Callable[..., Any]] = {}

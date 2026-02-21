@@ -66,6 +66,7 @@ def _make_processor(**kwargs) -> ConcreteProcessor:
     return ConcreteProcessor(
         instance_id="test-id",
         runtime_config=cfg,
+        config_identifier="test",
         **kwargs,
     )
 

@@ -55,7 +55,6 @@ from app.redis import (
     JobOrderAndStateDAO,
     JobResponseDAO,
     RedisKeySchema,
-    sanitize_scope,
 )
 
 logger = logging.getLogger("processor.machinery_jobs")
@@ -82,15 +81,20 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         self,
         instance_id: str,
         runtime_config: ProcessingConfig,
+        config_identifier: str,
         redis_connection_pool: redis.ConnectionPool,
         redis_key_schema: RedisKeySchema,
     ):
-        super().__init__(instance_id, runtime_config)
+        super().__init__(instance_id, runtime_config, config_identifier)
+        self._topic_prefix = runtime_config.get_topic_prefix_for_identifier(
+            self._config_identifier
+        )
         self._event_attributes.extend(
             [
                 CloudeventAttributeTuple("mqtt_topic", "transportmetadata.mqtt_topic"),
                 CloudeventAttributeTuple("correlationid", "correlationid"),
-                CloudeventAttributeTuple("request_id", "id"),
+                CloudeventAttributeTuple("cloudevent_id", "id"),
+                CloudeventAttributeTuple("scope", "transportmetadata.scope"),
             ]
         )
         self._redis_client: redis.Redis = redis.Redis(
@@ -135,6 +139,26 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             return None
         parts = [s.state_text.text for s in state if s.state_text and s.state_text.text]
         return "_".join(parts) if parts else None
+
+    def identify_scope(self, mqtt_topic: str, scope: str | None = None) -> str:
+        """Derive the scope from the MQTT topic if not explicitly provided."""
+        if scope:
+            return scope
+        # Assuming the topic structure is like "prefix/scope/..."
+        # remove prefix and the intent from the end to extract the scope
+        if self._topic_prefix and mqtt_topic.startswith(self._topic_prefix):
+            mqtt_topic = mqtt_topic[len(self._topic_prefix) :]
+        mqtt_topic = mqtt_topic.strip("/").rsplit("/", 1)[
+            0
+        ]  # remove intent segment at the end
+
+        if len(mqtt_topic) == 0:
+            logger.warning(
+                "MQTT topic '%s' does not contain enough parts to derive scope, using 'default'",
+                mqtt_topic,
+            )
+            return "default"
+        return mqtt_topic
 
     async def is_job_acceptable(
         self, job_order: ISA95JobOrderDataType, scope: str
@@ -419,11 +443,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> StoreResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_store_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(StoreAndStartCall)
@@ -433,11 +458,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> StoreAndStartResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_store_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     # ── Existing-job transition handlers ─────────────────────────────────
@@ -449,11 +475,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> AbortResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(CancelCall)
@@ -463,11 +490,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> CancelResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(ClearCall)
@@ -477,11 +505,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> ClearResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(PauseCall)
@@ -491,11 +520,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> PauseResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(ResumeCall)
@@ -505,11 +535,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> ResumeResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(RevokeStartCall)
@@ -519,11 +550,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> RevokeStartResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(StartCall)
@@ -533,11 +565,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> StartResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     @incoming(StopCall)
@@ -547,11 +580,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> StopResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_existing_job_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     # ── Update handler ───────────────────────────────────────────────────
@@ -563,11 +597,12 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> UpdateResponse | None:
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         return await self._handle_update_transition(
-            method, scope, correlationid, request_id
+            method, scope, correlationid, cloudevent_id
         )
 
     # ── Query handlers (stubs) ───────────────────────────────────────────
@@ -579,7 +614,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> RequestJobResponseByJobOrderIDResponse | None:
         logger.info(
             "Received RequestJobResponseByJobOrderID for job: %s",
@@ -608,7 +644,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         *,
         mqtt_topic: str,
         correlationid: str | None = None,
-        request_id: str | None = None,
+        cloudevent_id: str | None = None,
+        scope: str | None,
     ) -> RequestJobResponseByJobOrderStateResponse | None:
         logger.info(
             "Received RequestJobResponseByJobOrderState for state: %s",
@@ -617,7 +654,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         if not method.job_order_state:
             return method.response(return_status=MethodReturnStatus.INVALID_REQUEST)
 
-        scope = sanitize_scope(mqtt_topic)
+        scope = self.identify_scope(mqtt_topic, scope)
         job_responses = await self._jobresponse_dao.retrieve_by_state(
             scope, method.job_order_state
         )

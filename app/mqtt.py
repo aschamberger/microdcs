@@ -16,12 +16,11 @@ from opentelemetry.semconv._incubating.attributes import messaging_attributes
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
-from app import MQTTConfig, ProcessingConfig
+from app import MQTTConfig
 from app.common import (
     CloudEvent,
     CloudEventProcessor,
     MessageIntent,
-    ProcessorBinding,
     ProtocolHandler,
 )
 from app.redis import CloudEventDedupeDAO, RedisKeySchema
@@ -130,8 +129,6 @@ class MQTTHandler(ProtocolHandler):
     def register_mqtt_processor(
         self,
         processor: CloudEventProcessor,
-        topic_identifier: str,
-        processing_config: ProcessingConfig,
         queue_size: int = 1,
     ) -> None:
         """Register a processor with MQTT-specific routing configuration.
@@ -148,34 +145,38 @@ class MQTTHandler(ProtocolHandler):
                 f"{type(processor).__name__} must be decorated with @processor_config"
             )
 
-        # Resolve topic prefix for this processor
-        topic_prefix: str | None = None
-        for entry in processing_config.topic_prefixes:
-            name, _, prefix = entry.partition(":")
-            if name.strip() == topic_identifier:
-                topic_prefix = prefix.strip()
-                break
+        # Resolve topic prefix/wildcard levels for this processor
+        topic_prefix = processor._runtime_config.get_topic_prefix_for_identifier(
+            processor._config_identifier
+        )
         if topic_prefix is None:
             raise ValueError(
-                f"No topic prefix found for identifier '{topic_identifier}' "
+                f"No topic prefix found for identifier '{processor._config_identifier}' "
                 f"in APP_PROCESSING_TOPIC_PREFIX"
             )
+        topic_wildcard_levels = (
+            processor._runtime_config.get_wildcard_levels_for_identifier(
+                processor._config_identifier
+            )
+        )
 
         # Build subscribe topics from prefix + subscribe intents
         topics: set[str] = set()
+        wildcard_string = "/+"
         for intent in processor.subscribe_intents():
-            topic = f"{topic_prefix}/{intent.value}"
-            if processing_config.shared_subscription_name:
-                topic = f"$share/{processing_config.shared_subscription_name}/{topic}"
-            topics.add(topic)
+            for i in range(0, topic_wildcard_levels + 1):
+                topic = f"{topic_prefix}{wildcard_string * i}/{intent.value}"
+                if processor._runtime_config.shared_subscription_name:
+                    topic = f"$share/{processor._runtime_config.shared_subscription_name}/{topic}"
+                topics.add(topic)
 
-        # Resolve response topic (kept as-is from config)
-        response_topic = ""
-        for response_topic_str in processing_config.response_topics:
-            proc_name, topic = response_topic_str.split(":", 1)
-            if proc_name == topic_identifier:
-                response_topic = f"{topic}/{processor._instance_id}"
-                break
+        # Resolve response topic for this processor
+        response_topic_base = (
+            processor._runtime_config.get_response_topic_for_identifier(
+                processor._config_identifier
+            )
+        )
+        response_topic = f"{response_topic_base}/{processor._instance_id}"
 
         outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue(
             queue_size

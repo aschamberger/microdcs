@@ -67,6 +67,7 @@ def _make_processor(**kwargs) -> ConcreteProcessor:
     proc = ConcreteProcessor(
         instance_id="test-id",
         runtime_config=cfg,
+        config_identifier="test",
         **kwargs,
     )
     return proc
@@ -224,12 +225,16 @@ class TestMQTTProcessorBindingWildcards:
 class TestRegisterMQTTProcessor:
     def test_derives_subscribe_topics_from_intents(self):
         handler = _make_handler()
-        proc = _make_processor()
         cfg = ProcessingConfig(
             topic_prefixes={"greetings:test/greetings"},
             response_topics={"greetings:test/responses"},
         )
-        handler.register_mqtt_processor(proc, "greetings", cfg)
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        handler.register_mqtt_processor(proc)
         assert len(handler._bindings) == 1
         binding = handler._bindings[0]
         # Southbound subscribes to data, events, metadata
@@ -245,13 +250,17 @@ class TestRegisterMQTTProcessor:
 
     def test_shared_subscription(self):
         handler = _make_handler()
-        proc = _make_processor()
         cfg = ProcessingConfig(
             topic_prefixes={"greetings:test/greetings"},
             response_topics={"greetings:test/responses"},
             shared_subscription_name="mygroup",
         )
-        handler.register_mqtt_processor(proc, "greetings", cfg)
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        handler.register_mqtt_processor(proc)
         binding = handler._bindings[0]
         for topic in binding.topics:
             assert topic.startswith("$share/mygroup/")
@@ -260,12 +269,16 @@ class TestRegisterMQTTProcessor:
 
     def test_sets_publish_handler_on_processor(self):
         handler = _make_handler()
-        proc = _make_processor()
         cfg = ProcessingConfig(
             topic_prefixes={"greetings:test/greetings"},
             response_topics={"greetings:test/responses"},
         )
-        handler.register_mqtt_processor(proc, "greetings", cfg)
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        handler.register_mqtt_processor(proc)
         assert len(proc._publish_handlers) == 1
 
     def test_missing_processor_config_raises(self):
@@ -282,21 +295,26 @@ class TestRegisterMQTTProcessor:
             async def handle_expiration(self, cloudevent, timeout):
                 return None
 
-        proc = BareProcessor(instance_id="bare", runtime_config=ProcessingConfig())
-        cfg = ProcessingConfig(
-            topic_prefixes={"test:test/prefix"},
+        proc = BareProcessor(
+            instance_id="bare",
+            runtime_config=ProcessingConfig(),
+            config_identifier="bare",
         )
         with pytest.raises(ValueError, match="must be decorated"):
-            handler.register_mqtt_processor(proc, "test", cfg)
+            handler.register_mqtt_processor(proc)
 
     def test_missing_topic_prefix_raises(self):
         handler = _make_handler()
-        proc = _make_processor()
         cfg = ProcessingConfig(
             topic_prefixes={"other:test/prefix"},
         )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
         with pytest.raises(ValueError, match="No topic prefix found"):
-            handler.register_mqtt_processor(proc, "greetings", cfg)
+            handler.register_mqtt_processor(proc)
 
 
 class TestEnrichResponseTransport:
@@ -387,6 +405,7 @@ class TestEnrichResponseTransport:
         response = CloudEvent()
         result = handler._enrich_response_transport(response, request, binding)
         assert result is True
+        assert response.transportmetadata is not None
         assert response.transportmetadata["mqtt_topic"] == "sender/resp"
         assert (
             response.transportmetadata["mqtt_response_topic"]
@@ -1023,6 +1042,7 @@ class TestMQTTHandler:
                 await handler._outgoing_message_publisher(client, binding)
 
         assert len(published) == 1
+        assert published[0].transportmetadata is not None
         assert published[0].transportmetadata["mqtt_topic"] == "test/commands"
 
     @pytest.mark.asyncio
@@ -1134,6 +1154,7 @@ class TestMQTTHandler:
                 await handler._outgoing_message_publisher(client, binding)
 
         assert len(published) == 1
+        assert published[0].transportmetadata is not None
         assert published[0].transportmetadata["mqtt_topic"] == "test/concrete/commands"
 
     # --- task ---

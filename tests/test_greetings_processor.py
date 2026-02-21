@@ -18,7 +18,7 @@ def _processing_config() -> ProcessingConfig:
 
 
 def _make_processor() -> GreetingsCloudEventProcessor:
-    return GreetingsCloudEventProcessor("test-id", _processing_config())
+    return GreetingsCloudEventProcessor("test-id", _processing_config(), "greetings")
 
 
 HELLO_CE_TYPE = "com.github.aschamberger.microdcs.greetings.hello.v1"

@@ -387,9 +387,12 @@ class ConcreteProcessor(CloudEventProcessor):
         self,
         instance_id: str = "test-1",
         runtime_config: ProcessingConfig | None = None,
+        config_identifier: str = "test",
         queue_size: int = 1,
     ):
-        super().__init__(instance_id, runtime_config or _make_processing_config())
+        super().__init__(
+            instance_id, runtime_config or _make_processing_config(), config_identifier
+        )
         self.published_events: list[tuple[CloudEvent, MessageIntent | None]] = []
         self.register_publish_handler(
             lambda ce, intent: self.published_events.append((ce, intent))

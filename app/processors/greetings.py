@@ -18,8 +18,13 @@ logger = logging.getLogger("processor.greetings")
 
 @processor_config(binding=ProcessorBinding.SOUTHBOUND)
 class GreetingsCloudEventProcessor(CloudEventProcessor):
-    def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
-        super().__init__(instance_id, runtime_config)
+    def __init__(
+        self,
+        instance_id: str,
+        runtime_config: ProcessingConfig,
+        config_identifier: str | None = None,
+    ):
+        super().__init__(instance_id, runtime_config, config_identifier)
 
     @incoming(Hello)
     async def handle_hello(self, hello: Hello) -> list[Hello] | Hello | None:

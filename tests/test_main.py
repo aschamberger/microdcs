@@ -52,7 +52,7 @@ class TestMain:
         mock_mqtt_proc.initialize = AsyncMock()
         mock_mp_proc = MagicMock()
         mock_mp_proc.initialize = AsyncMock()
-        dcs._mqtt_processors.append((mock_mqtt_proc, "greetings"))
+        dcs._mqtt_processors.append(mock_mqtt_proc)
         dcs._msgpack_processors.append(mock_mp_proc)
 
         with (
@@ -72,7 +72,7 @@ class TestMain:
 
             # MQTT processor registered via register_mqtt_processor
             mock_mqtt_handler.register_mqtt_processor.assert_called_once_with(
-                mock_mqtt_proc, "greetings", dcs.runtime_config.processing
+                mock_mqtt_proc
             )
             # MessagePack processor registered via register_processor
             mock_mp_handler.register_processor.assert_called_once_with(mock_mp_proc)
@@ -92,7 +92,7 @@ class TestMain:
         mock_mqtt_proc.initialize = AsyncMock()
         mock_mp_proc = MagicMock()
         mock_mp_proc.initialize = AsyncMock()
-        dcs._mqtt_processors.append((mock_mqtt_proc, "greetings"))
+        dcs._mqtt_processors.append(mock_mqtt_proc)
         dcs._msgpack_processors.append(mock_mp_proc)
 
         with (

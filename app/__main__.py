@@ -13,11 +13,11 @@ microdcs = MicroDCS()
 
 # Create a single protocol-agnostic greetings processor
 greetings_processor = GreetingsCloudEventProcessor(
-    microdcs.runtime_config.instance_id, microdcs.runtime_config.processing
+    microdcs.runtime_config.instance_id, microdcs.runtime_config.processing, "greetings"
 )
 
 # Register with MQTT handler (topic identifier selects config section)
-microdcs.register_mqtt_processor(greetings_processor, "greetings")
+microdcs.register_mqtt_processor(greetings_processor)
 
 # Register with MessagePack handler
 microdcs.register_msgpack_processor(greetings_processor)
@@ -26,12 +26,13 @@ microdcs.register_msgpack_processor(greetings_processor)
 machinery_jobs_processor = MachineryJobsCloudEventProcessor(
     microdcs.runtime_config.instance_id,
     microdcs.runtime_config.processing,
+    "machinery-jobs",
     microdcs.redis_connection_pool,
     microdcs.redis_key_schema,
 )
 
 # Register with MQTT handler (topic identifier selects config section)
-microdcs.register_mqtt_processor(machinery_jobs_processor, "machinery_jobs")
+microdcs.register_mqtt_processor(machinery_jobs_processor)
 
 # Register with MessagePack handler
 microdcs.register_msgpack_processor(machinery_jobs_processor)

@@ -96,7 +96,29 @@ class ProcessingConfig:
     message_expiry_interval: int | None = None
     shared_subscription_name: str | None = None
     topic_prefixes: set[str] = field(default_factory=set)
+    topic_wildcard_levels: set[str] = field(default_factory=set)
     response_topics: set[str] = field(default_factory=set)
+
+    def get_topic_prefix_for_identifier(self, topic_identifier: str) -> str | None:
+        for entry in self.topic_prefixes:
+            name, _, prefix = entry.partition(":")
+            if name.strip() == topic_identifier:
+                return prefix.strip()
+        return None
+
+    def get_wildcard_levels_for_identifier(self, topic_identifier: str) -> int:
+        for entry in self.topic_wildcard_levels:
+            name, _, levels_str = entry.partition(":")
+            if name.strip() == topic_identifier:
+                return int(levels_str.strip())
+        return 0
+
+    def get_response_topic_for_identifier(self, topic_identifier: str) -> str | None:
+        for entry in self.response_topics:
+            name, _, topic = entry.partition(":")
+            if name.strip() == topic_identifier:
+                return topic.strip()
+        return None
 
 
 @dataclass

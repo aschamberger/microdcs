@@ -92,7 +92,7 @@ class RedisKeySchema:
         Redis type: string
         """
         # hash key to keep the Redis key size consistent and small
-        raw = f"{scope}:{transaction_id}"
+        raw = f"{sanitize_scope(scope)}:{transaction_id}"
         return f"transdedupe:{hashlib.md5(raw.encode()).hexdigest()}"
 
     @prefixed_key
@@ -117,7 +117,7 @@ class RedisKeySchema:
         joborder:list:[scope]
         Redis type: sorted set (score: priority)
         """
-        return f"joborder:list:{scope}"
+        return f"joborder:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def jobresponse_key(self, job_response_id: str) -> str:
@@ -133,7 +133,7 @@ class RedisKeySchema:
         jobresponse:list:[scope]
         Redis type: sorted set (score: start_time)
         """
-        return f"jobresponse:list:{scope}"
+        return f"jobresponse:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def jobresponse_index_name(self) -> str:
@@ -157,7 +157,7 @@ class RedisKeySchema:
         workmaster:list:[scope]
         Redis type: set
         """
-        return f"workmaster:list:{scope}"
+        return f"workmaster:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def equipment_list_key(self, scope: str) -> str:
@@ -165,7 +165,7 @@ class RedisKeySchema:
         equipment:list:[scope]
         Redis type: set
         """
-        return f"equipment:list:{scope}"
+        return f"equipment:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def materialclass_list_key(self, scope: str) -> str:
@@ -173,7 +173,7 @@ class RedisKeySchema:
         materialclass:list:[scope]
         Redis type: set
         """
-        return f"materialclass:list:{scope}"
+        return f"materialclass:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def personnel_list_key(self, scope: str) -> str:
@@ -181,7 +181,7 @@ class RedisKeySchema:
         personnel:list:[scope]
         Redis type: set
         """
-        return f"personnel:list:{scope}"
+        return f"personnel:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def physicalasset_list_key(self, scope: str) -> str:
@@ -189,7 +189,7 @@ class RedisKeySchema:
         physicalasset:list:[scope]
         Redis type: set
         """
-        return f"physicalasset:list:{scope}"
+        return f"physicalasset:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def materialdefinition_list_key(self, scope: str) -> str:
@@ -197,7 +197,7 @@ class RedisKeySchema:
         materialdefinition:list:[scope]
         Redis type: set
         """
-        return f"materialdefinition:list:{scope}"
+        return f"materialdefinition:list:{sanitize_scope(scope)}"
 
     @prefixed_key
     def event_receiver_key(self) -> str:
@@ -565,7 +565,7 @@ class JobResponseDAO:
         if not state_str:
             return []
         logger.debug(
-            f"Retrieving Job Responses by state {state_str} in scope {scope} from Redis"
+            f"Retrieving Job Responses by state {state_str} in scope {sanitize_scope(scope)} from Redis"
         )
         index_name = self.key_schema.jobresponse_index_name()
         escaped_scope = _escape_tag(scope)

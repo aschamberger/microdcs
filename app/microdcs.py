@@ -29,13 +29,11 @@ class MicroDCS:
         self.redis_key_schema: RedisKeySchema = RedisKeySchema(
             self.runtime_config.redis.key_prefix
         )
-        self._mqtt_processors: list[tuple[CloudEventProcessor, str]] = []
+        self._mqtt_processors: list[CloudEventProcessor] = []
         self._msgpack_processors: list[CloudEventProcessor] = []
 
-    def register_mqtt_processor(
-        self, processor: CloudEventProcessor, topic_identifier: str
-    ):
-        self._mqtt_processors.append((processor, topic_identifier))
+    def register_mqtt_processor(self, processor: CloudEventProcessor):
+        self._mqtt_processors.append(processor)
 
     def register_msgpack_processor(self, processor: CloudEventProcessor):
         self._msgpack_processors.append(processor)
@@ -45,7 +43,7 @@ class MicroDCS:
         # Initialise every registered processor exactly once, even when a
         # processor is shared across multiple protocol handlers.
         seen: set[int] = set()
-        for processor, _ in self._mqtt_processors:
+        for processor in self._mqtt_processors:
             if id(processor) not in seen:
                 await processor.initialize()
                 seen.add(id(processor))
@@ -69,10 +67,8 @@ class MicroDCS:
                     self.redis_connection_pool,
                     self.redis_key_schema,
                 )
-            for processor, topic_id in self._mqtt_processors:
-                mqtt_handler.register_mqtt_processor(
-                    processor, topic_id, self.runtime_config.processing
-                )
+            for processor in self._mqtt_processors:
+                mqtt_handler.register_mqtt_processor(processor)
             task_group.create_task(mqtt_handler.task())
             # MessagePackHandler setup based on OTEL instrumentation flag
             if self.runtime_config.processing.otel_instrumentation_enabled:

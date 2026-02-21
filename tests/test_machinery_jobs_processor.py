@@ -209,6 +209,7 @@ def processor(mock_redis_pool, redis_key_schema):
     proc = MachineryJobsCloudEventProcessor(
         instance_id="test-processor",
         runtime_config=_processing_config(),
+        config_identifier="machinery_jobs",
         redis_connection_pool=mock_redis_pool,
         redis_key_schema=redis_key_schema,
     )
@@ -374,7 +375,11 @@ class TestProcessStore:
         method = StoreCall(job_order=job_order)
 
         result = await processor.process_store(
-            method, mqtt_topic=MQTT_TOPIC, correlationid="corr-1", request_id="req-1"
+            method,
+            mqtt_topic=MQTT_TOPIC,
+            correlationid="corr-1",
+            cloudevent_id="req-1",
+            scope=None,
         )
 
         assert isinstance(result, StoreResponse)
@@ -385,7 +390,9 @@ class TestProcessStore:
     async def test_store_none_job_order(self, processor):
         method = StoreCall(job_order=None)
 
-        result = await processor.process_store(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_store(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -399,7 +406,9 @@ class TestProcessStore:
         with patch.object(
             processor, "is_job_acceptable", new_callable=AsyncMock, return_value=False
         ):
-            result = await processor.process_store(method, mqtt_topic=MQTT_TOPIC)
+            result = await processor.process_store(
+                method, mqtt_topic=MQTT_TOPIC, scope=None
+            )
 
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
@@ -412,7 +421,9 @@ class TestProcessStore:
         job_order = _make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
-        result = await processor.process_store(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_store(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
@@ -423,7 +434,7 @@ class TestProcessStore:
         job_order = _make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
-        await processor.process_store(method, mqtt_topic=MQTT_TOPIC)
+        await processor.process_store(method, mqtt_topic=MQTT_TOPIC, scope=None)
 
         saved_args = processor._joborder_and_state_dao.save.call_args
         saved_obj: ISA95JobOrderAndStateDataType = saved_args[0][0]
@@ -442,7 +453,11 @@ class TestProcessStoreAndStart:
         method = StoreAndStartCall(job_order=job_order)
 
         result = await processor.process_store_and_start(
-            method, mqtt_topic=MQTT_TOPIC, correlationid="corr-1", request_id="req-1"
+            method,
+            mqtt_topic=MQTT_TOPIC,
+            correlationid="corr-1",
+            cloudevent_id="req-1",
+            scope=None,
         )
 
         assert isinstance(result, StoreAndStartResponse)
@@ -454,7 +469,9 @@ class TestProcessStoreAndStart:
         job_order = _make_woodworking_job_order()
         method = StoreAndStartCall(job_order=job_order)
 
-        await processor.process_store_and_start(method, mqtt_topic=MQTT_TOPIC)
+        await processor.process_store_and_start(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         saved_args = processor._joborder_and_state_dao.save.call_args
         saved_obj: ISA95JobOrderAndStateDataType = saved_args[0][0]
@@ -467,7 +484,9 @@ class TestProcessStoreAndStart:
     async def test_store_and_start_none_job_order(self, processor):
         method = StoreAndStartCall(job_order=None)
 
-        result = await processor.process_store_and_start(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_store_and_start(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, StoreAndStartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -530,7 +549,11 @@ class TestProcessStart:
         )
 
         result = await processor.process_start(
-            method, mqtt_topic=MQTT_TOPIC, correlationid="corr-1", request_id="req-1"
+            method,
+            mqtt_topic=MQTT_TOPIC,
+            correlationid="corr-1",
+            cloudevent_id="req-1",
+            scope=None,
         )
 
         assert isinstance(result, StartResponse)
@@ -540,7 +563,9 @@ class TestProcessStart:
     async def test_start_with_none_job_order_id(self, processor):
         method = StartCall(job_order_id=None)
 
-        result = await processor.process_start(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_start(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, StartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -550,7 +575,9 @@ class TestProcessStart:
         _mock_dao_retrieve(processor, None)
         method = StartCall(job_order_id="nonexistent")
 
-        result = await processor.process_start(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_start(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, StartResponse)
         assert result.return_status == MethodReturnStatus.UNKNOWN_JOB_ORDER_ID
@@ -564,7 +591,9 @@ class TestProcessStart:
 
         method = StartCall(job_order_id="12345")
 
-        result = await processor.process_start(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_start(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, StartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -582,7 +611,9 @@ class TestProcessAbort:
             comment=[LocalizedText(text="Emergency abort", locale="en")],
         )
 
-        result = await processor.process_abort(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_abort(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -595,7 +626,9 @@ class TestProcessAbort:
 
         method = AbortCall(job_order_id="12345")
 
-        result = await processor.process_abort(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_abort(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -608,7 +641,9 @@ class TestProcessAbort:
 
         method = AbortCall(job_order_id="12345")
 
-        result = await processor.process_abort(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_abort(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -621,7 +656,9 @@ class TestProcessAbort:
 
         method = AbortCall(job_order_id="12345")
 
-        result = await processor.process_abort(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_abort(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -637,7 +674,9 @@ class TestProcessPauseResume:
 
         method = PauseCall(job_order_id="12345")
 
-        result = await processor.process_pause(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_pause(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, PauseResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -651,7 +690,9 @@ class TestProcessPauseResume:
 
         method = ResumeCall(job_order_id="12345")
 
-        result = await processor.process_resume(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_resume(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, ResumeResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -665,7 +706,9 @@ class TestProcessPauseResume:
 
         method = PauseCall(job_order_id="12345")
 
-        result = await processor.process_pause(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_pause(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, PauseResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -681,7 +724,7 @@ class TestProcessStop:
 
         method = StopCall(job_order_id="12345")
 
-        result = await processor.process_stop(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_stop(method, mqtt_topic=MQTT_TOPIC, scope=None)
 
         assert isinstance(result, StopResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -695,7 +738,7 @@ class TestProcessStop:
 
         method = StopCall(job_order_id="12345")
 
-        result = await processor.process_stop(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_stop(method, mqtt_topic=MQTT_TOPIC, scope=None)
 
         assert isinstance(result, StopResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -711,7 +754,9 @@ class TestProcessCancel:
 
         method = CancelCall(job_order_id="12345")
 
-        result = await processor.process_cancel(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_cancel(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, CancelResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -725,7 +770,9 @@ class TestProcessCancel:
 
         method = CancelCall(job_order_id="12345")
 
-        result = await processor.process_cancel(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_cancel(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, CancelResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -739,7 +786,9 @@ class TestProcessCancel:
 
         method = CancelCall(job_order_id="12345")
 
-        result = await processor.process_cancel(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_cancel(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, CancelResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -755,7 +804,9 @@ class TestProcessClear:
 
         method = ClearCall(job_order_id="12345")
 
-        result = await processor.process_clear(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_clear(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, ClearResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -769,7 +820,9 @@ class TestProcessClear:
 
         method = ClearCall(job_order_id="12345")
 
-        result = await processor.process_clear(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_clear(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, ClearResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -783,7 +836,9 @@ class TestProcessClear:
 
         method = ClearCall(job_order_id="12345")
 
-        result = await processor.process_clear(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_clear(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, ClearResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -799,7 +854,9 @@ class TestProcessRevokeStart:
 
         method = RevokeStartCall(job_order_id="12345")
 
-        result = await processor.process_revoke_start(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_revoke_start(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, RevokeStartResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -825,7 +882,9 @@ class TestProcessUpdate:
             comment=[LocalizedText(text="Increase priority", locale="en")],
         )
 
-        result = await processor.process_update(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_update(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -841,7 +900,9 @@ class TestProcessUpdate:
         updated_job.priority = 5
         method = UpdateCall(job_order=updated_job)
 
-        result = await processor.process_update(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_update(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -850,7 +911,9 @@ class TestProcessUpdate:
     async def test_update_none_job_order(self, processor):
         method = UpdateCall(job_order=None)
 
-        result = await processor.process_update(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_update(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -862,7 +925,9 @@ class TestProcessUpdate:
         updated_job = _make_woodworking_job_order("99999")
         method = UpdateCall(job_order=updated_job)
 
-        result = await processor.process_update(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_update(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.UNKNOWN_JOB_ORDER_ID
@@ -877,7 +942,9 @@ class TestProcessUpdate:
         updated_job = _make_woodworking_job_order()
         method = UpdateCall(job_order=updated_job)
 
-        result = await processor.process_update(method, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_update(
+            method, mqtt_topic=MQTT_TOPIC, scope=None
+        )
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -893,7 +960,7 @@ class TestProcessUpdate:
         updated_job.priority = 99
         method = UpdateCall(job_order=updated_job)
 
-        await processor.process_update(method, mqtt_topic=MQTT_TOPIC)
+        await processor.process_update(method, mqtt_topic=MQTT_TOPIC, scope=None)
 
         saved_args = processor._joborder_and_state_dao.save.call_args
         saved_obj: ISA95JobOrderAndStateDataType = saved_args[0][0]
@@ -916,7 +983,7 @@ class TestRequestJobResponseByJobOrderID:
         method = RequestJobResponseByJobOrderIDCall(job_order_id=None)
 
         result = await processor.process_request_job_response_by_id(
-            method, mqtt_topic=MQTT_TOPIC
+            method, mqtt_topic=MQTT_TOPIC, scope=None
         )
 
         assert isinstance(result, RequestJobResponseByJobOrderIDResponse)
@@ -928,7 +995,7 @@ class TestRequestJobResponseByJobOrderID:
         method = RequestJobResponseByJobOrderIDCall(job_order_id="nonexistent")
 
         result = await processor.process_request_job_response_by_id(
-            method, mqtt_topic=MQTT_TOPIC
+            method, mqtt_topic=MQTT_TOPIC, scope=None
         )
 
         assert isinstance(result, RequestJobResponseByJobOrderIDResponse)
@@ -942,7 +1009,7 @@ class TestRequestJobResponseByJobOrderState:
         method = RequestJobResponseByJobOrderStateCall(job_order_state=None)
 
         result = await processor.process_request_job_response_by_state(
-            method, mqtt_topic=MQTT_TOPIC
+            method, mqtt_topic=MQTT_TOPIC, scope=None
         )
 
         assert isinstance(result, RequestJobResponseByJobOrderStateResponse)
@@ -954,7 +1021,7 @@ class TestRequestJobResponseByJobOrderState:
         method = RequestJobResponseByJobOrderStateCall(job_order_state=[])
 
         result = await processor.process_request_job_response_by_state(
-            method, mqtt_topic=MQTT_TOPIC
+            method, mqtt_topic=MQTT_TOPIC, scope=None
         )
 
         assert isinstance(result, RequestJobResponseByJobOrderStateResponse)
@@ -1091,7 +1158,7 @@ class TestFullB3Lifecycle:
         # 1. Store
         job_order = _make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
-        result = await processor.process_store(store, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_store(store, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         # Capture the saved object to feed into subsequent steps
@@ -1100,7 +1167,7 @@ class TestFullB3Lifecycle:
 
         # 2. Start (NotAllowedToStart → AllowedToStart)
         start = StartCall(job_order_id="12345")
-        result = await processor.process_start(start, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_start(start, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1126,7 +1193,7 @@ class TestFullB3Lifecycle:
 
         # 4. Pause (Running → Interrupted)
         pause = PauseCall(job_order_id="12345")
-        result = await processor.process_pause(pause, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_pause(pause, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1134,7 +1201,9 @@ class TestFullB3Lifecycle:
 
         # 5. Resume (Interrupted → Running)
         resume = ResumeCall(job_order_id="12345")
-        result = await processor.process_resume(resume, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_resume(
+            resume, mqtt_topic=MQTT_TOPIC, scope=None
+        )
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1142,7 +1211,7 @@ class TestFullB3Lifecycle:
 
         # 6. Stop (Running → Ended)
         stop = StopCall(job_order_id="12345")
-        result = await processor.process_stop(stop, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_stop(stop, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1150,7 +1219,7 @@ class TestFullB3Lifecycle:
 
         # 7. Clear (Ended → EndState)
         clear = ClearCall(job_order_id="12345")
-        result = await processor.process_clear(clear, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_clear(clear, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
@@ -1162,7 +1231,7 @@ class TestFullB3Lifecycle:
         job_order = _make_woodworking_job_order()
         store_and_start = StoreAndStartCall(job_order=job_order)
         result = await processor.process_store_and_start(
-            store_and_start, mqtt_topic=MQTT_TOPIC
+            store_and_start, mqtt_topic=MQTT_TOPIC, scope=None
         )
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
@@ -1171,7 +1240,7 @@ class TestFullB3Lifecycle:
 
         # 2. Abort (AllowedToStart → Aborted)
         abort = AbortCall(job_order_id="12345")
-        result = await processor.process_abort(abort, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_abort(abort, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1179,7 +1248,7 @@ class TestFullB3Lifecycle:
 
         # 3. Clear (Aborted → EndState)
         clear = ClearCall(job_order_id="12345")
-        result = await processor.process_clear(clear, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_clear(clear, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
@@ -1190,7 +1259,7 @@ class TestFullB3Lifecycle:
         # 1. Store
         job_order = _make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
-        result = await processor.process_store(store, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_store(store, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1198,7 +1267,9 @@ class TestFullB3Lifecycle:
 
         # 2. Cancel (NotAllowedToStart → EndState)
         cancel = CancelCall(job_order_id="12345")
-        result = await processor.process_cancel(cancel, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_cancel(
+            cancel, mqtt_topic=MQTT_TOPIC, scope=None
+        )
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
@@ -1209,7 +1280,7 @@ class TestFullB3Lifecycle:
         # 1. Store
         job_order = _make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
-        result = await processor.process_store(store, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_store(store, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1217,7 +1288,7 @@ class TestFullB3Lifecycle:
 
         # 2. Start
         start = StartCall(job_order_id="12345")
-        result = await processor.process_start(start, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_start(start, mqtt_topic=MQTT_TOPIC, scope=None)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1225,7 +1296,9 @@ class TestFullB3Lifecycle:
 
         # 3. RevokeStart (AllowedToStart → NotAllowedToStart)
         revoke = RevokeStartCall(job_order_id="12345")
-        result = await processor.process_revoke_start(revoke, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_revoke_start(
+            revoke, mqtt_topic=MQTT_TOPIC, scope=None
+        )
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1233,5 +1306,7 @@ class TestFullB3Lifecycle:
 
         # 4. Cancel (NotAllowedToStart → EndState)
         cancel = CancelCall(job_order_id="12345")
-        result = await processor.process_cancel(cancel, mqtt_topic=MQTT_TOPIC)
+        result = await processor.process_cancel(
+            cancel, mqtt_topic=MQTT_TOPIC, scope=None
+        )
         assert result.return_status == MethodReturnStatus.NO_ERROR
