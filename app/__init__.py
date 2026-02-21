@@ -95,7 +95,7 @@ class ProcessingConfig:
     cloudevent_source: str | None = None
     message_expiry_interval: int | None = None
     shared_subscription_name: str | None = None
-    topics: set[str] = field(default_factory=set)
+    topic_prefixes: set[str] = field(default_factory=set)
     response_topics: set[str] = field(default_factory=set)
 
 

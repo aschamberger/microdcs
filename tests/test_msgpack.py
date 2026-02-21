@@ -9,7 +9,13 @@ import msgpack
 import pytest
 
 from app import MessagePackConfig, ProcessingConfig
-from app.common import CloudEvent, CloudEventProcessor, Direction
+from app.common import (
+    CloudEvent,
+    CloudEventProcessor,
+    Direction,
+    ProcessorBinding,
+    processor_config,
+)
 from app.dataclass import DataClassConfig, DataClassMixin
 from app.msgpack import (
     MessagePackHandler,
@@ -41,6 +47,7 @@ class PlainPayload(DataClassMixin):
     value: str = "plain"
 
 
+@processor_config(binding=ProcessorBinding.SOUTHBOUND)
 class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass so we can test the ABC methods."""
 

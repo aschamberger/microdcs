@@ -46,6 +46,94 @@ class Direction(StrEnum):
     """Message is outgoing (sent)."""
 
 
+class MessageIntent(StrEnum):
+    """Enumeration of message intents."""
+
+    DATA = "data"
+    """The message represents data being transmitted."""
+
+    EVENT = "events"
+    """The message represents an event that occurred."""
+
+    COMMAND = "commands"
+    """The message represents a command to be executed."""
+
+    META = "metadata"
+    """The message represents metadata about the system or other messages."""
+
+
+class ProcessorBinding(StrEnum):
+    """Defines the protocol binding direction of a processor."""
+
+    NORTHBOUND = "northbound"
+    """Northbound: subscribes to commands, publishes to data/events/meta."""
+
+    SOUTHBOUND = "southbound"
+    """Southbound: subscribes to data/events/meta, publishes to commands."""
+
+
+# Default subscribe intents per binding direction
+_BINDING_SUBSCRIBE_INTENTS: dict[ProcessorBinding, set[MessageIntent]] = {
+    ProcessorBinding.NORTHBOUND: {MessageIntent.COMMAND},
+    ProcessorBinding.SOUTHBOUND: {
+        MessageIntent.DATA,
+        MessageIntent.EVENT,
+        MessageIntent.META,
+    },
+}
+
+# Default publish intents per binding direction
+_BINDING_PUBLISH_INTENTS: dict[ProcessorBinding, set[MessageIntent]] = {
+    ProcessorBinding.NORTHBOUND: {
+        MessageIntent.DATA,
+        MessageIntent.EVENT,
+        MessageIntent.META,
+    },
+    ProcessorBinding.SOUTHBOUND: {MessageIntent.COMMAND},
+}
+
+
+def processor_config(
+    binding: ProcessorBinding,
+    subscribe_intents: set[MessageIntent] | None = None,
+    publish_intents: set[MessageIntent] | None = None,
+) -> Callable:
+    """Class decorator to configure a CloudEventProcessor subclass.
+
+    The *binding* direction defines the default subscribe/publish intents.
+    Override with explicit sets when the defaults don't fit.
+
+    Usage::
+
+        @processor_config(binding=ProcessorBinding.SOUTHBOUND)
+        class MyProcessor(CloudEventProcessor):
+            ...
+
+        @processor_config(
+            binding=ProcessorBinding.NORTHBOUND,
+            publish_intents={MessageIntent.EVENT},  # override default
+        )
+        class MyProcessor(CloudEventProcessor):
+            ...
+    """
+
+    def decorator(cls: type) -> type:
+        cls._processor_binding = binding
+        cls._subscribe_intents = (
+            subscribe_intents
+            if subscribe_intents is not None
+            else _BINDING_SUBSCRIBE_INTENTS[binding]
+        )
+        cls._publish_intents = (
+            publish_intents
+            if publish_intents is not None
+            else _BINDING_PUBLISH_INTENTS[binding]
+        )
+        return cls
+
+    return decorator
+
+
 class ErrorKind(StrEnum):
     """Enumeration of possible error kinds during message delivery."""
 
@@ -53,7 +141,7 @@ class ErrorKind(StrEnum):
     """The configuration provided is invalid."""
 
     NO_MATCHING_SUBSCRIBERS = "NO_MATCHING_SUBSCRIBERS"
-    """IThere were no subscribers matching the message topic."""
+    """There were no subscribers matching the message topic."""
     TIMEOUT = "TIMEOUT"
     """The message delivery timed out."""
 
@@ -353,6 +441,10 @@ def outgoing(cloudevent_dataclass: type | UnionType) -> Callable:
 
 
 class CloudEventProcessor(ABC):
+    _processor_binding: ProcessorBinding
+    _subscribe_intents: set[MessageIntent] = set()
+    _publish_intents: set[MessageIntent] = set()
+
     def __init__(
         self,
         instance_id: str,
@@ -364,8 +456,23 @@ class CloudEventProcessor(ABC):
         self._type_callbacks_in: dict[str, Callable[..., Any]] = {}
         self._type_callbacks_out: dict[str, Callable[..., Any]] = {}
         self._event_attributes: list[CloudeventAttributeTuple] = []
-        self._publish_handlers: list[Callable[[CloudEvent], None]] = []
+        self._publish_handlers: list[
+            Callable[[CloudEvent, MessageIntent | None], None]
+        ] = []
         self._register_decorated_callbacks()
+
+    @property
+    def binding(self) -> ProcessorBinding:
+        """Return the binding direction of this processor."""
+        return type(self)._processor_binding
+
+    def subscribe_intents(self) -> set[MessageIntent]:
+        """Return the set of intents this processor subscribes to."""
+        return type(self)._subscribe_intents
+
+    def publish_intents(self) -> set[MessageIntent]:
+        """Return the set of intents this processor publishes to."""
+        return type(self)._publish_intents
 
     def _register_decorated_callbacks(self) -> None:
         """Scan for methods decorated with @incoming / @outgoing and register them."""
@@ -420,20 +527,26 @@ class CloudEventProcessor(ABC):
         a no-op.
         """
 
-    def register_publish_handler(self, handler: Callable[[CloudEvent], None]) -> None:
+    def register_publish_handler(
+        self, handler: Callable[[CloudEvent, MessageIntent | None], None]
+    ) -> None:
         """Register a transport-specific publish handler.
 
         Each registered handler will be called when the processor publishes
         an outbound event, allowing multiple transports to receive the event.
+        The handler receives the CloudEvent and an optional MessageIntent that
+        indicates which publish-topic pattern should be used.
         """
         self._publish_handlers.append(handler)
 
-    def publish_event(self, cloudevent: CloudEvent) -> None:
+    def publish_event(
+        self, cloudevent: CloudEvent, intent: MessageIntent | None = None
+    ) -> None:
         if not self._publish_handlers:
             logger.warning("No publish handlers registered; cannot publish event.")
             return
         for handler in self._publish_handlers:
-            handler(cloudevent)
+            handler(cloudevent, intent)
 
     def create_event(
         self,
@@ -516,7 +629,11 @@ class CloudEventProcessor(ABC):
         return response_cloudevents
 
     async def callback_outgoing(
-        self, payload_type: type, topic: str | None = None, **kwargs
+        self,
+        payload_type: type,
+        topic: str | None = None,
+        intent: MessageIntent | None = None,
+        **kwargs,
     ) -> list[CloudEvent] | CloudEvent | None:
         cloudevent_type = get_cloudevent_type(payload_type)
         if cloudevent_type is None or cloudevent_type not in self._type_callbacks_out:
@@ -559,7 +676,7 @@ class CloudEventProcessor(ABC):
                 )
                 return None
 
-            self.publish_event(response_cloudevent)
+            self.publish_event(response_cloudevent, intent=intent)
             response_cloudevents.append(response_cloudevent)
         return response_cloudevents
 

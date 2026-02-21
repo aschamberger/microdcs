@@ -10,9 +10,12 @@ from app.common import (
     CloudEventProcessor,
     Direction,
     ErrorKind,
+    MessageIntent,
+    ProcessorBinding,
     ProtocolHandler,
     incoming,
     outgoing,
+    processor_config,
 )
 from app.dataclass import DataClassConfig, DataClassMixin
 
@@ -376,6 +379,7 @@ class TestCloudEventPayload:
 # ---------------------------------------------------------------------------
 
 
+@processor_config(binding=ProcessorBinding.SOUTHBOUND)
 class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass for testing base-class behaviour."""
 
@@ -386,8 +390,10 @@ class ConcreteProcessor(CloudEventProcessor):
         queue_size: int = 1,
     ):
         super().__init__(instance_id, runtime_config or _make_processing_config())
-        self.published_events: list[CloudEvent] = []
-        self.register_publish_handler(self.published_events.append)
+        self.published_events: list[tuple[CloudEvent, MessageIntent | None]] = []
+        self.register_publish_handler(
+            lambda ce, intent: self.published_events.append((ce, intent))
+        )
 
     async def process_event(self, cloudevent: CloudEvent) -> Any:
         return None
@@ -454,7 +460,7 @@ class TestCloudEventProcessorPublishAndCreate:
         ce = CloudEvent(source="test")
         proc.publish_event(ce)
         assert len(proc.published_events) == 1
-        assert proc.published_events[0] is ce
+        assert proc.published_events[0][0] is ce
 
 
 class TestCloudEventProcessorDecorators:

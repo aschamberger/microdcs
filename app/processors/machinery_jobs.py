@@ -9,7 +9,10 @@ from app.common import (
     CloudEvent,
     CloudeventAttributeTuple,
     CloudEventProcessor,
+    MessageIntent,
+    ProcessorBinding,
     incoming,
+    processor_config,
 )
 from app.models.machinery_jobs import (
     AbortCall,
@@ -73,6 +76,7 @@ type JobOrderIdCall = (
 type JobOrderCall = StoreCall | StoreAndStartCall
 
 
+@processor_config(binding=ProcessorBinding.NORTHBOUND)
 class MachineryJobsCloudEventProcessor(CloudEventProcessor):
     def __init__(
         self,
@@ -129,11 +133,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         """
         if not state:
             return None
-        parts = [
-            s.state_text.text
-            for s in state
-            if s.state_text and s.state_text.text
-        ]
+        parts = [s.state_text.text for s in state if s.state_text and s.state_text.text]
         return "_".join(parts) if parts else None
 
     async def is_job_acceptable(
@@ -146,9 +146,9 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         if "_" in state:
             main_state, sub_state = state.split("_")
             main_state_number, sub_state_number = (
-                JobOrderControlExt.Config.opcua_state_machine_state_ids[
-                    state
-                ].split("_")
+                JobOrderControlExt.Config.opcua_state_machine_state_ids[state].split(
+                    "_"
+                )
             )
             return [
                 ISA95StateDataType(
@@ -197,7 +197,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
                 e,
             )
             return
-        self.publish_event(cloudevent)
+        self.publish_event(cloudevent, intent=MessageIntent.EVENT)
 
     # ── shared transition logic ──────────────────────────────────────────
 

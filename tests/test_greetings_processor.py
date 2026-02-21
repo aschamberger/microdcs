@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app import ProcessingConfig
-from app.common import CloudEvent
+from app.common import CloudEvent, MessageIntent
 from app.models.greetings import Bye, Hello, HiddenObject
 from app.processors.greetings import GreetingsCloudEventProcessor
 
@@ -226,7 +226,7 @@ class TestGreetingsCloudEventProcessor:
                 "app.processors.greetings.asyncio.sleep", new_callable=AsyncMock
             ):
                 await proc.send_event()
-            mock_type_cb.assert_awaited_once_with(Bye, "app/greetings/bye")
+            mock_type_cb.assert_awaited_once_with(Bye, intent=MessageIntent.COMMAND)
 
     # --- handle_expiration ---
 

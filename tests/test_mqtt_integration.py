@@ -5,8 +5,8 @@ import pytest
 import pytest_asyncio
 import redis.asyncio as redis
 
-from app import MQTTConfig, RedisConfig
-from app.common import CloudEvent
+from app import MQTTConfig, ProcessingConfig, RedisConfig
+from app.common import CloudEvent, MessageIntent
 from app.models.greetings import Hello, HiddenObject
 from app.models.machinery_jobs import (
     EUInformation,
@@ -20,18 +20,58 @@ from app.models.machinery_jobs import (
     StoreCall,
 )
 from app.mqtt import MQTTHandler
+from app.processors.greetings import GreetingsCloudEventProcessor
+from app.processors.machinery_jobs import MachineryJobsCloudEventProcessor
 from app.redis import RedisKeySchema
 from tests.conftest import integration, mqtt_available, redis_available
 
 MQTT_CONFIG = MQTTConfig()
 REDIS_CONFIG = RedisConfig()
 
+# --------------------------------------------------------------------------
+# Dynamic topic configuration — mirrors the real app setup so that tests
+# survive changes to ProcessorBinding / MessageIntent / topic prefix values.
+# --------------------------------------------------------------------------
 
-GREETINGS_TOPIC = "app/greetings/request"
-GREETINGS_RESPONSE_TOPIC = "app/greetings/response"
-JOBS_TOPIC = "app/jobs/woodworking/command"
-JOBS_RESPONSE_TOPIC = "app/jobs/woodworking/response"
+GREETINGS_PREFIX = "app/greetings"
+JOBS_PREFIX = "app/jobs/woodworking"
+
+PROCESSING_CONFIG = ProcessingConfig(
+    topic_prefixes={
+        f"greetings:{GREETINGS_PREFIX}",
+        f"machinery_jobs:{JOBS_PREFIX}",
+    },
+    response_topics={
+        f"greetings:{GREETINGS_PREFIX}/responses",
+        f"machinery_jobs:{JOBS_PREFIX}/responses",
+    },
+)
+
+# Derive the actual publish/subscribe topics from the processor config
+# so tests don't break when intents or topic structure change.
+_greetings_subscribe_intents = GreetingsCloudEventProcessor._subscribe_intents
+_greetings_publish_intents = GreetingsCloudEventProcessor._publish_intents
+_jobs_subscribe_intents = MachineryJobsCloudEventProcessor._subscribe_intents
+_jobs_publish_intents = MachineryJobsCloudEventProcessor._publish_intents
+
+# Greetings is southbound: subscribes to data/events/meta, publishes to commands
+GREETINGS_SUBSCRIBE_TOPICS = {
+    f"{GREETINGS_PREFIX}/{intent.value}" for intent in _greetings_subscribe_intents
+}
+# Topic the test sender publishes greetings events to (one of the subscribe intents)
+GREETINGS_EVENT_TOPIC = f"{GREETINGS_PREFIX}/{MessageIntent.EVENT.value}"
+
+# Jobs is northbound: subscribes to commands, publishes to data/events/meta
+JOBS_SUBSCRIBE_TOPICS = {
+    f"{JOBS_PREFIX}/{intent.value}" for intent in _jobs_subscribe_intents
+}
+# Topic the test sender publishes job commands to (the subscribe intent)
+JOBS_COMMAND_TOPIC = f"{JOBS_PREFIX}/{MessageIntent.COMMAND.value}"
+
 CE_SOURCE = "https://aschamberger.github.com/microdcs/test-sender"
+# Test-only response topics (not derived from the app, just for the test sender)
+GREETINGS_RESPONSE_TOPIC = "tests/greetings/response"
+JOBS_RESPONSE_TOPIC = "tests/jobs/woodworking/response"
 
 
 @pytest_asyncio.fixture
@@ -68,7 +108,7 @@ async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
         dataschema="https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/raw",
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
-            "mqtt_topic": GREETINGS_TOPIC,
+            "mqtt_topic": GREETINGS_EVENT_TOPIC,
             "mqtt_response_topic": GREETINGS_RESPONSE_TOPIC,
         },
     )
@@ -94,7 +134,7 @@ async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
-            "mqtt_topic": GREETINGS_TOPIC,
+            "mqtt_topic": GREETINGS_EVENT_TOPIC,
             "mqtt_response_topic": GREETINGS_RESPONSE_TOPIC,
         },
     )
@@ -131,7 +171,7 @@ async def test_publish_hello_with_additional_payload_fields(
             ),
         },
         transportmetadata={
-            "mqtt_topic": GREETINGS_TOPIC,
+            "mqtt_topic": GREETINGS_EVENT_TOPIC,
             "mqtt_response_topic": GREETINGS_RESPONSE_TOPIC,
         },
     )
@@ -268,7 +308,7 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
-            "mqtt_topic": JOBS_TOPIC,
+            "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
         },
     )
@@ -297,7 +337,7 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
-            "mqtt_topic": JOBS_TOPIC,
+            "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
         },
     )
@@ -325,7 +365,7 @@ async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
-            "mqtt_topic": JOBS_TOPIC,
+            "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
         },
     )
@@ -401,7 +441,7 @@ async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
         dataschema=StoreCall.Config.cloudevent_dataschema,
         datacontenttype="application/json; charset=utf-8",
         transportmetadata={
-            "mqtt_topic": JOBS_TOPIC,
+            "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
         },
     )

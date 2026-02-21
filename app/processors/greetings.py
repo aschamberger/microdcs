@@ -2,12 +2,21 @@ import asyncio
 import logging
 
 from app import ProcessingConfig
-from app.common import CloudEvent, CloudEventProcessor, incoming, outgoing
+from app.common import (
+    CloudEvent,
+    CloudEventProcessor,
+    MessageIntent,
+    ProcessorBinding,
+    incoming,
+    outgoing,
+    processor_config,
+)
 from app.models.greetings import Bye, Hello
 
 logger = logging.getLogger("processor.greetings")
 
 
+@processor_config(binding=ProcessorBinding.SOUTHBOUND)
 class GreetingsCloudEventProcessor(CloudEventProcessor):
     def __init__(self, instance_id: str, runtime_config: ProcessingConfig):
         super().__init__(instance_id, runtime_config)
@@ -66,9 +75,7 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
     async def send_event(self) -> None:
         await asyncio.sleep(5)  # wait for system to be ready
         logger.info("Sending bye event")
-        payload_type = Bye
-        topic = "app/greetings/bye"
-        await self.callback_outgoing(payload_type, topic)
+        await self.callback_outgoing(Bye, intent=MessageIntent.COMMAND)
 
     async def handle_expiration(
         self, cloudevent: CloudEvent, timeout: int

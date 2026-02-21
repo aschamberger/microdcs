@@ -61,7 +61,7 @@ class TestProcessingConfig:
         assert cfg.cloudevent_source is None
         assert cfg.message_expiry_interval is None
         assert cfg.shared_subscription_name is None
-        assert cfg.topics == set()
+        assert cfg.topic_prefixes == set()
         assert cfg.response_topics == set()
 
 
@@ -207,11 +207,11 @@ class TestRuntimeConfig:
     def test_env_override_set(self):
         with patch.dict(
             os.environ,
-            {"APP_PROCESSING_TOPICS": "greetings:t/a/#,greetings:t/b/#"},
+            {"APP_PROCESSING_TOPIC_PREFIXES": "greetings:t/a,greetings:t/b"},
             clear=False,
         ):
             cfg = RuntimeConfig()
-        assert cfg.processing.topics == {"greetings:t/a/#", "greetings:t/b/#"}
+        assert cfg.processing.topic_prefixes == {"greetings:t/a", "greetings:t/b"}
 
     def test_env_override_str_or_none(self):
         with patch.dict(

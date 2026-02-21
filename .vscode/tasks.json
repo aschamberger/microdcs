@@ -15,7 +15,7 @@
             //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
             "APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL": "10",
             "APP_PROCESSING_SHARED_SUBSCRIPTION_NAME": "appsub",
-            "APP_PROCESSING_TOPICS": "greetings:app/greetings/request,machinery_jobs:app/jobs/+/command",
+            "APP_PROCESSING_TOPIC_PREFIXES": "greetings:app/greetings,machinery_jobs:app/jobs/+",
             "APP_PROCESSING_RESPONSE_TOPICS": "greetings:app/greetings/responses,machinery_jobs:app/jobs/+/responses",
             "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/micro-dcs/app",
             "APP_LOGGING_LEVEL": "DEBUG",

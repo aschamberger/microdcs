@@ -9,7 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app import MQTTConfig, ProcessingConfig
-from app.common import CloudEvent, CloudEventProcessor, Direction
+from app.common import (
+    CloudEvent,
+    CloudEventProcessor,
+    Direction,
+    MessageIntent,
+    ProcessorBinding,
+    processor_config,
+)
 from app.dataclass import DataClassConfig, DataClassMixin
 from app.mqtt import (
     MQTTHandler,
@@ -40,6 +47,7 @@ class PlainPayload(DataClassMixin):
     value: str = "plain"
 
 
+@processor_config(binding=ProcessorBinding.SOUTHBOUND)
 class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass for testing."""
 
@@ -79,16 +87,22 @@ def _make_binding(
     topics: set[str] | None = None,
     response_topic: str = "test/responses/test-id",
     queue_size: int = 1,
+    topic_prefix: str = "test",
+    publish_intents: set[MessageIntent] | None = None,
 ) -> MQTTProcessorBinding:
     """Register a processor via the binding system and return the binding."""
     if processor is None:
         processor = _make_processor()
-    outgoing_queue: Queue[CloudEvent] = Queue(queue_size)
+    if publish_intents is None:
+        publish_intents = processor.publish_intents()
+    outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue(queue_size)
     binding = MQTTProcessorBinding(
         processor=processor,
         topics=topics or {"test/events/#"},
         response_topic=response_topic,
         outgoing_queue=outgoing_queue,
+        topic_prefix=topic_prefix,
+        publish_intents=publish_intents,
     )
     handler._bindings.append(binding)
     return binding
@@ -141,29 +155,99 @@ class TestQoS:
 
 
 # ===================================================================
+# MQTTProcessorBinding wildcard helpers
+# ===================================================================
+
+
+class TestMQTTProcessorBindingWildcards:
+    def test_resolve_topic_wildcards_single_level(self):
+        result = MQTTProcessorBinding.resolve_topic_wildcards(
+            "app/jobs/+/events", "app/jobs/woodworking/commands"
+        )
+        assert result == "app/jobs/woodworking/events"
+
+    def test_resolve_topic_wildcards_response_longer_pattern(self):
+        result = MQTTProcessorBinding.resolve_topic_wildcards(
+            "app/jobs/+/responses/inst-1", "app/jobs/woodworking/commands"
+        )
+        assert result == "app/jobs/woodworking/responses/inst-1"
+
+    def test_resolve_topic_wildcards_no_wildcards(self):
+        result = MQTTProcessorBinding.resolve_topic_wildcards(
+            "app/greetings/events", "app/greetings/commands"
+        )
+        assert result == "app/greetings/events"
+
+    def test_has_wildcards_plus(self):
+        assert MQTTProcessorBinding.has_wildcards("app/jobs/+/events") is True
+
+    def test_has_wildcards_hash(self):
+        assert MQTTProcessorBinding.has_wildcards("app/jobs/#") is True
+
+    def test_has_wildcards_none(self):
+        assert MQTTProcessorBinding.has_wildcards("app/greetings/events") is False
+
+    def test_resolve_publish_topic(self):
+        proc = _make_processor()
+        binding = MQTTProcessorBinding(
+            processor=proc,
+            topics=set(),
+            response_topic="test/+/responses",
+            outgoing_queue=Queue(),
+            topic_prefix="test/+",
+            publish_intents={MessageIntent.COMMAND},
+        )
+        result = binding.resolve_publish_topic(
+            MessageIntent.COMMAND, "test/example/data"
+        )
+        assert result == "test/example/commands"
+
+    def test_resolve_response_topic(self):
+        proc = _make_processor()
+        binding = MQTTProcessorBinding(
+            processor=proc,
+            topics=set(),
+            response_topic="test/+/responses/inst-1",
+            outgoing_queue=Queue(),
+            topic_prefix="test/+",
+            publish_intents=set(),
+        )
+        result = binding.resolve_response_topic("test/example/commands")
+        assert result == "test/example/responses/inst-1"
+
+
+# ===================================================================
 # register_mqtt_processor and MQTTProcessorBinding
 # ===================================================================
 
 
 class TestRegisterMQTTProcessor:
-    def test_parses_topics(self):
+    def test_derives_subscribe_topics_from_intents(self):
         handler = _make_handler()
         proc = _make_processor()
         cfg = ProcessingConfig(
-            topics={"greetings:test/events/#"},
+            topic_prefixes={"greetings:test/greetings"},
             response_topics={"greetings:test/responses"},
         )
         handler.register_mqtt_processor(proc, "greetings", cfg)
         assert len(handler._bindings) == 1
         binding = handler._bindings[0]
-        assert "test/events/#" in binding.topics
+        # Southbound subscribes to data, events, metadata
+        assert "test/greetings/data" in binding.topics
+        assert "test/greetings/events" in binding.topics
+        assert "test/greetings/metadata" in binding.topics
         assert binding.response_topic.endswith("/test-id")
+        # Southbound publishes commands
+        assert binding.topic_prefix == "test/greetings"
+        assert binding.publish_topic_patterns == {
+            MessageIntent.COMMAND: "test/greetings/commands",
+        }
 
     def test_shared_subscription(self):
         handler = _make_handler()
         proc = _make_processor()
         cfg = ProcessingConfig(
-            topics={"greetings:test/events/#"},
+            topic_prefixes={"greetings:test/greetings"},
             response_topics={"greetings:test/responses"},
             shared_subscription_name="mygroup",
         )
@@ -178,23 +262,55 @@ class TestRegisterMQTTProcessor:
         handler = _make_handler()
         proc = _make_processor()
         cfg = ProcessingConfig(
-            topics={"greetings:test/events/#"},
+            topic_prefixes={"greetings:test/greetings"},
             response_topics={"greetings:test/responses"},
         )
         handler.register_mqtt_processor(proc, "greetings", cfg)
         assert len(proc._publish_handlers) == 1
+
+    def test_missing_processor_config_raises(self):
+        handler = _make_handler()
+
+        # Undecorated processor
+        class BareProcessor(CloudEventProcessor):
+            async def process_event(self, cloudevent):
+                return None
+
+            async def process_response_event(self, cloudevent):
+                return None
+
+            async def handle_expiration(self, cloudevent, timeout):
+                return None
+
+        proc = BareProcessor(instance_id="bare", runtime_config=ProcessingConfig())
+        cfg = ProcessingConfig(
+            topic_prefixes={"test:test/prefix"},
+        )
+        with pytest.raises(ValueError, match="must be decorated"):
+            handler.register_mqtt_processor(proc, "test", cfg)
+
+    def test_missing_topic_prefix_raises(self):
+        handler = _make_handler()
+        proc = _make_processor()
+        cfg = ProcessingConfig(
+            topic_prefixes={"other:test/prefix"},
+        )
+        with pytest.raises(ValueError, match="No topic prefix found"):
+            handler.register_mqtt_processor(proc, "greetings", cfg)
 
 
 class TestEnrichResponseTransport:
     def test_adds_topic_from_request(self):
         handler = _make_handler()
         proc = _make_processor()
-        outgoing_queue: Queue[CloudEvent] = Queue()
+        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue()
         binding = MQTTProcessorBinding(
             processor=proc,
             topics={"test/events/#"},
             response_topic="test/responses/test-id",
             outgoing_queue=outgoing_queue,
+            topic_prefix="test",
+            publish_intents=proc.publish_intents(),
         )
         request = CloudEvent(
             transportmetadata={"mqtt_response_topic": "resp/topic"},
@@ -213,12 +329,14 @@ class TestEnrichResponseTransport:
     def test_keeps_existing_topic(self):
         handler = _make_handler()
         proc = _make_processor()
-        outgoing_queue: Queue[CloudEvent] = Queue()
+        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue()
         binding = MQTTProcessorBinding(
             processor=proc,
             topics=set(),
             response_topic="",
             outgoing_queue=outgoing_queue,
+            topic_prefix="test",
+            publish_intents=proc.publish_intents(),
         )
         request = CloudEvent(
             transportmetadata={"mqtt_response_topic": "other"},
@@ -234,17 +352,46 @@ class TestEnrichResponseTransport:
     def test_no_response_topic_returns_false(self):
         handler = _make_handler()
         proc = _make_processor()
-        outgoing_queue: Queue[CloudEvent] = Queue()
+        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue()
         binding = MQTTProcessorBinding(
             processor=proc,
             topics=set(),
             response_topic="",
             outgoing_queue=outgoing_queue,
+            topic_prefix="test",
+            publish_intents=proc.publish_intents(),
         )
         request = CloudEvent(transportmetadata=None)
         response = CloudEvent()
         result = handler._enrich_response_transport(response, request, binding)
         assert result is False
+
+    def test_resolves_wildcard_in_response_topic(self):
+        handler = _make_handler()
+        proc = _make_processor()
+        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue()
+        binding = MQTTProcessorBinding(
+            processor=proc,
+            topics=set(),
+            response_topic="app/jobs/+/responses/test-id",
+            outgoing_queue=outgoing_queue,
+            topic_prefix="app/jobs/+",
+            publish_intents=proc.publish_intents(),
+        )
+        request = CloudEvent(
+            transportmetadata={
+                "mqtt_response_topic": "sender/resp",
+                "mqtt_topic": "app/jobs/woodworking/commands",
+            },
+        )
+        response = CloudEvent()
+        result = handler._enrich_response_transport(response, request, binding)
+        assert result is True
+        assert response.transportmetadata["mqtt_topic"] == "sender/resp"
+        assert (
+            response.transportmetadata["mqtt_response_topic"]
+            == "app/jobs/woodworking/responses/test-id"
+        )
 
 
 # ===================================================================
@@ -414,8 +561,8 @@ class TestCloudEventProcessorCallbacks:
     @pytest.mark.asyncio
     async def test_type_callback_success_publishes_event(self):
         proc = _make_processor()
-        published: list[CloudEvent] = []
-        proc.register_publish_handler(published.append)
+        published: list[tuple[CloudEvent, MessageIntent | None]] = []
+        proc.register_publish_handler(lambda ce, intent: published.append((ce, intent)))
 
         async def handler(**kwargs):
             return SamplePayload(value="outbound")
@@ -430,8 +577,8 @@ class TestCloudEventProcessorCallbacks:
     @pytest.mark.asyncio
     async def test_type_callback_list_response(self):
         proc = _make_processor()
-        published: list[CloudEvent] = []
-        proc.register_publish_handler(published.append)
+        published: list[tuple[CloudEvent, MessageIntent | None]] = []
+        proc.register_publish_handler(lambda ce, intent: published.append((ce, intent)))
 
         async def handler(**kwargs):
             return [SamplePayload(value="a"), SamplePayload(value="b")]
@@ -798,7 +945,7 @@ class TestMQTTHandler:
         binding = _make_binding(handler, proc)
 
         ce = CloudEvent(transportmetadata={"mqtt_topic": "out"})
-        await binding.outgoing_queue.put(ce)
+        await binding.outgoing_queue.put((ce, None))
 
         async def stop_after_one(*args, **kwargs):
             raise asyncio.CancelledError()
@@ -813,15 +960,17 @@ class TestMQTTHandler:
                 await handler._outgoing_message_publisher(client, binding)
 
     @pytest.mark.asyncio
-    async def test_outgoing_message_publisher_uses_response_topic_as_fallback(self):
-        """When no mqtt_topic is set, the binding's response_topic is used."""
+    async def test_outgoing_message_publisher_uses_publish_topic_pattern_fallback(
+        self,
+    ):
+        """When no mqtt_topic or mqtt_intent is set, the first publish_topic_pattern is used."""
         handler = _make_handler()
         client = AsyncMock()
         proc = _make_processor()
         binding = _make_binding(handler, proc, response_topic="test/responses/test-id")
 
-        ce = CloudEvent()  # no transportmetadata / mqtt_topic
-        await binding.outgoing_queue.put(ce)
+        ce = CloudEvent()  # no transportmetadata / mqtt_topic / intent
+        await binding.outgoing_queue.put((ce, None))
 
         published: list[CloudEvent] = []
 
@@ -840,27 +989,57 @@ class TestMQTTHandler:
 
         assert len(published) == 1
         assert published[0].transportmetadata is not None
-        assert published[0].transportmetadata["mqtt_topic"] == "test/responses/test-id"
+        # Southbound processor → publish_intents={COMMAND} → "test/commands"
+        assert published[0].transportmetadata["mqtt_topic"] == "test/commands"
         assert (
             published[0].transportmetadata["mqtt_response_topic"]
             == "test/responses/test-id"
         )
 
     @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_uses_intent_for_topic(self):
+        """When intent is provided, the matching publish_topic_pattern is used."""
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        binding = _make_binding(handler, proc, response_topic="test/responses/test-id")
+
+        ce = CloudEvent()
+        await binding.outgoing_queue.put((ce, MessageIntent.COMMAND))
+
+        published: list[CloudEvent] = []
+
+        async def capture_and_stop(client, message, processor):
+            published.append(message)
+            raise asyncio.CancelledError()
+
+        with patch.object(
+            handler,
+            "_publish_message",
+            new_callable=AsyncMock,
+            side_effect=capture_and_stop,
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await handler._outgoing_message_publisher(client, binding)
+
+        assert len(published) == 1
+        assert published[0].transportmetadata["mqtt_topic"] == "test/commands"
+
+    @pytest.mark.asyncio
     async def test_outgoing_message_publisher_drops_when_no_topic(self, caplog):
-        """Events are dropped with a warning when no mqtt_topic and no response_topic."""
+        """Events are dropped with a warning when no publish topic can be resolved."""
         import logging
 
         handler = _make_handler()
         client = AsyncMock()
         proc = _make_processor()
-        binding = _make_binding(handler, proc, response_topic="")
+        binding = _make_binding(handler, proc, response_topic="", publish_intents=set())
 
         ce = CloudEvent()  # no transportmetadata / mqtt_topic
         # Use put_nowait on an unbounded queue copy so we don't block
-        unbounded: Queue[CloudEvent] = Queue()
+        unbounded: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue()
         binding.outgoing_queue = unbounded
-        await unbounded.put(ce)
+        await unbounded.put((ce, None))
 
         with patch.object(
             handler, "_publish_message", new_callable=AsyncMock
@@ -879,7 +1058,83 @@ class TestMQTTHandler:
                     pass
 
         mock_publish.assert_not_called()
-        assert any("No event topic configured" in r.message for r in caplog.records)
+        assert any("No publish topic resolved" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_warns_on_wildcard_pattern(self, caplog):
+        """Wildcard publish patterns produce a warning when mqtt_topic is not set."""
+        import logging
+
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        binding = _make_binding(
+            handler,
+            proc,
+            response_topic="",
+            topic_prefix="test/+",
+        )
+
+        ce = CloudEvent()
+        unbounded: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue()
+        binding.outgoing_queue = unbounded
+        await unbounded.put((ce, MessageIntent.COMMAND))
+
+        with patch.object(
+            handler, "_publish_message", new_callable=AsyncMock
+        ) as mock_publish:
+            with caplog.at_level(logging.WARNING, logger="handler.mqtt"):
+                task = asyncio.create_task(
+                    handler._outgoing_message_publisher(client, binding)
+                )
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError, Exception:
+                    pass
+
+        mock_publish.assert_not_called()
+        assert any("contains wildcards" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_explicit_topic_with_wildcards(self):
+        """When mqtt_topic is set explicitly, wildcard patterns don't matter."""
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        binding = _make_binding(
+            handler,
+            proc,
+            response_topic="",
+            topic_prefix="test/+",
+        )
+
+        ce = CloudEvent(
+            transportmetadata={
+                "mqtt_topic": "test/concrete/commands",
+            },
+        )
+        await binding.outgoing_queue.put((ce, MessageIntent.COMMAND))
+
+        published: list[CloudEvent] = []
+
+        async def capture_and_stop(client, message, processor):
+            published.append(message)
+            raise asyncio.CancelledError()
+
+        with patch.object(
+            handler,
+            "_publish_message",
+            new_callable=AsyncMock,
+            side_effect=capture_and_stop,
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await handler._outgoing_message_publisher(client, binding)
+
+        assert len(published) == 1
+        assert published[0].transportmetadata["mqtt_topic"] == "test/concrete/commands"
 
     # --- task ---
 
