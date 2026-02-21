@@ -414,12 +414,12 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
         mqtt_handler, ce, expected_responses=1
     )
 
-    assert len(responses) == 1, f"Expected 1 StoreAndStartResponse, got {len(responses)}"
+    assert len(responses) == 1, (
+        f"Expected 1 StoreAndStartResponse, got {len(responses)}"
+    )
     response_data = orjson.loads(responses[0].payload)
     assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
-    _assert_cloudevent_type(
-        responses[0], StoreAndStartResponse.Config.cloudevent_type
-    )
+    _assert_cloudevent_type(responses[0], StoreAndStartResponse.Config.cloudevent_type)
 
 
 @pytest.mark.asyncio
