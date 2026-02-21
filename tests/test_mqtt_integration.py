@@ -1,5 +1,7 @@
+import asyncio
 from typing import Any
 
+import aiomqtt
 import orjson
 import pytest
 import pytest_asyncio
@@ -17,8 +19,11 @@ from app.models.machinery_jobs import (
     OutputInformationDataType,
     StartCall,
     StoreAndStartCall,
+    StoreAndStartResponse,
     StoreCall,
+    StoreResponse,
 )
+from app.models.machinery_jobs_ext import MethodReturnStatus
 from app.mqtt import MQTTHandler
 from app.processors.greetings import GreetingsCloudEventProcessor
 from app.processors.machinery_jobs import MachineryJobsCloudEventProcessor
@@ -87,14 +92,61 @@ async def mqtt_handler():
     await redis_connection_pool.aclose()
 
 
+# Default timeout (seconds) for waiting on response messages from the app.
+RESPONSE_TIMEOUT = 5.0
+
+
+async def _publish_and_collect_responses(
+    mqtt_handler: MQTTHandler,
+    cloudevent: CloudEvent,
+    *,
+    expected_responses: int = 1,
+    timeout: float = RESPONSE_TIMEOUT,
+) -> list[aiomqtt.Message]:
+    """Subscribe to the response topic, publish *cloudevent*, and collect responses.
+
+    Returns the list of :class:`aiomqtt.Message` objects received on the
+    response topic within *timeout* seconds.  The helper waits until
+    *expected_responses* messages arrive or the timeout expires — whichever
+    comes first.
+    """
+    response_topic = cloudevent.transportmetadata["mqtt_response_topic"]  # type: ignore[index]
+    mqtt_client = mqtt_handler._client()
+    collected: list[aiomqtt.Message] = []
+
+    async with mqtt_client:
+        await mqtt_client.subscribe(response_topic)
+        await mqtt_handler._publish_message(mqtt_client, cloudevent)
+
+        try:
+            async with asyncio.timeout(timeout):
+                async for message in mqtt_client.messages:
+                    collected.append(message)
+                    if len(collected) >= expected_responses:
+                        break
+        except TimeoutError:
+            pass  # return whatever was collected so far
+
+    return collected
+
+
+def _assert_cloudevent_type(message: aiomqtt.Message, expected_type: str) -> None:
+    """Assert that an MQTT v5 message carries the expected CloudEvent ``type``
+    in its UserProperty list."""
+    user_props = {}
+    if message.properties and hasattr(message.properties, "UserProperty"):
+        user_props = dict(message.properties.UserProperty)  # type: ignore[arg-type]
+    assert user_props.get("type") == expected_type, (
+        f"Expected CE type '{expected_type}', got '{user_props.get('type')}'"
+    )
+
+
 @pytest.mark.asyncio
 @integration
 @mqtt_available
 @redis_available
 async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
-    """Send a raw greetings message via MQTT."""
-    mqtt_client = mqtt_handler._client()
-
+    """Send a raw greetings message and verify the echo response."""
     payload: dict[str, Any] = {
         "message": "Hello, MQTT!",
         "some_number": "42",
@@ -113,8 +165,13 @@ async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
         },
     )
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, raw_ce)
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, raw_ce, expected_responses=1
+    )
+
+    assert len(responses) == 1, f"Expected 1 echo response, got {len(responses)}"
+    response_payload = orjson.loads(responses[0].payload)
+    assert response_payload == payload
 
 
 @pytest.mark.asyncio
@@ -122,9 +179,7 @@ async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
 @mqtt_available
 @redis_available
 async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
-    """Send a Hello greetings message with hidden fields via MQTT."""
-    mqtt_client = mqtt_handler._client()
-
+    """Send a Hello greetings message and verify two Hello responses."""
     bob = Hello(
         name="Bob",
         _hidden_str="This is a hidden string",
@@ -140,8 +195,14 @@ async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
     )
     bob_ce.serialize_payload(bob)
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, bob_ce)
+    # handle_hello returns [response(name="Bob"), Hello(name="Alice")]
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, bob_ce, expected_responses=2
+    )
+
+    assert len(responses) == 2, f"Expected 2 Hello responses, got {len(responses)}"
+    names = {orjson.loads(r.payload).get("Name") for r in responses}
+    assert names == {"Bob", "Alice"}
 
 
 @pytest.mark.asyncio
@@ -151,9 +212,7 @@ async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
 async def test_publish_hello_with_additional_payload_fields(
     mqtt_handler: MQTTHandler,
 ):
-    """Send a Hello greetings message with additional fields in payload via MQTT."""
-    mqtt_client = mqtt_handler._client()
-
+    """Send a Hello greetings message with additional fields and verify responses."""
     payload: dict[str, Any] = {
         "Name": "Bob",
         "addition": "42",
@@ -176,8 +235,14 @@ async def test_publish_hello_with_additional_payload_fields(
         },
     )
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, bob_ce)
+    # handle_hello returns [response(name="Bob"), Hello(name="Alice")]
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, bob_ce, expected_responses=2
+    )
+
+    assert len(responses) == 2, f"Expected 2 Hello responses, got {len(responses)}"
+    names = {orjson.loads(r.payload).get("Name") for r in responses}
+    assert names == {"Bob", "Alice"}
 
 
 # ===================================================================
@@ -296,10 +361,8 @@ def _make_b3_woodworking_job_order(
 @mqtt_available
 @redis_available
 async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
-    """Send a StoreCall with the B.3 woodworking job order via MQTT."""
-    mqtt_client = mqtt_handler._client()
-
-    job_order = _make_b3_woodworking_job_order()
+    """Send a StoreCall and verify a successful StoreResponse."""
+    job_order = _make_b3_woodworking_job_order(job_order_id="store-test-1")
     store_call = StoreCall(
         job_order=job_order,
         comment=[LocalizedText(text="Store woodworking job", locale="en")],
@@ -314,8 +377,14 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
     )
     ce.serialize_payload(store_call)
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, ce)
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, ce, expected_responses=1
+    )
+
+    assert len(responses) == 1, f"Expected 1 StoreResponse, got {len(responses)}"
+    response_data = orjson.loads(responses[0].payload)
+    assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
+    _assert_cloudevent_type(responses[0], StoreResponse.Config.cloudevent_type)
 
 
 @pytest.mark.asyncio
@@ -323,10 +392,8 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
 @mqtt_available
 @redis_available
 async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandler):
-    """Send a StoreAndStartCall with the B.3 woodworking job order via MQTT."""
-    mqtt_client = mqtt_handler._client()
-
-    job_order = _make_b3_woodworking_job_order()
+    """Send a StoreAndStartCall and verify a successful StoreAndStartResponse."""
+    job_order = _make_b3_woodworking_job_order(job_order_id="store-and-start-1")
     store_and_start_call = StoreAndStartCall(
         job_order=job_order,
         comment=[
@@ -343,8 +410,16 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
     )
     ce.serialize_payload(store_and_start_call)
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, ce)
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, ce, expected_responses=1
+    )
+
+    assert len(responses) == 1, f"Expected 1 StoreAndStartResponse, got {len(responses)}"
+    response_data = orjson.loads(responses[0].payload)
+    assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
+    _assert_cloudevent_type(
+        responses[0], StoreAndStartResponse.Config.cloudevent_type
+    )
 
 
 @pytest.mark.asyncio
@@ -352,11 +427,34 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
 @mqtt_available
 @redis_available
 async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
-    """Send a StartCall referencing an existing job order ID via MQTT."""
-    mqtt_client = mqtt_handler._client()
+    """Store a job order then start it, verifying both responses."""
+    # First, store the job so it exists in Redis
+    job_order = _make_b3_woodworking_job_order(job_order_id="start-test-1")
+    store_call = StoreCall(
+        job_order=job_order,
+        comment=[LocalizedText(text="Store before start", locale="en")],
+    )
+    store_ce = CloudEvent(
+        source=CE_SOURCE,
+        datacontenttype="application/json; charset=utf-8",
+        transportmetadata={
+            "mqtt_topic": JOBS_COMMAND_TOPIC,
+            "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
+        },
+    )
+    store_ce.serialize_payload(store_call)
+    store_responses = await _publish_and_collect_responses(
+        mqtt_handler, store_ce, expected_responses=1
+    )
+    assert len(store_responses) == 1
+    assert (
+        orjson.loads(store_responses[0].payload)["ReturnStatus"]
+        == MethodReturnStatus.NO_ERROR
+    )
 
+    # Now send the StartCall referencing the stored job order
     start_call = StartCall(
-        job_order_id="12345",
+        job_order_id="start-test-1",
         comment=[
             LocalizedText(text="Start the woodworking job", locale="en"),
         ],
@@ -371,8 +469,13 @@ async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
     )
     ce.serialize_payload(start_call)
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, ce)
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, ce, expected_responses=1
+    )
+
+    assert len(responses) == 1, f"Expected 1 StartResponse, got {len(responses)}"
+    response_data = orjson.loads(responses[0].payload)
+    assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
 
 
 @pytest.mark.asyncio
@@ -380,12 +483,10 @@ async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
 @mqtt_available
 @redis_available
 async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
-    """Send a StoreCall as raw JSON payload (not via serialize_payload) via MQTT."""
-    mqtt_client = mqtt_handler._client()
-
+    """Send a StoreCall as raw JSON and verify a successful StoreResponse."""
     payload: dict[str, Any] = {
         "JobOrder": {
-            "JobOrderID": "12345",
+            "JobOrderID": "raw-json-1",
             "Description": [
                 {"Text": "Order_Forest_Utilize_01", "Locale": "en"},
             ],
@@ -446,5 +547,11 @@ async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
         },
     )
 
-    async with mqtt_client:
-        await mqtt_handler._publish_message(mqtt_client, ce)
+    responses = await _publish_and_collect_responses(
+        mqtt_handler, ce, expected_responses=1
+    )
+
+    assert len(responses) == 1, f"Expected 1 StoreResponse, got {len(responses)}"
+    response_data = orjson.loads(responses[0].payload)
+    assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
+    _assert_cloudevent_type(responses[0], StoreResponse.Config.cloudevent_type)

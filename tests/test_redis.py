@@ -410,7 +410,7 @@ class TestJobOrderAndStateDAO:
     async def test_save_stores_json_and_adds_to_sorted_set(self):
         jo = self._make_job_order_and_state()
         with patch.object(
-            jo, "to_json", return_value='{"JobOrder":{"JobOrderID":"jo-1"}}'
+            jo, "to_dict", return_value={"JobOrder": {"JobOrderID": "jo-1"}}
         ):
             await self.dao.save(jo, scope="s1")
 
@@ -441,7 +441,7 @@ class TestJobOrderAndStateDAO:
     @pytest.mark.asyncio
     async def test_save_with_zero_priority(self):
         jo = self._make_job_order_and_state(priority=None)  # type: ignore[arg-type]
-        with patch.object(jo, "to_json", return_value="{}"):
+        with patch.object(jo, "to_dict", return_value={}):
             await self.dao.save(jo, scope="s1")
         self.redis.zadd.assert_awaited_once_with(
             self.schema.joborder_list_key("s1"), {"jo-1": 0}
@@ -455,12 +455,12 @@ class TestJobOrderAndStateDAO:
         json_mock = self.redis.json()
         json_mock.get.side_effect = [
             ["some-schema"],  # first call: dataschema
-            fake_data,  # second call: full data (a dict)
+            [fake_data],  # second call: full data (JSONPath list)
         ]
 
         with patch.object(
             ISA95JobOrderAndStateDataType,
-            "from_json",
+            "from_dict",
             return_value=jo,
         ) as mock_from:
             result = await self.dao.retrieve("jo-1")
@@ -533,7 +533,7 @@ class TestJobResponseDAO:
     @pytest.mark.asyncio
     async def test_save_stores_json_and_adds_to_sorted_set(self):
         jr = self._make_job_response()
-        with patch.object(jr, "to_json", return_value='{"JobResponseID":"jr-1"}'):
+        with patch.object(jr, "to_dict", return_value={"JobResponseID": "jr-1"}):
             await self.dao.save(jr, scope="s1")
 
         json_mock = self.redis.json()
@@ -560,12 +560,12 @@ class TestJobResponseDAO:
         json_mock = self.redis.json()
         json_mock.get.side_effect = [
             ["some-schema"],
-            fake_data,
+            [fake_data],
         ]
 
         with patch.object(
             ISA95JobResponseDataType,
-            "from_json",
+            "from_dict",
             return_value=jr,
         ) as mock_from:
             result = await self.dao.retrieve("jr-1")
@@ -583,15 +583,15 @@ class TestJobResponseDAO:
         }
 
         json_mock = self.redis.json()
-        json_mock.get.side_effect = [["some-schema"], fake_data]
+        json_mock.get.side_effect = [["some-schema"], [fake_data]]
 
         with patch.object(
             ISA95JobResponseDataType,
-            "from_json",
+            "from_dict",
             return_value=jr,
         ) as mock_from:
             await self.dao.retrieve("jr-1")
-            # Verify the three metadata fields were removed before from_json
+            # Verify the three metadata fields were removed before from_dict
             passed_data = mock_from.call_args.args[0]
             assert "_dataschema" not in passed_data
             assert "_scope" not in passed_data
@@ -646,17 +646,17 @@ class TestJobResponseDAO:
         state = [ISA95StateDataType(state_text=None), *self._make_state("Running")]
         assert JobResponseDAO.normalize_state(state) == "Running"
 
-    # -- save passes metadata via to_json context ----------------------------
+    # -- save passes metadata via to_dict context ----------------------------
 
     @pytest.mark.asyncio
     async def test_save_passes_scope_in_context(self):
         jr = self._make_job_response()
         with patch.object(
-            jr, "to_json", return_value='{"JobResponseID":"jr-1"}'
-        ) as mock_to_json:
+            jr, "to_dict", return_value={"JobResponseID": "jr-1"}
+        ) as mock_to_dict:
             await self.dao.save(jr, scope="s1")
 
-        ctx = mock_to_json.call_args.kwargs["context"]
+        ctx = mock_to_dict.call_args.kwargs["context"]
         assert ctx["add_scope"] == "s1"
 
     @pytest.mark.asyncio
@@ -664,22 +664,22 @@ class TestJobResponseDAO:
         state = self._make_state("Running")
         jr = self._make_job_response(job_state=state)
         with patch.object(
-            jr, "to_json", return_value='{"JobResponseID":"jr-1"}'
-        ) as mock_to_json:
+            jr, "to_dict", return_value={"JobResponseID": "jr-1"}
+        ) as mock_to_dict:
             await self.dao.save(jr, scope="s1")
 
-        ctx = mock_to_json.call_args.kwargs["context"]
+        ctx = mock_to_dict.call_args.kwargs["context"]
         assert ctx["add_normalized_state"] == "Running"
 
     @pytest.mark.asyncio
     async def test_save_omits_normalized_state_when_no_state(self):
         jr = self._make_job_response()
         with patch.object(
-            jr, "to_json", return_value='{"JobResponseID":"jr-1"}'
-        ) as mock_to_json:
+            jr, "to_dict", return_value={"JobResponseID": "jr-1"}
+        ) as mock_to_dict:
             await self.dao.save(jr, scope="s1")
 
-        ctx = mock_to_json.call_args.kwargs["context"]
+        ctx = mock_to_dict.call_args.kwargs["context"]
         assert "add_normalized_state" not in ctx
 
     # -- initialize -----------------------------------------------------------
@@ -713,10 +713,10 @@ class TestJobResponseDAO:
         json_mock = self.redis.json()
         json_mock.get.side_effect = [
             ["some-schema"],
-            {"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"},
+            [{"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"}],
         ]
 
-        with patch.object(ISA95JobResponseDataType, "from_json", return_value=jr):
+        with patch.object(ISA95JobResponseDataType, "from_dict", return_value=jr):
             result = await self.dao.retrieve_by_job_order_id("jo-1")
 
         ft_mock.search.assert_awaited_once()
@@ -746,10 +746,10 @@ class TestJobResponseDAO:
         json_mock = self.redis.json()
         json_mock.get.side_effect = [
             ["some-schema"],
-            {"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"},
+            [{"JobResponseID": "jr-1", "_dataschema": "s", "_scope": "s1"}],
         ]
 
-        with patch.object(ISA95JobResponseDataType, "from_json", return_value=jr):
+        with patch.object(ISA95JobResponseDataType, "from_dict", return_value=jr):
             result = await self.dao.retrieve_by_state("s1", state)
 
         ft_mock.search.assert_awaited_once()
@@ -790,7 +790,7 @@ class TestWorkMasterDAO:
     @pytest.mark.asyncio
     async def test_save_stores_json_and_adds_to_set(self):
         wm = self._make_work_master()
-        with patch.object(wm, "to_json", return_value='{"ID":"wm-1"}'):
+        with patch.object(wm, "to_dict", return_value={"ID": "wm-1"}):
             await self.dao.save(wm, scope="s1")
 
         json_mock = self.redis.json()
@@ -817,12 +817,12 @@ class TestWorkMasterDAO:
         json_mock = self.redis.json()
         json_mock.get.side_effect = [
             ["some-schema"],
-            fake_data,
+            [fake_data],
         ]
 
         with patch.object(
             ISA95WorkMasterDataType,
-            "from_json",
+            "from_dict",
             return_value=wm,
         ) as mock_from:
             result = await self.dao.retrieve("wm-1")

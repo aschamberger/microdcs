@@ -365,7 +365,7 @@ class JobOrderAndStateDAO:
         await self.redis.json().set(
             key,
             "$",
-            job_order_and_state.to_json(context={"add_cloudevent_dataschema": True}),
+            job_order_and_state.to_dict(context={"add_cloudevent_dataschema": True}),
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the sorted set with priority as score
         priority = getattr(job_order_and_state.job_order, "priority", 0) or 0
@@ -389,8 +389,10 @@ class JobOrderAndStateDAO:
             # here we could check the dataschema to determine which class to deserialize into,
             # but since we only have one class for now, we will just deserialize into that class
             data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+            if isinstance(data, list):
+                data = data[0]
             del data["_dataschema"]  # remove before deserialization
-            return ISA95JobOrderAndStateDataType.from_json(data)
+            return ISA95JobOrderAndStateDataType.from_dict(data)
         else:
             return None
 
@@ -500,7 +502,7 @@ class JobResponseDAO:
         await self.redis.json().set(
             key,
             "$",
-            job_response.to_json(context=ctx),
+            job_response.to_dict(context=ctx),
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the sorted set with start_time as score
         start_time = getattr(job_response, "start_time", 0) or 0
@@ -522,11 +524,13 @@ class JobResponseDAO:
                 f"Found Job Response with ID {job_response_id} in Redis with dataschema {dataschema}"
             )
             data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+            if isinstance(data, list):
+                data = data[0]
             # Remove internal metadata fields before deserialization
             del data["_dataschema"]
             del data["_scope"]
             data.pop("_normalized_state", None)  # conditionally stored
-            return ISA95JobResponseDataType.from_json(data)
+            return ISA95JobResponseDataType.from_dict(data)
         else:
             return None
 
@@ -639,7 +643,7 @@ class WorkMasterDAO:
         await self.redis.json().set(
             key,
             "$",
-            work_master.to_json(context={"add_cloudevent_dataschema": True}),
+            work_master.to_dict(context={"add_cloudevent_dataschema": True}),
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the set
         list_key = self.key_schema.workmaster_list_key(scope)
@@ -660,8 +664,10 @@ class WorkMasterDAO:
                 f"Found Work Master with ID {work_master_id} in Redis with dataschema {dataschema}"
             )
             data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+            if isinstance(data, list):
+                data = data[0]
             del data["_dataschema"]  # remove before deserialization
-            return ISA95WorkMasterDataType.from_json(data)
+            return ISA95WorkMasterDataType.from_dict(data)
         else:
             return None
 
