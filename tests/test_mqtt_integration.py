@@ -39,7 +39,8 @@ REDIS_CONFIG = RedisConfig()
 # --------------------------------------------------------------------------
 
 GREETINGS_PREFIX = "app/greetings"
-JOBS_PREFIX = "app/jobs/woodworking"
+JOBS_PREFIX = "app/jobs"
+SCOPE = "woodworking"  # used as CE subject in some tests
 
 PROCESSING_CONFIG = ProcessingConfig(
     topic_prefixes={
@@ -68,15 +69,18 @@ GREETINGS_EVENT_TOPIC = f"{GREETINGS_PREFIX}/{MessageIntent.EVENT.value}"
 
 # Jobs is northbound: subscribes to commands, publishes to data/events/meta
 JOBS_SUBSCRIBE_TOPICS = {
-    f"{JOBS_PREFIX}/{intent.value}" for intent in _jobs_subscribe_intents
+    f"{JOBS_PREFIX}/{SCOPE.replace('.', '/')}/{intent.value}"
+    for intent in _jobs_subscribe_intents
 }
 # Topic the test sender publishes job commands to (the subscribe intent)
-JOBS_COMMAND_TOPIC = f"{JOBS_PREFIX}/{MessageIntent.COMMAND.value}"
+JOBS_COMMAND_TOPIC = (
+    f"{JOBS_PREFIX}/{SCOPE.replace('.', '/')}/{MessageIntent.COMMAND.value}"
+)
 
 CE_SOURCE = "https://aschamberger.github.com/microdcs/test-sender"
 # Test-only response topics (not derived from the app, just for the test sender)
 GREETINGS_RESPONSE_TOPIC = "tests/greetings/response"
-JOBS_RESPONSE_TOPIC = "tests/jobs/woodworking/response"
+JOBS_RESPONSE_TOPIC = "tests/jobs/response"
 
 
 @pytest_asyncio.fixture
@@ -370,6 +374,7 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
     ce = CloudEvent(
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
+        subject=SCOPE,
         transportmetadata={
             "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
@@ -403,6 +408,7 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
     ce = CloudEvent(
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
+        subject=SCOPE,
         transportmetadata={
             "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
@@ -437,6 +443,7 @@ async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
     store_ce = CloudEvent(
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
+        subject=SCOPE,
         transportmetadata={
             "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
@@ -462,6 +469,7 @@ async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
     ce = CloudEvent(
         source=CE_SOURCE,
         datacontenttype="application/json; charset=utf-8",
+        subject=SCOPE,
         transportmetadata={
             "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,
@@ -541,6 +549,7 @@ async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
         type=StoreCall.Config.cloudevent_type,
         dataschema=StoreCall.Config.cloudevent_dataschema,
         datacontenttype="application/json; charset=utf-8",
+        subject=SCOPE,
         transportmetadata={
             "mqtt_topic": JOBS_COMMAND_TOPIC,
             "mqtt_response_topic": JOBS_RESPONSE_TOPIC,

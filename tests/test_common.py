@@ -461,7 +461,7 @@ class TestCloudEventProcessorPublishAndCreate:
     def test_publish_event(self):
         proc = ConcreteProcessor(queue_size=5)
         ce = CloudEvent(source="test")
-        proc.publish_event(ce)
+        proc.publish_event(ce, intent=MessageIntent.EVENT)
         assert len(proc.published_events) == 1
         assert proc.published_events[0][0] is ce
 

@@ -92,6 +92,19 @@ class MicroDCS:
             for processor in self._msgpack_processors:
                 msgpack_handler.register_processor(processor)
             task_group.create_task(msgpack_handler.task())
+
+            # Post start every registered processor exactly once, even when a
+            # processor is shared across multiple protocol handlers.
+            seen: set[int] = set()
+            for processor in self._mqtt_processors:
+                if id(processor) not in seen:
+                    await processor.post_start()
+                    seen.add(id(processor))
+            for processor in self._msgpack_processors:
+                if id(processor) not in seen:
+                    await processor.post_start()
+                    seen.add(id(processor))
+
         logger.info("Main application logic has completed")
 
         logger.info("Closing Redis connection pool")

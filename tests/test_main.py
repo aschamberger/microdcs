@@ -50,8 +50,10 @@ class TestMain:
 
         mock_mqtt_proc = MagicMock()
         mock_mqtt_proc.initialize = AsyncMock()
+        mock_mqtt_proc.post_start = AsyncMock()
         mock_mp_proc = MagicMock()
         mock_mp_proc.initialize = AsyncMock()
+        mock_mp_proc.post_start = AsyncMock()
         dcs._mqtt_processors.append(mock_mqtt_proc)
         dcs._msgpack_processors.append(mock_mp_proc)
 
@@ -90,8 +92,10 @@ class TestMain:
 
         mock_mqtt_proc = MagicMock()
         mock_mqtt_proc.initialize = AsyncMock()
+        mock_mqtt_proc.post_start = AsyncMock()
         mock_mp_proc = MagicMock()
         mock_mp_proc.initialize = AsyncMock()
+        mock_mp_proc.post_start = AsyncMock()
         dcs._mqtt_processors.append(mock_mqtt_proc)
         dcs._msgpack_processors.append(mock_mp_proc)
 

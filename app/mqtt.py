@@ -49,60 +49,27 @@ class MQTTProcessorBinding:
         processor: CloudEventProcessor,
         topics: set[str],
         response_topic: str,
-        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]],
+        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]],
         topic_prefix: str,
         publish_intents: set[MessageIntent],
+        mqtt_path_from_subject: bool = True,
     ):
         self.processor = processor
         self.topics = topics
         self.response_topic = response_topic
         self.outgoing_queue = outgoing_queue
         self.topic_prefix = topic_prefix
-        self.publish_topic_patterns: dict[MessageIntent, str] = {
-            intent: f"{topic_prefix}/{intent.value}" for intent in publish_intents
-        }
+        self.publish_intents = publish_intents
+        self.mqtt_path_from_subject = mqtt_path_from_subject
 
-    # -- wildcard helpers --------------------------------------------------
-
-    @staticmethod
-    def resolve_topic_wildcards(pattern: str, concrete_topic: str) -> str:
-        """Replace ``+`` wildcard segments in *pattern* with the corresponding
-        segments (by position) from *concrete_topic*.
-
-        Example::
-
-            >>> MQTTProcessorBinding.resolve_topic_wildcards(
-            ...     "app/jobs/+/events", "app/jobs/woodworking/commands")
-            'app/jobs/woodworking/events'
-        """
-        pattern_parts = pattern.split("/")
-        concrete_parts = concrete_topic.split("/")
-        return "/".join(
-            concrete_parts[i] if part == "+" and i < len(concrete_parts) else part
-            for i, part in enumerate(pattern_parts)
-        )
-
-    @staticmethod
-    def has_wildcards(topic: str) -> bool:
-        """Return True if *topic* contains MQTT wildcard characters."""
-        return "+" in topic or "#" in topic
-
-    def resolve_publish_topic(
-        self, intent: MessageIntent, concrete_reference_topic: str
-    ) -> str | None:
-        """Return the concrete publish topic for *intent*, resolving any
-        wildcards from *concrete_reference_topic*."""
-        pattern = self.publish_topic_patterns.get(intent)
-        if pattern is None:
-            return None
-        return self.resolve_topic_wildcards(pattern, concrete_reference_topic)
-
-    def resolve_response_topic(self, concrete_reference_topic: str) -> str:
-        """Return the concrete response topic, resolving any wildcards from
-        *concrete_reference_topic*."""
-        return self.resolve_topic_wildcards(
-            self.response_topic, concrete_reference_topic
-        )
+    def topic_for_intent(
+        self, intent: MessageIntent | None, cloudevent: CloudEvent
+    ) -> str:
+        if intent is None or intent not in self.publish_intents:
+            return self.topic_prefix
+        if self.mqtt_path_from_subject and cloudevent.subject is not None:
+            return f"{self.topic_prefix}/{cloudevent.subject.replace('.', '/')}/{intent.value}"
+        return f"{self.topic_prefix}/{intent.value}"
 
 
 class MQTTHandler(ProtocolHandler):
@@ -129,7 +96,8 @@ class MQTTHandler(ProtocolHandler):
     def register_mqtt_processor(
         self,
         processor: CloudEventProcessor,
-        queue_size: int = 1,
+        queue_size: int = 5,
+        mqtt_path_from_subject: bool = True,
     ) -> None:
         """Register a processor with MQTT-specific routing configuration.
 
@@ -161,14 +129,14 @@ class MQTTHandler(ProtocolHandler):
         )
 
         # Build subscribe topics from prefix + subscribe intents
-        topics: set[str] = set()
+        subscription_topics: set[str] = set()
         wildcard_string = "/+"
         for intent in processor.subscribe_intents():
             for i in range(0, topic_wildcard_levels + 1):
                 topic = f"{topic_prefix}{wildcard_string * i}/{intent.value}"
                 if processor._runtime_config.shared_subscription_name:
                     topic = f"$share/{processor._runtime_config.shared_subscription_name}/{topic}"
-                topics.add(topic)
+                subscription_topics.add(topic)
 
         # Resolve response topic for this processor
         response_topic_base = (
@@ -178,27 +146,26 @@ class MQTTHandler(ProtocolHandler):
         )
         response_topic = f"{response_topic_base}/{processor._instance_id}"
 
-        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent | None]] = Queue(
-            queue_size
-        )
+        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue(queue_size)
         processor.register_publish_handler(
-            lambda ce, intent: outgoing_queue.put_nowait((ce, intent))
+            lambda ce, intent: outgoing_queue.put_nowait((ce, intent))  # pyright: ignore[reportArgumentType]
         )
         binding = MQTTProcessorBinding(
             processor=processor,
-            topics=topics,
+            topics=subscription_topics,
             response_topic=response_topic,
             outgoing_queue=outgoing_queue,
             topic_prefix=topic_prefix,
             publish_intents=processor.publish_intents(),
+            mqtt_path_from_subject=mqtt_path_from_subject,
         )
         self._bindings.append(binding)
         logger.info(
             "Registered %s processor '%s' | subscribes: %s | publishes: %s | response: %s",
             processor.binding.value,
             processor._instance_id,
-            topics,
-            set(binding.publish_topic_patterns.values()),
+            subscription_topics,
+            processor.publish_intents(),
             response_topic,
         )
 
@@ -228,25 +195,12 @@ class MQTTHandler(ProtocolHandler):
             else:
                 logger.warning("No response topic specified; cannot publish response.")
                 return False
-        # Set our backchannel response topic, resolving wildcards from the
-        # incoming request's concrete topic when necessary.
+        # Set our backchannel response topic if not already set on the response
         if (
             "mqtt_response_topic" not in response.transportmetadata
             and binding.response_topic
         ):
-            if MQTTProcessorBinding.has_wildcards(binding.response_topic):
-                request_topic = (
-                    request.transportmetadata.get("mqtt_topic", "")
-                    if request.transportmetadata
-                    else ""
-                )
-                response.transportmetadata["mqtt_response_topic"] = (
-                    binding.resolve_response_topic(request_topic)
-                )
-            else:
-                response.transportmetadata["mqtt_response_topic"] = (
-                    binding.response_topic
-                )
+            response.transportmetadata["mqtt_response_topic"] = binding.response_topic
         if "mqtt_retain" not in response.transportmetadata:
             response.transportmetadata["mqtt_retain"] = False
         return True
@@ -484,61 +438,28 @@ class MQTTHandler(ProtocolHandler):
         self, client: aiomqtt.Client, binding: MQTTProcessorBinding
     ) -> None:
         while True:
-            message, intent = await binding.outgoing_queue.get()
+            cloudevent, intent = await binding.outgoing_queue.get()
             # Enrich with MQTT transport metadata from the binding
-            if message.transportmetadata is None:
-                message.transportmetadata = {}
+            if cloudevent.transportmetadata is None:
+                cloudevent.transportmetadata = {}
 
             # Resolve publish topic from intent + publish_topic_patterns
-            if "mqtt_topic" not in message.transportmetadata:
-                if intent is not None:
-                    pattern = binding.publish_topic_patterns.get(intent)
-                else:
-                    # Fallback: first available publish topic pattern
-                    pattern = (
-                        next(iter(binding.publish_topic_patterns.values()), None)
-                        if binding.publish_topic_patterns
-                        else None
-                    )
-                if pattern:
-                    if not MQTTProcessorBinding.has_wildcards(pattern):
-                        message.transportmetadata["mqtt_topic"] = pattern
-                    else:
-                        logger.warning(
-                            "Publish topic pattern '%s' contains wildcards that "
-                            "cannot be resolved for proactive outgoing message; "
-                            "set mqtt_topic explicitly on the CloudEvent.",
-                            pattern,
-                        )
+            if "mqtt_topic" not in cloudevent.transportmetadata:
+                cloudevent.transportmetadata["mqtt_topic"] = binding.topic_for_intent(
+                    intent, cloudevent
+                )
 
-            # Resolve response backchannel topic
+            # Set our backchannel response topic if not already set
             if (
-                "mqtt_response_topic" not in message.transportmetadata
+                "mqtt_response_topic" not in cloudevent.transportmetadata
+                and intent == MessageIntent.COMMAND
                 and binding.response_topic
             ):
-                if not MQTTProcessorBinding.has_wildcards(binding.response_topic):
-                    message.transportmetadata["mqtt_response_topic"] = (
-                        binding.response_topic
-                    )
-                elif message.transportmetadata.get("mqtt_topic"):
-                    # Resolve wildcards from the already-resolved publish topic
-                    message.transportmetadata["mqtt_response_topic"] = (
-                        binding.resolve_response_topic(
-                            message.transportmetadata["mqtt_topic"]
-                        )
-                    )
-
-            if "mqtt_retain" not in message.transportmetadata:
-                message.transportmetadata["mqtt_retain"] = False
-            if not message.transportmetadata.get("mqtt_topic"):
-                logger.warning(
-                    "No publish topic resolved for binding '%s'; "
-                    "dropping outgoing event.",
-                    binding.processor._instance_id,
+                cloudevent.transportmetadata["mqtt_response_topic"] = (
+                    binding.response_topic
                 )
-                binding.outgoing_queue.task_done()
-                continue
-            await self._publish_message(client, message, binding.processor)
+
+            await self._publish_message(client, cloudevent, binding.processor)
             binding.outgoing_queue.task_done()
 
     async def task(self) -> None:

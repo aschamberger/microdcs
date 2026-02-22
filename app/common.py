@@ -1,3 +1,4 @@
+import functools
 import logging
 import typing
 import uuid
@@ -441,6 +442,65 @@ def outgoing(cloudevent_dataclass: type | UnionType) -> Callable:
     return decorator
 
 
+def scope_from_subject(func: Callable) -> Callable:
+    """Decorator that derives the ``scope`` keyword argument from ``subject``.
+
+    Extracts the part of ``subject`` before the first ``/`` and injects it
+    as the ``scope`` keyword argument into the decorated function.  The
+    original ``subject`` kwarg is consumed and not forwarded.
+
+    Intended to be stacked below :func:`incoming`::
+
+        @incoming(MyCall)
+        @scope_from_subject
+        async def process_my_call(self, method: MyCall, *, scope: str, ...) -> ...:
+            ...
+    """
+
+    @functools.wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        subject: str | None = kwargs.pop("subject", None)
+        if subject is not None:
+            kwargs["scope"] = subject.split("/")[0]
+        else:
+            kwargs["scope"] = None
+        return await func(*args, **kwargs)
+
+    return wrapper
+
+
+def asset_id_from_subject(func: Callable, *, name: str = "asset_id") -> Callable:
+    """Decorator that derives a keyword argument from ``subject``.
+
+    Extracts the part of ``subject`` before the first ``/`` and injects it
+    as the specified keyword argument (default: 'asset_id') into the decorated function.
+    The original ``subject`` kwarg is consumed and not forwarded.
+
+    Intended to be stacked below :func:`incoming`::
+
+        @incoming(MyCall)
+        @asset_id_from_subject
+        async def process_my_call(self, method: MyCall, *, asset_id: str, ...) -> ...:
+            ...
+
+        @incoming(MyCall)
+        @asset_id_from_subject(name="custom_id")
+        async def process_my_call(self, method: MyCall, *, custom_id: str, ...) -> ...:
+            ...
+    """
+
+    @functools.wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        subject: str | None = kwargs.pop("subject", None)
+        if subject is not None:
+            kwargs[name] = subject.split("/")[0]
+        else:
+            kwargs[name] = None
+        return await func(*args, **kwargs)
+
+    return wrapper
+
+
 class CloudEventProcessor(ABC):
     _processor_binding: ProcessorBinding
     _subscribe_intents: set[MessageIntent] = set()
@@ -524,10 +584,17 @@ class CloudEventProcessor(ABC):
     async def initialize(self) -> None:
         """Optional async initialisation hook.
 
-        Called once by the protocol handler before the processor starts
-        receiving events. Override in subclasses that need async setup
-        (e.g. creating database indices). The default implementation is
-        a no-op.
+        Called once by the main handler before the processor is registered
+        in the handler. Override in subclasses that need async setup
+        (e.g. creating database indices).
+        """
+
+    async def post_start(self) -> None:
+        """Optional async post start hook.
+
+        Called once by the main handler after the processor has been started
+        in the handler. Override in subclasses that need to perform actions
+        after start (e.g. publishing metadata).
         """
 
     def register_publish_handler(
@@ -543,7 +610,7 @@ class CloudEventProcessor(ABC):
         self._publish_handlers.append(handler)
 
     def publish_event(
-        self, cloudevent: CloudEvent, intent: MessageIntent | None = None
+        self, cloudevent: CloudEvent, intent: MessageIntent = MessageIntent.EVENT
     ) -> None:
         if not self._publish_handlers:
             logger.warning("No publish handlers registered; cannot publish event.")
@@ -558,14 +625,11 @@ class CloudEventProcessor(ABC):
         cloudevent = CloudEvent(
             datacontenttype=datacontenttype,
         )
-        if self._runtime_config.cloudevent_source is not None and isinstance(
-            cloudevent, CloudEvent
-        ):
+        if self._runtime_config.cloudevent_source is not None:
             cloudevent.source = self._runtime_config.cloudevent_source
         if (
             self._runtime_config.message_expiry_interval is not None
             and int(self._runtime_config.message_expiry_interval) > 0
-            and isinstance(cloudevent, CloudEvent)
         ):
             cloudevent.expiryinterval = self._runtime_config.message_expiry_interval
         return cloudevent
@@ -618,6 +682,8 @@ class CloudEventProcessor(ABC):
             response_cloudevent = self.create_event()
             response_cloudevent.correlationid = request_cloudevent.correlationid
             response_cloudevent.causationid = request_cloudevent.id
+            if request_cloudevent.subject is not None:
+                response_cloudevent.subject = request_cloudevent.subject
             try:
                 response_cloudevent.serialize_payload(response)
             except ValueError as e:
@@ -634,8 +700,8 @@ class CloudEventProcessor(ABC):
     async def callback_outgoing(
         self,
         payload_type: type,
+        intent: MessageIntent,
         topic: str | None = None,
-        intent: MessageIntent | None = None,
         **kwargs,
     ) -> list[CloudEvent] | CloudEvent | None:
         cloudevent_type = get_cloudevent_type(payload_type)

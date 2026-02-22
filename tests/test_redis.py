@@ -27,44 +27,9 @@ from app.redis import (
     WorkMasterDAO,
     _escape_tag,
     prefixed_key,
-    sanitize_scope,
 )
 
 DEFAULT_PREFIX = "microdcs-test"
-
-
-# ---------------------------------------------------------------------------
-# sanitize_scope helper
-# ---------------------------------------------------------------------------
-
-
-class TestSanitizeScope:
-    def test_leading_slash_topic(self):
-        assert sanitize_scope("/app/jobs/myscope") == "app.jobs.myscope"
-
-    def test_no_leading_slash(self):
-        assert sanitize_scope("app/jobs/myscope") == "app.jobs.myscope"
-
-    def test_trailing_slash(self):
-        assert sanitize_scope("/app/jobs/myscope/") == "app.jobs.myscope"
-
-    def test_multiple_slashes(self):
-        assert sanitize_scope("/app//jobs///myscope/") == "app.jobs.myscope"
-
-    def test_single_segment(self):
-        assert sanitize_scope("myscope") == "myscope"
-
-    def test_preserves_dots(self):
-        assert sanitize_scope("app.jobs/myscope") == "app.jobs.myscope"
-
-    def test_empty_string(self):
-        assert sanitize_scope("") == ""
-
-    def test_only_slashes(self):
-        assert sanitize_scope("///") == ""
-
-    def test_special_chars_replaced(self):
-        assert sanitize_scope("/app/jobs+my scope") == "app.jobs.my.scope"
 
 
 # ---------------------------------------------------------------------------
