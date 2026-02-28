@@ -182,7 +182,7 @@ class TestGreetingsCloudEventProcessor:
             datacontenttype="application/octet-stream",
             correlationid="corr-1",
         )
-        result = await proc.process_event(ce)
+        result = await proc.process_cloudevent(ce)
         assert isinstance(result, CloudEvent)
         assert result.data == b"raw-data"
         assert result.type == "com.github.aschamberger.microdcs.greetings.raw.v1"
@@ -200,7 +200,7 @@ class TestGreetingsCloudEventProcessor:
             data=hello.to_jsonb(),
             datacontenttype="application/json; charset=utf-8",
         )
-        result = await proc.process_event(ce)
+        result = await proc.process_cloudevent(ce)
         # handle_hello returns a list of 2 CloudEvents
         assert isinstance(result, list)
         assert len(result) == 2
@@ -211,7 +211,7 @@ class TestGreetingsCloudEventProcessor:
     async def test_process_response_event_returns_none(self):
         proc = _make_processor()
         ce = CloudEvent()
-        result = await proc.process_response_event(ce)
+        result = await proc.process_response_cloudevent(ce)
         assert result is None
 
     # --- send_event ---
@@ -235,5 +235,5 @@ class TestGreetingsCloudEventProcessor:
         proc = _make_processor()
         ce = CloudEvent()
         with patch("app.processors.greetings.asyncio.sleep", new_callable=AsyncMock):
-            result = await proc.handle_expiration(ce, 10)
+            result = await proc.handle_cloudevent_expiration(ce, 10)
         assert result is None

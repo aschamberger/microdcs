@@ -1,7 +1,9 @@
 import asyncio
+import errno
 import inspect
 import itertools
 import logging
+import random
 import ssl
 import time
 from enum import IntEnum
@@ -17,8 +19,13 @@ from opentelemetry.semconv._incubating.attributes import (
     server_attributes,
 )
 
-from app import MessagePackConfig
-from app.common import CloudEvent, ProtocolHandler
+from app import MessagePackConfig, ProcessingConfig
+from app.common import (
+    CloudEvent,
+    CloudEventProcessor,
+    ProtocolBinding,
+    ProtocolHandler,
+)
 from app.redis import RedisKeySchema
 
 logger = logging.getLogger("handler.msgpack")
@@ -30,29 +37,24 @@ class RpcMessageType(IntEnum):
     NOTIFICATION = 2  # [2, method, params]
 
 
-class RpcDispatcher:
-    def __init__(self):
-        self._methods: dict[str, Callable] = {}
+class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
+    def __init__(
+        self,
+        runtime_config: MessagePackConfig,
+        redis_connection_pool: redis.ConnectionPool,
+        redis_key_schema: RedisKeySchema,
+    ):
+        super().__init__()
+        self._runtime_config: MessagePackConfig = runtime_config
+        self._redis_client: redis.Redis = redis.Redis(
+            connection_pool=redis_connection_pool
+        )
+        self._redis_key_schema: RedisKeySchema = redis_key_schema
+        self._methods: dict[str, Callable] = {
+            "publish": self.publish,
+            "heartbeat": self.heartbeat,
+        }
 
-    def register(self, name: str, func: Callable):
-        """Register a function to handle RPC calls."""
-        self._methods[name] = func
-
-    async def dispatch(self, method_name: str, params: list):
-        """Finds the method and executes it."""
-        if method_name not in self._methods:
-            raise ValueError(f"Method '{method_name}' not found")
-
-        func = self._methods[method_name]
-
-        # Check if the function is a coroutine (async)
-        if inspect.iscoroutinefunction(func):
-            return await func(*params)
-        else:
-            return func(*params)
-
-
-class MessagePackHandler(ProtocolHandler):
     async def publish(
         self,
         cloudevent_dict: dict[str, Any],
@@ -71,7 +73,7 @@ class MessagePackHandler(ProtocolHandler):
         # Process the event through registered CloudEvent processors
         responses: list[dict[str, Any]] = []
         for processor in self._cloudevent_processors:
-            processor_response = await processor.process_event(cloudevent)
+            processor_response = await processor.process_cloudevent(cloudevent)
             if processor_response:
                 if isinstance(processor_response, list):
                     for response in processor_response:
@@ -85,39 +87,219 @@ class MessagePackHandler(ProtocolHandler):
         logger.debug("Heartbeat: %s", timestamp)
         # No return value needed for notification
 
-    def __init__(
-        self,
-        runtime_config: MessagePackConfig,
-        redis_connection_pool: redis.ConnectionPool,
-        redis_key_schema: RedisKeySchema,
-        dispatcher: RpcDispatcher = RpcDispatcher(),
+    async def _dispatch_method(
+        self, method_name: str, params: list, msg_type: RpcMessageType, msg_id: int
     ):
-        super().__init__()
-        self._runtime_config: MessagePackConfig = runtime_config
-        self._redis_client: redis.Redis = redis.Redis(
-            connection_pool=redis_connection_pool
-        )
-        self._redis_key_schema: RedisKeySchema = redis_key_schema
-        self._dispatcher: RpcDispatcher = dispatcher
-        self.register_method("publish", self.publish)
-        self.register_method("heartbeat", self.heartbeat)
+        """Finds the method and executes it."""
+        if method_name not in self._methods:
+            raise ValueError(f"Method '{method_name}' not found")
 
-    async def _server(self) -> asyncio.Server:
+        func = self._methods[method_name]
+
+        # Check if the function is a coroutine (async)
+        if inspect.iscoroutinefunction(func):
+            return await func(*params)
+        else:
+            return func(*params)
+
+    def _server(self) -> MessagePackRpcServer:
         ssl_context = None
         if self._runtime_config.tls_cert_path.exists():
             ssl_context = ssl.create_default_context(
                 cafile=str(self._runtime_config.tls_cert_path)
             )
-        return await asyncio.start_server(
-            self._handle_client,
-            self._runtime_config.hostname,
-            self._runtime_config.port,
-            ssl=ssl_context,
-            backlog=self._runtime_config.max_queued_connections,
+        return MessagePackRpcServer(
+            dispatcher=self._dispatch_method,
+            hostname=self._runtime_config.hostname,
+            port=self._runtime_config.port,
+            ssl_context=ssl_context,
+            max_queued_connections=self._runtime_config.max_queued_connections,
+            max_concurrent_requests=self._runtime_config.max_concurrent_requests,
         )
 
-    def register_method(self, name, func):
-        self._dispatcher.register(name, func)
+    async def task(self) -> None:
+        logger.info("Starting MessagePack handler task")
+        server = self._server()
+        backoff = 1  # seconds
+        max_backoff = 60  # seconds
+        while True:
+            try:
+                # redis is required for message deduplication and expiration handling,
+                # so we check the connection before starting the server
+                try:
+                    await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
+                except redis.RedisError as e:
+                    logger.error(f"Error connecting to Redis: {e}")
+                    raise
+                async with server:
+                    backoff = 1  # Reset backoff after successful start
+                    await server.serve_forever()
+
+            except OSError as e:
+                # 1. Config Check: Check for fatal errors
+                if e.errno in (errno.EADDRNOTAVAIL, errno.EACCES):
+                    logger.error(f"FATAL CONFIG ERROR: {e.strerror} (errno {e.errno})")
+                    raise  # Break out of the loop and the app
+
+                # 2. Retry Logic: Handle 'Address in use'
+                if e.errno == errno.EADDRINUSE:
+                    sleep_time = backoff + random.uniform(0, 0.1 * backoff)
+                    logger.warning(
+                        f"Port {self._runtime_config.port} busy. Retrying in {sleep_time:.2f}s..."
+                    )
+                    await asyncio.sleep(sleep_time)
+                    backoff = min(backoff * 2, max_backoff)
+                    continue
+
+                raise  # Any other OSError we didn't account for
+
+            except asyncio.CancelledError:
+                logger.info("MessagePack handler task cancelled; shutting down")
+                await self._redis_client.aclose()
+                raise
+
+
+class OTELInstrumentedMessagePackHandler(MessagePackHandler):
+    def __init__(
+        self,
+        runtime_config: MessagePackConfig,
+        redis_connection_pool: redis.ConnectionPool,
+        redis_key_schema: RedisKeySchema,
+    ):
+        super().__init__(
+            runtime_config,
+            redis_connection_pool,
+            redis_key_schema,
+        )
+
+        self._tracer: trace.Tracer = trace.get_tracer(__name__)
+        self._meter: metrics.Meter = metrics.get_meter(__name__)
+        self._metrics: dict[str, metrics.Instrument] = {
+            "call_counter": self._meter.create_counter(
+                "rpc.server.call.count",
+                description="Count of MessagePack RPC calls processed",
+            ),
+            "call_duration": self._meter.create_histogram(
+                "rpc.server.call.duration",
+                description="Duration of MessagePack RPC calls in milliseconds",
+            ),
+        }
+
+    def record_metrics(
+        self, duration: float, error: bool = False, base_attributes: dict[str, str] = {}
+    ) -> None:
+        attributes = base_attributes | {"status": "error" if error else "success"}
+        self._metrics["call_counter"].add(1, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+        self._metrics["call_duration"].record(duration, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+
+    async def _dispatch_method(
+        self, method_name: str, params: list, msg_type: RpcMessageType, msg_id: int
+    ):
+        # start timing
+        processing_start_time = time.time()
+        # extract context from MessagePack message properties
+        context = None
+        if len(params) > 0 and isinstance(params[0], dict):
+            context = extract(params[0])
+        # define base attributes for both trace and metrics
+        base_attributes = {
+            rpc_attributes.RPC_SYSTEM: "messagepack",
+            rpc_attributes.RPC_SERVICE: "micro-dcs",
+            rpc_attributes.RPC_METHOD: method_name,
+            network_attributes.NETWORK_TRANSPORT: "tcp",
+            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
+            server_attributes.SERVER_PORT: self._runtime_config.port,
+        }
+        # start trace span and call parent method
+        with self._tracer.start_as_current_span(
+            "{rpc.method}",
+            kind=trace.SpanKind.CONSUMER,
+            context=context,
+        ) as span:
+            span.set_attributes(base_attributes)
+
+        error = False
+        try:
+            await super()._dispatch_method(
+                method_name, params, RpcMessageType.REQUEST, 0
+            )
+        except Exception:
+            span.set_status(
+                trace.Status(
+                    trace.StatusCode.ERROR,
+                    "Error processing MessagePack message",
+                )
+            )
+            error = True
+        processing_duration = time.time() - processing_start_time
+        self.record_metrics(processing_duration, error, base_attributes)
+
+
+class MessagePackProtocolBinding(ProtocolBinding["MessagePackHandler"]):
+    def __init__(
+        self,
+        processor: CloudEventProcessor,
+        processing_config: ProcessingConfig,
+        msgpack_config: MessagePackConfig,
+    ):
+        super().__init__(
+            processor, processing_config, msgpack_config.binding_outgoing_queue_size
+        )
+        self._msgpack_config = msgpack_config
+        # not currently used, but can be implemented in the future for
+        # outgoing message publication and filtering, only RPC type NOTIFICATIONs
+        # are supported for outgoing messages, since REQUEST/RESPONSE semantics
+        # don't make sense for outgoing events
+        # processor.register_publish_handler(self.publish_handler)
+
+
+class MessagePackRpcServer:
+    def __init__(
+        self,
+        dispatcher: Callable[[str, list, RpcMessageType, int], Any],
+        hostname: str = "localhost",
+        port: int = 8888,
+        ssl_context: ssl.SSLContext | None = None,
+        max_queued_connections: int = 100,
+        max_concurrent_requests: int = 10,
+    ):
+        self._host = hostname
+        self._port = port
+        self._ssl_context = ssl_context
+        self._max_queued_connections = max_queued_connections
+        self._max_concurrent_requests = max_concurrent_requests
+        self._server: asyncio.Server | None = None
+        self._methods: dict[str, Callable] = {}
+        self._dispatcher = dispatcher
+
+    async def __aenter__(self) -> MessagePackRpcServer:
+        """Starts the server when entering the 'async with' block."""
+        self._server = await asyncio.start_server(
+            self._handle_client,
+            self._host,
+            self._port,
+            ssl=self._ssl_context,
+            backlog=self._max_queued_connections,
+        )
+        logger.info(
+            "MessagePack-RPC Server running on %s:%d",
+            self._host,
+            self._port,
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        """Ensures the server closes cleanly when the block is exited."""
+        if self._server is None:
+            return
+        self._server.close()
+        await self._server.wait_closed()
+        logger.info("MessagePack-RPC Server shut down cleanly.")
+
+    async def serve_forever(self):
+        """Wrapper for the server's internal loop."""
+        if self._server:
+            await self._server.serve_forever()
 
     async def _send_response(self, writer, lock, msg_id, error, result):
         """Sends the response safely using the Write Lock."""
@@ -146,7 +328,7 @@ class MessagePackHandler(ProtocolHandler):
 
             try:
                 # Execute business logic
-                result = await self._dispatcher.dispatch(method, params)
+                result = await self._dispatcher(method, params, msg_type, msg_id)
             except asyncio.CancelledError:
                 # If the server cancels us (client disconnect), we stop immediately.
                 logger.info("Task cancelled for %s", method)
@@ -173,7 +355,7 @@ class MessagePackHandler(ProtocolHandler):
         socket_lock = asyncio.Lock()
 
         # 2. Backpressure Control
-        semaphore = asyncio.Semaphore(self._runtime_config.max_concurrent_requests)
+        semaphore = asyncio.Semaphore(self._max_concurrent_requests)
 
         # 3. Active Task Tracking (for cleanup)
         active_tasks = set()
@@ -274,109 +456,11 @@ class MessagePackHandler(ProtocolHandler):
             writer.close()
             await writer.wait_closed()
 
-    async def task(self) -> None:
-        logger.info("Starting MessagePack handler task")
-        logger.info(
-            "MessagePack-RPC Server running on %s:%d",
-            self._runtime_config.hostname,
-            self._runtime_config.port,
-        )
-        server = await self._server()
-        try:
-            # redis is required for message deduplication and expiration handling,
-            # so we check the connection before starting the server
-            try:
-                await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
-            except redis.RedisError as e:
-                logger.error(f"Error connecting to Redis: {e}")
-                raise
-            async with server:
-                await server.serve_forever()
-        except asyncio.CancelledError:
-            logger.info("MessagePack handler task cancelled; shutting down")
-            await self._redis_client.aclose()
-            raise
-
-
-class OTELInstrumentedMessagePackHandler(MessagePackHandler):
-    def __init__(
-        self,
-        runtime_config: MessagePackConfig,
-        redis_connection_pool: redis.ConnectionPool,
-        redis_key_schema: RedisKeySchema,
-        rpc_dispatcher: RpcDispatcher = RpcDispatcher(),
-    ):
-        super().__init__(
-            runtime_config, redis_connection_pool, redis_key_schema, rpc_dispatcher
-        )
-
-        self._tracer = trace.get_tracer(__name__)
-        self._meter = metrics.get_meter(__name__)
-        self._metrics: dict[str, Any] = {
-            "call_counter": self._meter.create_counter(
-                "rpc.server.call.count",
-                description="Count of MessagePack RPC calls processed",
-            ),
-            "call_duration": self._meter.create_histogram(
-                "rpc.server.call.duration",
-                description="Duration of MessagePack RPC calls in milliseconds",
-            ),
-        }
-
-    def record_metrics(
-        self, duration: float, error: bool = False, base_attributes: dict[str, str] = {}
-    ) -> None:
-        attributes = base_attributes | {"status": "error" if error else "success"}
-        self._metrics["call_counter"].add(1, attributes)  # pyright: ignore[reportAttributeAccessIssue]
-        self._metrics["call_duration"].record(duration, attributes)  # pyright: ignore[reportAttributeAccessIssue]
-
-    async def _handle_rpc_task(
-        self, writer, lock, semaphore, msg_type, msg_id, method, params
-    ):
-        # start timing
-        processing_start_time = time.time()
-        # extract context from MessagePack message properties
-        context = None
-        if len(params) > 0 and isinstance(params[0], dict):
-            context = extract(params[0])
-        # define base attributes for both trace and metrics
-        base_attributes = {
-            rpc_attributes.RPC_SYSTEM: "messagepack",
-            rpc_attributes.RPC_SERVICE: "micro-dcs",
-            rpc_attributes.RPC_METHOD: method,
-            network_attributes.NETWORK_TRANSPORT: "tcp",
-            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
-            server_attributes.SERVER_PORT: self._runtime_config.port,
-        }
-        # start trace span and call parent method
-        with self._tracer.start_as_current_span(
-            "{rpc.method}",
-            kind=trace.SpanKind.CONSUMER,
-            context=context,
-        ) as span:
-            span.set_attributes(base_attributes)
-
-        error = False
-        try:
-            await super()._handle_rpc_task(
-                writer, lock, semaphore, msg_type, msg_id, method, params
-            )
-        except Exception:
-            span.set_status(
-                trace.Status(
-                    trace.StatusCode.ERROR,
-                    "Error processing MessagePack message",
-                )
-            )
-            error = True
-        processing_duration = time.time() - processing_start_time
-        self.record_metrics(processing_duration, error, base_attributes)
-
 
 class MessagePackRpcClient:
     def __init__(self, host="localhost", port=8888):
-        self.host = host
-        self.port = port
+        self._host = host
+        self._port = port
         self.reader = None
         self.writer = None
         self._id_counter = itertools.count(1)
@@ -387,9 +471,9 @@ class MessagePackRpcClient:
     async def connect(self):
         if self.writer:
             return  # Already connected
-        self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        self.reader, self.writer = await asyncio.open_connection(self._host, self._port)
         self._listen_task = asyncio.create_task(self._reader_loop())
-        print(f"Connected to {self.host}:{self.port}")
+        print(f"Connected to {self._host}:{self._port}")
         return self
 
     async def close(self):

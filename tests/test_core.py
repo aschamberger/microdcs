@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.microdcs import MicroDCS
+from app.core import MicroDCS
 
 
 def _close_coroutine_arg(coro, *_args, **_kwargs):

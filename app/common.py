@@ -1,14 +1,27 @@
+import fnmatch
 import functools
 import logging
+import sys
 import typing
 import uuid
 from abc import ABC, abstractmethod
+from annotationlib import ForwardRef
+from asyncio import Queue
 from collections import namedtuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import UnionType
-from typing import Any, Callable, Dict, Optional
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Optional,
+    TypeVar,
+    get_args,
+    get_origin,
+)
 
 import msgpack
 import orjson
@@ -519,9 +532,7 @@ class CloudEventProcessor(ABC):
         self._type_callbacks_in: dict[str, Callable[..., Any]] = {}
         self._type_callbacks_out: dict[str, Callable[..., Any]] = {}
         self._event_attributes: list[CloudeventAttributeTuple] = []
-        self._publish_handlers: list[
-            Callable[[CloudEvent, MessageIntent | None], None]
-        ] = []
+        self._publish_handlers: list[Callable[[CloudEvent, MessageIntent], None]] = []
         self._register_decorated_callbacks()
 
     @property
@@ -578,8 +589,11 @@ class CloudEventProcessor(ABC):
             f"_type_callbacks_{direction.value}",
         )[cloudevent_type] = callback
 
-    def event_has_callback(self, cloudevent: CloudEvent) -> bool:
+    def has_incoming_callback(self, cloudevent: CloudEvent) -> bool:
         return cloudevent.type in self._type_callbacks_in
+
+    def has_outgoing_callback(self, cloudevent: CloudEvent) -> bool:
+        return cloudevent.type in self._type_callbacks_out
 
     async def initialize(self) -> None:
         """Optional async initialisation hook.
@@ -598,7 +612,7 @@ class CloudEventProcessor(ABC):
         """
 
     def register_publish_handler(
-        self, handler: Callable[[CloudEvent, MessageIntent | None], None]
+        self, handler: Callable[[CloudEvent, MessageIntent], None]
     ) -> None:
         """Register a transport-specific publish handler.
 
@@ -618,6 +632,24 @@ class CloudEventProcessor(ABC):
         for handler in self._publish_handlers:
             handler(cloudevent, intent)
 
+    async def process_cloudevent(
+        self, cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        result = await self.callback_incoming(cloudevent)
+        return result
+
+    @abstractmethod
+    async def process_response_cloudevent(
+        self, cloudevent: CloudEvent
+    ) -> list[CloudEvent] | CloudEvent | None:
+        pass
+
+    @abstractmethod
+    async def handle_cloudevent_expiration(
+        self, cloudevent: CloudEvent, timeout: int
+    ) -> list[CloudEvent] | CloudEvent | None:
+        pass
+
     def create_event(
         self,
         datacontenttype: str | None = "application/json; charset=utf-8",
@@ -634,7 +666,9 @@ class CloudEventProcessor(ABC):
             cloudevent.expiryinterval = self._runtime_config.message_expiry_interval
         return cloudevent
 
-    def get_event_args(self, cloudevent: CloudEvent) -> dict[str, Any]:
+    def _cloudevent_attributes_for_callback(
+        self, cloudevent: CloudEvent
+    ) -> dict[str, Any]:
         kwargs = {}
         for arg in self._event_attributes:
             kwargs[arg.attribute] = get_deep_attr(cloudevent, arg.path)
@@ -661,7 +695,7 @@ class CloudEventProcessor(ABC):
             return None
         logger.debug("Request before callback: %s", request)
 
-        kwargs = self.get_event_args(request_cloudevent)
+        kwargs = self._cloudevent_attributes_for_callback(request_cloudevent)
         responses: list[DataClassMixin] | DataClassMixin | None = await callback(
             request, **kwargs
         )
@@ -749,30 +783,113 @@ class CloudEventProcessor(ABC):
             response_cloudevents.append(response_cloudevent)
         return response_cloudevents
 
-    @abstractmethod
-    async def process_event(self, cloudevent: CloudEvent) -> Any:
-        pass
 
-    @abstractmethod
-    async def process_response_event(
-        self, cloudevent: CloudEvent
-    ) -> list[CloudEvent] | CloudEvent | None:
-        pass
-
-    @abstractmethod
-    async def handle_expiration(
-        self, cloudevent: CloudEvent, timeout: int
-    ) -> list[CloudEvent] | CloudEvent | None:
-        pass
+PB = TypeVar("PB", bound="ProtocolBinding")
 
 
-class ProtocolHandler(ABC):
+class ProtocolHandler(Generic[PB], ABC):
     def __init__(self):
+        self._bindings: list[PB] = []
         self._cloudevent_processors: list[CloudEventProcessor] = []
 
-    def register_processor(self, processor: CloudEventProcessor) -> None:
-        self._cloudevent_processors.append(processor)
+    def register_binding(self, binding: PB) -> None:
+        self._bindings.append(binding)
+        self._cloudevent_processors.append(binding.processor)
 
     @abstractmethod
     async def task(self) -> None:
         pass
+
+
+PH = TypeVar("PH", bound="ProtocolHandler")
+
+
+class ProtocolBinding(Generic[PH], ABC):
+    _resolved_handler: type[PH]
+
+    @classmethod
+    def get_protocol_handler(cls) -> type[ProtocolHandler]:
+        # 1. Return cached if available
+        if hasattr(cls, "_cached_handler"):
+            return cls._cached_handler
+
+        # 2. Iterate through the generic hierarchy
+        # We use __orig_bases__ to find the ProtocolBinding[ActualClass] entry
+        for base in getattr(cls, "__orig_bases__", []):
+            if get_origin(base) is ProtocolBinding:
+                args = get_args(base)
+                if not args:
+                    continue
+
+                candidate = args[0]
+
+                # 3. Handle String or ForwardRef (Lazy Resolution)
+                if isinstance(candidate, (str, ForwardRef)):
+                    name = (
+                        candidate
+                        if isinstance(candidate, str)
+                        else candidate.__forward_arg__
+                    )
+
+                    # Fetch the module where the subclass (cls) was defined
+                    module = sys.modules.get(cls.__module__)
+                    if module is None:
+                        raise ImportError(f"Could not find module {cls.__module__}")
+
+                    # Resolve the name from the module's namespace
+                    resolved = getattr(module, name, None)
+
+                    if resolved is None:
+                        raise NameError(
+                            f"Name '{name}' not found in module '{cls.__module__}'. "
+                            "Ensure the handler class is defined in the same module."
+                        )
+                    candidate = resolved
+
+                # 4. Type Safety Check & Caching
+                if isinstance(candidate, type) and issubclass(
+                    candidate, ProtocolHandler
+                ):
+                    cls._cached_handler = candidate
+                    return candidate
+
+        raise TypeError(f"Could not resolve a valid ProtocolHandler for {cls.__name__}")
+
+    def __init__(
+        self,
+        processor: CloudEventProcessor,
+        processing_config: ProcessingConfig,
+        queue_size: int = 5,
+        outgoing_ce_type_filter: set[str] = set(),
+    ):
+        if not hasattr(type(processor), "_processor_binding"):
+            raise ValueError(
+                f"{type(processor).__name__} must be decorated with @processor_config"
+            )
+
+        self.processor = processor
+        self.processing_config = processing_config
+        self.outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue(queue_size)
+        self.outgoing_ce_type_filter = outgoing_ce_type_filter
+
+    def publish_handler(self, cloudevent: CloudEvent, intent: MessageIntent) -> None:
+        """Default publish handler that puts the event into the outgoing queue.
+        Applies cloudevent type filtering based on the outgoing_ce_type_filter.
+        Method needs to be overwritten by protocol bindings that require more
+        advanced routing behavior."""
+        if (
+            self.outgoing_ce_type_filter is None
+            or len(self.outgoing_ce_type_filter) == 0
+        ):
+            self.outgoing_queue.put_nowait((cloudevent, intent))
+            return
+        if cloudevent.type is None:
+            logger.warning(
+                "CloudEvent has no type; cannot apply outgoing filter. Event: %s",
+                cloudevent,
+            )
+            return
+        for filter in self.outgoing_ce_type_filter:
+            if filter == cloudevent.type or fnmatch.fnmatch(cloudevent.type, filter):
+                self.outgoing_queue.put_nowait((cloudevent, intent))
+                return

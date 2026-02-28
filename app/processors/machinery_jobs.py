@@ -693,18 +693,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
     # ── CloudEvent lifecycle overrides ───────────────────────────────────
 
-    async def process_event(
-        self, cloudevent: CloudEvent
-    ) -> list[CloudEvent] | CloudEvent | None:
-        if not self.event_has_callback(cloudevent):
-            logger.info("No handler registered for message type: %s", cloudevent.type)
-            return None
-
-        result = await self.callback_incoming(cloudevent)
-
-        return result
-
-    async def process_response_event(
+    async def process_response_cloudevent(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
         logger.debug("Response message: %s", cloudevent)
@@ -713,7 +702,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         # however we could retry in some cases or log to an external system
         return None
 
-    async def handle_expiration(
+    async def handle_cloudevent_expiration(
         self, cloudevent: CloudEvent, timeout: int
     ) -> list[CloudEvent] | CloudEvent | None:
         logger.info("Message expired: %s", cloudevent.id)

@@ -51,13 +51,13 @@ class PlainPayload(DataClassMixin):
 class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass so we can test the ABC methods."""
 
-    async def process_event(self, cloudevent):
+    async def process_cloudevent(self, cloudevent):
         return await self.callback_incoming(cloudevent)
 
-    async def process_response_event(self, cloudevent):
+    async def process_response_cloudevent(self, cloudevent):
         return None
 
-    async def handle_expiration(self, cloudevent, timeout):
+    async def handle_cloudevent_expiration(self, cloudevent, timeout):
         return None
 
 
@@ -331,7 +331,7 @@ class TestMessagePackHandler:
                 CloudEvent(type="resp2"),
             ]
 
-        proc.process_event = fake_process
+        proc.process_cloudevent = fake_process
         handler.register_processor(proc)
 
         result = await handler.publish({"type": "com.test.sample.v1"})
@@ -347,7 +347,7 @@ class TestMessagePackHandler:
         ) -> list[CloudEvent] | CloudEvent | None:
             return CloudEvent(type="single")
 
-        proc.process_event = fake_process
+        proc.process_cloudevent = fake_process
         handler.register_processor(proc)
 
         result = await handler.publish({"type": "com.test.sample.v1"})
@@ -363,7 +363,7 @@ class TestMessagePackHandler:
         ) -> list[CloudEvent] | CloudEvent | None:
             return None
 
-        proc.process_event = fake_process
+        proc.process_cloudevent = fake_process
         handler.register_processor(proc)
 
         result = await handler.publish({"type": "com.test.sample.v1"})
@@ -380,7 +380,7 @@ class TestMessagePackHandler:
             assert cloudevent.transportmetadata == {"key": "val"}
             return None
 
-        proc.process_event = fake_process
+        proc.process_cloudevent = fake_process
         handler.register_processor(proc)
 
         await handler.publish({"type": "t"}, transportmetadata={"key": "val"})

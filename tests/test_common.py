@@ -398,15 +398,15 @@ class ConcreteProcessor(CloudEventProcessor):
             lambda ce, intent: self.published_events.append((ce, intent))
         )
 
-    async def process_event(self, cloudevent: CloudEvent) -> Any:
+    async def process_cloudevent(self, cloudevent: CloudEvent) -> Any:
         return None
 
-    async def process_response_event(
+    async def process_response_cloudevent(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
         return None
 
-    async def handle_expiration(
+    async def handle_cloudevent_expiration(
         self, cloudevent: CloudEvent, timeout: int
     ) -> list[CloudEvent] | CloudEvent | None:
         return None
@@ -452,9 +452,9 @@ class TestCloudEventProcessorRegistration:
         proc = ConcreteProcessor()
         proc.register_callback(SamplePayload, AsyncMock())
         ce = CloudEvent(type="com.test.sample.v1")
-        assert proc.event_has_callback(ce) is True
+        assert proc.has_incoming_callback(ce) is True
         ce2 = CloudEvent(type="com.test.unknown.v1")
-        assert proc.event_has_callback(ce2) is False
+        assert proc.has_incoming_callback(ce2) is False
 
 
 class TestCloudEventProcessorPublishAndCreate:

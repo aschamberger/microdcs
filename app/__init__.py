@@ -32,6 +32,7 @@ class MQTTConfig:
     outgoing_queue_size: int = 0
     message_workers: int = 5
     dedupe_ttl_seconds: int = 60 * 10  # 10 minutes
+    binding_outgoing_queue_size: int = 5
 
 
 @dataclass
@@ -42,6 +43,7 @@ class MessagePackConfig:
     keep_alive: bool = True
     max_queued_connections: int = 100
     max_concurrent_requests: int = 10
+    binding_outgoing_queue_size: int = 5
 
 
 @dataclass

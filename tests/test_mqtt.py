@@ -51,13 +51,13 @@ class PlainPayload(DataClassMixin):
 class ConcreteProcessor(CloudEventProcessor):
     """Minimal concrete subclass for testing."""
 
-    async def process_event(self, cloudevent):
+    async def process_cloudevent(self, cloudevent):
         return await self.callback_incoming(cloudevent)
 
-    async def process_response_event(self, cloudevent):
+    async def process_response_cloudevent(self, cloudevent):
         return None
 
-    async def handle_expiration(self, cloudevent, timeout):
+    async def handle_cloudevent_expiration(self, cloudevent, timeout):
         return None
 
 
@@ -221,13 +221,13 @@ class TestRegisterMQTTProcessor:
 
         # Undecorated processor
         class BareProcessor(CloudEventProcessor):
-            async def process_event(self, cloudevent):
+            async def process_cloudevent(self, cloudevent):
                 return None
 
-            async def process_response_event(self, cloudevent):
+            async def process_response_cloudevent(self, cloudevent):
                 return None
 
-            async def handle_expiration(self, cloudevent, timeout):
+            async def handle_cloudevent_expiration(self, cloudevent, timeout):
                 return None
 
         proc = BareProcessor(
@@ -664,21 +664,21 @@ class TestMQTTHandler:
         handler = _make_handler()
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
         ce = CloudEvent(source="src", id="id-1")
-        assert await handler.is_duplicate_message(ce) is True
+        assert await handler._is_duplicate_message(ce) is True
 
     @pytest.mark.asyncio
     async def test_is_not_duplicate_message(self):
         handler = _make_handler()
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
         ce = CloudEvent(source="src", id="id-2")
-        assert await handler.is_duplicate_message(ce) is False
+        assert await handler._is_duplicate_message(ce) is False
 
     # --- cloudevent_from_message ---
 
     def test_cloudevent_from_message_basic(self):
         handler = _make_handler()
         msg = _make_mqtt_message(properties=None)
-        ce = handler.cloudevent_from_message(msg)
+        ce = handler._cloudevent_from_message(msg)
         assert ce.data == msg.payload
         assert ce.transportmetadata is not None
         assert ce.transportmetadata["mqtt_message_id"] == 42
@@ -696,7 +696,7 @@ class TestMQTTHandler:
             ("source", "test-source"),
         ]
         msg = _make_mqtt_message(properties=props)
-        ce = handler.cloudevent_from_message(msg)
+        ce = handler._cloudevent_from_message(msg)
         assert ce.expiryinterval == 120
         assert ce.datacontenttype == "application/json"
         assert ce.transportmetadata is not None
@@ -715,7 +715,7 @@ class TestMQTTHandler:
         del props.ResponseTopic
         del props.CorrelationData
         msg = _make_mqtt_message(properties=props)
-        ce = handler.cloudevent_from_message(msg)
+        ce = handler._cloudevent_from_message(msg)
         assert ce.custommetadata is not None
         assert ce.custommetadata.get("customkey") == "customval"
 
@@ -779,7 +779,7 @@ class TestMQTTHandler:
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
         proc = _make_processor()
-        proc.process_event = AsyncMock(return_value=None)
+        proc.process_cloudevent = AsyncMock(return_value=None)
         binding = _make_binding(
             handler,
             proc,
@@ -793,7 +793,7 @@ class TestMQTTHandler:
             match_topics=binding.topics,
         )
         await handler._process_message(client, msg)
-        proc.process_event.assert_awaited_once()
+        proc.process_cloudevent.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_process_message_response_topic_match(self):
@@ -805,7 +805,7 @@ class TestMQTTHandler:
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
         proc = _make_processor()
-        proc.process_response_event = AsyncMock(return_value=None)
+        proc.process_response_cloudevent = AsyncMock(return_value=None)
         _make_binding(
             handler,
             proc,
@@ -818,7 +818,7 @@ class TestMQTTHandler:
             match_topics={"test/events/foo"},
         )
         await handler._process_message(client, msg)
-        proc.process_response_event.assert_awaited()
+        proc.process_response_cloudevent.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_process_message_publishes_list_response(self):
@@ -832,7 +832,7 @@ class TestMQTTHandler:
         proc = _make_processor()
         resp1 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         resp2 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
-        proc.process_event = AsyncMock(return_value=[resp1, resp2])
+        proc.process_cloudevent = AsyncMock(return_value=[resp1, resp2])
         binding = _make_binding(
             handler,
             proc,
@@ -858,7 +858,7 @@ class TestMQTTHandler:
 
         proc = _make_processor()
         single_resp = CloudEvent(transportmetadata={"mqtt_topic": "out"})
-        proc.process_event = AsyncMock(return_value=single_resp)
+        proc.process_cloudevent = AsyncMock(return_value=single_resp)
         binding = _make_binding(
             handler,
             proc,
