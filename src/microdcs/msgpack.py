@@ -19,14 +19,14 @@ from opentelemetry.semconv._incubating.attributes import (
     server_attributes,
 )
 
-from app import MessagePackConfig, ProcessingConfig
-from app.common import (
+from microdcs import MessagePackConfig, ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     ProtocolBinding,
     ProtocolHandler,
 )
-from app.redis import RedisKeySchema
+from microdcs.redis import RedisKeySchema
 
 logger = logging.getLogger("handler.msgpack")
 

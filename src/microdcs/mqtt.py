@@ -16,15 +16,15 @@ from opentelemetry.semconv._incubating.attributes import messaging_attributes
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
-from app import MQTTConfig, ProcessingConfig
-from app.common import (
+from microdcs import MQTTConfig, ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     MessageIntent,
     ProtocolBinding,
     ProtocolHandler,
 )
-from app.redis import CloudEventDedupeDAO, RedisKeySchema
+from microdcs.redis import CloudEventDedupeDAO, RedisKeySchema
 
 logger = logging.getLogger("handler.mqtt")
 

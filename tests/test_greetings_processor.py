@@ -2,10 +2,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app import ProcessingConfig
-from app.common import CloudEvent, MessageIntent
-from app.models.greetings import Bye, Hello, HiddenObject
-from app.processors.greetings import GreetingsCloudEventProcessor
+from microdcs import ProcessingConfig
+from microdcs.common import CloudEvent, MessageIntent
+from microdcs.models.greetings import Bye, Hello, HiddenObject
+from microdcs.processors.greetings import GreetingsCloudEventProcessor
 
 # ===================================================================
 # Helpers

@@ -3,9 +3,9 @@ from typing import Coroutine
 
 import redis.asyncio as redis
 
-from app import RuntimeConfig, SystemEventTaskGroup
-from app.common import CloudEventProcessor, ProtocolBinding, ProtocolHandler
-from app.redis import RedisKeySchema
+from microdcs import RuntimeConfig, SystemEventTaskGroup
+from microdcs.common import CloudEventProcessor, ProtocolBinding, ProtocolHandler
+from microdcs.redis import RedisKeySchema
 
 logger = logging.getLogger("app.main")
 

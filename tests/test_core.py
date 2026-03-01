@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core import MicroDCS
+from microdcs.core import MicroDCS
 
 
 def _close_coroutine_arg(coro, *_args, **_kwargs):
@@ -72,7 +72,7 @@ class TestMain:
             _register_mock_handler_and_binding(dcs)
         )
 
-        with patch("app.core.SystemEventTaskGroup") as mock_tg_cls:
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
             mock_tg = _setup_task_group_mock(mock_tg_cls)
 
             await dcs.main()
@@ -99,7 +99,7 @@ class TestMain:
             _register_mock_handler_and_binding(dcs)
         )
 
-        with patch("app.core.SystemEventTaskGroup") as mock_tg_cls:
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
             mock_tg = _setup_task_group_mock(mock_tg_cls)
 
             await dcs.main()

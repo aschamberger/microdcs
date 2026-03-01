@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app import ProcessingConfig
-from app.common import (
+from microdcs import ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     Direction,
@@ -17,7 +17,7 @@ from app.common import (
     outgoing,
     processor_config,
 )
-from app.dataclass import DataClassConfig, DataClassMixin
+from microdcs.dataclass import DataClassConfig, DataClassMixin
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures

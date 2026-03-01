@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import pytest
 from mashumaro.config import BaseConfig
 
-from app.dataclass import (
+from microdcs.dataclass import (
     DataClassConfig,
     DataClassMixin,
     DataClassValidationMixin,

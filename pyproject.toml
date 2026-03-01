@@ -1,6 +1,11 @@
 [project]
 name = "MicroDCS"
 version = "0.1.0"
+description = "An Open-Standard Framework for Distributed Sequence Control"
+readme = "README.md"
+authors = [
+    { name = "Andreas Schamberger", email = "mail@andreass.net" }
+]
 requires-python = ">=3.14"
 dependencies = [
     "aiomqtt>=2.4.0",
@@ -11,6 +16,12 @@ dependencies = [
     "transitions>=0.9.3",
 ]
 
+[project.urls]
+Homepage = "https://microdcs.io"
+Documentation = "https://github.com/aschamberger/microdcs"
+Repository = "https://github.com/aschamberger/microdcs.git"
+Issues = "https://github.com/aschamberger/microdcs/issues"
+
 [dependency-groups]
 dev = [
     "datamodel-code-generator[ruff]>=0.54.0",
@@ -20,8 +31,14 @@ dev = [
     "typer>=0.21.1",
 ]
 
+[project.scripts]
+dataclassgen = "scripts.dataclassgen:app"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
 [tool.pytest.ini_options]
-pythonpath = "."
 testpaths = ["tests"]
 markers = [
     "integration: integration tests requiring external services (MQTT, Redis)",

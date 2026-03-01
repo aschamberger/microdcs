@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING, Any
 
-from app.dataclass import DataClassMixin
+from microdcs.dataclass import DataClassMixin
 
 if TYPE_CHECKING:
-    from app.models.greetings import Greetings
+    from microdcs.models.greetings import Greetings
 
 
 class GreetingsDataClassMixin(DataClassMixin):
@@ -22,7 +22,7 @@ class GreetingsDataClassMixin(DataClassMixin):
             if hasattr(self, "_hidden_obj"):
                 value = __custom_metadata__.get("x-hidden-obj")
                 if value is not None:
-                    from app.models.greetings import HiddenObject
+                    from microdcs.models.greetings import HiddenObject
 
                     self._hidden_obj = HiddenObject.from_json(value)
         # create_response: Copy hidden fields from request object only when one is provided

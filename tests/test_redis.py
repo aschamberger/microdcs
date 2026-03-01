@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import redis.asyncio as redis
 
-from app.models.machinery_jobs import (
+from microdcs.models.machinery_jobs import (
     ISA95JobOrderAndStateDataType,
     ISA95JobOrderDataType,
     ISA95JobResponseDataType,
@@ -12,7 +12,7 @@ from app.models.machinery_jobs import (
     ISA95WorkMasterDataType,
     LocalizedText,
 )
-from app.redis import (
+from microdcs.redis import (
     CloudEventDedupeDAO,
     CounterDAO,
     EquipmentListDAO,

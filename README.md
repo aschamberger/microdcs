@@ -160,13 +160,13 @@ JSON Schemas representing the OPC UA information models can be generated from no
 
 ```
 uv run ./scripts/dataclassgen.py dataclasses \
-  --imports app.dataclass.DataClassConfig \
-  --imports app.dataclass.DataClassResponseMixin \
-  --imports app.dataclass.DataClassMixin \
-  --imports app.models.machinery_jobs_mixin.JobStateMixin \
+  --imports microdcs.dataclass.DataClassConfig \
+  --imports microdcs.dataclass.DataClassResponseMixin \
+  --imports microdcs.dataclass.DataClassMixin \
+  --imports microdcs.models.machinery_jobs_mixin.JobStateMixin \
   --imports dataclasses.field \
-  --base-class app.dataclass.DataClassMixin \
-  --config-base-class app.dataclass.DataClassConfig \
+  --base-class microdcs.dataclass.DataClassMixin \
+  --config-base-class microdcs.dataclass.DataClassConfig \
   --add-mixin 'ISA95JobOrderDataType->JobStateMixin' \
   machinery_jobs.jsonschema.json
 ```
@@ -236,12 +236,12 @@ The code generator has some options to support customization for other protocols
 Generate greetings:
 ```
 uv run ./scripts/dataclassgen.py dataclasses \
-  --imports app.dataclass.DataClassConfig \
-  --imports app.dataclass.DataClassResponseMixin \
-  --imports app.models.greetings_mixin.GreetingsDataClassMixin \
+  --imports microdcs.dataclass.DataClassConfig \
+  --imports microdcs.dataclass.DataClassResponseMixin \
+  --imports microdcs.models.greetings_mixin.GreetingsDataClassMixin \
   --imports dataclasses.field \
-  --base-class app.models.greetings_mixin.GreetingsDataClassMixin \
-  --config-base-class app.dataclass.DataClassConfig \
+  --base-class microdcs.models.greetings_mixin.GreetingsDataClassMixin \
+  --config-base-class microdcs.dataclass.DataClassConfig \
   --hidden-fields '_hidden_str->str' \
   --hidden-fields '_hidden_obj->HiddenObject' \
   --validation \

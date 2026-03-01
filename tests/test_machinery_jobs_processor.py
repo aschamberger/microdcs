@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import redis.asyncio as redis
 
-from app import ProcessingConfig
-from app.common import CloudEvent
-from app.models.machinery_jobs import (
+from microdcs import ProcessingConfig
+from microdcs.common import CloudEvent
+from microdcs.models.machinery_jobs import (
     AbortCall,
     AbortResponse,
     CancelCall,
@@ -49,9 +49,9 @@ from app.models.machinery_jobs import (
     UpdateCall,
     UpdateResponse,
 )
-from app.models.machinery_jobs_ext import JobOrderControlExt, MethodReturnStatus
-from app.processors.machinery_jobs import MachineryJobsCloudEventProcessor
-from app.redis import RedisKeySchema
+from microdcs.models.machinery_jobs_ext import JobOrderControlExt, MethodReturnStatus
+from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
+from microdcs.redis import RedisKeySchema
 
 # ===================================================================
 # Constants

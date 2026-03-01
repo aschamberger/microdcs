@@ -15,13 +15,11 @@ from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
 from rich import print
 from rich.table import Table
 
-# Add parent directory to path
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+schemas_path = pathlib.Path(__file__).parent.parent.parent.parent / "schemas"
+models_path = pathlib.Path(__file__).parent.parent / "models"
+
 
 app = typer.Typer()
-
-schemas_path = pathlib.Path(__file__).parent.parent / "schemas"
-dataclass_path = pathlib.Path(__file__).parent.parent / "app" / "models"
 
 
 @app.command()
@@ -41,13 +39,15 @@ def index():
 def dataclasses(
     schema_file: Annotated[pathlib.Path, typer.Argument()],
     imports: Annotated[list[str], typer.Option()] = [
-        "app.dataclass.DataClassMixin",
-        "app.dataclass.DataClassConfig",
-        "app.dataclass.DataClassResponseMixin",
+        "microdcs.dataclass.DataClassMixin",
+        "microdcs.dataclass.DataClassConfig",
+        "microdcs.dataclass.DataClassResponseMixin",
         "dataclasses.field",
     ],
-    base_class: Annotated[str, typer.Option()] = "app.dataclass.DataClassMixin",
-    config_base_class: Annotated[str, typer.Option()] = "app.dataclass.DataClassConfig",
+    base_class: Annotated[str, typer.Option()] = "microdcs.dataclass.DataClassMixin",
+    config_base_class: Annotated[
+        str, typer.Option()
+    ] = "microdcs.dataclass.DataClassConfig",
     validation: Annotated[
         bool, typer.Option(help="Add DataClassValidationMixin to generated classes")
     ] = False,
@@ -92,7 +92,7 @@ def dataclasses(
     data_model_types = get_data_model_types(
         DataModelType.DataclassesDataclass, target_python_version=PythonVersion.PY_314
     )
-    validation_mixin_import = "app.dataclass.DataClassValidationMixin"
+    validation_mixin_import = "microdcs.dataclass.DataClassValidationMixin"
     if validation and validation_mixin_import not in imports:
         imports.append(validation_mixin_import)
     initvar_import = "dataclasses.InitVar"
@@ -201,7 +201,7 @@ def dataclasses(
     )
     parser = JsonSchemaParser(schema_file_path.read_text(), config=config)
     result = parser.parse()
-    out = dataclass_path / (
+    out = models_path / (
         schema_file_path.name.replace("".join(schema_file_path.suffixes), ".py")
     )
     f = out.open("w")

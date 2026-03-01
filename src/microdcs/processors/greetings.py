@@ -1,7 +1,7 @@
 import logging
 
-from app import ProcessingConfig
-from app.common import (
+from microdcs import ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     MessageIntent,
@@ -10,7 +10,7 @@ from app.common import (
     outgoing,
     processor_config,
 )
-from app.models.greetings import Bye, Hello
+from microdcs.models.greetings import Bye, Hello
 
 logger = logging.getLogger("processor.greetings")
 

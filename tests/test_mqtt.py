@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app import MQTTConfig, ProcessingConfig
-from app.common import (
+from microdcs import MQTTConfig, ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     Direction,
@@ -16,14 +16,14 @@ from app.common import (
     ProcessorBinding,
     processor_config,
 )
-from app.dataclass import DataClassConfig, DataClassMixin
-from app.mqtt import (
+from microdcs.dataclass import DataClassConfig, DataClassMixin
+from microdcs.mqtt import (
     MQTTHandler,
     MQTTProtocolBinding,
     OTELInstrumentedMQTTHandler,
     QoS,
 )
-from app.redis import RedisKeySchema
+from microdcs.redis import RedisKeySchema
 
 # ---------------------------------------------------------------------------
 # Test fixtures / helpers
@@ -76,7 +76,7 @@ def _make_handler() -> MQTTHandler:
     config = MQTTConfig()
     pool = MagicMock()
     key_schema = RedisKeySchema()
-    with patch("app.mqtt.redis.Redis"):
+    with patch("microdcs.mqtt.redis.Redis"):
         handler = MQTTHandler(config, pool, key_schema)
     return handler
 
@@ -562,7 +562,7 @@ class TestMQTTHandler:
 
     def test_client_no_sat_no_tls(self):
         handler = _make_handler()
-        with patch("app.mqtt.aiomqtt.Client") as mock_client_cls:
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_client_cls:
             mock_client_cls.return_value = MagicMock()
             handler._client()
             mock_client_cls.assert_called_once()
@@ -580,7 +580,7 @@ class TestMQTTHandler:
         mock_file.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("app.mqtt.aiomqtt.Client") as mock_client_cls,
+            patch("microdcs.mqtt.aiomqtt.Client") as mock_client_cls,
             patch("builtins.open", return_value=mock_file),
         ):
             mock_client_cls.return_value = MagicMock()
@@ -1013,7 +1013,7 @@ class TestMQTTHandler:
         # Make TaskGroup raise CancelledError immediately
         with (
             patch.object(handler, "_client", return_value=mock_client),
-            patch("app.mqtt.asyncio.TaskGroup") as mock_tg_cls,
+            patch("microdcs.mqtt.asyncio.TaskGroup") as mock_tg_cls,
         ):
 
             def _close_coro(coro):
@@ -1042,7 +1042,7 @@ class TestOTELInstrumentedMQTTHandler:
         config = MQTTConfig()
         pool = MagicMock()
         key_schema = RedisKeySchema()
-        with patch("app.mqtt.redis.Redis"):
+        with patch("microdcs.mqtt.redis.Redis"):
             return OTELInstrumentedMQTTHandler(config, pool, key_schema)
 
     def test_init_sets_tracer_meter_metrics(self):

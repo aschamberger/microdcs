@@ -2,7 +2,7 @@ import socket
 
 import pytest
 
-from app import MessagePackConfig, MQTTConfig, RedisConfig
+from microdcs import MessagePackConfig, MQTTConfig, RedisConfig
 
 MQTT_CONFIG = MQTTConfig()
 REDIS_CONFIG = RedisConfig()

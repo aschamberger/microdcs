@@ -8,23 +8,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import msgpack
 import pytest
 
-from app import MessagePackConfig, ProcessingConfig
-from app.common import (
+from microdcs import MessagePackConfig, ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     Direction,
     ProcessorBinding,
     processor_config,
 )
-from app.dataclass import DataClassConfig, DataClassMixin
-from app.msgpack import (
+from microdcs.dataclass import DataClassConfig, DataClassMixin
+from microdcs.msgpack import (
     MessagePackHandler,
     MessagePackRpcClient,
     MessagePackRpcServer,
     OTELInstrumentedMessagePackHandler,
     RpcMessageType,
 )
-from app.redis import RedisKeySchema
+from microdcs.redis import RedisKeySchema
 
 # ---------------------------------------------------------------------------
 # Test fixtures / helpers
@@ -75,7 +75,7 @@ def _make_handler(**kwargs) -> MessagePackHandler:
     config = MessagePackConfig()
     pool = MagicMock()
     key_schema = RedisKeySchema()
-    with patch("app.msgpack.redis.Redis"):
+    with patch("microdcs.msgpack.redis.Redis"):
         handler = MessagePackHandler(config, pool, key_schema, **kwargs)
     return handler
 
@@ -707,7 +707,7 @@ class TestOTELInstrumentedMessagePackHandler:
         config = MessagePackConfig()
         pool = MagicMock()
         key_schema = RedisKeySchema()
-        with patch("app.msgpack.redis.Redis"):
+        with patch("microdcs.msgpack.redis.Redis"):
             return OTELInstrumentedMessagePackHandler(config, pool, key_schema)
 
     def test_init_sets_tracer_and_meter(self):

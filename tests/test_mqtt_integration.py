@@ -7,10 +7,10 @@ import pytest
 import pytest_asyncio
 import redis.asyncio as redis
 
-from app import MQTTConfig, ProcessingConfig, RedisConfig
-from app.common import CloudEvent, MessageIntent
-from app.models.greetings import Hello, HiddenObject
-from app.models.machinery_jobs import (
+from microdcs import MQTTConfig, ProcessingConfig, RedisConfig
+from microdcs.common import CloudEvent, MessageIntent
+from microdcs.models.greetings import Hello, HiddenObject
+from microdcs.models.machinery_jobs import (
     EUInformation,
     ISA95JobOrderDataType,
     ISA95MaterialDataType,
@@ -23,11 +23,11 @@ from app.models.machinery_jobs import (
     StoreCall,
     StoreResponse,
 )
-from app.models.machinery_jobs_ext import MethodReturnStatus
-from app.mqtt import MQTTHandler
-from app.processors.greetings import GreetingsCloudEventProcessor
-from app.processors.machinery_jobs import MachineryJobsCloudEventProcessor
-from app.redis import RedisKeySchema
+from microdcs.models.machinery_jobs_ext import MethodReturnStatus
+from microdcs.mqtt import MQTTHandler
+from microdcs.processors.greetings import GreetingsCloudEventProcessor
+from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
+from microdcs.redis import RedisKeySchema
 from tests.conftest import app_available, integration, mqtt_available, redis_available
 
 MQTT_CONFIG = MQTTConfig()

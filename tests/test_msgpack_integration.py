@@ -5,10 +5,10 @@ from datetime import datetime
 import orjson
 import pytest
 
-from app import MessagePackConfig
-from app.common import CloudEvent
-from app.models.greetings import Hello
-from app.msgpack import MessagePackRpcClient
+from microdcs import MessagePackConfig
+from microdcs.common import CloudEvent
+from microdcs.models.greetings import Hello
+from microdcs.msgpack import MessagePackRpcClient
 from tests.conftest import integration, msgpack_server_available
 
 MSGPACK_CONFIG = MessagePackConfig()

@@ -44,7 +44,7 @@
             "options": {
                 "env": {
                     "APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true",
-                    "OTEL_SERVICE_NAME": "micro-dcs.app",
+                    "OTEL_SERVICE_NAME": "microdcs.app",
                     "OTEL_TRACES_EXPORTER": "console", // console, otlp, none
                     "OTEL_METRICS_EXPORTER": "console", // console, otlp, none
                     "OTEL_LOGS_EXPORTER": "console", // console, otlp, none
@@ -83,14 +83,14 @@
         {
             "label": "App deployment",
             "type": "shell",
-            "command": "kubectl apply -f ./deploy/app.yaml",
+            "command": "kubectl apply -f ./deploy/k8s.yaml",
             "group": "test",
             "problemMatcher": [],
         },
         {
-            "label": "Line count stats (app)",
+            "label": "Line count stats (microdcs,app)",
             "type": "shell",
-            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],tests,deploy,schemas,scripts",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],app,tests,deploy,schemas,scripts",
             "windows": {
                 "options": {
                     "env": {
@@ -104,7 +104,7 @@
         {
             "label": "Line count stats (other)",
             "type": "shell",
-            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],app",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],microdcs,app",
             "windows": {
                 "options": {
                     "env": {
@@ -118,7 +118,7 @@
         {
             "label": "Run test coverage",
             "type": "shell",
-            "command": "${command:python.interpreterPath} -m pytest --cov=app --cov-report=term-missing tests/",
+            "command": "${command:python.interpreterPath} -m pytest --cov=microdcs,app --cov-report=term-missing tests/",
             "group": "test",
             "problemMatcher": [],
         },

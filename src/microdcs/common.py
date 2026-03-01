@@ -27,8 +27,8 @@ import msgpack
 import orjson
 from mashumaro.config import BaseConfig
 
-from app import ProcessingConfig
-from app.dataclass import (
+from microdcs import ProcessingConfig
+from microdcs.dataclass import (
     DataClassConfig,
     DataClassMixin,
     get_cloudevent_type,

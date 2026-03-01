@@ -2,15 +2,15 @@ import asyncio
 import logging
 import os
 
-from app.core import MicroDCS
-from app.mqtt import MQTTHandler, MQTTProtocolBinding, OTELInstrumentedMQTTHandler
-from app.msgpack import (
+from microdcs.core import MicroDCS
+from microdcs.mqtt import MQTTHandler, MQTTProtocolBinding, OTELInstrumentedMQTTHandler
+from microdcs.msgpack import (
     MessagePackHandler,
     MessagePackProtocolBinding,
     OTELInstrumentedMessagePackHandler,
 )
-from app.processors.greetings import GreetingsCloudEventProcessor
-from app.processors.machinery_jobs import MachineryJobsCloudEventProcessor
+from microdcs.processors.greetings import GreetingsCloudEventProcessor
+from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
 
 logger = logging.getLogger("app.main")
 

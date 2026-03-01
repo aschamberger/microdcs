@@ -4,8 +4,8 @@ from typing import Any
 import redis.asyncio as redis
 from transitions.extensions import HierarchicalGraphMachine
 
-from app import ProcessingConfig
-from app.common import (
+from microdcs import ProcessingConfig
+from microdcs.common import (
     CloudEvent,
     CloudeventAttributeTuple,
     CloudEventProcessor,
@@ -15,7 +15,7 @@ from app.common import (
     processor_config,
     scope_from_subject,
 )
-from app.models.machinery_jobs import (
+from microdcs.models.machinery_jobs import (
     AbortCall,
     AbortResponse,
     CancelCall,
@@ -49,11 +49,11 @@ from app.models.machinery_jobs import (
     UpdateCall,
     UpdateResponse,
 )
-from app.models.machinery_jobs_ext import (
+from microdcs.models.machinery_jobs_ext import (
     JobOrderControlExt,
     MethodReturnStatus,
 )
-from app.redis import (
+from microdcs.redis import (
     JobOrderAndStateDAO,
     JobResponseDAO,
     RedisKeySchema,
