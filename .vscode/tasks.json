@@ -90,7 +90,7 @@
         {
             "label": "Line count stats (microdcs,app)",
             "type": "shell",
-            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],app,tests,deploy,schemas,scripts",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],tests,deploy,schemas,scripts",
             "windows": {
                 "options": {
                     "env": {
@@ -104,7 +104,7 @@
         {
             "label": "Line count stats (other)",
             "type": "shell",
-            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],microdcs,app",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],src,app",
             "windows": {
                 "options": {
                     "env": {
@@ -118,7 +118,7 @@
         {
             "label": "Run test coverage",
             "type": "shell",
-            "command": "${command:python.interpreterPath} -m pytest --cov=microdcs,app --cov-report=term-missing tests/",
+            "command": "${command:python.interpreterPath} -m pytest --cov=microdcs --cov-report=term-missing tests/",
             "group": "test",
             "problemMatcher": [],
         },
