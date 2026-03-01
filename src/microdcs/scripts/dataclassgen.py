@@ -1,6 +1,5 @@
 import json
 import pathlib
-import sys
 from collections import defaultdict
 from typing import Annotated, Any
 
@@ -17,7 +16,6 @@ from rich.table import Table
 
 schemas_path = pathlib.Path(__file__).parent.parent.parent.parent / "schemas"
 models_path = pathlib.Path(__file__).parent.parent / "models"
-
 
 app = typer.Typer()
 
@@ -37,7 +35,15 @@ def index():
 
 @app.command()
 def dataclasses(
-    schema_file: Annotated[pathlib.Path, typer.Argument()],
+    schema_file: Annotated[
+        pathlib.Path,
+        typer.Argument(
+            help="Path to the JSON schema file to parse (relative to schemas/ or absolute)"
+        ),
+    ],
+    models_path: Annotated[
+        pathlib.Path, typer.Argument(help="Output directory for generated dataclasses")
+    ] = models_path,
     imports: Annotated[list[str], typer.Option()] = [
         "microdcs.dataclass.DataClassMixin",
         "microdcs.dataclass.DataClassConfig",
@@ -82,7 +88,10 @@ def dataclasses(
         ),
     ] = [],
 ):
-    schema_file_path = schemas_path / schema_file
+    if schema_file.is_absolute():
+        schema_file_path = schema_file
+    else:
+        schema_file_path = schemas_path / schema_file
     if not schema_file_path.exists():
         print(f"[bold red]Schema file does not exist: {schema_file_path}[/bold red]")
         raise typer.Exit(code=1)

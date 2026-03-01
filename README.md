@@ -159,7 +159,7 @@ JSON Schemas representing the OPC UA information models can be generated from no
   * custom attributes "x-*" in `Config` inner class
 
 ```
-uv run ./scripts/dataclassgen.py dataclasses \
+uv run dataclassgen dataclasses \
   --imports microdcs.dataclass.DataClassConfig \
   --imports microdcs.dataclass.DataClassResponseMixin \
   --imports microdcs.dataclass.DataClassMixin \
@@ -214,12 +214,12 @@ The code generator has some options to support customization for other protocols
 * Add `__custom_metadata__: InitVar[dict[str, Any] | None] = None` for usage in `__post_init__()``. It is populated from cloudevent.
 
   ```
-  uv run ./scripts/dataclassgen.py dataclasses --custom-metadata my.jsonschema.json
+  uv run dataclassgen dataclasses --custom-metadata my.jsonschema.json
   ```
 
 * Add additional `InitVar` fields for usage in `__post_init__()`. You can populate them via `event.response(mystatus=MyStatus.OKAY)`.
   ```
-  uv run ./scripts/dataclassgen.py dataclasses \
+  uv run dataclassgen dataclasses \
     --init-fields 'mystatus->MyStatus' \
     --init-fields 'init->dict[str,str]' \
     my.jsonschema.json
@@ -227,7 +227,7 @@ The code generator has some options to support customization for other protocols
 
 * Add hidden fields.
   ```
-  uv run ./scripts/dataclassgen.py dataclasses \
+  uv run dataclassgen dataclasses \
     --hidden-fields '_hidden_str->str' \
     --hidden-fields '_hidden_obj->Obj1|Obj2' \
     my.jsonschema.json
@@ -235,7 +235,7 @@ The code generator has some options to support customization for other protocols
 
 Generate greetings:
 ```
-uv run ./scripts/dataclassgen.py dataclasses \
+uv run dataclassgen dataclasses \
   --imports microdcs.dataclass.DataClassConfig \
   --imports microdcs.dataclass.DataClassResponseMixin \
   --imports microdcs.models.greetings_mixin.GreetingsDataClassMixin \

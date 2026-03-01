@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-dataclassgen = "scripts.dataclassgen:app"
+dataclassgen = "microdcs.scripts.dataclassgen:app"
 
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]
