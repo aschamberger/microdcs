@@ -20,6 +20,10 @@ mkdir -p .vscode
 curl -LsSf https://raw.githubusercontent.com/aschamberger/microdcs/main/.vscode/settings.json -o .vscode/settings.json
 curl -LsSf https://raw.githubusercontent.com/aschamberger/microdcs/main/.vscode/tasks.json -o .vscode/tasks.json
 
+# Create .github directory and copy copilot instructions from MicroDCS
+mkdir -p .github
+curl -LsSf https://raw.githubusercontent.com/aschamberger/microdcs/main/scripts/copilot-instructions.md -o .github/copilot-instructions.md
+
 # Install python with uv
 #uv python install 3.14.3
 
