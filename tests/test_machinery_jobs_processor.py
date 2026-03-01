@@ -981,7 +981,7 @@ class TestProcessEvent:
             datacontenttype="application/json; charset=utf-8",
         )
 
-        result = await processor.process_event(ce)
+        result = await processor.process_cloudevent(ce)
         assert result is None
 
     @pytest.mark.asyncio
@@ -996,20 +996,20 @@ class TestProcessEvent:
             subject=SCOPE,
         )
 
-        result = await processor.process_event(ce)
+        result = await processor.process_cloudevent(ce)
         assert isinstance(result, list)
         assert len(result) >= 1
 
     @pytest.mark.asyncio
     async def test_process_response_event_returns_none(self, processor):
         ce = CloudEvent()
-        result = await processor.process_response_event(ce)
+        result = await processor.process_response_cloudevent(ce)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_handle_expiration_returns_none(self, processor):
         ce = CloudEvent()
-        result = await processor.handle_expiration(ce, 10)
+        result = await processor.handle_cloudevent_expiration(ce, 10)
         assert result is None
 
 

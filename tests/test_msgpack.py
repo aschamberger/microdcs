@@ -20,8 +20,8 @@ from app.dataclass import DataClassConfig, DataClassMixin
 from app.msgpack import (
     MessagePackHandler,
     MessagePackRpcClient,
+    MessagePackRpcServer,
     OTELInstrumentedMessagePackHandler,
-    RpcDispatcher,
     RpcMessageType,
 )
 from app.redis import RedisKeySchema
@@ -97,43 +97,49 @@ class TestRpcMessageType:
 
 
 # ===================================================================
-# RpcDispatcher
+# MessagePackHandler._dispatch_method (formerly RpcDispatcher)
 # ===================================================================
 
 
-class TestRpcDispatcher:
+class TestDispatchMethod:
     @pytest.mark.asyncio
     async def test_dispatch_sync_function(self):
-        d = RpcDispatcher()
-        d.register("add", lambda a, b: a + b)
-        assert await d.dispatch("add", [2, 3]) == 5
+        handler = _make_handler()
+        handler._methods["add"] = lambda a, b: a + b
+        assert (
+            await handler._dispatch_method("add", [2, 3], RpcMessageType.REQUEST, 0)
+            == 5
+        )
 
     @pytest.mark.asyncio
     async def test_dispatch_async_function(self):
-        d = RpcDispatcher()
+        handler = _make_handler()
 
         async def async_mul(a, b):
             return a * b
 
-        d.register("mul", async_mul)
-        assert await d.dispatch("mul", [4, 5]) == 20
+        handler._methods["mul"] = async_mul
+        assert (
+            await handler._dispatch_method("mul", [4, 5], RpcMessageType.REQUEST, 0)
+            == 20
+        )
 
     @pytest.mark.asyncio
     async def test_dispatch_unknown_method_raises(self):
-        d = RpcDispatcher()
+        handler = _make_handler()
         with pytest.raises(ValueError, match="Method 'nope' not found"):
-            await d.dispatch("nope", [])
+            await handler._dispatch_method("nope", [], RpcMessageType.REQUEST, 0)
 
     def test_register_overwrites(self):
-        d = RpcDispatcher()
-        d.register("f", lambda: 1)
-        d.register("f", lambda: 2)
-        assert d._methods["f"]() == 2
+        handler = _make_handler()
+        handler._methods["f"] = lambda: 1
+        handler._methods["f"] = lambda: 2
+        assert handler._methods["f"]() == 2
 
     @pytest.mark.asyncio
     async def test_dispatch_checks_coroutine(self):
         """Verify the iscoroutinefunction branch."""
-        d = RpcDispatcher()
+        handler = _make_handler()
 
         def sync_fn():
             return "sync"
@@ -141,12 +147,17 @@ class TestRpcDispatcher:
         async def async_fn():
             return "async"
 
-        d.register("s", sync_fn)
-        d.register("a", async_fn)
-        assert inspect.iscoroutinefunction(d._methods["a"])
-        assert not inspect.iscoroutinefunction(d._methods["s"])
-        assert await d.dispatch("s", []) == "sync"
-        assert await d.dispatch("a", []) == "async"
+        handler._methods["s"] = sync_fn
+        handler._methods["a"] = async_fn
+        assert inspect.iscoroutinefunction(handler._methods["a"])
+        assert not inspect.iscoroutinefunction(handler._methods["s"])
+        assert (
+            await handler._dispatch_method("s", [], RpcMessageType.REQUEST, 0) == "sync"
+        )
+        assert (
+            await handler._dispatch_method("a", [], RpcMessageType.REQUEST, 0)
+            == "async"
+        )
 
 
 # ===================================================================
@@ -298,13 +309,13 @@ class TestCloudEventProcessorCallbacks:
 class TestMessagePackHandler:
     def test_init_registers_publish_and_heartbeat(self):
         handler = _make_handler()
-        assert "publish" in handler._dispatcher._methods
-        assert "heartbeat" in handler._dispatcher._methods
+        assert "publish" in handler._methods
+        assert "heartbeat" in handler._methods
 
     def test_register_method(self):
         handler = _make_handler()
-        handler.register_method("custom", lambda: 42)
-        assert "custom" in handler._dispatcher._methods
+        handler._methods["custom"] = lambda: 42
+        assert "custom" in handler._methods
 
     @pytest.mark.asyncio
     async def test_heartbeat(self):
@@ -332,7 +343,7 @@ class TestMessagePackHandler:
             ]
 
         proc.process_cloudevent = fake_process
-        handler.register_processor(proc)
+        handler._cloudevent_processors.append(proc)
 
         result = await handler.publish({"type": "com.test.sample.v1"})
         assert len(result) == 2
@@ -348,7 +359,7 @@ class TestMessagePackHandler:
             return CloudEvent(type="single")
 
         proc.process_cloudevent = fake_process
-        handler.register_processor(proc)
+        handler._cloudevent_processors.append(proc)
 
         result = await handler.publish({"type": "com.test.sample.v1"})
         assert len(result) == 1
@@ -364,7 +375,7 @@ class TestMessagePackHandler:
             return None
 
         proc.process_cloudevent = fake_process
-        handler.register_processor(proc)
+        handler._cloudevent_processors.append(proc)
 
         result = await handler.publish({"type": "com.test.sample.v1"})
         assert len(result) == 0
@@ -381,59 +392,53 @@ class TestMessagePackHandler:
             return None
 
         proc.process_cloudevent = fake_process
-        handler.register_processor(proc)
+        handler._cloudevent_processors.append(proc)
 
         await handler.publish({"type": "t"}, transportmetadata={"key": "val"})
 
-    @pytest.mark.asyncio
-    async def test_server_creates_asyncio_server(self):
+    def test_server_creates_rpc_server(self):
         handler = _make_handler()
-        # TLS cert does not exist in test env, so ssl_context should be None
-        with patch("asyncio.start_server", new_callable=AsyncMock) as mock_start:
-            mock_start.return_value = MagicMock()
-            server = await handler._server()
-            mock_start.assert_awaited_once()
-            assert server is not None
+        server = handler._server()
+        assert isinstance(server, MessagePackRpcServer)
 
-    @pytest.mark.asyncio
-    async def test_server_with_tls(self):
+    def test_server_with_tls(self):
         handler = _make_handler()
         handler._runtime_config.tls_cert_path = MagicMock()
         handler._runtime_config.tls_cert_path.exists.return_value = True
         handler._runtime_config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
-        with (
-            patch("asyncio.start_server", new_callable=AsyncMock) as mock_start,
-            patch("ssl.create_default_context") as mock_ssl,
-        ):
-            mock_start.return_value = MagicMock()
-            await handler._server()
+        with patch("ssl.create_default_context") as mock_ssl:
+            server = handler._server()
             mock_ssl.assert_called_once()
+            assert server._ssl_context is not None
 
     @pytest.mark.asyncio
     async def test_send_response_success(self):
         handler = _make_handler()
+        server = handler._server()
         writer = MagicMock()
         writer.write = MagicMock()
         writer.drain = AsyncMock()
         lock = asyncio.Lock()
 
-        await handler._send_response(writer, lock, 1, None, "ok")
+        await server._send_response(writer, lock, 1, None, "ok")
         writer.write.assert_called_once()
         writer.drain.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_send_response_write_error(self):
         handler = _make_handler()
+        server = handler._server()
         writer = MagicMock()
         writer.write = MagicMock(side_effect=BrokenPipeError("broken"))
         lock = asyncio.Lock()
 
         # Should not raise
-        await handler._send_response(writer, lock, 1, None, "ok")
+        await server._send_response(writer, lock, 1, None, "ok")
 
     @pytest.mark.asyncio
     async def test_handle_rpc_task_request_success(self):
         handler = _make_handler()
+        server = handler._server()
         writer = MagicMock()
         writer.write = MagicMock()
         writer.drain = AsyncMock()
@@ -441,7 +446,7 @@ class TestMessagePackHandler:
         semaphore = asyncio.Semaphore(1)
         await semaphore.acquire()
 
-        await handler._handle_rpc_task(
+        await server._handle_rpc_task(
             writer, lock, semaphore, RpcMessageType.REQUEST, 42, "heartbeat", ["ts"]
         )
         # Semaphore should be released
@@ -450,6 +455,7 @@ class TestMessagePackHandler:
     @pytest.mark.asyncio
     async def test_handle_rpc_task_request_error(self):
         handler = _make_handler()
+        server = handler._server()
         writer = MagicMock()
         writer.write = MagicMock()
         writer.drain = AsyncMock()
@@ -457,7 +463,7 @@ class TestMessagePackHandler:
         semaphore = asyncio.Semaphore(1)
         await semaphore.acquire()
 
-        await handler._handle_rpc_task(
+        await server._handle_rpc_task(
             writer,
             lock,
             semaphore,
@@ -479,12 +485,13 @@ class TestMessagePackHandler:
     @pytest.mark.asyncio
     async def test_handle_rpc_task_notification_no_response(self):
         handler = _make_handler()
+        server = handler._server()
         writer = MagicMock()
         lock = asyncio.Lock()
         semaphore = asyncio.Semaphore(1)
         await semaphore.acquire()
 
-        await handler._handle_rpc_task(
+        await server._handle_rpc_task(
             writer,
             lock,
             semaphore,
@@ -500,11 +507,12 @@ class TestMessagePackHandler:
     @pytest.mark.asyncio
     async def test_handle_rpc_task_cancelled(self):
         handler = _make_handler()
+        server = handler._server()
 
-        async def cancel_dispatch(method_name: str, params: list) -> None:  # type: ignore[type-arg]
+        async def cancel_dispatch(method_name, params, msg_type, msg_id):
             raise asyncio.CancelledError()
 
-        handler._dispatcher.dispatch = cancel_dispatch  # type: ignore[assignment]
+        server._dispatcher = cancel_dispatch
         writer = MagicMock()
         writer.write = MagicMock()
         writer.drain = AsyncMock()
@@ -513,7 +521,7 @@ class TestMessagePackHandler:
         await semaphore.acquire()
 
         with pytest.raises(asyncio.CancelledError):
-            await handler._handle_rpc_task(
+            await server._handle_rpc_task(
                 writer,
                 lock,
                 semaphore,
@@ -528,6 +536,7 @@ class TestMessagePackHandler:
     @pytest.mark.asyncio
     async def test_handle_client_clean_disconnect(self):
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -536,12 +545,13 @@ class TestMessagePackHandler:
 
         # reader.read returns empty bytes → clean disconnect
         reader.read = AsyncMock(return_value=b"")
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_client_processes_request(self):
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -555,7 +565,7 @@ class TestMessagePackHandler:
             [RpcMessageType.REQUEST, 1, "heartbeat", ["2025-01-01"]]
         )
         reader.read = AsyncMock(side_effect=[request, b""])
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
 
         # Client was properly closed (task may be cancelled before writing)
         writer.close.assert_called_once()
@@ -563,6 +573,7 @@ class TestMessagePackHandler:
     @pytest.mark.asyncio
     async def test_handle_client_processes_notification(self):
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -571,12 +582,13 @@ class TestMessagePackHandler:
 
         notification = msgpack.packb([RpcMessageType.NOTIFICATION, "heartbeat", ["ts"]])
         reader.read = AsyncMock(side_effect=[notification, b""])
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_client_malformed_message(self):
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -586,12 +598,13 @@ class TestMessagePackHandler:
         # A malformed message (wrong type value) followed by disconnect
         malformed = msgpack.packb([99, "bad"])
         reader.read = AsyncMock(side_effect=[malformed, b""])
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_client_non_list_message(self):
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -601,12 +614,13 @@ class TestMessagePackHandler:
         # A non-list message
         non_list = msgpack.packb("just a string")
         reader.read = AsyncMock(side_effect=[non_list, b""])
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_client_read_exception(self):
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -614,13 +628,14 @@ class TestMessagePackHandler:
         writer.wait_closed = AsyncMock()
 
         reader.read = AsyncMock(side_effect=ConnectionResetError("reset"))
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_client_partial_data_releases_semaphore(self):
         """Data that doesn't complete a message should release the semaphore."""
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -629,13 +644,14 @@ class TestMessagePackHandler:
 
         # Incomplete msgpack data then disconnect
         reader.read = AsyncMock(side_effect=[b"\x93", b""])
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_client_batch_messages(self):
         """Multiple messages in a single read."""
         handler = _make_handler()
+        server = handler._server()
         reader = AsyncMock()
         writer = MagicMock()
         writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
@@ -649,7 +665,7 @@ class TestMessagePackHandler:
         assert isinstance(req1, bytes) and isinstance(req2, bytes)
         batch = req1 + req2
         reader.read = AsyncMock(side_effect=[batch, b""])
-        await handler._handle_client(reader, writer)
+        await server._handle_client(reader, writer)
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
@@ -718,86 +734,39 @@ class TestOTELInstrumentedMessagePackHandler:
         assert attrs["status"] == "error"
 
     @pytest.mark.asyncio
-    async def test_handle_rpc_task_calls_parent(self):
+    async def test_dispatch_method_calls_parent_and_records_metrics(self):
         handler = self._make_otel_handler()
-        writer = MagicMock()
-        writer.write = MagicMock()
-        writer.drain = AsyncMock()
-        lock = asyncio.Lock()
-        semaphore = asyncio.Semaphore(1)
-        await semaphore.acquire()
-
         handler._metrics["call_counter"] = MagicMock()
         handler._metrics["call_duration"] = MagicMock()
 
-        await handler._handle_rpc_task(
-            writer,
-            lock,
-            semaphore,
-            RpcMessageType.REQUEST,
-            1,
-            "heartbeat",
-            ["ts"],
-        )
-        assert not semaphore.locked()
+        await handler._dispatch_method("heartbeat", ["ts"], RpcMessageType.REQUEST, 1)
         handler._metrics["call_counter"].add.assert_called()
 
     @pytest.mark.asyncio
-    async def test_handle_rpc_task_with_context_extraction(self):
+    async def test_dispatch_method_with_context_extraction(self):
         """First param is dict → extract OTEL context."""
         handler = self._make_otel_handler()
-        writer = MagicMock()
-        writer.write = MagicMock()
-        writer.drain = AsyncMock()
-        lock = asyncio.Lock()
-        semaphore = asyncio.Semaphore(1)
-        await semaphore.acquire()
-
         handler._metrics["call_counter"] = MagicMock()
         handler._metrics["call_duration"] = MagicMock()
 
         # params[0] is dict → triggers context extraction
-        await handler._handle_rpc_task(
-            writer,
-            lock,
-            semaphore,
-            RpcMessageType.REQUEST,
-            2,
+        await handler._dispatch_method(
             "heartbeat",
             [{"traceparent": "00-abc-def-01"}, "ts"],
+            RpcMessageType.REQUEST,
+            2,
         )
-        assert not semaphore.locked()
+        handler._metrics["call_counter"].add.assert_called()
 
     @pytest.mark.asyncio
-    async def test_handle_rpc_task_error_path(self):
+    async def test_dispatch_method_error_path(self):
         handler = self._make_otel_handler()
-        writer = MagicMock()
-        writer.write = MagicMock()
-        writer.drain = AsyncMock()
-        lock = asyncio.Lock()
-        semaphore = asyncio.Semaphore(1)
-        await semaphore.acquire()
-
         handler._metrics["call_counter"] = MagicMock()
         handler._metrics["call_duration"] = MagicMock()
 
-        # Parent's _handle_rpc_task swallows dispatch errors internally,
-        # so we force an exception to escape via the parent method.
-        with patch.object(
-            MessagePackHandler,
-            "_handle_rpc_task",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("boom"),
-        ):
-            await handler._handle_rpc_task(
-                writer,
-                lock,
-                semaphore,
-                RpcMessageType.REQUEST,
-                3,
-                "no_such_method",
-                [],
-            )
+        # Parent's _dispatch_method raises ValueError for unknown method;
+        # OTEL handler catches Exception and records error=True
+        await handler._dispatch_method("no_such_method", [], RpcMessageType.REQUEST, 3)
         # Metrics should record error=True
         counter_call_attrs = handler._metrics["call_counter"].add.call_args[0][1]
         assert counter_call_attrs["status"] == "error"

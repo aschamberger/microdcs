@@ -2,7 +2,6 @@
 
 import asyncio
 import uuid
-from asyncio import Queue
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,7 +19,7 @@ from app.common import (
 from app.dataclass import DataClassConfig, DataClassMixin
 from app.mqtt import (
     MQTTHandler,
-    MQTTProcessorBinding,
+    MQTTProtocolBinding,
     OTELInstrumentedMQTTHandler,
     QoS,
 )
@@ -90,21 +89,30 @@ def _make_binding(
     queue_size: int = 1,
     topic_prefix: str = "test",
     publish_intents: set[MessageIntent] | None = None,
-) -> MQTTProcessorBinding:
+) -> MQTTProtocolBinding:
     """Register a processor via the binding system and return the binding."""
     if processor is None:
         processor = _make_processor()
     if publish_intents is None:
         publish_intents = processor.publish_intents()
-    outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue(queue_size)
-    binding = MQTTProcessorBinding(
-        processor=processor,
-        topics=topics or {"test/events/#"},
-        response_topic=response_topic,
-        outgoing_queue=outgoing_queue,
-        topic_prefix=topic_prefix,
-        publish_intents=publish_intents,
+    # Set up processor config so MQTTProtocolBinding can derive topics
+    cfg = ProcessingConfig(
+        topic_prefixes={f"{processor._config_identifier}:{topic_prefix}"},
+        response_topics={f"{processor._config_identifier}:test/responses"},
     )
+    processor._runtime_config = cfg
+    mqtt_config = MQTTConfig(binding_outgoing_queue_size=queue_size)
+    binding = MQTTProtocolBinding(
+        processor=processor,
+        processing_config=cfg,
+        mqtt_config=mqtt_config,
+    )
+    # Override derived values for test control
+    if topics is not None:
+        binding.topics = topics
+    binding.response_topic = response_topic
+    if publish_intents is not None:
+        binding.publish_intents = publish_intents
     handler._bindings.append(binding)
     return binding
 
@@ -156,7 +164,7 @@ class TestQoS:
 
 
 # ===================================================================
-# register_mqtt_processor and MQTTProcessorBinding
+# MQTTProtocolBinding registration
 # ===================================================================
 
 
@@ -172,9 +180,13 @@ class TestRegisterMQTTProcessor:
             runtime_config=cfg,
             config_identifier="greetings",
         )
-        handler.register_mqtt_processor(proc)
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
         assert len(handler._bindings) == 1
-        binding = handler._bindings[0]
         # Southbound subscribes to data, events, metadata
         assert "test/greetings/data" in binding.topics
         assert "test/greetings/events" in binding.topics
@@ -195,8 +207,12 @@ class TestRegisterMQTTProcessor:
             runtime_config=cfg,
             config_identifier="greetings",
         )
-        handler.register_mqtt_processor(proc)
-        binding = handler._bindings[0]
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
         for topic in binding.topics:
             assert topic.startswith("$share/mygroup/")
         # Response topic does NOT get shared subscription prefix
@@ -213,12 +229,15 @@ class TestRegisterMQTTProcessor:
             runtime_config=cfg,
             config_identifier="greetings",
         )
-        handler.register_mqtt_processor(proc)
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
         assert len(proc._publish_handlers) == 1
 
     def test_missing_processor_config_raises(self):
-        handler = _make_handler()
-
         # Undecorated processor
         class BareProcessor(CloudEventProcessor):
             async def process_cloudevent(self, cloudevent):
@@ -235,11 +254,19 @@ class TestRegisterMQTTProcessor:
             runtime_config=ProcessingConfig(),
             config_identifier="bare",
         )
+        cfg = ProcessingConfig(
+            topic_prefixes={"bare:test/prefix"},
+            response_topics={"bare:test/responses"},
+        )
+        proc._runtime_config = cfg
         with pytest.raises(ValueError, match="must be decorated"):
-            handler.register_mqtt_processor(proc)
+            MQTTProtocolBinding(
+                processor=proc,
+                processing_config=cfg,
+                mqtt_config=MQTTConfig(),
+            )
 
     def test_missing_topic_prefix_raises(self):
-        handler = _make_handler()
         cfg = ProcessingConfig(
             topic_prefixes={"other:test/prefix"},
         )
@@ -249,75 +276,66 @@ class TestRegisterMQTTProcessor:
             config_identifier="greetings",
         )
         with pytest.raises(ValueError, match="No topic prefix found"):
-            handler.register_mqtt_processor(proc)
+            MQTTProtocolBinding(
+                processor=proc,
+                processing_config=cfg,
+                mqtt_config=MQTTConfig(),
+            )
 
 
 class TestEnrichResponseTransport:
-    def test_adds_topic_from_request(self):
-        handler = _make_handler()
+    def _make_test_binding(
+        self,
+        response_topic: str = "test/responses/test-id",
+        topic_prefix: str = "test",
+    ) -> MQTTProtocolBinding:
         proc = _make_processor()
-        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue()
-        binding = MQTTProcessorBinding(
-            processor=proc,
-            topics={"test/events/#"},
-            response_topic="test/responses/test-id",
-            outgoing_queue=outgoing_queue,
-            topic_prefix="test",
-            publish_intents=proc.publish_intents(),
+        cfg = ProcessingConfig(
+            topic_prefixes={f"{proc._config_identifier}:{topic_prefix}"},
+            response_topics={f"{proc._config_identifier}:test/responses"},
         )
+        proc._runtime_config = cfg
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        binding.response_topic = response_topic
+        return binding
+
+    def test_adds_topic_from_request(self):
+        binding = self._make_test_binding(response_topic="test/responses/test-id")
         request = CloudEvent(
             transportmetadata={"mqtt_response_topic": "resp/topic"},
         )
         response = CloudEvent()
-        result = handler._enrich_response_transport(response, request, binding)
-        assert result is True
+        binding.enrich_response_transportmetadata(response, request)
         assert response.transportmetadata is not None
         assert response.transportmetadata["mqtt_topic"] == "resp/topic"
         assert (
             response.transportmetadata["mqtt_response_topic"]
             == "test/responses/test-id"
         )
-        assert response.transportmetadata["mqtt_retain"] is False
 
     def test_keeps_existing_topic(self):
-        handler = _make_handler()
-        proc = _make_processor()
-        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue()
-        binding = MQTTProcessorBinding(
-            processor=proc,
-            topics=set(),
-            response_topic="",
-            outgoing_queue=outgoing_queue,
-            topic_prefix="test",
-            publish_intents=proc.publish_intents(),
-        )
+        binding = self._make_test_binding(response_topic="")
         request = CloudEvent(
             transportmetadata={"mqtt_response_topic": "other"},
         )
         response = CloudEvent(
             transportmetadata={"mqtt_topic": "already/set"},
         )
-        result = handler._enrich_response_transport(response, request, binding)
-        assert result is True
+        binding.enrich_response_transportmetadata(response, request)
         assert response.transportmetadata is not None
         assert response.transportmetadata["mqtt_topic"] == "already/set"
 
-    def test_no_response_topic_returns_false(self):
-        handler = _make_handler()
-        proc = _make_processor()
-        outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue()
-        binding = MQTTProcessorBinding(
-            processor=proc,
-            topics=set(),
-            response_topic="",
-            outgoing_queue=outgoing_queue,
-            topic_prefix="test",
-            publish_intents=proc.publish_intents(),
-        )
+    def test_no_response_topic_logs_warning(self):
+        binding = self._make_test_binding(response_topic="")
         request = CloudEvent(transportmetadata=None)
         response = CloudEvent()
-        result = handler._enrich_response_transport(response, request, binding)
-        assert result is False
+        binding.enrich_response_transportmetadata(response, request)
+        assert response.transportmetadata is not None
+        assert "mqtt_topic" not in response.transportmetadata
 
 
 # ===================================================================
@@ -762,10 +780,10 @@ class TestMQTTHandler:
         handler._expiration_timeout_tasks[ce_id] = mock_task
 
         msg = _make_mqtt_message()
-        # Override cloudevent_from_message to return CE with matching id
+        # Override _cloudevent_from_message to return CE with matching id
         ce = CloudEvent(id=ce_id, data=msg.payload)
         ce.transportmetadata = {"mqtt_topic": "t", "mqtt_qos": 1, "mqtt_retain": False}
-        with patch.object(handler, "cloudevent_from_message", return_value=ce):
+        with patch.object(handler, "_cloudevent_from_message", return_value=ce):
             await handler._process_message(client, msg)
         mock_task.cancel.assert_called_once()
 

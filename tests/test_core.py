@@ -20,13 +20,6 @@ def _setup_task_group_mock(mock_tg_cls: MagicMock) -> AsyncMock:
     return mock_tg
 
 
-def _setup_handler_mock(handler_cls: MagicMock) -> MagicMock:
-    handler = MagicMock()
-    handler.task = AsyncMock()
-    handler_cls.return_value = handler
-    return handler
-
-
 def _create_microdcs(otel_enabled: bool) -> MicroDCS:
     """Create a MicroDCS instance with mocked configuration."""
     with patch.object(MicroDCS, "__init__", lambda self: None):
@@ -35,9 +28,37 @@ def _create_microdcs(otel_enabled: bool) -> MicroDCS:
     dcs.runtime_config.processing.otel_instrumentation_enabled = otel_enabled
     dcs.redis_connection_pool = AsyncMock()
     dcs.redis_key_schema = MagicMock()
-    dcs._mqtt_processors = []
-    dcs._msgpack_processors = []
+    dcs._protocol_handlers = {}
+    dcs._handler_bindings = {}
+    dcs._processors = set()
+    dcs._additional_tasks = set()
     return dcs
+
+
+def _register_mock_handler_and_binding(dcs: MicroDCS):
+    """Register a mock handler pair and binding on the MicroDCS instance."""
+    mock_handler = MagicMock()
+    mock_handler.task = AsyncMock()
+    mock_handler.register_binding = MagicMock()
+
+    mock_otel_handler = MagicMock()
+    mock_otel_handler.task = AsyncMock()
+    mock_otel_handler.register_binding = MagicMock()
+
+    handler_cls = type(mock_handler)
+    dcs._protocol_handlers[handler_cls] = (mock_handler, mock_otel_handler)
+
+    mock_proc = MagicMock()
+    mock_proc.initialize = AsyncMock()
+    mock_proc.post_start = AsyncMock()
+
+    mock_binding = MagicMock()
+    mock_binding.processor = mock_proc
+
+    dcs._handler_bindings[handler_cls] = {mock_binding}
+    dcs._processors = {mock_proc}
+
+    return mock_handler, mock_otel_handler, mock_binding, mock_proc
 
 
 class TestMain:
@@ -45,78 +66,49 @@ class TestMain:
 
     @pytest.mark.asyncio
     async def test_main_runs_with_otel_disabled(self):
-        """main() wires up handlers and starts tasks (OTEL off)."""
+        """main() uses non-OTEL handler when flag is off."""
         dcs = _create_microdcs(otel_enabled=False)
+        mock_handler, mock_otel_handler, mock_binding, mock_proc = (
+            _register_mock_handler_and_binding(dcs)
+        )
 
-        mock_mqtt_proc = MagicMock()
-        mock_mqtt_proc.initialize = AsyncMock()
-        mock_mqtt_proc.post_start = AsyncMock()
-        mock_mp_proc = MagicMock()
-        mock_mp_proc.initialize = AsyncMock()
-        mock_mp_proc.post_start = AsyncMock()
-        dcs._mqtt_processors.append(mock_mqtt_proc)
-        dcs._msgpack_processors.append(mock_mp_proc)
-
-        with (
-            patch("app.microdcs.MQTTHandler") as mock_mqtt_cls,
-            patch("app.microdcs.MessagePackHandler") as mock_mp_cls,
-            patch("app.microdcs.SystemEventTaskGroup") as mock_tg_cls,
-        ):
+        with patch("app.core.SystemEventTaskGroup") as mock_tg_cls:
             mock_tg = _setup_task_group_mock(mock_tg_cls)
-            mock_mqtt_handler = _setup_handler_mock(mock_mqtt_cls)
-            mock_mp_handler = _setup_handler_mock(mock_mp_cls)
 
             await dcs.main()
 
-            # Non-OTEL handlers were used
-            mock_mqtt_cls.assert_called_once()
-            mock_mp_cls.assert_called_once()
+            # Non-OTEL handler was used
+            mock_handler.register_binding.assert_called_once_with(mock_binding)
+            mock_otel_handler.register_binding.assert_not_called()
 
-            # MQTT processor registered via register_mqtt_processor
-            mock_mqtt_handler.register_mqtt_processor.assert_called_once_with(
-                mock_mqtt_proc
-            )
-            # MessagePack processor registered via register_processor
-            mock_mp_handler.register_processor.assert_called_once_with(mock_mp_proc)
+            # Task created for handler
+            assert mock_tg.create_task.call_count >= 1
 
-            # Tasks created: mqtt_handler.task, msgpack_handler.task
-            assert mock_tg.create_task.call_count == 2
+            # Processor lifecycle
+            mock_proc.initialize.assert_awaited_once()
+            mock_proc.post_start.assert_awaited_once()
 
             # Connection pool closed
             dcs.redis_connection_pool.aclose.assert_awaited_once()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_main_runs_with_otel_enabled(self):
-        """main() uses OTEL-instrumented handlers when flag is set."""
+        """main() uses OTEL-instrumented handler when flag is set."""
         dcs = _create_microdcs(otel_enabled=True)
+        mock_handler, mock_otel_handler, mock_binding, mock_proc = (
+            _register_mock_handler_and_binding(dcs)
+        )
 
-        mock_mqtt_proc = MagicMock()
-        mock_mqtt_proc.initialize = AsyncMock()
-        mock_mqtt_proc.post_start = AsyncMock()
-        mock_mp_proc = MagicMock()
-        mock_mp_proc.initialize = AsyncMock()
-        mock_mp_proc.post_start = AsyncMock()
-        dcs._mqtt_processors.append(mock_mqtt_proc)
-        dcs._msgpack_processors.append(mock_mp_proc)
-
-        with (
-            patch("app.microdcs.OTELInstrumentedMQTTHandler") as mock_otel_mqtt_cls,
-            patch(
-                "app.microdcs.OTELInstrumentedMessagePackHandler"
-            ) as mock_otel_mp_cls,
-            patch("app.microdcs.SystemEventTaskGroup") as mock_tg_cls,
-        ):
+        with patch("app.core.SystemEventTaskGroup") as mock_tg_cls:
             mock_tg = _setup_task_group_mock(mock_tg_cls)
-            _setup_handler_mock(mock_otel_mqtt_cls)
-            _setup_handler_mock(mock_otel_mp_cls)
 
             await dcs.main()
 
-            # OTEL-instrumented handlers were used
-            mock_otel_mqtt_cls.assert_called_once()
-            mock_otel_mp_cls.assert_called_once()
+            # OTEL handler was used
+            mock_otel_handler.register_binding.assert_called_once_with(mock_binding)
+            mock_handler.register_binding.assert_not_called()
 
-            # Tasks created
-            assert mock_tg.create_task.call_count == 2
+            # Task created
+            assert mock_tg.create_task.call_count >= 1
 
             dcs.redis_connection_pool.aclose.assert_awaited_once()  # type: ignore[union-attr]

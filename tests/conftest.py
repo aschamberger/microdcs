@@ -33,4 +33,9 @@ msgpack_server_available = pytest.mark.skipif(
     reason=f"MessagePack RPC server not reachable at {MSGPACK_CONFIG.hostname}:{MSGPACK_CONFIG.port}",
 )
 
+app_available = pytest.mark.skipif(
+    not _is_service_available(MSGPACK_CONFIG.hostname, MSGPACK_CONFIG.port),
+    reason=f"App not running (MessagePack RPC server not reachable at {MSGPACK_CONFIG.hostname}:{MSGPACK_CONFIG.port})",
+)
+
 integration = pytest.mark.integration

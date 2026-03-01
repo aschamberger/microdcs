@@ -28,7 +28,7 @@ from app.mqtt import MQTTHandler
 from app.processors.greetings import GreetingsCloudEventProcessor
 from app.processors.machinery_jobs import MachineryJobsCloudEventProcessor
 from app.redis import RedisKeySchema
-from tests.conftest import integration, mqtt_available, redis_available
+from tests.conftest import app_available, integration, mqtt_available, redis_available
 
 MQTT_CONFIG = MQTTConfig()
 REDIS_CONFIG = RedisConfig()
@@ -149,6 +149,7 @@ def _assert_cloudevent_type(message: aiomqtt.Message, expected_type: str) -> Non
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
     """Send a raw greetings message and verify the echo response."""
     payload: dict[str, Any] = {
@@ -182,6 +183,7 @@ async def test_publish_raw_greetings_message(mqtt_handler: MQTTHandler):
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
     """Send a Hello greetings message and verify two Hello responses."""
     bob = Hello(
@@ -213,6 +215,7 @@ async def test_publish_hello_greetings_message(mqtt_handler: MQTTHandler):
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_hello_with_additional_payload_fields(
     mqtt_handler: MQTTHandler,
 ):
@@ -364,6 +367,7 @@ def _make_b3_woodworking_job_order(
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
     """Send a StoreCall and verify a successful StoreResponse."""
     job_order = _make_b3_woodworking_job_order(job_order_id="store-test-1")
@@ -396,6 +400,7 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandler):
     """Send a StoreAndStartCall and verify a successful StoreAndStartResponse."""
     job_order = _make_b3_woodworking_job_order(job_order_id="store-and-start-1")
@@ -432,6 +437,7 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
     """Store a job order then start it, verifying both responses."""
     # First, store the job so it exists in Redis
@@ -490,6 +496,7 @@ async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
 @integration
 @mqtt_available
 @redis_available
+@app_available
 async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
     """Send a StoreCall as raw JSON and verify a successful StoreResponse."""
     payload: dict[str, Any] = {

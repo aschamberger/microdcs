@@ -222,10 +222,7 @@ class TestGreetingsCloudEventProcessor:
         with patch.object(
             proc, "callback_outgoing", new_callable=AsyncMock
         ) as mock_type_cb:
-            with patch(
-                "app.processors.greetings.asyncio.sleep", new_callable=AsyncMock
-            ):
-                await proc.send_event()
+            await proc.send_event()
             mock_type_cb.assert_awaited_once_with(Bye, intent=MessageIntent.COMMAND)
 
     # --- handle_expiration ---
@@ -234,6 +231,5 @@ class TestGreetingsCloudEventProcessor:
     async def test_handle_expiration(self):
         proc = _make_processor()
         ce = CloudEvent()
-        with patch("app.processors.greetings.asyncio.sleep", new_callable=AsyncMock):
-            result = await proc.handle_cloudevent_expiration(ce, 10)
+        result = await proc.handle_cloudevent_expiration(ce, 10)
         assert result is None

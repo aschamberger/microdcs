@@ -587,13 +587,13 @@ class TestProtocolHandler:
     def test_register_processor(self):
         handler = ConcreteHandler()
         proc = ConcreteProcessor()
-        handler.register_processor(proc)
+        handler._cloudevent_processors.append(proc)
         assert proc in handler._cloudevent_processors
 
     def test_register_multiple_processors(self):
         handler = ConcreteHandler()
         p1 = ConcreteProcessor(instance_id="a")
         p2 = ConcreteProcessor(instance_id="b")
-        handler.register_processor(p1)
-        handler.register_processor(p2)
+        handler._cloudevent_processors.append(p1)
+        handler._cloudevent_processors.append(p2)
         assert len(handler._cloudevent_processors) == 2
