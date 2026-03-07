@@ -87,6 +87,12 @@ def dataclasses(
             help="Add a mixin to a specific class (format: ClassName->MixinName, e.g. ISA95JobOrderDataType->JobStateMixin)"
         ),
     ] = [],
+    template_dir: Annotated[
+        pathlib.Path,
+        typer.Option(
+            help="Add a custom template dir"
+        ),
+    ] = pathlib.Path(__file__).parent / "template",
 ):
     if schema_file.is_absolute():
         schema_file_path = schema_file
@@ -190,7 +196,7 @@ def dataclasses(
         use_union_operator=True,
         use_standard_collections=True,
         formatters=[Formatter.RUFF_FORMAT, Formatter.RUFF_CHECK],
-        custom_template_dir=pathlib.Path(__file__).parent / "template",
+        custom_template_dir=template_dir,
         data_model_type=data_model_types.data_model,
         data_model_root_type=data_model_types.root_model,
         data_model_field_type=data_model_types.field_model,
