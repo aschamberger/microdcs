@@ -482,14 +482,23 @@ def scope_from_subject(func: Callable) -> Callable:
     return wrapper
 
 
-def asset_id_from_subject(func: Callable, *, name: str = "asset_id") -> Callable:
+def asset_id_from_subject(
+    func: Callable | None = None,
+    *,
+    name: str = "asset_id",
+    factory: Callable[[str], Any] | None = None,
+) -> Callable:
     """Decorator that derives a keyword argument from ``subject``.
 
     Extracts the part of ``subject`` before the first ``/`` and injects it
-    as the specified keyword argument (default: 'asset_id') into the decorated function.
-    The original ``subject`` kwarg is consumed and not forwarded.
+    as the specified keyword argument (default: ``asset_id``) into the decorated
+    function.  The original ``subject`` kwarg is consumed and not forwarded.
 
-    Intended to be stacked below :func:`incoming`::
+    If *factory* is provided it is called with the extracted string and its
+    return value is passed instead of the raw string.  This is useful for
+    parsing the segment into a typed object.
+
+    Intended to be stacked below :func:`incoming`.  Supports three call forms::
 
         @incoming(MyCall)
         @asset_id_from_subject
@@ -500,18 +509,36 @@ def asset_id_from_subject(func: Callable, *, name: str = "asset_id") -> Callable
         @asset_id_from_subject(name="custom_id")
         async def process_my_call(self, method: MyCall, *, custom_id: str, ...) -> ...:
             ...
+
+        @incoming(MyCall)
+        @asset_id_from_subject(factory=AssetId.from_string)
+        async def process_my_call(self, method: MyCall, *, asset_id: AssetId, ...) -> ...:
+            ...
+
+        @incoming(MyCall)
+        @asset_id_from_subject(name="asset", factory=AssetId.from_string)
+        async def process_my_call(self, method: MyCall, *, asset: AssetId, ...) -> ...:
+            ...
     """
 
-    @functools.wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        subject: str | None = kwargs.pop("subject", None)
-        if subject is not None:
-            kwargs[name] = subject.split("/")[0]
-        else:
-            kwargs[name] = None
-        return await func(*args, **kwargs)
+    def decorator(f: Callable) -> Callable:
+        @functools.wraps(f)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            subject: str | None = kwargs.pop("subject", None)
+            if subject is not None:
+                raw = subject.split("/")[0]
+                kwargs[name] = factory(raw) if factory is not None else raw
+            else:
+                kwargs[name] = None
+            return await f(*args, **kwargs)
 
-    return wrapper
+        return wrapper
+
+    if func is not None:
+        # Used as @asset_id_from_subject (no parentheses)
+        return decorator(func)
+    # Used as @asset_id_from_subject(...) with parentheses
+    return decorator
 
 
 class CloudEventProcessor(ABC):
