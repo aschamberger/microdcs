@@ -11,8 +11,54 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 * De-/serialization to Python dataclasses with handling of custom user properties
 * Multiple CloudEventProcessors handling incoming requests
 * Dataclass generation from JSON Schema with request/response handling mechanisms
-* OPC UA Machinery Job Management: TODO(Reciever/Event Publisher/State Publisher) & Redis DAOs
+* OPC UA Machinery Job Management: Receiver/Event Publisher; State Publisher TODO
+* OPC UA Machinery Job hierarchical state machine via `transitions` library driven by OPC UA companion spec
+* Redis-backed persistence for job orders/responses and CloudEvent/transaction deduplication
 * OpenTelemetry auto instrumentation plus manual instrumentation of internals (logging, metrics and tracing)
+
+## Usage
+
+### Initialize a new project
+
+Bootstrap a new MicroDCS application project using the `init` command. It scaffolds the full project structure, pins Python 3.14, and installs all required dependencies.
+
+```bash
+# Initialize in the current directory
+uvx --from git+https://github.com/aschamberger/microdcs microdcs init
+
+# Initialize in a new directory
+uvx --from git+https://github.com/aschamberger/microdcs microdcs init my-app
+```
+
+The command will:
+
+1. Pin Python ≥ 3.14 and create a `uv` project (`uv init --python=>=3.14 --bare`)
+2. Add `microdcs` and dev dependencies (`datamodel-code-generator`, `pytest`, `pytest-asyncio`, `pytest-cov`)
+3. Create the project directory structure:
+   ```
+   app/
+     __init__.py
+     __main__.py       # wiring of handlers, bindings and processors
+     models/           # place for generated and hand-written model mixins
+     processors/       # place for CloudEventProcessor implementations
+   schemas/            # JSON Schema input files for dataclassgen
+   deploy/
+     k8s.yaml          # Kubernetes deployment manifest
+   tests/
+   .vscode/
+     settings.json
+     tasks.json
+   .github/
+     copilot-instructions.md
+   Dockerfile
+   ```
+4. Append build-system and pytest configuration to `pyproject.toml`
+
+After initialization, generate dataclasses from your JSON Schema files:
+
+```bash
+uv run microdcs dataclassgen dataclasses my-schema.jsonschema.json
+```
 
 ## Overall Design
 
@@ -159,7 +205,7 @@ JSON Schemas representing the OPC UA information models can be generated from no
   * custom attributes "x-*" in `Config` inner class
 
 ```
-uv run dataclassgen dataclasses \
+uv run microdcs dataclassgen dataclasses \
   --imports microdcs.dataclass.DataClassConfig \
   --imports microdcs.dataclass.DataClassResponseMixin \
   --imports microdcs.dataclass.DataClassMixin \
@@ -214,12 +260,12 @@ The code generator has some options to support customization for other protocols
 * Add `__custom_metadata__: InitVar[dict[str, Any] | None] = None` for usage in `__post_init__()``. It is populated from cloudevent.
 
   ```
-  uv run dataclassgen dataclasses --custom-metadata my.jsonschema.json
+  uv run microdcs dataclassgen dataclasses --custom-metadata my.jsonschema.json
   ```
 
 * Add additional `InitVar` fields for usage in `__post_init__()`. You can populate them via `event.response(mystatus=MyStatus.OKAY)`.
   ```
-  uv run dataclassgen dataclasses \
+  uv run microdcs dataclassgen dataclasses \
     --init-fields 'mystatus->MyStatus' \
     --init-fields 'init->dict[str,str]' \
     my.jsonschema.json
@@ -227,7 +273,7 @@ The code generator has some options to support customization for other protocols
 
 * Add hidden fields.
   ```
-  uv run dataclassgen dataclasses \
+  uv run microdcs dataclassgen dataclasses \
     --hidden-fields '_hidden_str->str' \
     --hidden-fields '_hidden_obj->Obj1|Obj2' \
     my.jsonschema.json
@@ -235,7 +281,7 @@ The code generator has some options to support customization for other protocols
 
 Generate greetings:
 ```
-uv run dataclassgen dataclasses \
+uv run microdcs dataclassgen dataclasses \
   --imports microdcs.dataclass.DataClassConfig \
   --imports microdcs.dataclass.DataClassResponseMixin \
   --imports microdcs.models.greetings_mixin.GreetingsDataClassMixin \

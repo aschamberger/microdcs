@@ -1,0 +1,12 @@
+
+
+
+
+
+env:
+  - name: POD_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid
+
+

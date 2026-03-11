@@ -1,0 +1,96 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "APP_REDIS_HOSTNAME": "localhost",
+            "APP_REDIS_PORT": "6379",
+            "APP_MQTT_HOSTNAME": "localhost",
+            "APP_MQTT_PORT": "1883",
+            "APP_MQTT_IDENTIFIER": "app",
+            "APP_MQTT_CONNECT_TIMEOUT": "10",
+            "APP_MQTT_PUBLISH_TIMEOUT": "5",
+            //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
+            //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
+            "APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL": "10",
+            "APP_PROCESSING_SHARED_SUBSCRIPTION_NAME": "appsub",
+            "APP_PROCESSING_TOPIC_PREFIXES": "greetings:app/greetings,machinery-jobs:app/jobs",
+            "APP_PROCESSING_TOPIC_WILDCARD_LEVELS": "greetings:0,machinery-jobs:3",
+            "APP_PROCESSING_RESPONSE_TOPICS": "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses",
+            "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/microdcs/app",
+            "APP_LOGGING_LEVEL": "DEBUG",
+            "APP_MSGPACK_HOSTNAME": "localhost",
+            "APP_MSGPACK_PORT": "8888",
+            "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"
+        }
+    },
+    "presentation": {
+        "reveal": "always",
+        "panel": "new"
+    },
+    "tasks": [
+        {
+            "label": "Run App (plain)",
+            "type": "shell",
+            "command": "${command:python.interpreterPath} -m app",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Run App (instrumented)",
+            "type": "shell",
+            "command": "${workspaceFolder}${/}.venv${/}Scripts${/}opentelemetry-instrument ${command:python.interpreterPath} -m app 2>&1",
+            "options": {
+                "env": {
+                    "APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true",
+                    "OTEL_SERVICE_NAME": "microdcs.app",
+                    "OTEL_TRACES_EXPORTER": "console",
+                    "OTEL_METRICS_EXPORTER": "console",
+                    "OTEL_LOGS_EXPORTER": "console",
+                    "OTEL_PYTHON_LOG_CORRELATION": "true",
+                    "OTEL_PYTHON_LOG_LEVEL": "debug",
+                    "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED": "true",
+                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading"
+                }
+            },
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Start local MQTT broker",
+            "type": "shell",
+            "command": "docker run --rm -it --name mosquitto -p 1883:1883 eclipse-mosquitto mosquitto -c /mosquitto-no-auth.conf",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Start local redis server",
+            "type": "shell",
+            "command": "docker run --rm -it --name redis -p 6379:6379 redis:latest",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "MQTT broker port forwarding",
+            "type": "shell",
+            "command": "kubectl port-forward --namespace azure-iot-operations pod/aio-broker-frontend-0 19884 19884",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "App deployment",
+            "type": "shell",
+            "command": "kubectl apply -f ./deploy/k8s.yaml",
+            "group": "test",
+            "problemMatcher": [],
+        },
+        {
+            "label": "Run test coverage",
+            "type": "shell",
+            "command": "${command:python.interpreterPath} -m pytest --cov --cov-report=term-missing tests/",
+            "group": "test",
+            "problemMatcher": [],
+        },
+    ]
+}
