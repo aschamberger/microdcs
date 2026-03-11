@@ -27,9 +27,6 @@
       "required": [
         "Name"
       ],
-      "x-request-type": {
-        "$ref": "#/$defs/Hello"
-      },
       "x-response-type": {
         "$ref": "#/$defs/Hello"
       },
