@@ -106,7 +106,7 @@ class DataClassResponseMixin(Generic[R]):
                         return result
         raise TypeError(f"Could not determine Response type for {cls.__name__}")
 
-    def response(self, **kwargs) -> R:
+    def response(self, takeover: list[str] | None = None, **kwargs) -> R:
         """
         Creates the response object.
         Automatically injects 'self' if the response class has a '__request_object__' argument.
@@ -125,7 +125,13 @@ class DataClassResponseMixin(Generic[R]):
             # inject self (the request instance) into the arguments
             kwargs["__request_object__"] = self
 
-        return response_cls(**kwargs)
+        response_object = response_cls(**kwargs)
+        if takeover:
+            for field in takeover:
+                if hasattr(self, field) and hasattr(response_object, field):
+                    setattr(response_object, field, getattr(self, field))
+
+        return response_object
 
 
 class DataClassConfig(BaseConfig):
