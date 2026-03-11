@@ -55,6 +55,9 @@ COPY --from=builder /app/app /app/app
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Disable Python output buffering for better logging
+ENV PYTHONUNBUFFERED=1
+
 # Reset the entrypoint, don't invoke `uv`
 ENTRYPOINT []
 
