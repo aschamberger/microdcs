@@ -1,4 +1,4 @@
-curl#!/bin/sh
+#!/bin/sh
 
 # This script initializes a new app in the current directory.
 #
@@ -31,7 +31,7 @@ curl -LsSf https://raw.githubusercontent.com/aschamberger/microdcs/main/scripts/
 uv python pin 3.14
 
 # Create the basic structure for a MicroDCS app
-uv init --python >=3.14 --bare
+uv init --python=">=3.14" --bare
 uv sync
 
 # Add MicroDCS as a dependency
@@ -42,11 +42,15 @@ uv add --dev datamodel-code-generator[ruff] pytest pytest-asyncio pytest-cov
 
 # Create a basic app structure
 mkdir -p app
+touch app/py.typed
 touch app/__init__.py
 curl -LsSf https://raw.githubusercontent.com/aschamberger/microdcs/main/app/__main__.py -o app/__main__.py
 mkdir -p app/models
+touch app/models/__init__.py
 mkdir -p app/processors
+touch app/processors/__init__.py
 mkdir -p schemas
+echo "JSON Schema files ..." > schemas/README.md
 mkdir -p deploy
 curl -LsSf https://raw.githubusercontent.com/aschamberger/microdcs/main/deploy/k8s.yaml -o deploy/k8s.yaml
 mkdir -p tests
