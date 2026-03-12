@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import Optional
 
 import pytest
 from mashumaro.config import BaseConfig
@@ -38,6 +41,23 @@ class PlainModel(DataClassMixin):
     """Model without a DataClassConfig – used for negative-path tests."""
 
     value: str = ""
+
+    class Config(BaseConfig):
+        code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
+
+
+# Models for get_field_types tests
+
+
+@dataclass(kw_only=True)
+class FieldTypesModel(DataClassMixin):
+    plain_str: str = ""
+    plain_int: int = 0
+    optional_str: Optional[str] = None
+    union_field: str | int = ""
+    list_field: list[str] = field(default_factory=list)
+    dict_field: dict[str, int] = field(default_factory=dict)
+    forward_ref: EventModel | None = None
 
     class Config(BaseConfig):
         code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
@@ -211,3 +231,59 @@ class TestWildcardMatch:
 
     def test_no_match(self):
         assert not EventModel.Config.matches_cloudevent_type_pattern("com.other.event")
+
+
+# ---------------------------------------------------------------------------
+# DataClassMixin – get_field_types
+# ---------------------------------------------------------------------------
+
+
+class TestGetFieldTypes:
+    def test_plain_type(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("plain_str")
+        assert result == [str]
+
+    def test_plain_int(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("plain_int")
+        assert result == [int]
+
+    def test_optional_field(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("optional_str")
+        assert result is not None
+        assert set(result) == {str, type(None)}
+
+    def test_union_field(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("union_field")
+        assert result is not None
+        assert set(result) == {str, int}
+
+    def test_list_field(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("list_field")
+        assert result == [str]
+
+    def test_dict_field(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("dict_field")
+        assert result == [str, int]
+
+    def test_forward_ref_resolved(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("forward_ref")
+        assert result is not None
+        assert EventModel in result
+        assert type(None) in result
+
+    def test_nonexistent_field_returns_none(self):
+        model = FieldTypesModel()
+        assert model.get_field_types("nonexistent") is None
+
+    def test_result_is_always_a_list(self):
+        model = FieldTypesModel()
+        for name in ("plain_str", "optional_str", "union_field", "list_field"):
+            result = model.get_field_types(name)
+            assert isinstance(result, list)

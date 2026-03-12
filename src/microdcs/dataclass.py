@@ -80,6 +80,45 @@ class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
                 d["_normalized_state"] = normalized_state
         return d
 
+    def get_field_types(self, fieldname: str) -> list[type] | None:
+        cls = self.__class__.__mro__[0]
+        # get_type_hints resolves string annotations and ForwardRef
+        try:
+            hints = typing.get_type_hints(cls)
+        except Exception:
+            hints = {f.name: f.type for f in dataclasses.fields(cls)}
+
+        field_type = hints.get(fieldname)
+        if field_type is None:
+            return None
+
+        # Fallback resolution if get_type_hints failed
+        if isinstance(field_type, (str, typing.ForwardRef)):
+            name = (
+                field_type
+                if isinstance(field_type, str)
+                else field_type.__forward_arg__
+            )
+            module = sys.modules.get(cls.__module__)
+            if module:
+                resolved = getattr(module, name, None)
+                if resolved is not None:
+                    field_type = resolved
+
+        # If still unresolved, we cannot return a meaningful type list
+        if isinstance(field_type, (str, typing.ForwardRef)):
+            return None
+
+        # Unwrap generic/union types (list[str], Optional[int], str | int, etc.)
+        origin = get_origin(field_type)
+        if origin is not None:
+            args = get_args(field_type)
+            if args:
+                return list(args)
+            return [origin]
+
+        return [field_type]
+
 
 R = TypeVar("R")
 
