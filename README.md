@@ -20,7 +20,7 @@ MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
 
 ### Initialize a new project
 
-Bootstrap a new MicroDCS application project using the `init` command. It scaffolds the full project structure, pins Python 3.14, and installs all required dependencies.
+Bootstrap a new MicroDCS application project using the `init` command. The product name is MicroDCS; the Python distribution and CLI package name are `microdcs`. The command scaffolds the full project structure, pins Python 3.14, and installs all required dependencies.
 
 ```bash
 # Initialize in the current directory
@@ -295,8 +295,6 @@ uv run microdcs dataclassgen dataclasses \
   --custom-metadata \
   greetings.jsonschema.json
 ```
-
-
 
 ## Persistance
 

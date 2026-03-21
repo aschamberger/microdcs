@@ -16,7 +16,7 @@ MicroDCS is a Python framework for building distributed sequence control (DCS) a
 ## Project Structure
 
 ```
-src/microdcs/             # Library package (installed as "MicroDCS")
+src/microdcs/             # Library package (installed as "microdcs")
   __init__.py             # RuntimeConfig, dataclass configs (Redis/MQTT/MessagePack/Logging/Processing)
   core.py                 # MicroDCS app class: handler/binding/processor registration, main loop
   common.py               # CloudEvent dataclass, CloudEventProcessor ABC, @incoming/@outgoing decorators,

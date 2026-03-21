@@ -1,5 +1,5 @@
 [project]
-name = "MicroDCS"
+name = "microdcs"
 version = "0.1.0"
 description = "An Open-Standard Framework for Distributed Sequence Control"
 readme = "README.md"

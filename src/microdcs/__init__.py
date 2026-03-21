@@ -11,7 +11,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
-__version__ = importlib.metadata.version("MicroDCS")
+__version__ = importlib.metadata.version("microdcs")
 
 logger = logging.getLogger("app.main")
 

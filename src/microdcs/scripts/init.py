@@ -107,7 +107,7 @@ def init(path: Path | None = None) -> None:
     _run(["uv", "init", "--python=>=3.14", "--bare"], cwd=path)
     _run(["uv", "sync"], cwd=path)
 
-    # Add MicroDCS and dev dependencies
+    # Add the microdcs package and dev dependencies
     _run(["uv", "add", f"git+{GITHUB_REPO}"], cwd=path)
     _run(
         [
