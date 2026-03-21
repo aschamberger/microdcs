@@ -272,7 +272,7 @@ class TestSystemEventTaskGroup:
                 cancelled = True
                 # Swallow the error so TaskGroup exits cleanly
 
-        async with SystemEventTaskGroup() as tg:
+        async with SystemEventTaskGroup(grace_period=0) as tg:
             tg.create_task(long_running())
             # Give the task time to start
             await asyncio.sleep(0.05)

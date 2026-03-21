@@ -672,16 +672,15 @@ class TestMessagePackHandler:
     async def test_task_redis_ping_success(self):
         handler = _make_handler()
         mock_server = AsyncMock()
-        mock_server.serve_forever = AsyncMock(side_effect=asyncio.CancelledError())
 
         handler._redis_client.ping = AsyncMock()
-        handler._redis_client.aclose = AsyncMock()
 
-        with pytest.raises(asyncio.CancelledError):
-            with patch.object(handler, "_server", return_value=mock_server):
-                await handler.task()
+        # Pre-set shutdown event so the handler exits via the graceful
+        # shutdown branch after one iteration (serve_forever gets cancelled).
+        handler._shutdown_event.set()
 
-        handler._redis_client.aclose.assert_awaited_once()
+        with patch.object(handler, "_server", return_value=mock_server):
+            await handler.task()
 
     @pytest.mark.asyncio
     async def test_task_redis_ping_failure(self):

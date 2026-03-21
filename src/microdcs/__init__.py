@@ -199,9 +199,6 @@ class RuntimeConfig:
 class SystemEventTaskGroup(asyncio.TaskGroup):
     """Custom TaskGroup with two-phase shutdown: graceful event then force-cancel."""
 
-    _signals: set[signal.Signals]
-    _win_signal: int | None
-
     def _force_shutdown(self):
         """Force-cancel all tasks after grace period expires."""
         logger.info("Grace period expired: force-cancelling remaining tasks")

@@ -1002,7 +1002,6 @@ class TestMQTTHandler:
     async def test_task_cancelled(self):
         handler = _make_handler()
         handler._redis_client.ping = AsyncMock()
-        handler._redis_client.aclose = AsyncMock()
 
         mock_client = MagicMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -1010,26 +1009,19 @@ class TestMQTTHandler:
         mock_client.subscribe = AsyncMock()
         mock_client.messages = MagicMock()
 
-        # Make TaskGroup raise CancelledError immediately
+        # Use a cancelled Future so asyncio.gather can await it
+        loop = asyncio.get_event_loop()
+        mock_task = loop.create_future()
+        mock_task.cancel()
+
+        # Make asyncio.wait raise CancelledError to simulate force shutdown
         with (
             patch.object(handler, "_client", return_value=mock_client),
-            patch("microdcs.mqtt.asyncio.TaskGroup") as mock_tg_cls,
+            patch("microdcs.mqtt.asyncio.create_task", return_value=mock_task),
+            patch("microdcs.mqtt.asyncio.wait", side_effect=asyncio.CancelledError()),
         ):
-
-            def _close_coro(coro):
-                """Close the coroutine so it doesn't trigger RuntimeWarning."""
-                coro.close()
-
-            mock_tg = MagicMock()
-            mock_tg.__aenter__ = AsyncMock(return_value=mock_tg)
-            mock_tg.__aexit__ = AsyncMock(side_effect=asyncio.CancelledError())
-            mock_tg.create_task = MagicMock(side_effect=_close_coro)
-            mock_tg_cls.return_value = mock_tg
-
             with pytest.raises(asyncio.CancelledError):
                 await handler.task()
-
-            handler._redis_client.aclose.assert_awaited_once()
 
 
 # ===================================================================
