@@ -59,7 +59,9 @@ class MicroDCS:
         # Initialise every registered processor
         for processor in self._processors:
             await processor.initialize()
-        async with SystemEventTaskGroup() as task_group:
+        async with SystemEventTaskGroup(
+            grace_period=self.runtime_config.processing.shutdown_grace_period,
+        ) as task_group:
             for handler_cls, (
                 handler,
                 instrumented_handler,
@@ -74,6 +76,7 @@ class MicroDCS:
                         f"Registering non-OTEL-instrumented handler: {handler_cls.__name__}"
                     )
                     handler_to_use = handler
+                handler_to_use.register_shutdown_event(task_group.shutdown_event)
                 bindings = self._handler_bindings.get(handler_cls)
                 if bindings is None:
                     raise ValueError(

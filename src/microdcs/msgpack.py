@@ -133,7 +133,33 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
                     raise
                 async with server:
                     backoff = 1  # Reset backoff after successful start
-                    await server.serve_forever()
+                    # Wait for either serve_forever to end or shutdown event
+                    serve_task = asyncio.create_task(server.serve_forever())
+                    shutdown_task = asyncio.create_task(self._shutdown_event.wait())
+
+                    done, _ = await asyncio.wait(
+                        {serve_task, shutdown_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    if shutdown_task in done:
+                        # Graceful shutdown: close server to stop accepting
+                        # new connections; __aexit__ handles wait_closed()
+                        # to let in-flight RPCs drain
+                        logger.info(
+                            "Graceful shutdown: closing MessagePack server"
+                        )
+                        serve_task.cancel()
+                        try:
+                            await serve_task
+                        except asyncio.CancelledError:
+                            pass
+                        break  # exit retry loop
+                    else:
+                        # serve_forever ended unexpectedly
+                        shutdown_task.cancel()
+                        if not serve_task.cancelled() and serve_task.exception() is not None:
+                            raise serve_task.exception()  # pyright: ignore[reportGeneralTypeIssues]
 
             except OSError as e:
                 # 1. Config Check: Check for fatal errors
@@ -147,16 +173,23 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
                     logger.warning(
                         f"Port {self._runtime_config.port} busy. Retrying in {sleep_time:.2f}s..."
                     )
-                    await asyncio.sleep(sleep_time)
-                    backoff = min(backoff * 2, max_backoff)
-                    continue
+                    try:
+                        await asyncio.wait_for(
+                            self._shutdown_event.wait(), timeout=sleep_time
+                        )
+                        logger.info("Shutdown during reconnect backoff; exiting")
+                        break
+                    except asyncio.TimeoutError:
+                        backoff = min(backoff * 2, max_backoff)
+                        continue
 
                 raise  # Any other OSError we didn't account for
 
             except asyncio.CancelledError:
                 logger.info("MessagePack handler task cancelled; shutting down")
-                await self._redis_client.aclose()
                 raise
+
+        logger.info("MessagePack handler shutdown complete")
 
 
 class OTELInstrumentedMessagePackHandler(MessagePackHandler):

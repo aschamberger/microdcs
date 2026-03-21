@@ -104,6 +104,7 @@ class ProcessingConfig:
     topic_prefixes: set[str] = field(default_factory=set)
     topic_wildcard_levels: set[str] = field(default_factory=set)
     response_topics: set[str] = field(default_factory=set)
+    shutdown_grace_period: int = 30
 
     def get_topic_prefix_for_identifier(self, topic_identifier: str) -> str | None:
         for entry in self.topic_prefixes:
@@ -196,22 +197,39 @@ class RuntimeConfig:
 
 
 class SystemEventTaskGroup(asyncio.TaskGroup):
-    """Custom TaskGroup gracefully handling system events."""
+    """Custom TaskGroup with two-phase shutdown: graceful event then force-cancel."""
 
     _signals: set[signal.Signals]
     _win_signal: int | None
 
-    def shutdown(self, signal: signal.Signals):
-        logger.info("Received signal %s: shutting down tasks", signal.name)
+    def _force_shutdown(self):
+        """Force-cancel all tasks after grace period expires."""
+        logger.info("Grace period expired: force-cancelling remaining tasks")
         for task in self._tasks:
             task.cancel()
 
+    def shutdown(self, signal: signal.Signals):
+        logger.info("Received signal %s: initiating graceful shutdown", signal.name)
+        self._shutdown_event.set()
+        loop = asyncio.get_running_loop()
+        self._force_shutdown_handle = loop.call_later(
+            self._grace_period, self._force_shutdown
+        )
+
+    @property
+    def shutdown_event(self) -> asyncio.Event:
+        return self._shutdown_event
+
     def __init__(
         self,
+        grace_period: int = 30,
         signals: set[signal.Signals] = {signal.SIGINT, signal.SIGTERM},
         *args: Any,
         **kwargs: Any,
     ):
+        self._shutdown_event: asyncio.Event = asyncio.Event()
+        self._grace_period = grace_period
+        self._force_shutdown_handle: asyncio.TimerHandle | None = None
         self._signals = signals
         super().__init__(*args, **kwargs)
         logger.info(

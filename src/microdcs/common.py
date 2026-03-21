@@ -1,3 +1,4 @@
+import asyncio
 import fnmatch
 import functools
 import logging
@@ -818,6 +819,10 @@ class ProtocolHandler(Generic[PB], ABC):
     def __init__(self):
         self._bindings: list[PB] = []
         self._cloudevent_processors: list[CloudEventProcessor] = []
+        self._shutdown_event: asyncio.Event = asyncio.Event()
+
+    def register_shutdown_event(self, event: asyncio.Event) -> None:
+        self._shutdown_event = event
 
     def register_binding(self, binding: PB) -> None:
         self._bindings.append(binding)

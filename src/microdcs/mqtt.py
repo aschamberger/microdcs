@@ -284,7 +284,15 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
         logger.info("Starting MQTT message processing")
         message: aiomqtt.Message
         async for message in client.messages:
-            await self._process_message(client, message)
+            # Shield message processing from cancellation so that in-flight
+            # messages are fully processed, ACKed, and expiration tasks set up.
+            processing = asyncio.create_task(self._process_message(client, message))
+            try:
+                await asyncio.shield(processing)
+            except asyncio.CancelledError:
+                # Worker cancelled, but finish processing the current message
+                await processing
+                return
 
     async def _outgoing_message_publisher(
         self, client: aiomqtt.Client, binding: MQTTProtocolBinding
@@ -296,6 +304,13 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
 
             await self._publish_message(client, cloudevent, binding.processor)
             binding.outgoing_queue.task_done()
+
+    async def _cancel_and_wait(self, tasks: list[asyncio.Task]) -> None:
+        """Cancel tasks and wait for them to finish."""
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def task(self) -> None:
         logger.info("Starting MQTT handler task")
@@ -327,27 +342,141 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                             "Subscribed to response topic: %s",
                             binding.response_topic,
                         )
-                    async with asyncio.TaskGroup() as tg:
-                        logger.info(
-                            "Starting %d message worker tasks",
-                            self._runtime_config.message_workers,
+                    # Start worker and publisher tasks (manual management
+                    # instead of TaskGroup for controlled graceful shutdown)
+                    worker_tasks: list[asyncio.Task] = []
+                    publisher_tasks: list[asyncio.Task] = []
+                    logger.info(
+                        "Starting %d message worker tasks",
+                        self._runtime_config.message_workers,
+                    )
+                    for _ in range(self._runtime_config.message_workers):
+                        worker_tasks.append(
+                            asyncio.create_task(self._process_messages(client))
                         )
-                        for _ in range(self._runtime_config.message_workers):
-                            tg.create_task(self._process_messages(client))
-                        for binding in self._bindings:
-                            tg.create_task(
+                    for binding in self._bindings:
+                        publisher_tasks.append(
+                            asyncio.create_task(
                                 self._outgoing_message_publisher(client, binding)
                             )
+                        )
+                    all_tasks = worker_tasks + publisher_tasks
+
+                    try:
+                        # Wait for shutdown event or an unexpected task failure
+                        shutdown_waiter = asyncio.create_task(
+                            self._shutdown_event.wait()
+                        )
+                        done, _ = await asyncio.wait(
+                            set(all_tasks) | {shutdown_waiter},
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+
+                        if shutdown_waiter in done:
+                            # === Graceful shutdown sequence ===
+                            # Phase 1: Unsubscribe – stop receiving new messages
+                            logger.info(
+                                "Graceful shutdown: unsubscribing from MQTT topics"
+                            )
+                            for binding in self._bindings:
+                                for topic in binding.topics:
+                                    try:
+                                        await client.unsubscribe(topic)
+                                        logger.info(
+                                            "Unsubscribed from topic: %s", topic
+                                        )
+                                    except aiomqtt.MqttError:
+                                        logger.warning(
+                                            "Failed to unsubscribe from topic: %s",
+                                            topic,
+                                        )
+                                try:
+                                    await client.unsubscribe(binding.response_topic)
+                                    logger.info(
+                                        "Unsubscribed from response topic: %s",
+                                        binding.response_topic,
+                                    )
+                                except aiomqtt.MqttError:
+                                    logger.warning(
+                                        "Failed to unsubscribe from response topic: %s",
+                                        binding.response_topic,
+                                    )
+
+                            # Phase 2: Cancel workers – shielded processing
+                            # ensures in-flight messages finish (process, ack,
+                            # create expiration tasks, enqueue responses)
+                            await self._cancel_and_wait(worker_tasks)
+                            logger.info("All message workers completed")
+
+                            # Phase 3: Drain outgoing queues – send remaining
+                            # outgoing events that were enqueued during processing
+                            for binding in self._bindings:
+                                if not binding.outgoing_queue.empty():
+                                    logger.info(
+                                        "Draining outgoing queue (%d items)",
+                                        binding.outgoing_queue.qsize(),
+                                    )
+                                    await binding.outgoing_queue.join()
+
+                            # Phase 4: Cancel publishers – queues are drained
+                            await self._cancel_and_wait(publisher_tasks)
+                            logger.info("All publishers completed")
+
+                            # Phase 5: Wait for expiration timeout tasks
+                            pending = [
+                                task
+                                for task in self._expiration_timeout_tasks.values()
+                                if not task.done()
+                            ]
+                            if pending:
+                                logger.info(
+                                    "Waiting for %d expiration timeout task(s)",
+                                    len(pending),
+                                )
+                                await asyncio.gather(*pending, return_exceptions=True)
+
+                            logger.info("MQTT graceful shutdown complete")
+                            break  # exit retry loop
+                        else:
+                            # A worker/publisher died unexpectedly
+                            shutdown_waiter.cancel()
+                            await self._cancel_and_wait(all_tasks)
+                            for task in done:
+                                if not task.cancelled() and task.exception() is not None:
+                                    raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
+
+                    except asyncio.CancelledError:
+                        # Force shutdown (grace period exceeded) –
+                        # cancel everything including expiration tasks
+                        await self._cancel_and_wait(all_tasks)
+                        for task in list(self._expiration_timeout_tasks.values()):
+                            if not task.done():
+                                task.cancel()
+                        raise
+
             except aiomqtt.MqttError:
+                if self._shutdown_event.is_set():
+                    logger.info("MQTT connection lost during shutdown; exiting")
+                    break
                 sleep_time = backoff + random.uniform(0, 0.1 * backoff)
                 logger.warning(f"Connection lost. Retrying in {sleep_time:.2f}s...")
-                await asyncio.sleep(sleep_time)
-                backoff = min(backoff * 2, max_backoff)
+                try:
+                    await asyncio.wait_for(
+                        self._shutdown_event.wait(), timeout=sleep_time
+                    )
+                    logger.info("Shutdown during reconnect backoff; exiting")
+                    break
+                except asyncio.TimeoutError:
+                    backoff = min(backoff * 2, max_backoff)
 
             except asyncio.CancelledError:
                 logger.info("MQTT handler task cancelled; shutting down")
-                await self._redis_client.aclose()
+                for task in list(self._expiration_timeout_tasks.values()):
+                    if not task.done():
+                        task.cancel()
                 raise
+
+        logger.info("MQTT handler shutdown complete")
 
 
 class OTELInstrumentedMQTTHandler(MQTTHandler):
