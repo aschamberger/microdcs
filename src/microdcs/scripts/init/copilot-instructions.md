@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-This is an application built on the [MicroDCS](https://github.com/aschamberger/microdcs) framework — a Python framework for distributed sequence control (DCS) in OT/manufacturing environments. MicroDCS provides protocol transport (MQTTv5, MessagePack-RPC), CloudEvent processing, OPC UA Machinery Job Management state machines, and Redis persistence. This project contains the application-specific processors, models, and wiring.
+This is an application built on the [MicroDCS](https://github.com/aschamberger/microdcs) framework — a Python framework for distributed sequence control (DCS) in OT and manufacturing environments. MicroDCS provides protocol transport (MQTT v5, MessagePack-RPC), CloudEvent processing, OPC UA Machinery Job Management state machines, and Redis persistence. This project contains the application-specific processors, models, and wiring.
 
 ## Tech Stack
 

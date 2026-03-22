@@ -1,8 +1,12 @@
 # Information Model Standards
 
+MicroDCS uses established industrial information-model standards and schema-driven code generation to keep application payloads typed, consistent, and transport-independent. This page summarizes the standards and model-generation patterns that shape the framework's data layer.
+
 ## OPC UA
 
-JSON Schemas representing the OPC UA information models can be generated from nodeset XMLs. These schemas are used to generate Python dataclasses via `datamodel-code-generator`. A custom template is used to generate:
+OPC UA information models and companion specifications provide much of the semantic structure used by MicroDCS.
+
+JSON Schemas representing OPC UA information models can be generated from NodeSet XML files. These schemas are then used to generate Python dataclasses through `datamodel-code-generator`. MicroDCS uses a custom generation template to add framework-specific behavior, including:
 
 * `Config` inner class for mashumaro
 * custom attributes `x-*` in `Config` inner class
@@ -20,21 +24,21 @@ uv run microdcs dataclassgen dataclasses \
   machinery_jobs.jsonschema.json
 ```
 
-### [OPC 40001-3: Machinery Job Mgmt](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/)
+### [OPC 40001-3: Machinery Job Management](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/)
 
-The custom template also creates:
+For OPC UA Machinery Job Management, the custom template also generates:
 
 * `opcua_state_machine` with serialized python dict from JSON Schema (use `ast.literal_eval()` to deserialize str to dict)
 * custom attributes `opcua_state_machine_states` and `opcua_state_machine_transitions` with ready to use dictionaries for usage with `transitions` library
 * custom attribute `opcua_state_machine_effects` storing transition events
 
-Manual additions for Machinery Job Management are required:
+Some manual additions are still required for Machinery Job Management support:
 
 * `MethodReturnStatus` enum
-* additional `JobOrderControlExt` class that adds "the dotted states and transitions" from the spec (without the meta state `Prepared`)
+* additional `JobOrderControlExt` class that adds the dotted states and transitions from the specification, without the meta state `Prepared`
 * fix missing transition name for `Run`
-* add initial states to sub statemachines
-* helpers to map to/from state names to ids
+* add initial states to sub-state machines
+* helpers to map between state names and state IDs
 
 Links:
 
@@ -42,11 +46,15 @@ Links:
 
 ### EUInformation
 
+Engineering-unit metadata is derived from the OPC UA EUInformation model and related mapping tables.
+
 * [OPC UA Part 8 EUInformation](https://reference.opcfoundation.org/Core/Part8/v105/docs/5.6.3)
 * [UNECE to OPC UA CSV](http://www.opcfoundation.org/UA/EngineeringUnits/UNECE/UNECE_to_OPCUA.csv)
 * [UA-Nodeset UNECE to OPC UA CSV](https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Schema/UNECE_to_OPCUA.csv)
 
 ## ISA-88/ISA-95
+
+ISA-88 and ISA-95 provide the manufacturing-domain concepts used by the framework's sequence control and job-management examples.
 
 ### ISA-95 Introduction
 
@@ -61,15 +69,17 @@ Links:
 
 ## Custom Models
 
-The code generator has some options to support customization for other protocols/messages:
+The code generator also exposes options for extending generated models for application-specific protocols and behaviors.
 
-* Add `__custom_metadata__: InitVar[dict[str, Any] | None] = None` for usage in `__post_init__()``. It is populated from cloudevent.
+Supported customization patterns include:
+
+* Add `__custom_metadata__: InitVar[dict[str, Any] | None] = None` for use in `__post_init__()`. It is populated from the CloudEvent.
 
   ```bash
   uv run microdcs dataclassgen dataclasses --custom-metadata my.jsonschema.json
   ```
 
-* Add additional `InitVar` fields for usage in `__post_init__()`. You can populate them via `event.response(mystatus=MyStatus.OKAY)`.
+* Add additional `InitVar` fields for use in `__post_init__()`. These can be populated through response helpers such as `event.response(mystatus=MyStatus.OKAY)`.
 
   ```bash
   uv run microdcs dataclassgen dataclasses \
@@ -87,7 +97,7 @@ The code generator has some options to support customization for other protocols
     my.jsonschema.json
   ```
 
-Generate greetings:
+Example: generate the greetings models:
 
 ```bash
 uv run microdcs dataclassgen dataclasses \

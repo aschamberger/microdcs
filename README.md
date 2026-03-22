@@ -1,8 +1,12 @@
 # MicroDCS
 
-MicroDCS: An Open-Standard Framework for Distributed Sequence Control.
+MicroDCS: An Open-Standards-Based Framework for Distributed Sequence Control Applications.
+
+MicroDCS is a Python framework for building distributed sequence control applications for OT and manufacturing. It uses MQTT v5, CloudEvents, JSON Schema, OPC UA companion specifications, and OpenTelemetry to support event-driven control flows with typed data models, protocol abstraction, and open-standard interoperability.
 
 ## Quickstart
+
+Get the framework installed, run the unit tests, and start the example application:
 
 ```bash
 # Install dependencies
@@ -18,23 +22,20 @@ uv run python -m app
 
 ## Features
 
-* Transport protocols: MQTTv5 RPC/CloudEvents & MessagePack-RPC over TCP/CloudEvents
-* High-availability, horizontal scalability leveraging MQTTv5 shared subscriptions
-* Deduplication of messages with at least once delivery guaranties and flow control with expiry intervals
-* Generic handling of JSON/MessagePack payloads via content type
-* De-/serialization to Python dataclasses with handling of custom user properties
-* Multiple CloudEventProcessors handling incoming requests
-* Dataclass generation from JSON Schema with request/response handling mechanisms
-* OPC UA Machinery Job Management: Receiver/Event Publisher
-* OPC UA Machinery Job hierarchical state machine via `transitions` library driven by OPC UA companion spec
-* Redis-backed persistence for job orders/responses and CloudEvent/transaction deduplication
-* OpenTelemetry auto instrumentation plus manual instrumentation of internals (metrics and tracing)
+* Open-standards foundation built around MQTT v5, CloudEvents, JSON Schema, OPC UA companion specifications, and OpenTelemetry
+* Protocol abstraction for MQTT v5 and MessagePack-RPC transports with a shared event-processing model
+* Typed application models generated from JSON Schema and serialized to JSON or MessagePack
+* Event-driven processor architecture for handling commands, data, events, and metadata
+* Distributed operation features including MQTT shared subscriptions, deduplication, and message expiry handling
+* Redis-backed persistence for job state, responses, and delivery coordination
+* Built-in support for OPC UA Machinery Job Management patterns, including hierarchical state-machine execution
+* Observability support through OpenTelemetry auto-instrumentation and internal tracing and metrics hooks
 
 ## Usage
 
 ### Initialize a new project
 
-Bootstrap a new MicroDCS application project using the `init` command. The product name is MicroDCS; the Python distribution and CLI package name are `microdcs`. The command scaffolds the full project structure, pins Python 3.14, and installs all required dependencies.
+Create a new MicroDCS application with the `init` command. It scaffolds the project structure, pins Python 3.14, and prepares the dependencies needed to build a distributed sequence control application.
 
 ```bash
 # Initialize in the current directory
@@ -44,11 +45,11 @@ uvx --from git+https://github.com/aschamberger/microdcs microdcs init
 uvx --from git+https://github.com/aschamberger/microdcs microdcs init my-app
 ```
 
-The command will:
+The generated project includes:
 
-1. Pin Python ≥ 3.14 and create a `uv` project (`uv init --python=>=3.14 --bare`)
-2. Add `microdcs` and dev dependencies (`datamodel-code-generator`, `pytest`, `pytest-asyncio`, `pytest-cov`)
-3. Create the project directory structure:
+1. A `uv` project pinned to Python ≥ 3.14
+2. The `microdcs` package and core development dependencies
+3. A starter project structure:
    ```
    app/
      __init__.py
@@ -66,9 +67,9 @@ The command will:
      copilot-instructions.md
    Dockerfile
    ```
-4. Append build-system and pytest configuration to `pyproject.toml`
+4. Build-system and pytest configuration in `pyproject.toml`
 
-After initialization, generate dataclasses from your JSON Schema files:
+After initialization, generate typed application models from your JSON Schema files:
 
 ```bash
 uv run microdcs dataclassgen dataclasses my-schema.jsonschema.json

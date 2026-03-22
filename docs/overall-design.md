@@ -1,16 +1,18 @@
 # Overall Design
 
-Build OT apps based on open standards like MQTTv5, CloudEvents, OpenTelemetry, OPC UA companions specs, ... to apply the speed of software to the mostly hardware-defined OT base.
+MicroDCS is designed to help build OT and manufacturing applications with modern software architecture patterns while staying grounded in open standards. Instead of centering the system on custom protocol glue or tightly coupled device integrations, the framework uses typed events, protocol abstraction, and standard specifications to support distributed sequence control applications.
 
 ## Design Goals
 
-* Manufacturing control/OT apps should be buildable like IT applications with cloud native/modern architecture principles
-* Code is generated as much as possible from standard specs (e.g. OPC UA) to lower the burden to adhere to these standards
+* Make manufacturing control and OT applications buildable with cloud-native and event-driven software architecture principles
+* Reduce custom integration work by relying on open standards such as MQTT v5, CloudEvents, JSON Schema, OpenTelemetry, and OPC UA companion specifications
+* Generate as much application model code as practical from standard specifications to reduce implementation effort and improve consistency
+* Keep application logic focused on typed models and processors rather than transport-specific payload handling
 
 ## Premises
 
-* Event driven architecture via MQTT as transport protocol (no OPC UA Client/Server or Pub/Sub)
-* OPC UA information models/companion specs are used for communication over MQTT
-* Meta information is transported via MQTT user properties/cloud event headers to identify the message payload
-* Implementations must only work via the generated dataclasses and not directly with the MQTT payloads (they are decoded/encoded in the background)
-* There is an app UNS that has at least subtopics for `data` (variable publication/maybe setting), `events` and `commands` (method calls); optionally `metadata`to publish what is offered by the app in a retained topic
+* The system follows an event-driven architecture, with MQTT as the primary transport rather than OPC UA client/server or OPC UA PubSub communication
+* OPC UA information models and companion specifications are used to define application semantics and payload structure over the chosen transports
+* Metadata required to identify and process payloads is carried through MQTT properties and CloudEvent attributes instead of being embedded in custom transport formats
+* Application implementations should work with generated dataclasses and processor abstractions rather than directly parsing MQTT or MessagePack payloads
+* The application assumes a UNS-style topic structure with at least `data`, `events`, and `commands` topics, with optional `metadata` topics for retained capability publication

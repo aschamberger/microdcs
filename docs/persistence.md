@@ -1,19 +1,20 @@
 # Persistence
 
+MicroDCS uses Redis to persist operational state needed for delivery coordination, job tracking, and multi-instance processing patterns. This page summarizes the persistence requirements behind that choice.
+
 ## Persistence Requirements
 
-The dataclasses from the OPC UA Job Mgmt need to be persisted. With a document oriented persistence layer they can be directly stored as is. Schema evolution needs to be possible.
+The dataclasses used for OPC UA Job Management need to be persisted in a form that supports schema evolution and can store nested structures without excessive mapping overhead. A document-oriented persistence approach fits those requirements well.
 
-The other requirements are deduplication of cloudevents and passing changed variable state to a single publisher.
+The framework also needs persistence support for CloudEvent deduplication and for coordinating state publication so that changed variable values are emitted by a single publisher in multi-instance scenarios.
 
 ## [Redis](https://redis.io/docs/latest/)
 
-Dataclasses are stored to Redis data type JSON. The dataschema is added to an additional field `_dataschema`.
-It is derived from the `Config` classes on serialization.
+MicroDCS stores dataclasses in Redis JSON. The associated `dataschema` value is written to an additional `_dataschema` field and is derived from the model `Config` class during serialization.
 
-The event data type is used for the OPC UA Job Mgmt implementation to trigger the single instance publisher from the multi instance receiver/event publisher. Events are published directly to MQTT. The state variables however are published with the OPC UA pub/sub mechanism (to not always send unchanged values).
+For the OPC UA Job Management implementation, Redis eventing is used to coordinate a single-instance publisher from a multi-instance receiver and event-publisher setup. Events are published directly to MQTT, while state variables are published through the OPC UA pub-sub mechanism so unchanged values do not need to be sent repeatedly.
 
 * [Redis course notes](https://medium.com/@krushnakr9/l3-l5-redis-course-3ebc9843925c)
 * [Redis Labs Python developer path](https://github.com/redislabs-training/ru-dev-path-py)
-* [RedisVL hash vs JSON guide](https://redis.io/docs/latest/develop/ai/redisvl/user_guide/hash_vs_json/) - JSON as we have multi level
-* [Redis OM for Python: globally unique primary keys](https://redis.io/blog/introducing-redis-om-for-python/#Globally_unique_primary_keys) - not required as we do not create any new PK
+* [RedisVL hash vs JSON guide](https://redis.io/docs/latest/develop/ai/redisvl/user_guide/hash_vs_json/) - JSON fits the nested model structure used by MicroDCS
+* [Redis OM for Python: globally unique primary keys](https://redis.io/blog/introducing-redis-om-for-python/#Globally_unique_primary_keys) - not required here because MicroDCS does not generate new primary keys through Redis OM
