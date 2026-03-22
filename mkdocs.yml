@@ -1,0 +1,65 @@
+site_name: MicroDCS
+site_url: https://aschamberger.github.io/microdcs/
+repo_url: https://github.com/aschamberger/microdcs
+repo_name: aschamberger/microdcs
+theme:
+  name: material
+  icon:
+    logo: simple/microstation
+    repo: simple/github
+  palette:
+    # Dark Mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Dark mode
+      primary: indigo
+      accent: deep purple
+
+    # Light Mode
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Light mode
+      primary: blue
+      accent: deep orange
+  features:
+    - navigation.tabs
+    - navigation.footer
+nav:
+  - Home: index.md
+  - Overall Design:
+      - Overview: overall-design.md
+      - Technical Standards: technical-standards.md
+      - Information Model Standards: information-model-standards.md
+  - Development:
+      - Overview: development.md
+      - Persistence: persistence.md
+copyright: Copyright &copy; 2026 Andeas Schamberger
+extra:
+  social:
+    - icon: simple/github
+      link: https://github.com/aschamberger
+markdown_extensions:
+  - attr_list
+  - pymdownx.magiclink
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
