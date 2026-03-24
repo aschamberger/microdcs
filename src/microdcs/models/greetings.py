@@ -1,14 +1,13 @@
 # Auto-generated from "greetings.schema.json". Do not modify!
+from dataclasses import InitVar, dataclass, field
+from typing import Any
+
 from microdcs.dataclass import (
     DataClassConfig,
     DataClassResponseMixin,
     DataClassValidationMixin,
 )
 from microdcs.models.greetings_mixin import GreetingsDataClassMixin
-from dataclasses import InitVar, field
-from typing import Any
-from dataclasses import dataclass
-
 
 type Greetings = Any
 """

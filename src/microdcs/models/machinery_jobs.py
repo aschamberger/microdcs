@@ -1,9 +1,10 @@
 # Auto-generated from "machinery_jobs.schema.json". Do not modify!
+from dataclasses import dataclass
+from enum import IntEnum
+from typing import Any
+
 from microdcs.dataclass import DataClassConfig, DataClassMixin, DataClassResponseMixin
 from microdcs.models.machinery_jobs_mixin import JobStateMixin
-from dataclasses import dataclass
-from typing import Any
-from enum import IntEnum
 
 
 @dataclass(kw_only=True)
