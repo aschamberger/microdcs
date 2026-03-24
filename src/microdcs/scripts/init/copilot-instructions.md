@@ -41,7 +41,7 @@ uv run python -m app
 uv run dataclassgen index
 
 # Generate dataclasses from a JSON schema (output goes to app/models/)
-uv run dataclassgen dataclasses <schema_file.jsonschema.json> app/models [options]
+uv run dataclassgen dataclasses <schema_file.schema.json> app/models [options]
 
 # Docker build
 docker build -t myapp .

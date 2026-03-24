@@ -1,4 +1,4 @@
-# Auto-generated from "greetings.jsonschema.json". Do not modify!
+# Auto-generated from "greetings.schema.json". Do not modify!
 from microdcs.dataclass import (
     DataClassConfig,
     DataClassResponseMixin,

@@ -64,7 +64,7 @@ uv run python -m app
 uv run dataclassgen index
 
 # Generate dataclasses from a JSON schema (output goes to src/microdcs/models/)
-uv run dataclassgen dataclasses <schema_file.jsonschema.json> [options]
+uv run dataclassgen dataclasses <schema_file.schema.json> [options]
 
 # Docker build
 docker build -t aschamberger/microdcs .

@@ -72,7 +72,7 @@ The generated project includes:
 After initialization, generate typed application models from your JSON Schema files:
 
 ```bash
-uv run microdcs dataclassgen dataclasses my-schema.jsonschema.json
+uv run microdcs dataclassgen dataclasses my-schema.schema.json
 ```
 
 ## Additional Documentation

@@ -35,7 +35,7 @@ uv run python -m app
 Generate typed models from a JSON Schema file:
 
 ```bash
-uv run microdcs dataclassgen dataclasses my-schema.jsonschema.json
+uv run microdcs dataclassgen dataclasses my-schema.schema.json
 ```
 
 ## Documentation

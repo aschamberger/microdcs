@@ -21,7 +21,7 @@ uv run microdcs dataclassgen dataclasses \
   --base-class microdcs.dataclass.DataClassMixin \
   --config-base-class microdcs.dataclass.DataClassConfig \
   --add-mixin 'ISA95JobOrderDataType->JobStateMixin' \
-  machinery_jobs.jsonschema.json
+  machinery_jobs.schema.json
 ```
 
 ### [OPC 40001-3: Machinery Job Management](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/)
@@ -76,7 +76,7 @@ Supported customization patterns include:
 * Add `__custom_metadata__: InitVar[dict[str, Any] | None] = None` for use in `__post_init__()`. It is populated from the CloudEvent.
 
   ```bash
-  uv run microdcs dataclassgen dataclasses --custom-metadata my.jsonschema.json
+  uv run microdcs dataclassgen dataclasses --custom-metadata my.schema.json
   ```
 
 * Add additional `InitVar` fields for use in `__post_init__()`. These can be populated through response helpers such as `event.response(mystatus=MyStatus.OKAY)`.
@@ -85,7 +85,7 @@ Supported customization patterns include:
   uv run microdcs dataclassgen dataclasses \
     --init-fields 'mystatus->MyStatus' \
     --init-fields 'init->dict[str,str]' \
-    my.jsonschema.json
+    my.schema.json
   ```
 
 * Add hidden fields.
@@ -94,7 +94,7 @@ Supported customization patterns include:
   uv run microdcs dataclassgen dataclasses \
     --hidden-fields '_hidden_str->str' \
     --hidden-fields '_hidden_obj->Obj1|Obj2' \
-    my.jsonschema.json
+    my.schema.json
   ```
 
 Example: generate the greetings models:
@@ -112,5 +112,5 @@ uv run microdcs dataclassgen dataclasses \
   --validation \
   --request-object \
   --custom-metadata \
-  greetings.jsonschema.json
+  greetings.schema.json
 ```
