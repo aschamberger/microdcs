@@ -1,5 +1,7 @@
 import json
+import keyword
 import pathlib
+import re
 from collections import defaultdict
 from typing import Annotated, Any
 
@@ -18,6 +20,21 @@ schemas_path = pathlib.Path(__file__).parent.parent.parent.parent / "schemas"
 models_path = pathlib.Path(__file__).parent.parent / "models"
 
 app = typer.Typer()
+
+
+def _schema_path_to_module_name(schema_file_path: pathlib.Path) -> str:
+    schema_name = schema_file_path.name
+    schema_stem = schema_name.removesuffix("".join(schema_file_path.suffixes))
+    module_name = re.sub(r"[^0-9A-Za-z_]+", "_", schema_stem).strip("_").lower()
+
+    if not module_name:
+        module_name = "generated"
+    if module_name[0].isdigit():
+        module_name = f"_{module_name}"
+    if keyword.iskeyword(module_name):
+        module_name = f"{module_name}_"
+
+    return module_name
 
 
 @app.command()
@@ -89,9 +106,7 @@ def dataclasses(
     ] = [],
     template_dir: Annotated[
         pathlib.Path,
-        typer.Option(
-            help="Add a custom template dir"
-        ),
+        typer.Option(help="Add a custom template dir"),
     ] = pathlib.Path(__file__).parent / "template",
 ):
     if schema_file.is_absolute():
@@ -216,9 +231,7 @@ def dataclasses(
     )
     parser = JsonSchemaParser(schema_file_path.read_text(), config=config)
     result = parser.parse()
-    out = models_path / (
-        schema_file_path.name.replace("".join(schema_file_path.suffixes), ".py")
-    )
+    out = models_path / f"{_schema_path_to_module_name(schema_file_path)}.py"
     f = out.open("w")
     f.write(f'# Auto-generated from "{schema_file}". Do not modify!\n')
     f.write(result)
