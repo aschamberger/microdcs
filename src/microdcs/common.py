@@ -19,6 +19,7 @@ from typing import (
     Dict,
     Generic,
     Optional,
+    TypeAliasType,
     TypeVar,
     get_args,
     get_origin,
@@ -418,7 +419,7 @@ class CloudEvent(DataClassMixin):
 CloudeventAttributeTuple = namedtuple("CloudeventAttributeTuple", ["attribute", "path"])
 
 
-def incoming(cloudevent_dataclass: type | UnionType) -> Callable:
+def incoming(cloudevent_dataclass: type | UnionType | TypeAliasType) -> Callable:
     """Decorator to register a method as an incoming cloud event callback.
 
     Usage::
@@ -437,7 +438,7 @@ def incoming(cloudevent_dataclass: type | UnionType) -> Callable:
     return decorator
 
 
-def outgoing(cloudevent_dataclass: type | UnionType) -> Callable:
+def outgoing(cloudevent_dataclass: type | UnionType | TypeAliasType) -> Callable:
     """Decorator to register a method as an outgoing cloud event callback.
 
     Usage::
@@ -589,16 +590,20 @@ class CloudEventProcessor(ABC):
 
     def register_callback(
         self,
-        cloudevent_dataclass: type | UnionType,
+        cloudevent_dataclass: type | UnionType | TypeAliasType,
         callback: Callable[..., Any],
         direction: Direction = Direction.INCOMING,
     ) -> None:
         if not callable(callback):
             raise TypeError("callback must be callable")
+        if isinstance(cloudevent_dataclass, TypeAliasType):
+            cloudevent_dataclass = cloudevent_dataclass.__value__
         if isinstance(cloudevent_dataclass, UnionType):
             for subtype in cloudevent_dataclass.__args__:
                 self.register_callback(subtype, callback)
             return
+        if not isinstance(cloudevent_dataclass, type):
+            raise TypeError("message_dataclass must be a class type")
         if not issubclass(cloudevent_dataclass, DataClassMixin):
             raise TypeError("message_dataclass must be a subclass of DataClassMixin")
         config_class = getattr(cloudevent_dataclass, "Config", None)

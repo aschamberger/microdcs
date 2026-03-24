@@ -42,6 +42,9 @@ class AnotherPayload(DataClassMixin):
         cloudevent_dataschema: str = "https://example.com/schemas/another-v1"
 
 
+type PayloadAlias = SamplePayload | AnotherPayload
+
+
 @dataclass
 class PlainDataClass(DataClassMixin):
     """No Config subclass – used for negative tests."""
@@ -433,6 +436,15 @@ class TestCloudEventProcessorRegistration:
         assert "com.test.sample.v1" in proc._type_callbacks_in
         assert "com.test.another.v1" in proc._type_callbacks_in
 
+    def test_register_callback_type_alias_type(self):
+        proc = ConcreteProcessor()
+        cb = AsyncMock()
+
+        proc.register_callback(PayloadAlias, cb)
+
+        assert "com.test.sample.v1" in proc._type_callbacks_in
+        assert "com.test.another.v1" in proc._type_callbacks_in
+
     def test_register_callback_non_callable_raises(self):
         proc = ConcreteProcessor()
         with pytest.raises(TypeError, match="callback must be callable"):
@@ -503,6 +515,16 @@ class TestCloudEventProcessorDecorators:
     def test_incoming_decorator_union_type(self):
         class DecoratedProcessor(ConcreteProcessor):
             @incoming(SamplePayload | AnotherPayload)
+            async def handle_both(self, payload):
+                return None
+
+        proc = DecoratedProcessor()
+        assert "com.test.sample.v1" in proc._type_callbacks_in
+        assert "com.test.another.v1" in proc._type_callbacks_in
+
+    def test_incoming_decorator_type_alias_type(self):
+        class DecoratedProcessor(ConcreteProcessor):
+            @incoming(PayloadAlias)
             async def handle_both(self, payload):
                 return None
 
