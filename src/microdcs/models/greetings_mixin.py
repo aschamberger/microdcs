@@ -16,6 +16,8 @@ class GreetingsDataClassMixin(DataClassMixin):
         if super_post_init is not None:
             super_post_init()
         # is_request: Copy hidden fields from custom metadata only when one is provided
+        if __custom_metadata__ is None:
+            __custom_metadata__ = self._consume_custom_metadata()
         if __custom_metadata__ is not None:
             if hasattr(self, "_hidden_str"):
                 self._hidden_str = __custom_metadata__.get("x-hidden-str")

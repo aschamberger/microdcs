@@ -1,3 +1,4 @@
+import contextvars
 import dataclasses
 import fnmatch
 import inspect
@@ -18,6 +19,10 @@ from typing import (
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.msgpack import DataClassMessagePackMixin
 from mashumaro.mixins.orjson import DataClassORJSONMixin
+
+_custom_metadata_var: contextvars.ContextVar[dict[str, Any] | None] = (
+    contextvars.ContextVar("_custom_metadata_var", default=None)
+)
 
 
 def type_has_dataclass_mixin(cls: type) -> bool:
@@ -66,6 +71,17 @@ class DataClassValidationMixin:
 
 
 class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
+        _custom_metadata_var.set(d.pop("__custom_metadata__", None))
+        return d
+
+    @classmethod
+    def _consume_custom_metadata(cls) -> dict[str, Any] | None:
+        value = _custom_metadata_var.get()
+        _custom_metadata_var.set(None)
+        return value
+
     # remove hidden fields starting with "_" from serialization
     # context keys for persisting metadata alongside the document in Redis:
     #   add_cloudevent_dataschema: bool – inject _dataschema from Config
