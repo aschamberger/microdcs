@@ -89,6 +89,7 @@ Setting a response topic in the application sets QoS=1 (at least once delivery) 
 ## MessagePack-RPC
 
 MessagePack-RPC is supported as an additional transport option where a lightweight binary RPC channel is preferred.
+MicroDCS also supports outgoing CloudEvents over MessagePack by publishing RPC `NOTIFICATION` frames to connected clients.
 
 * [MessagePack](https://msgpack.org/)
 * [MessagePack-RPC specification](https://github.com/msgpack-rpc/msgpack-rpc/blob/master/spec.md)

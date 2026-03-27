@@ -65,7 +65,6 @@ microdcs.register_protocol_binding(
 )
 
 # Register with MessagePack handler
-# FIXME: MessagePackProtocolBinding does not currently support outgoing events.
 microdcs.register_protocol_binding(
     MessagePackProtocolBinding(
         greetings_processor,

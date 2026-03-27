@@ -38,6 +38,17 @@ Generate typed models from a JSON Schema file:
 uv run microdcs dataclassgen dataclasses my-schema.schema.json
 ```
 
+Generate models with advanced options (custom metadata, init fields, validation, and root-union workaround):
+
+```bash
+uv run microdcs dataclassgen dataclasses \
+	--custom-metadata \
+	--init-fields 'mystatus->MyStatus' \
+	--validation \
+	--collapse-root-workaround \
+	my-schema.schema.json
+```
+
 ## Documentation
 
 The documentation site is built with MkDocs Material.

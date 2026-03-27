@@ -61,10 +61,11 @@ docker build -t myapp .
 ### Processors
 
 - Subclass `CloudEventProcessor` and decorate the class with `@processor_config(binding=ProcessorBinding.NORTHBOUND|SOUTHBOUND)`.
-- **Must implement** two abstract methods: `process_response_cloudevent(self, cloudevent)` and `handle_cloudevent_expiration(self, cloudevent, timeout)`. Both return `list[CloudEvent] | CloudEvent | None`.
+- **Must implement** three abstract methods: `process_response_cloudevent(self, cloudevent)`, `handle_cloudevent_expiration(self, cloudevent, timeout)`, and `trigger_outgoing_event(self, **kwargs)`. All return `list[CloudEvent] | CloudEvent | None`.
 - Use `@incoming(MyDataClass)` to register a handler for incoming CloudEvents of that type.
 - Use `@outgoing(MyDataClass)` to register a handler for producing outgoing CloudEvents.
 - Incoming handlers receive the deserialized dataclass plus keyword args for CloudEvent attributes listed in `_event_attributes`. Return `list[T] | T | None`.
+- Optional hooks `__pre_outgoing_callback__` and `__post_outgoing_callback__` can intercept/transform callback flow.
 - Helper decorators `@scope_from_subject` and `@asset_id_from_subject` extract info from the CloudEvent subject.
 
 ### Wiring in `app/__main__.py`
@@ -85,6 +86,3 @@ docker build -t myapp .
 - Unit tests mock external dependencies (`unittest.mock.AsyncMock`, `MagicMock`, `patch`).
 - Test classes group related tests (e.g., `class TestMyProcessor:`).
 
-### Known Issues / Workarounds
-
-- `MessagePackProtocolBinding` does not currently support outgoing events.

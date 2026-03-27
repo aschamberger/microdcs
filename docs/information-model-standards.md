@@ -97,6 +97,16 @@ Supported customization patterns include:
     my.schema.json
   ```
 
+* Enable root-union generation workaround for schemas with top-level `oneOf` / `anyOf` where root collapsing causes unwanted flattening.
+
+  ```bash
+  uv run microdcs dataclassgen dataclasses \
+    --collapse-root-workaround \
+    my.schema.json
+  ```
+
+* Schema file names are converted into safe Python module names automatically (for example, `My Schema.schema.json` -> `my_schema.py`).
+
 Example: generate the greetings models:
 
 ```bash

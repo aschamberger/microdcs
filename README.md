@@ -24,6 +24,7 @@ uv run python -m app
 
 * Open-standards foundation built around MQTT v5, CloudEvents, JSON Schema, OPC UA companion specifications, and OpenTelemetry
 * Protocol abstraction for MQTT v5 and MessagePack-RPC transports with a shared event-processing model
+* Outgoing CloudEvents over MessagePack-RPC via server-to-client notification frames
 * Typed application models generated from JSON Schema and serialized to JSON or MessagePack
 * Event-driven processor architecture for handling commands, data, events, and metadata
 * Distributed operation features including MQTT shared subscriptions, deduplication, and message expiry handling
