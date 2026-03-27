@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://aschamberger.github.io/microdcs/</loc>
+         <lastmod>2026-03-27</lastmod>
+    </url>
+    <url>
+         <loc>https://aschamberger.github.io/microdcs/development/</loc>
+         <lastmod>2026-03-27</lastmod>
+    </url>
+    <url>
+         <loc>https://aschamberger.github.io/microdcs/information-model-standards/</loc>
+         <lastmod>2026-03-27</lastmod>
+    </url>
+    <url>
+         <loc>https://aschamberger.github.io/microdcs/overall-design/</loc>
+         <lastmod>2026-03-27</lastmod>
+    </url>
+    <url>
+         <loc>https://aschamberger.github.io/microdcs/persistence/</loc>
+         <lastmod>2026-03-27</lastmod>
+    </url>
+    <url>
+         <loc>https://aschamberger.github.io/microdcs/technical-standards/</loc>
+         <lastmod>2026-03-27</lastmod>
+    </url>
+</urlset>
