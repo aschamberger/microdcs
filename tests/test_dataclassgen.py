@@ -93,3 +93,83 @@ class TestValidationMixinInheritance:
         assert "DataClassValidationMixin" not in child_match.group(1), (
             f"Child should not have DataClassValidationMixin, got: {child_match.group(1)}"
         )
+
+    def test_inline_discriminated_child_does_not_get_validation_mixin(
+        self, tmp_path: Path
+    ):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "DiscriminatedTest",
+            "$defs": {
+                "Base": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string", "minLength": 1}},
+                    "required": ["name"],
+                },
+                "Container": {
+                    "type": "object",
+                    "properties": {
+                        "item": {
+                            "oneOf": [
+                                {
+                                    "title": "InlineChild",
+                                    "allOf": [
+                                        {"$ref": "#/$defs/Base"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "extra": {"type": "integer"}
+                                            },
+                                        },
+                                    ],
+                                }
+                            ]
+                        }
+                    },
+                },
+            },
+            "oneOf": [
+                {"$ref": "#/$defs/Base"},
+                {"$ref": "#/$defs/Container"},
+            ],
+        }
+        schema_file = tmp_path / "discriminated.schema.json"
+        schema_file.write_text(json.dumps(schema))
+
+        from typer.testing import CliRunner
+
+        from microdcs.scripts.dataclassgen import app
+
+        runner = CliRunner()
+        out_dir = tmp_path / "models"
+        out_dir.mkdir()
+        result = runner.invoke(
+            app,
+            [
+                "dataclasses",
+                str(schema_file),
+                str(out_dir),
+                "--validation",
+                "--collapse-root-workaround",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        generated = (out_dir / "discriminated.py").read_text()
+
+        # Base should have DataClassValidationMixin
+        base_match = re.search(r"class Base\(([^)]+)\)", generated)
+        assert base_match, f"Base class not found in:\n{generated}"
+        assert "DataClassValidationMixin" in base_match.group(1)
+
+        # Container (no inheritance) should have DataClassValidationMixin
+        container_match = re.search(r"class Container\(([^)]+)\)", generated)
+        assert container_match, f"Container class not found in:\n{generated}"
+        assert "DataClassValidationMixin" in container_match.group(1)
+
+        # InlineChild (inherits from Base via oneOf>allOf) should NOT
+        child_match = re.search(r"class InlineChild\(([^)]+)\)", generated)
+        assert child_match, f"InlineChild class not found in:\n{generated}"
+        assert "DataClassValidationMixin" not in child_match.group(1), (
+            f"InlineChild should not have DataClassValidationMixin, got: {child_match.group(1)}"
+        )

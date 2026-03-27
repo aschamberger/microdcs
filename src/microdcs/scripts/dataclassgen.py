@@ -38,6 +38,47 @@ def _schema_path_to_module_name(schema_file_path: pathlib.Path) -> str:
     return module_name
 
 
+def _find_child_class_names(schema_data: dict[str, Any]) -> set[str]:
+    """Recursively walk the schema to find all classes that inherit from another
+    via allOf+$ref. These classes should not get the validation mixin directly
+    because they inherit it from their parent."""
+    children: set[str] = set()
+    _collect_child_names(schema_data, children, defs_key=None)
+    return children
+
+
+def _collect_child_names(
+    node: Any, children: set[str], *, defs_key: str | None
+) -> None:
+    if not isinstance(node, dict):
+        return
+
+    # Check if this node defines a class that inherits via allOf+$ref
+    all_of = node.get("allOf")
+    if isinstance(all_of, list):
+        has_parent_ref = any(
+            isinstance(item, dict) and item.get("$ref", "").startswith("#/$defs/")
+            for item in all_of
+        )
+        if has_parent_ref:
+            # Use title if available, fall back to $defs key name
+            name = node.get("title") or defs_key
+            if name:
+                children.add(name)
+
+    # Recurse into $defs (pass key as fallback name)
+    for key, defn in node.get("$defs", {}).items():
+        _collect_child_names(defn, children, defs_key=key)
+
+    # Recurse into properties, oneOf/anyOf/allOf items, and array items
+    for prop_defn in node.get("properties", {}).values():
+        _collect_child_names(prop_defn, children, defs_key=None)
+    for keyword in ("oneOf", "anyOf", "allOf"):
+        for item in node.get(keyword, []):
+            _collect_child_names(item, children, defs_key=None)
+    _collect_child_names(node.get("items"), children, defs_key=None)
+
+
 def _title_to_class_name(title: str) -> str:
     clean = re.sub(r"[^0-9a-zA-Z]+", " ", title).strip()
     name = "".join(word.capitalize() for word in clean.split())
@@ -233,21 +274,13 @@ def dataclasses(
             f"[bold cyan]Cloud event types found: {', '.join(sorted(cloudevent_defs))}[/bold cyan]"
         )
 
-    # Find child classes that inherit from another $def via allOf+$ref.
+    # Find child classes that inherit from another class via allOf+$ref.
     # These already get the validation mixin from their parent.
-    child_defs = set()
-    if validation:
-        for name, defn in defs.items():
-            if "allOf" in defn:
-                for item in defn["allOf"]:
-                    ref = item.get("$ref", "")
-                    if ref.startswith("#/$defs/"):
-                        child_defs.add(name)
-                        break
-        if child_defs:
-            print(
-                f"[bold cyan]Skipping validation mixin for child classes: {', '.join(sorted(child_defs))}[/bold cyan]"
-            )
+    child_defs = _find_child_class_names(schema_data) if validation else set()
+    if child_defs:
+        print(
+            f"[bold cyan]Skipping validation mixin for child classes: {', '.join(sorted(child_defs))}[/bold cyan]"
+        )
 
     # Apply config_base_class and validation_mixin_class to all models.
     # Apply hidden_fields, init_fields, request_object, custom_metadata
