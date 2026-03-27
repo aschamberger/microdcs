@@ -224,15 +224,30 @@ def dataclasses(
 
     # Parse schema to find $defs with x-cloudevent-type
     schema_data = json.loads(schema_file_path.read_text())
+    defs = schema_data.get("$defs", {})
     cloudevent_defs = {
-        name
-        for name, defn in schema_data.get("$defs", {}).items()
-        if "x-cloudevent-type" in defn
+        name for name, defn in defs.items() if "x-cloudevent-type" in defn
     }
     if cloudevent_defs:
         print(
             f"[bold cyan]Cloud event types found: {', '.join(sorted(cloudevent_defs))}[/bold cyan]"
         )
+
+    # Find child classes that inherit from another $def via allOf+$ref.
+    # These already get the validation mixin from their parent.
+    child_defs = set()
+    if validation:
+        for name, defn in defs.items():
+            if "allOf" in defn:
+                for item in defn["allOf"]:
+                    ref = item.get("$ref", "")
+                    if ref.startswith("#/$defs/"):
+                        child_defs.add(name)
+                        break
+        if child_defs:
+            print(
+                f"[bold cyan]Skipping validation mixin for child classes: {', '.join(sorted(child_defs))}[/bold cyan]"
+            )
 
     # Apply config_base_class and validation_mixin_class to all models.
     # Apply hidden_fields, init_fields, request_object, custom_metadata
@@ -247,6 +262,9 @@ def dataclasses(
             else None,
         }
     }
+    # Mark child classes so the template skips the validation mixin
+    for name in child_defs:
+        extra_template_data[name] = {"skip_validation_mixin": True}
     cloudevent_model_data = {
         "request_object": request_object,
         "custom_metadata": custom_metadata,
@@ -254,7 +272,10 @@ def dataclasses(
         "init_fields": parsed_init_fields,
     }
     for def_name in cloudevent_defs:
-        extra_template_data[def_name] = cloudevent_model_data.copy()
+        if def_name not in extra_template_data:
+            extra_template_data[def_name] = cloudevent_model_data.copy()
+        else:
+            extra_template_data[def_name].update(cloudevent_model_data)
     for class_name, mixins in parsed_class_mixins.items():
         if class_name not in extra_template_data:
             extra_template_data[class_name] = {}

@@ -13,7 +13,7 @@
 @dataclass
 {%- endif %}
 {%- set bases = [] %}
-{%- if validation_mixin_class %}
+{%- if validation_mixin_class and not (skip_validation_mixin is defined and skip_validation_mixin) %}
     {%- set _ = bases.append(validation_mixin_class) %}
 {%- endif %}
 {%- if mixins is defined and mixins %}
