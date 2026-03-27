@@ -127,9 +127,29 @@ class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
         origin = get_origin(field_type)
         if origin is not None:
             args = get_args(field_type)
+            resolved_args = []
             if args:
-                return list(args)
-            return [origin]
+                # resoleve any TypeAliasType in args (e.g. `type MyAlias = str | int`)
+                # also resolve any ForwardRef in args (e.g. `type MyAlias = 'OtherClass'`)
+                # also unwrap any nested generics (e.g. `type MyAlias = list[str | int]`)
+                for arg in args:
+                    if isinstance(arg, TypeAliasType):
+                        arg = arg.__value__
+                    if isinstance(arg, (str, typing.ForwardRef)):
+                        name = arg if isinstance(arg, str) else arg.__forward_arg__
+                        module = sys.modules.get(cls.__module__)
+                        if module:
+                            resolved_arg = getattr(module, name, None)
+                            if resolved_arg is not None:
+                                arg = resolved_arg
+                    if get_origin(arg) is not None:
+                        # recursively resolve nested generics
+                        nested_args = get_args(arg)
+                        if nested_args:
+                            resolved_args.extend(nested_args)
+                    else:
+                        resolved_args.append(arg)
+            return resolved_args
 
         return [field_type]
 

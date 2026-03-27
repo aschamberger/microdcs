@@ -51,6 +51,29 @@ class PlainModel(DataClassMixin):
 type StrOrInt = str | int
 
 
+@dataclass
+class MyType1(DataClassMixin):
+    """Simple test class for union type alias testing."""
+
+    value: str = ""
+
+    class Config(BaseConfig):
+        code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
+
+
+@dataclass
+class MyType2(DataClassMixin):
+    """Simple test class for union type alias testing."""
+
+    value: int = 0
+
+    class Config(BaseConfig):
+        code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
+
+
+type MyUnionType = MyType1 | MyType2
+
+
 @dataclass(kw_only=True)
 class FieldTypesModel(DataClassMixin):
     plain_str: str = ""
@@ -61,6 +84,7 @@ class FieldTypesModel(DataClassMixin):
     dict_field: dict[str, int] = field(default_factory=dict)
     forward_ref: EventModel | None = None
     alias_field: StrOrInt = ""
+    union_type_with_none: MyUnionType | None = None
 
     class Config(BaseConfig):
         code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
@@ -296,3 +320,9 @@ class TestGetFieldTypes:
         result = model.get_field_types("alias_field")
         assert result is not None
         assert set(result) == {str, int}
+
+    def test_union_type_alias_with_none(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("union_type_with_none")
+        assert result is not None
+        assert set(result) == {MyType1, MyType2, type(None)}
