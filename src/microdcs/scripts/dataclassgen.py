@@ -13,6 +13,7 @@ from datamodel_code_generator.format import Formatter
 from datamodel_code_generator.model import get_data_model_types
 from datamodel_code_generator.model.base import ALL_MODEL
 from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
+from datamodel_code_generator.reference import snake_to_upper_camel
 from rich import print
 from rich.table import Table
 
@@ -35,6 +36,52 @@ def _schema_path_to_module_name(schema_file_path: pathlib.Path) -> str:
         module_name = f"{module_name}_"
 
     return module_name
+
+
+def _title_to_class_name(title: str) -> str:
+    clean = re.sub(r"[^0-9a-zA-Z]+", " ", title).strip()
+    name = "".join(word.capitalize() for word in clean.split())
+    if not name:
+        return "RootModel"
+    if name[0].isdigit():
+        name = f"Model{name}"
+    return name
+
+
+def _build_root_union(schema_data: dict[str, Any]) -> str | None:
+    refs = schema_data.get("oneOf") or schema_data.get("anyOf")
+    if not refs:
+        return None
+
+    title = schema_data.get("title", "")
+    description = schema_data.get("description", "")
+    defs = schema_data.get("$defs", {})
+
+    member_names = []
+    for ref in refs:
+        ref_path = ref.get("$ref", "")
+        if ref_path.startswith("#/$defs/"):
+            def_key = ref_path.split("/")[-1]
+            def_data = defs.get(def_key, {})
+            name = def_data.get("title", def_key)
+            member_names.append(snake_to_upper_camel(name))
+
+    if not member_names:
+        return None
+
+    root_name = _title_to_class_name(title) if title else "RootModel"
+
+    lines = [f"type {root_name} = ("]
+    lines.append(f"    {member_names[0]}")
+    for name in member_names[1:]:
+        lines.append(f"    | {name}")
+    lines.append(")")
+    if description:
+        lines.append('"""')
+        lines.append(description)
+        lines.append('"""')
+
+    return "\n".join(lines)
 
 
 @app.command()
@@ -108,6 +155,12 @@ def dataclasses(
         pathlib.Path,
         typer.Option(help="Add a custom template dir"),
     ] = pathlib.Path(__file__).parent / "template",
+    collapse_root_workaround: Annotated[
+        bool,
+        typer.Option(
+            help="Use skip_root_model instead of collapse_root_models to avoid collapsing union types, then manually re-create the root union type from oneOf/anyOf"
+        ),
+    ] = False,
 ):
     if schema_file.is_absolute():
         schema_file_path = schema_file
@@ -227,12 +280,17 @@ def dataclasses(
         use_schema_description=True,
         use_title_as_name=True,
         collapse_root_models=True,
+        skip_root_model=collapse_root_workaround,
         additional_imports=imports,
         base_class=base_class,
         extra_template_data=defaultdict(dict, extra_template_data),
     )
     parser = JsonSchemaParser(schema_file_path.read_text(), config=config)
     result = parser.parse()
+    if collapse_root_workaround:
+        root_union = _build_root_union(schema_data)
+        if root_union:
+            result += "\n\n" + root_union + "\n"
     out = models_path / f"{_schema_path_to_module_name(schema_file_path)}.py"
     f = out.open("w")
     f.write(f'# Auto-generated from "{schema_file}". Do not modify!\n')
