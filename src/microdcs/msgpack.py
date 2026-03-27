@@ -117,6 +117,15 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
             max_concurrent_requests=self._runtime_config.max_concurrent_requests,
         )
 
+    async def _outgoing_message_publisher(
+        self, server: MessagePackRpcServer, binding: "MessagePackProtocolBinding"
+    ) -> None:
+        while True:
+            cloudevent, intent = await binding.outgoing_queue.get()
+            notification_params = [cloudevent.to_dict(), intent.value]
+            await server.send_notification("cloudevent", notification_params)
+            binding.outgoing_queue.task_done()
+
     async def task(self) -> None:
         logger.info("Starting MessagePack handler task")
         server = self._server()
@@ -133,12 +142,20 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
                     raise
                 async with server:
                     backoff = 1  # Reset backoff after successful start
+                    # Start publisher tasks for outgoing events
+                    publisher_tasks: list[asyncio.Task] = []
+                    for binding in self._bindings:
+                        publisher_tasks.append(
+                            asyncio.create_task(
+                                self._outgoing_message_publisher(server, binding)
+                            )
+                        )
                     # Wait for either serve_forever to end or shutdown event
                     serve_task = asyncio.create_task(server.serve_forever())
                     shutdown_task = asyncio.create_task(self._shutdown_event.wait())
 
                     done, _ = await asyncio.wait(
-                        {serve_task, shutdown_task},
+                        {serve_task, shutdown_task} | set(publisher_tasks),
                         return_when=asyncio.FIRST_COMPLETED,
                     )
 
@@ -146,20 +163,45 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
                         # Graceful shutdown: close server to stop accepting
                         # new connections; __aexit__ handles wait_closed()
                         # to let in-flight RPCs drain
-                        logger.info(
-                            "Graceful shutdown: closing MessagePack server"
-                        )
+                        logger.info("Graceful shutdown: closing MessagePack server")
                         serve_task.cancel()
                         try:
                             await serve_task
                         except asyncio.CancelledError:
                             pass
+
+                        # Drain outgoing queues before cancelling publishers
+                        for binding in self._bindings:
+                            if not binding.outgoing_queue.empty():
+                                logger.info(
+                                    "Draining outgoing queue (%d items)",
+                                    binding.outgoing_queue.qsize(),
+                                )
+                                await binding.outgoing_queue.join()
+
+                        # Cancel publishers after queues are drained
+                        for task in publisher_tasks:
+                            if not task.done():
+                                task.cancel()
+                        await asyncio.gather(*publisher_tasks, return_exceptions=True)
+                        logger.info("All publishers completed")
+
                         break  # exit retry loop
                     else:
-                        # serve_forever ended unexpectedly
+                        # serve_forever or a publisher ended unexpectedly
                         shutdown_task.cancel()
-                        if not serve_task.cancelled() and serve_task.exception() is not None:
-                            raise serve_task.exception()  # pyright: ignore[reportGeneralTypeIssues]
+                        serve_task.cancel()
+                        for task in publisher_tasks:
+                            if not task.done():
+                                task.cancel()
+                        await asyncio.gather(
+                            serve_task,
+                            *publisher_tasks,
+                            return_exceptions=True,
+                        )
+                        for task in done:
+                            if not task.cancelled() and task.exception() is not None:
+                                raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
 
             except OSError as e:
                 # 1. Config Check: Check for fatal errors
@@ -274,16 +316,18 @@ class MessagePackProtocolBinding(ProtocolBinding["MessagePackHandler"]):
         processor: CloudEventProcessor,
         processing_config: ProcessingConfig,
         msgpack_config: MessagePackConfig,
+        outgoing_ce_type_filter: set[str] = set(),
     ):
         super().__init__(
-            processor, processing_config, msgpack_config.binding_outgoing_queue_size
+            processor,
+            processing_config,
+            msgpack_config.binding_outgoing_queue_size,
+            outgoing_ce_type_filter,
         )
         self._msgpack_config = msgpack_config
-        # not currently used, but can be implemented in the future for
-        # outgoing message publication and filtering, only RPC type NOTIFICATIONs
-        # are supported for outgoing messages, since REQUEST/RESPONSE semantics
-        # don't make sense for outgoing events
-        # processor.register_publish_handler(self.publish_handler)
+        # Only RPC type NOTIFICATIONs are supported for outgoing messages,
+        # since REQUEST/RESPONSE semantics don't make sense for outgoing events
+        processor.register_publish_handler(self.publish_handler)
 
 
 class MessagePackRpcServer:
@@ -304,6 +348,8 @@ class MessagePackRpcServer:
         self._server: asyncio.Server | None = None
         self._methods: dict[str, Callable] = {}
         self._dispatcher = dispatcher
+        # Track connected clients: maps peername → (writer, lock)
+        self._clients: dict[Any, tuple[asyncio.StreamWriter, asyncio.Lock]] = {}
 
     async def __aenter__(self) -> MessagePackRpcServer:
         """Starts the server when entering the 'async with' block."""
@@ -333,6 +379,19 @@ class MessagePackRpcServer:
         """Wrapper for the server's internal loop."""
         if self._server:
             await self._server.serve_forever()
+
+    async def send_notification(self, method: str, params: list) -> None:
+        """Send a NOTIFICATION frame to all connected clients."""
+        frame = msgpack.packb([RpcMessageType.NOTIFICATION, method, params])
+        if frame is None:
+            return
+        for addr, (writer, lock) in list(self._clients.items()):
+            try:
+                async with lock:
+                    writer.write(frame)
+                    await writer.drain()
+            except Exception as e:
+                logger.error("Failed to send notification to %s: %s", addr, e)
 
     async def _send_response(self, writer, lock, msg_id, error, result):
         """Sends the response safely using the Write Lock."""
@@ -386,6 +445,9 @@ class MessagePackRpcServer:
 
         # 1. Thread-safe Write Lock
         socket_lock = asyncio.Lock()
+
+        # Register client for outgoing notifications
+        self._clients[addr] = (writer, socket_lock)
 
         # 2. Backpressure Control
         semaphore = asyncio.Semaphore(self._max_concurrent_requests)
@@ -486,6 +548,7 @@ class MessagePackRpcServer:
                 await asyncio.gather(*active_tasks, return_exceptions=True)
 
             logger.info("Cleanup complete for %s", addr)
+            self._clients.pop(addr, None)
             writer.close()
             await writer.wait_closed()
 

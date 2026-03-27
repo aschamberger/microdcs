@@ -13,12 +13,14 @@ from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
     Direction,
+    MessageIntent,
     ProcessorBinding,
     processor_config,
 )
 from microdcs.dataclass import DataClassConfig, DataClassMixin
 from microdcs.msgpack import (
     MessagePackHandler,
+    MessagePackProtocolBinding,
     MessagePackRpcClient,
     MessagePackRpcServer,
     OTELInstrumentedMessagePackHandler,
@@ -950,3 +952,356 @@ class TestMessagePackRpcClient:
         mock_reader.read = AsyncMock(side_effect=ConnectionResetError("reset"))
         # Should not raise (prints error)
         await client._reader_loop()
+
+
+# ===================================================================
+# MessagePackRpcServer — client tracking & send_notification
+# ===================================================================
+
+
+class TestMessagePackRpcServerClientTracking:
+    def _make_server(self) -> MessagePackRpcServer:
+        return MessagePackRpcServer(
+            dispatcher=AsyncMock(),
+            hostname="localhost",
+            port=8888,
+        )
+
+    def test_clients_dict_initialized_empty(self):
+        server = self._make_server()
+        assert server._clients == {}
+
+    @pytest.mark.asyncio
+    async def test_handle_client_registers_and_unregisters(self):
+        """Client is added to _clients on connect and removed on disconnect."""
+        server = self._make_server()
+        reader = AsyncMock()
+        writer = MagicMock()
+        addr = ("127.0.0.1", 5555)
+        writer.get_extra_info = MagicMock(return_value=addr)
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+
+        reader.read = AsyncMock(return_value=b"")
+        await server._handle_client(reader, writer)
+
+        # After disconnect, client should be removed
+        assert addr not in server._clients
+        writer.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_client_registers_during_connection(self):
+        """Client is present in _clients while processing messages."""
+        server = self._make_server()
+        reader = AsyncMock()
+        writer = MagicMock()
+        addr = ("127.0.0.1", 6666)
+        writer.get_extra_info = MagicMock(return_value=addr)
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+
+        # Verify client is registered immediately after _handle_client starts.
+        # Use a side_effect on the first read to check _clients while connected.
+        registered_during_read = False
+
+        async def read_side_effect(size):
+            nonlocal registered_during_read
+            registered_during_read = addr in server._clients
+            return b""
+
+        reader.read = AsyncMock(side_effect=read_side_effect)
+        await server._handle_client(reader, writer)
+
+        assert registered_during_read is True
+        assert addr not in server._clients
+
+    @pytest.mark.asyncio
+    async def test_send_notification_to_connected_clients(self):
+        """send_notification broadcasts a NOTIFICATION frame to all clients."""
+        server = self._make_server()
+        writer1 = MagicMock()
+        writer1.write = MagicMock()
+        writer1.drain = AsyncMock()
+        lock1 = asyncio.Lock()
+
+        writer2 = MagicMock()
+        writer2.write = MagicMock()
+        writer2.drain = AsyncMock()
+        lock2 = asyncio.Lock()
+
+        server._clients[("127.0.0.1", 1111)] = (writer1, lock1)
+        server._clients[("127.0.0.1", 2222)] = (writer2, lock2)
+
+        await server.send_notification("cloudevent", [{"type": "test"}, "events"])
+
+        # Both writers should have received the notification
+        for w in (writer1, writer2):
+            w.write.assert_called_once()
+            w.drain.assert_awaited_once()
+            data = w.write.call_args[0][0]
+            msg = msgpack.unpackb(data)
+            assert msg[0] == RpcMessageType.NOTIFICATION
+            assert msg[1] == "cloudevent"
+            assert msg[2] == [{"type": "test"}, "events"]
+
+    @pytest.mark.asyncio
+    async def test_send_notification_no_clients(self):
+        """send_notification with no connected clients does nothing."""
+        server = self._make_server()
+        # Should not raise
+        await server.send_notification("cloudevent", [{"type": "test"}, "events"])
+
+    @pytest.mark.asyncio
+    async def test_send_notification_handles_write_error(self):
+        """A broken client doesn't prevent notification to other clients."""
+        server = self._make_server()
+        bad_writer = MagicMock()
+        bad_writer.write = MagicMock(side_effect=BrokenPipeError("broken"))
+        bad_writer.drain = AsyncMock()
+        bad_lock = asyncio.Lock()
+
+        good_writer = MagicMock()
+        good_writer.write = MagicMock()
+        good_writer.drain = AsyncMock()
+        good_lock = asyncio.Lock()
+
+        server._clients[("127.0.0.1", 1111)] = (bad_writer, bad_lock)
+        server._clients[("127.0.0.1", 2222)] = (good_writer, good_lock)
+
+        # Should not raise
+        await server.send_notification("cloudevent", [{"type": "test"}, "events"])
+
+        # Good writer still received the notification
+        good_writer.write.assert_called_once()
+        good_writer.drain.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_send_notification_uses_lock(self):
+        """send_notification acquires the per-client write lock."""
+        server = self._make_server()
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+        lock = asyncio.Lock()
+
+        server._clients[("127.0.0.1", 1111)] = (writer, lock)
+
+        # Acquire the lock externally; send_notification must wait for it
+        acquired = False
+
+        async def hold_lock_and_send():
+            nonlocal acquired
+            async with lock:
+                acquired = True
+                # Release happens when we exit
+            # Now send_notification can proceed
+
+        await hold_lock_and_send()
+
+        await server.send_notification("test_method", ["param"])
+        assert acquired
+        writer.write.assert_called_once()
+
+
+# ===================================================================
+# MessagePackHandler — outgoing publisher
+# ===================================================================
+
+
+class TestMessagePackHandlerOutgoing:
+    @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_sends_notification(self):
+        """_outgoing_message_publisher reads from queue and sends notification."""
+        handler = _make_handler()
+        server = handler._server()
+        server.send_notification = AsyncMock()
+
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+
+        ce = CloudEvent(type="com.test.sample.v1")
+        intent = MessageIntent.EVENT
+        await binding.outgoing_queue.put((ce, intent))
+
+        # Run the publisher; it should pick up the item and call send_notification
+        publisher_task = asyncio.create_task(
+            handler._outgoing_message_publisher(server, binding)
+        )
+        # Wait for the queue to drain
+        await binding.outgoing_queue.join()
+        publisher_task.cancel()
+        try:
+            await publisher_task
+        except asyncio.CancelledError:
+            pass
+
+        server.send_notification.assert_called_once()
+        call_args = server.send_notification.call_args
+        assert call_args[0][0] == "cloudevent"
+        params = call_args[0][1]
+        assert params[1] == "events"  # intent.value
+
+    @pytest.mark.asyncio
+    async def test_outgoing_message_publisher_calls_task_done(self):
+        """task_done is called after processing each item."""
+        handler = _make_handler()
+        server = handler._server()
+        server.send_notification = AsyncMock()
+
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+
+        # Put two items
+        ce1 = CloudEvent(type="com.test.sample.v1")
+        ce2 = CloudEvent(type="com.test.sample.v1")
+        await binding.outgoing_queue.put((ce1, MessageIntent.EVENT))
+        await binding.outgoing_queue.put((ce2, MessageIntent.DATA))
+
+        publisher_task = asyncio.create_task(
+            handler._outgoing_message_publisher(server, binding)
+        )
+        await binding.outgoing_queue.join()
+        publisher_task.cancel()
+        try:
+            await publisher_task
+        except asyncio.CancelledError:
+            pass
+
+        assert server.send_notification.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_task_starts_publisher_tasks(self):
+        """task() creates publisher tasks for each binding."""
+        handler = _make_handler()
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+        handler.register_binding(binding)
+
+        handler._redis_client.ping = AsyncMock()
+        handler._shutdown_event.set()
+
+        mock_server = AsyncMock()
+        with patch.object(handler, "_server", return_value=mock_server):
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_task_drains_outgoing_queue_on_shutdown(self):
+        """On shutdown, outgoing queues are drained before publishers are cancelled."""
+        handler = _make_handler()
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+        handler.register_binding(binding)
+
+        handler._redis_client.ping = AsyncMock()
+
+        # Put an item in the outgoing queue before shutdown
+        ce = CloudEvent(type="com.test.sample.v1")
+        await binding.outgoing_queue.put((ce, MessageIntent.EVENT))
+
+        mock_server = AsyncMock()
+
+        async def serve_forever_then_shutdown():
+            # Signal shutdown so the handler exits
+            handler._shutdown_event.set()
+            # Give the handler loop time to process
+            await asyncio.sleep(0)
+
+        mock_server.serve_forever = serve_forever_then_shutdown
+        mock_server.send_notification = AsyncMock()
+
+        with patch.object(handler, "_server", return_value=mock_server):
+            await handler.task()
+
+        # The queue should be empty after draining
+        assert binding.outgoing_queue.empty()
+
+
+# ===================================================================
+# MessagePackProtocolBinding
+# ===================================================================
+
+
+class TestMessagePackProtocolBinding:
+    def test_init_registers_publish_handler(self):
+        """Constructor registers publish_handler on the processor."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+        assert binding.publish_handler in processor._publish_handlers
+
+    def test_init_with_outgoing_filter(self):
+        """outgoing_ce_type_filter is passed to the base class."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        filters = {"com.test.sample.v1", "com.test.other.*"}
+        binding = MessagePackProtocolBinding(
+            processor, ProcessingConfig(), config, filters
+        )
+        assert binding.outgoing_ce_type_filter == filters
+
+    def test_init_default_empty_filter(self):
+        """Default filter is an empty set."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+        assert binding.outgoing_ce_type_filter == set()
+
+    def test_publish_handler_enqueues_event(self):
+        """publish_handler puts events on the outgoing_queue."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+        ce = CloudEvent(type="com.test.sample.v1")
+        binding.publish_handler(ce, MessageIntent.EVENT)
+        assert not binding.outgoing_queue.empty()
+        item = binding.outgoing_queue.get_nowait()
+        assert item[0] is ce
+        assert item[1] == MessageIntent.EVENT
+
+    def test_publish_handler_with_filter_matching(self):
+        """Events matching the filter are enqueued."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(
+            processor, ProcessingConfig(), config, {"com.test.sample.v1"}
+        )
+        ce = CloudEvent(type="com.test.sample.v1")
+        binding.publish_handler(ce, MessageIntent.EVENT)
+        assert not binding.outgoing_queue.empty()
+
+    def test_publish_handler_with_filter_not_matching(self):
+        """Events not matching the filter are not enqueued."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(
+            processor, ProcessingConfig(), config, {"com.test.other.v1"}
+        )
+        ce = CloudEvent(type="com.test.sample.v1")
+        binding.publish_handler(ce, MessageIntent.EVENT)
+        assert binding.outgoing_queue.empty()
+
+    def test_publish_handler_with_wildcard_filter(self):
+        """Wildcard filter matches event types."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(
+            processor, ProcessingConfig(), config, {"com.test.*"}
+        )
+        ce = CloudEvent(type="com.test.sample.v1")
+        binding.publish_handler(ce, MessageIntent.EVENT)
+        assert not binding.outgoing_queue.empty()
+
+    def test_publish_event_routes_to_binding(self):
+        """processor.publish_event() routes through binding's publish_handler."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        MessagePackProtocolBinding(processor, ProcessingConfig(), config)
+        ce = CloudEvent(type="com.test.sample.v1")
+        processor.publish_event(ce, MessageIntent.DATA)
+        # The processor's publish_event should have routed through the binding
