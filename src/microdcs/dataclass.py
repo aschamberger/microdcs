@@ -3,7 +3,17 @@ import fnmatch
 import inspect
 import sys
 import typing
-from typing import Any, Dict, Generic, Optional, Type, TypeVar, get_args, get_origin
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Optional,
+    Type,
+    TypeAliasType,
+    TypeVar,
+    get_args,
+    get_origin,
+)
 
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.msgpack import DataClassMessagePackMixin
@@ -91,6 +101,10 @@ class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
         field_type = hints.get(fieldname)
         if field_type is None:
             return None
+
+        # Unwrap TypeAliasType (e.g. `type MyAlias = str | int`)
+        if isinstance(field_type, TypeAliasType):
+            field_type = field_type.__value__
 
         # Fallback resolution if get_type_hints failed
         if isinstance(field_type, (str, typing.ForwardRef)):

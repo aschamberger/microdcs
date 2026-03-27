@@ -48,6 +48,8 @@ class PlainModel(DataClassMixin):
 
 # Models for get_field_types tests
 
+type StrOrInt = str | int
+
 
 @dataclass(kw_only=True)
 class FieldTypesModel(DataClassMixin):
@@ -58,6 +60,7 @@ class FieldTypesModel(DataClassMixin):
     list_field: list[str] = field(default_factory=list)
     dict_field: dict[str, int] = field(default_factory=dict)
     forward_ref: EventModel | None = None
+    alias_field: StrOrInt = ""
 
     class Config(BaseConfig):
         code_generation_options = ["ADD_SERIALIZATION_CONTEXT"]
@@ -287,3 +290,9 @@ class TestGetFieldTypes:
         for name in ("plain_str", "optional_str", "union_field", "list_field"):
             result = model.get_field_types(name)
             assert isinstance(result, list)
+
+    def test_type_alias(self):
+        model = FieldTypesModel()
+        result = model.get_field_types("alias_field")
+        assert result is not None
+        assert set(result) == {str, int}
