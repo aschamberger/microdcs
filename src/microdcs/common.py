@@ -745,9 +745,30 @@ class CloudEventProcessor(ABC):
         logger.debug("Request before callback: %s", request)
 
         kwargs = self._cloudevent_attributes_for_callback(request_cloudevent)
-        responses: list[DataClassMixin] | DataClassMixin | None = await callback(
-            request, **kwargs
-        )
+        call_callback = True
+        responses: list[DataClassMixin] | DataClassMixin | None = None
+        # a pre-callback can be defined to inspect the incoming cloudevent
+        # and decide whether the main callback should be called.
+        if hasattr(self, "__pre_outgoing_callback__") and callable(
+            getattr(self, "__pre_outgoing_callback__")
+        ):
+            call_callback, responses = await self.__pre_outgoing_callback__(  # type: ignore
+                request_cloudevent, **kwargs
+            )
+        # The pre-callback can decide if the main callback should be called.
+        # So it can intercept or act additionally before the main callback is executed.
+        if call_callback is True:
+            responses: list[DataClassMixin] | DataClassMixin | None = await callback(
+                request, **kwargs
+            )
+        # A post-callback can be defined to inspect or modify the responses from
+        # the main callback before they are returned.
+        if hasattr(self, "__post_outgoing_callback__") and callable(
+            getattr(self, "__post_outgoing_callback__")
+        ):
+            responses = await self.__post_outgoing_callback__(  # type: ignore
+                responses, request_cloudevent, **kwargs
+            )
 
         if responses is None:
             return None
