@@ -1,10 +1,9 @@
 # Auto-generated from "machinery_jobs.schema.json". Do not modify!
-from dataclasses import dataclass
-from enum import IntEnum
-from typing import Any
-
 from microdcs.dataclass import DataClassConfig, DataClassMixin, DataClassResponseMixin
 from microdcs.models.machinery_jobs_mixin import JobStateMixin
+from dataclasses import dataclass
+from typing import Any
+from enum import IntEnum
 
 
 @dataclass(kw_only=True)
@@ -97,12 +96,6 @@ class EUInformation(DataClassMixin):
         }
 
 
-type OutputInfoType = int
-"""
-https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/9.4
-"""
-
-
 @dataclass(kw_only=True)
 class OutputInformationDataType(DataClassMixin):
     """
@@ -113,7 +106,7 @@ class OutputInformationDataType(DataClassMixin):
     """
     ItemNumber defines an Identifier to identify the Type of the item (Material Identifier).
     """
-    output_info: OutputInfoType | None = None
+    output_info: int | None = None
     """
     Bitmask indicating which of the optional fields are used for identification. If none is selected, only ItemNumber is used. Each selected optional field shall provide a value.
     """

@@ -1,18 +1,13 @@
 # Auto-generated from "greetings.schema.json". Do not modify!
-from dataclasses import InitVar, dataclass, field
-from typing import Any
-
 from microdcs.dataclass import (
     DataClassConfig,
     DataClassResponseMixin,
     DataClassValidationMixin,
 )
 from microdcs.models.greetings_mixin import GreetingsDataClassMixin
-
-type Greetings = Any
-"""
-JSON Schema for HiddenObject, Hello and Bye types.
-"""
+from dataclasses import InitVar, field
+from typing import Any
+from dataclasses import dataclass
 
 
 @dataclass(kw_only=True)
@@ -59,3 +54,9 @@ class Bye(DataClassValidationMixin, GreetingsDataClassMixin):
         cloudevent_dataschema: str = (
             "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/bye"
         )
+
+
+type Greetings = Hello | Bye
+"""
+JSON Schema for HiddenObject, Hello and Bye types.
+"""

@@ -3,6 +3,14 @@
   "$id": "https://aschamberger.github.io/schemas/micro-dcs/greetings/",
   "title": "Greetings",
   "description": "JSON Schema for HiddenObject, Hello and Bye types.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Hello"
+    },
+    {
+      "$ref": "#/$defs/Bye"
+    }
+  ],
   "$defs": {
     "HiddenObject": {
       "type": "object",
