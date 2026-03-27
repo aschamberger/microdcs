@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 class GreetingsDataClassMixin(DataClassMixin):
     def __post_init__(
         self,
-        __request_object__: Greetings = None,
+        __request_object__: Greetings | None = None,
         __custom_metadata__: dict[str, Any] | None = None,
     ) -> None:
         super_post_init = getattr(super(), "__post_init__", None)
