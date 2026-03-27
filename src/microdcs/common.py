@@ -464,10 +464,10 @@ def scope_from_subject(func: Callable) -> Callable:
     as the ``scope`` keyword argument into the decorated function.  The
     original ``subject`` kwarg is consumed and not forwarded.
 
-    Intended to be stacked below :func:`incoming`::
+    Intended to be stacked above :func:`incoming`::
 
-        @incoming(MyCall)
         @scope_from_subject
+        @incoming(MyCall)
         async def process_my_call(self, method: MyCall, *, scope: str, ...) -> ...:
             ...
     """
@@ -500,25 +500,25 @@ def asset_id_from_subject(
     return value is passed instead of the raw string.  This is useful for
     parsing the segment into a typed object.
 
-    Intended to be stacked below :func:`incoming`.  Supports three call forms::
+    Intended to be stacked above :func:`incoming`.  Supports three call forms::
 
-        @incoming(MyCall)
         @asset_id_from_subject
+        @incoming(MyCall)
         async def process_my_call(self, method: MyCall, *, asset_id: str, ...) -> ...:
             ...
 
-        @incoming(MyCall)
         @asset_id_from_subject(name="custom_id")
+        @incoming(MyCall)
         async def process_my_call(self, method: MyCall, *, custom_id: str, ...) -> ...:
             ...
 
-        @incoming(MyCall)
         @asset_id_from_subject(factory=AssetId.from_string)
+        @incoming(MyCall)
         async def process_my_call(self, method: MyCall, *, asset_id: AssetId, ...) -> ...:
             ...
 
-        @incoming(MyCall)
         @asset_id_from_subject(name="asset", factory=AssetId.from_string)
+        @incoming(MyCall)
         async def process_my_call(self, method: MyCall, *, asset: AssetId, ...) -> ...:
             ...
     """

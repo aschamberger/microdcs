@@ -429,8 +429,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
     # ── Store / StoreAndStart handlers ───────────────────────────────────
 
-    @incoming(StoreCall)
     @scope_from_subject
+    @incoming(StoreCall)
     async def process_store(
         self,
         method: StoreCall,
@@ -443,8 +443,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(StoreAndStartCall)
     @scope_from_subject
+    @incoming(StoreAndStartCall)
     async def process_store_and_start(
         self,
         method: StoreAndStartCall,
@@ -459,8 +459,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
     # ── Existing-job transition handlers ─────────────────────────────────
 
-    @incoming(AbortCall)
     @scope_from_subject
+    @incoming(AbortCall)
     async def process_abort(
         self,
         method: AbortCall,
@@ -473,8 +473,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(CancelCall)
     @scope_from_subject
+    @incoming(CancelCall)
     async def process_cancel(
         self,
         method: CancelCall,
@@ -487,8 +487,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(ClearCall)
     @scope_from_subject
+    @incoming(ClearCall)
     async def process_clear(
         self,
         method: ClearCall,
@@ -501,8 +501,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(PauseCall)
     @scope_from_subject
+    @incoming(PauseCall)
     async def process_pause(
         self,
         method: PauseCall,
@@ -515,8 +515,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(ResumeCall)
     @scope_from_subject
+    @incoming(ResumeCall)
     async def process_resume(
         self,
         method: ResumeCall,
@@ -529,8 +529,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(RevokeStartCall)
     @scope_from_subject
+    @incoming(RevokeStartCall)
     async def process_revoke_start(
         self,
         method: RevokeStartCall,
@@ -543,8 +543,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(StartCall)
     @scope_from_subject
+    @incoming(StartCall)
     async def process_start(
         self,
         method: StartCall,
@@ -557,8 +557,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method, scope, correlationid, cloudevent_id
         )
 
-    @incoming(StopCall)
     @scope_from_subject
+    @incoming(StopCall)
     async def process_stop(
         self,
         method: StopCall,
@@ -573,8 +573,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
     # ── Update handler ───────────────────────────────────────────────────
 
-    @incoming(UpdateCall)
     @scope_from_subject
+    @incoming(UpdateCall)
     async def process_update(
         self,
         method: UpdateCall,
@@ -589,8 +589,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
     # ── Query handlers ───────────────────────────────────────────
 
-    @incoming(RequestJobResponseByJobOrderIDCall)
     @scope_from_subject
+    @incoming(RequestJobResponseByJobOrderIDCall)
     async def process_request_job_response_by_id(
         self,
         method: RequestJobResponseByJobOrderIDCall,
@@ -619,8 +619,8 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             return_status=MethodReturnStatus.NO_ERROR,
         )
 
-    @incoming(RequestJobResponseByJobOrderStateCall)
     @scope_from_subject
+    @incoming(RequestJobResponseByJobOrderStateCall)
     async def process_request_job_response_by_state(
         self,
         method: RequestJobResponseByJobOrderStateCall,
