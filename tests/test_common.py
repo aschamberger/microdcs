@@ -414,6 +414,11 @@ class ConcreteProcessor(CloudEventProcessor):
     ) -> list[CloudEvent] | CloudEvent | None:
         return None
 
+    async def trigger_outgoing_event(
+        self, **kwargs
+    ) -> list[CloudEvent] | CloudEvent | None:
+        return None
+
 
 class TestCloudEventProcessorRegistration:
     def test_register_callback_incoming(self):

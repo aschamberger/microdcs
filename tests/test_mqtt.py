@@ -59,6 +59,9 @@ class ConcreteProcessor(CloudEventProcessor):
     async def handle_cloudevent_expiration(self, cloudevent, timeout):
         return None
 
+    async def trigger_outgoing_event(self, **kwargs):
+        return None
+
 
 def _make_processor(**kwargs) -> ConcreteProcessor:
     cfg = ProcessingConfig()
@@ -247,6 +250,9 @@ class TestRegisterMQTTProcessor:
                 return None
 
             async def handle_cloudevent_expiration(self, cloudevent, timeout):
+                return None
+
+            async def trigger_outgoing_event(self, **kwargs):
                 return None
 
         proc = BareProcessor(

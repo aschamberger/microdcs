@@ -675,12 +675,28 @@ class CloudEventProcessor(ABC):
     async def process_response_cloudevent(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
+        """Handle a cloud event that is a response to a previously published event.
+        Can be used to handle responses from commands to react on the outcome
+        of the command (e.g. success, failure, or other status)."""
         pass
 
     @abstractmethod
     async def handle_cloudevent_expiration(
         self, cloudevent: CloudEvent, timeout: int
     ) -> list[CloudEvent] | CloudEvent | None:
+        """Handle a cloud event that has reached its expiry time or expiry interval.
+        Can be used to trigger retries, compensating actions, or cleanup tasks."""
+        pass
+
+    @abstractmethod
+    async def trigger_outgoing_event(
+        self, **kwargs
+    ) -> list[CloudEvent] | CloudEvent | None:
+        """Trigger an outgoing event with optional kwargs for the callback.
+        Supposed to be using the registered outgoing callbacks.
+        Callbacks registered with @outgoing can be triggered by calling
+        callback_outgoing() with the corresponding payload type and intent.
+        """
         pass
 
     def create_event(

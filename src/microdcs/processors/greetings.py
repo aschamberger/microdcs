@@ -10,7 +10,7 @@ from microdcs.common import (
     outgoing,
     processor_config,
 )
-from microdcs.models.greetings import Bye, Hello
+from microdcs.models.greetings import Bye, Greetings, Hello
 
 logger = logging.getLogger("processor.greetings")
 
@@ -86,4 +86,14 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
         self, cloudevent: CloudEvent, timeout: int
     ) -> list[CloudEvent] | CloudEvent | None:
         logger.info("Message expired: %s", cloudevent.id)
+        return None
+
+    async def trigger_outgoing_event(
+        self, *, event_type: type[Greetings], **kwargs
+    ) -> None:
+        logger.info("Triggering outgoing event: %s", event_type)
+        logger.debug("Triggering with kwargs: %s", kwargs)
+        logger.warning(
+            "Triggering outgoing events is currently not implemented in this processor!"
+        )
         return None
