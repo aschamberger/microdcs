@@ -13,7 +13,8 @@
 @dataclass
 {%- endif %}
 {%- set bases = [] %}
-{%- if validation_mixin_class and not (skip_validation_mixin is defined and skip_validation_mixin) %}
+{%- set _is_child_class = (model_base_class is defined and model_base_class and base_class and base_class != model_base_class) %}
+{%- if validation_mixin_class and not _is_child_class and not (skip_validation_mixin is defined and skip_validation_mixin) %}
     {%- set _ = bases.append(validation_mixin_class) %}
 {%- endif %}
 {%- if mixins is defined and mixins %}
@@ -81,6 +82,8 @@ class {{ class_name }}:
     {{ field.name }}: {{ field.type_hint }} = field({{ _field_args | join(', ') }})
     {%- elif field.field %}
     {{ field.name }}: {{ field.type_hint }} = {{ field.field }}
+    {%- if 'Literal[' in field.type_hint %}  # type: ignore[assignment]
+    {%- endif -%}
     {%- else %}
     {{ field.name }}: {{ field.type_hint }}
     {%- if not (field.required or (field.represented_default == 'None' and field.strip_default_none))
@@ -101,6 +104,7 @@ class {{ class_name }}:
 {% endif %}
     {%- endif %}
 {%- endfor %}
+{%- if not _is_child_class and not (skip_validation_mixin is defined and skip_validation_mixin) %}
 
     # mashumaro config class
     {%- if config_base_class %}
@@ -175,3 +179,4 @@ class {{ class_name }}:
     {%- if not _has_config_body %}
         pass
     {%- endif %}
+{%- endif %}

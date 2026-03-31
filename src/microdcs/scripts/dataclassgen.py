@@ -202,6 +202,18 @@ def dataclasses(
             help="Use skip_root_model instead of collapse_root_models to avoid collapsing union types, then manually re-create the root union type from oneOf/anyOf"
         ),
     ] = False,
+    reuse_model: Annotated[
+        bool,
+        typer.Option(
+            help="Re-use models that have the same set of fields instead of generating duplicates"
+        ),
+    ] = False,
+    collapse_reuse_models: Annotated[
+        bool,
+        typer.Option(
+            help="When reuse_model is enabled, collapse classes that were deduplicated into their parent (removes *1 suffixed classes)"
+        ),
+    ] = False,
 ):
     if schema_file.is_absolute():
         schema_file_path = schema_file
@@ -293,11 +305,24 @@ def dataclasses(
             "validation_mixin_class": "DataClassValidationMixin"
             if validation
             else None,
+            "model_base_class": base_class.split(".")[-1] if base_class else None,
         }
     }
-    # Mark child classes so the template skips the validation mixin
+    # Mark child classes so the template skips the validation mixin.
+    # Also cover numeric-suffixed variants (e.g. Foo1, Foo2) and
+    # Field-prefixed variants (e.g. FieldFoo, FieldFoo1) that
+    # collapse_reuse_models or reuse_model may generate.
     for name in child_defs:
         extra_template_data[name] = {"skip_validation_mixin": True}
+        for suffix_num in range(1, 10):
+            extra_template_data[f"{name}{suffix_num}"] = {
+                "skip_validation_mixin": True
+            }
+        extra_template_data[f"Field{name}"] = {"skip_validation_mixin": True}
+        for suffix_num in range(1, 10):
+            extra_template_data[f"Field{name}{suffix_num}"] = {
+                "skip_validation_mixin": True
+            }
     cloudevent_model_data = {
         "request_object": request_object,
         "custom_metadata": custom_metadata,
@@ -335,6 +360,8 @@ def dataclasses(
         use_title_as_name=True,
         collapse_root_models=True,
         skip_root_model=collapse_root_workaround,
+        reuse_model=reuse_model,
+        collapse_reuse_models=collapse_reuse_models,
         additional_imports=imports,
         base_class=base_class,
         extra_template_data=defaultdict(dict, extra_template_data),
