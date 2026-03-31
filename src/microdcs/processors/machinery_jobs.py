@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as redis
@@ -55,10 +56,29 @@ from microdcs.models.machinery_jobs_ext import (
     MethodReturnStatus,
 )
 from microdcs.redis import (
+    EquipmentListDAO,
     JobOrderAndStateDAO,
     JobResponseDAO,
+    MaterialClassListDAO,
+    MaterialDefinitionListDAO,
+    PersonnelListDAO,
+    PhysicalAssetListDAO,
     RedisKeySchema,
+    WorkMasterDAO,
 )
+
+
+@dataclass(kw_only=True)
+class JobAcceptanceConfig:
+    check_equipment_id: bool = True
+    check_material_class_id: bool = True
+    check_material_definition_id: bool = True
+    check_personnel_id: bool = True
+    check_physical_asset_id: bool = True
+    check_work_master: bool = True
+    check_max_downloadable_job_orders: bool = True
+    max_downloadable_job_orders: int = 0
+
 
 logger = logging.getLogger("processor.machinery_jobs")
 
@@ -87,6 +107,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         config_identifier: str,
         redis_connection_pool: redis.ConnectionPool,
         redis_key_schema: RedisKeySchema,
+        job_acceptance_config: JobAcceptanceConfig | None = None,
     ):
         super().__init__(instance_id, runtime_config, config_identifier)
         self._topic_prefix = runtime_config.get_topic_prefix_for_identifier(
@@ -103,6 +124,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             connection_pool=redis_connection_pool
         )
         self._redis_key_schema: RedisKeySchema = redis_key_schema
+        self._job_acceptance_config = job_acceptance_config or JobAcceptanceConfig()
         self._joborder_and_state_dao: JobOrderAndStateDAO = JobOrderAndStateDAO(
             self._redis_client,
             redis_key_schema,
@@ -111,6 +133,22 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             self._redis_client,
             redis_key_schema,
         )
+        self._equipment_list_dao = EquipmentListDAO(
+            self._redis_client, redis_key_schema
+        )
+        self._material_class_list_dao = MaterialClassListDAO(
+            self._redis_client, redis_key_schema
+        )
+        self._material_definition_list_dao = MaterialDefinitionListDAO(
+            self._redis_client, redis_key_schema
+        )
+        self._personnel_list_dao = PersonnelListDAO(
+            self._redis_client, redis_key_schema
+        )
+        self._physical_asset_list_dao = PhysicalAssetListDAO(
+            self._redis_client, redis_key_schema
+        )
+        self._work_master_dao = WorkMasterDAO(self._redis_client, redis_key_schema)
         self._state_machine = HierarchicalGraphMachine(
             model=None,
             states=JobOrderControlExt.Config.opcua_state_machine_states,
@@ -148,7 +186,94 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
     async def is_job_acceptable(
         self, job_order: ISA95JobOrderDataType, scope: str
     ) -> bool:
-        # TODO implement logic to check if job is acceptable (e.g. check if work master is available, ...)
+        cfg = self._job_acceptance_config
+
+        # Check max downloadable job orders
+        if (
+            cfg.check_max_downloadable_job_orders
+            and cfg.max_downloadable_job_orders > 0
+        ):
+            current_jobs = await self._joborder_and_state_dao.list(scope)
+            if len(current_jobs) >= cfg.max_downloadable_job_orders:
+                logger.warning(
+                    "Max downloadable job orders reached (%d) for scope %s",
+                    cfg.max_downloadable_job_orders,
+                    scope,
+                )
+                return False
+
+        # Check equipment IDs
+        if cfg.check_equipment_id and job_order.equipment_requirements:
+            for eq in job_order.equipment_requirements:
+                if eq.id and not await self._equipment_list_dao.is_member(eq.id, scope):
+                    logger.warning(
+                        "Equipment ID %s not allowed for scope %s", eq.id, scope
+                    )
+                    return False
+
+        # Check material class IDs
+        if cfg.check_material_class_id and job_order.material_requirements:
+            for mat in job_order.material_requirements:
+                if (
+                    mat.material_class_id
+                    and not await self._material_class_list_dao.is_member(
+                        mat.material_class_id, scope
+                    )
+                ):
+                    logger.warning(
+                        "Material class ID %s not allowed for scope %s",
+                        mat.material_class_id,
+                        scope,
+                    )
+                    return False
+
+        # Check material definition IDs
+        if cfg.check_material_definition_id and job_order.material_requirements:
+            for mat in job_order.material_requirements:
+                if (
+                    mat.material_definition_id
+                    and not await self._material_definition_list_dao.is_member(
+                        mat.material_definition_id, scope
+                    )
+                ):
+                    logger.warning(
+                        "Material definition ID %s not allowed for scope %s",
+                        mat.material_definition_id,
+                        scope,
+                    )
+                    return False
+
+        # Check personnel IDs
+        if cfg.check_personnel_id and job_order.personnel_requirements:
+            for pers in job_order.personnel_requirements:
+                if pers.id and not await self._personnel_list_dao.is_member(
+                    pers.id, scope
+                ):
+                    logger.warning(
+                        "Personnel ID %s not allowed for scope %s", pers.id, scope
+                    )
+                    return False
+
+        # Check physical asset IDs
+        if cfg.check_physical_asset_id and job_order.physical_asset_requirements:
+            for pa in job_order.physical_asset_requirements:
+                if pa.id and not await self._physical_asset_list_dao.is_member(
+                    pa.id, scope
+                ):
+                    logger.warning(
+                        "Physical asset ID %s not allowed for scope %s", pa.id, scope
+                    )
+                    return False
+
+        # Check work master IDs
+        if cfg.check_work_master and job_order.work_master_id:
+            for wm in job_order.work_master_id:
+                if wm.id and not await self._work_master_dao.is_member(wm.id, scope):
+                    logger.warning(
+                        "Work master ID %s not allowed for scope %s", wm.id, scope
+                    )
+                    return False
+
         return True
 
     def build_job_state_object(self, state: str) -> list[ISA95StateDataType]:
@@ -367,6 +492,11 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
 
         if method.job_order is None or method.job_order.job_order_id is None:
             return method.response(return_status=MethodReturnStatus.INVALID_REQUEST)
+
+        if not await self.is_job_acceptable(method.job_order, scope):
+            return method.response(
+                return_status=MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
+            )
 
         job_order_and_state = await self._joborder_and_state_dao.retrieve(
             method.job_order.job_order_id

@@ -21,11 +21,15 @@ from microdcs.models.machinery_jobs import (
     ClearCall,
     ClearResponse,
     EUInformation,
+    ISA95EquipmentDataType,
     ISA95JobOrderAndStateDataType,
     ISA95JobOrderDataType,
     ISA95MaterialDataType,
+    ISA95PersonnelDataType,
+    ISA95PhysicalAssetDataType,
     ISA95PropertyDataType,
     ISA95StateDataType,
+    ISA95WorkMasterDataType,
     LocalizedText,
     OutputInformationDataType,
     PauseCall,
@@ -50,7 +54,10 @@ from microdcs.models.machinery_jobs import (
     UpdateResponse,
 )
 from microdcs.models.machinery_jobs_ext import JobOrderControlExt, MethodReturnStatus
-from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
+from microdcs.processors.machinery_jobs import (
+    JobAcceptanceConfig,
+    MachineryJobsCloudEventProcessor,
+)
 from microdcs.redis import RedisKeySchema
 
 # ===================================================================
@@ -857,6 +864,24 @@ class TestProcessUpdate:
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
+    async def test_update_unacceptable_job_order(self, processor):
+        _mock_dao_save(processor)
+        stored = _stored_job_order_and_state("NotAllowedToStart_Ready")
+        _mock_dao_retrieve(processor, stored)
+
+        with patch.object(
+            processor, "is_job_acceptable", new_callable=AsyncMock, return_value=False
+        ):
+            updated_job = _make_woodworking_job_order()
+            method = UpdateCall(job_order=updated_job)
+
+            result = await processor.process_update(method, scope=SCOPE)
+
+        assert isinstance(result, UpdateResponse)
+        assert result.return_status == MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
+        processor._joborder_and_state_dao.save.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_update_none_job_order(self, processor):
         method = UpdateCall(job_order=None)
 
@@ -1239,3 +1264,211 @@ class TestFullB3Lifecycle:
         cancel = CancelCall(job_order_id="12345")
         result = await processor.process_cancel(cancel, scope=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
+
+
+# ===================================================================
+# is_job_acceptable tests
+# ===================================================================
+
+
+def _make_job_order_with_all_requirements() -> ISA95JobOrderDataType:
+    return ISA95JobOrderDataType(
+        job_order_id="accept-test-1",
+        equipment_requirements=[
+            ISA95EquipmentDataType(id="EQ-001"),
+            ISA95EquipmentDataType(id="EQ-002"),
+        ],
+        material_requirements=[
+            ISA95MaterialDataType(material_class_id="MC-001"),
+            ISA95MaterialDataType(material_definition_id="MD-001"),
+        ],
+        personnel_requirements=[
+            ISA95PersonnelDataType(id="PERS-001"),
+        ],
+        physical_asset_requirements=[
+            ISA95PhysicalAssetDataType(id="PA-001"),
+        ],
+        work_master_id=[
+            ISA95WorkMasterDataType(id="WM-001"),
+        ],
+    )
+
+
+class TestIsJobAcceptable:
+    @pytest.fixture
+    def acceptance_processor(self, mock_redis_pool, redis_key_schema):
+        cfg = JobAcceptanceConfig(max_downloadable_job_orders=5)
+        proc = MachineryJobsCloudEventProcessor(
+            instance_id="test-processor",
+            runtime_config=_processing_config(),
+            config_identifier="machinery_jobs",
+            redis_connection_pool=mock_redis_pool,
+            redis_key_schema=redis_key_schema,
+            job_acceptance_config=cfg,
+        )
+        # Mock all list DAOs
+        proc._joborder_and_state_dao.list = AsyncMock(return_value=[])
+        proc._equipment_list_dao.is_member = AsyncMock(return_value=True)
+        proc._material_class_list_dao.is_member = AsyncMock(return_value=True)
+        proc._material_definition_list_dao.is_member = AsyncMock(return_value=True)
+        proc._personnel_list_dao.is_member = AsyncMock(return_value=True)
+        proc._physical_asset_list_dao.is_member = AsyncMock(return_value=True)
+        proc._work_master_dao.is_member = AsyncMock(return_value=True)
+        return proc
+
+    @pytest.mark.asyncio
+    async def test_all_checks_pass(self, acceptance_processor):
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_max_downloadable_exceeded(self, acceptance_processor):
+        acceptance_processor._joborder_and_state_dao.list = AsyncMock(
+            return_value=["j1", "j2", "j3", "j4", "j5"]
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_max_downloadable_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_max_downloadable_job_orders = False
+        acceptance_processor._joborder_and_state_dao.list = AsyncMock(
+            return_value=["j1", "j2", "j3", "j4", "j5"]
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_max_downloadable_zero_means_unlimited(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.max_downloadable_job_orders = 0
+        acceptance_processor._joborder_and_state_dao.list = AsyncMock(
+            return_value=["j1", "j2", "j3"]
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_equipment_id_not_allowed(self, acceptance_processor):
+        acceptance_processor._equipment_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_equipment_check_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_equipment_id = False
+        acceptance_processor._equipment_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_material_class_not_allowed(self, acceptance_processor):
+        acceptance_processor._material_class_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_material_class_check_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_material_class_id = False
+        acceptance_processor._material_class_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_material_definition_not_allowed(self, acceptance_processor):
+        acceptance_processor._material_definition_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_material_definition_check_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_material_definition_id = False
+        acceptance_processor._material_definition_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_personnel_not_allowed(self, acceptance_processor):
+        acceptance_processor._personnel_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_personnel_check_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_personnel_id = False
+        acceptance_processor._personnel_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_physical_asset_not_allowed(self, acceptance_processor):
+        acceptance_processor._physical_asset_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_physical_asset_check_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_physical_asset_id = False
+        acceptance_processor._physical_asset_list_dao.is_member = AsyncMock(
+            return_value=False
+        )
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_work_master_not_allowed(self, acceptance_processor):
+        acceptance_processor._work_master_dao.is_member = AsyncMock(return_value=False)
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is False
+
+    @pytest.mark.asyncio
+    async def test_work_master_check_disabled(self, acceptance_processor):
+        acceptance_processor._job_acceptance_config.check_work_master = False
+        acceptance_processor._work_master_dao.is_member = AsyncMock(return_value=False)
+        job_order = _make_job_order_with_all_requirements()
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_empty_requirements_passes(self, acceptance_processor):
+        job_order = ISA95JobOrderDataType(job_order_id="empty-job")
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+
+    @pytest.mark.asyncio
+    async def test_none_ids_skipped(self, acceptance_processor):
+        job_order = ISA95JobOrderDataType(
+            job_order_id="none-ids",
+            equipment_requirements=[ISA95EquipmentDataType(id=None)],
+            personnel_requirements=[ISA95PersonnelDataType(id=None)],
+            physical_asset_requirements=[ISA95PhysicalAssetDataType(id=None)],
+            work_master_id=[ISA95WorkMasterDataType(id=None)],
+            material_requirements=[
+                ISA95MaterialDataType(
+                    material_class_id=None, material_definition_id=None
+                ),
+            ],
+        )
+        assert await acceptance_processor.is_job_acceptable(job_order, SCOPE) is True
+        # is_member should not have been called since all IDs are None
+        acceptance_processor._equipment_list_dao.is_member.assert_not_called()
+        acceptance_processor._personnel_list_dao.is_member.assert_not_called()
+        acceptance_processor._physical_asset_list_dao.is_member.assert_not_called()
+        acceptance_processor._work_master_dao.is_member.assert_not_called()
+        acceptance_processor._material_class_list_dao.is_member.assert_not_called()
+        acceptance_processor._material_definition_list_dao.is_member.assert_not_called()

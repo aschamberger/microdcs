@@ -674,6 +674,10 @@ class WorkMasterDAO:
         key = self.key_schema.workmaster_list_key(scope)
         return list(await self.redis.smembers(key))  # type: ignore[reportGeneralTypeIssues]
 
+    async def is_member(self, work_master_id: str, scope: str) -> bool:
+        key = self.key_schema.workmaster_list_key(scope)
+        return bool(await self.redis.sismember(key, work_master_id))  # type: ignore[reportGeneralTypeIssues]
+
 
 class EquipmentListDAO:
     """
@@ -704,6 +708,10 @@ class EquipmentListDAO:
         """
         list_key = self.key_schema.equipment_list_key(scope)
         await self.redis.srem(list_key, equipment_id)  # type: ignore[reportGeneralTypeIssues]
+
+    async def is_member(self, equipment_id: str, scope: str) -> bool:
+        key = self.key_schema.equipment_list_key(scope)
+        return bool(await self.redis.sismember(key, equipment_id))  # type: ignore[reportGeneralTypeIssues]
 
 
 class MaterialClassListDAO:
@@ -736,6 +744,10 @@ class MaterialClassListDAO:
         list_key = self.key_schema.materialclass_list_key(scope)
         await self.redis.srem(list_key, material_class_id)  # type: ignore[reportGeneralTypeIssues]
 
+    async def is_member(self, material_class_id: str, scope: str) -> bool:
+        key = self.key_schema.materialclass_list_key(scope)
+        return bool(await self.redis.sismember(key, material_class_id))  # type: ignore[reportGeneralTypeIssues]
+
 
 class PersonnelListDAO:
     """
@@ -766,6 +778,10 @@ class PersonnelListDAO:
         """
         list_key = self.key_schema.personnel_list_key(scope)
         await self.redis.srem(list_key, personnel_id)  # type: ignore[reportGeneralTypeIssues]
+
+    async def is_member(self, personnel_id: str, scope: str) -> bool:
+        key = self.key_schema.personnel_list_key(scope)
+        return bool(await self.redis.sismember(key, personnel_id))  # type: ignore[reportGeneralTypeIssues]
 
 
 class PhysicalAssetListDAO:
@@ -798,6 +814,10 @@ class PhysicalAssetListDAO:
         list_key = self.key_schema.physicalasset_list_key(scope)
         await self.redis.srem(list_key, physical_asset_id)  # type: ignore[reportGeneralTypeIssues]
 
+    async def is_member(self, physical_asset_id: str, scope: str) -> bool:
+        key = self.key_schema.physicalasset_list_key(scope)
+        return bool(await self.redis.sismember(key, physical_asset_id))  # type: ignore[reportGeneralTypeIssues]
+
 
 class MaterialDefinitionListDAO:
     """
@@ -828,3 +848,7 @@ class MaterialDefinitionListDAO:
         """
         list_key = self.key_schema.materialdefinition_list_key(scope)
         await self.redis.srem(list_key, material_definition_id)  # type: ignore[reportGeneralTypeIssues]
+
+    async def is_member(self, material_definition_id: str, scope: str) -> bool:
+        key = self.key_schema.materialdefinition_list_key(scope)
+        return bool(await self.redis.sismember(key, material_definition_id))  # type: ignore[reportGeneralTypeIssues]

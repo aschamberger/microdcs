@@ -10,7 +10,10 @@ from microdcs.msgpack import (
     OTELInstrumentedMessagePackHandler,
 )
 from microdcs.processors.greetings import GreetingsCloudEventProcessor
-from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
+from microdcs.processors.machinery_jobs import (
+    JobAcceptanceConfig,
+    MachineryJobsCloudEventProcessor,
+)
 
 logger = logging.getLogger("app.main")
 
@@ -76,12 +79,14 @@ microdcs.register_protocol_binding(
 )
 
 # Create a single protocol-agnostic machinery-jobs processor
+job_acceptance_config = JobAcceptanceConfig()
 machinery_jobs_processor = MachineryJobsCloudEventProcessor(
     microdcs.runtime_config.instance_id,
     microdcs.runtime_config.processing,
     "machinery-jobs",
     microdcs.redis_connection_pool,
     microdcs.redis_key_schema,
+    job_acceptance_config,
 )
 
 # Register with MQTT handler
