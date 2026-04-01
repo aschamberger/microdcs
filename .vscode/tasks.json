@@ -27,15 +27,17 @@
     },
     "presentation": {
         "reveal": "always",
-        "panel": "new"
+        "panel": "dedicated"
     },
     "tasks": [
         {
             "label": "Run App (plain)",
             "type": "shell",
-            "command": "${command:python.interpreterPath} -m app",
+            "command": "uv run python -m app",
             "group": "test",
-            "problemMatcher": [],
+            "dependsOn": ["Start local MQTT broker", "Start local redis server"],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
         },
         {
             "label": "Run App (instrumented)",
@@ -57,35 +59,63 @@
                 }
             },
             "group": "test",
-            "problemMatcher": [],
+            "dependsOn": ["Start local MQTT broker", "Start local redis server"],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
         },
         {
             "label": "Start local MQTT broker",
             "type": "shell",
-            "command": "docker run --rm -it --name mosquitto -p 1883:1883 eclipse-mosquitto mosquitto -c /mosquitto-no-auth.conf",
+            "command": "docker start mosquitto 2>/dev/null || docker run --rm -it --name mosquitto -p 1883:1883 eclipse-mosquitto mosquitto -c /mosquitto-no-auth.conf",
             "group": "test",
-            "problemMatcher": [],
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": ".",
+                    "file": 1,
+                    "location": 2,
+                    "message": 3
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".",
+                    "endsPattern": "running"
+                }
+            }
         },
         {
             "label": "Start local redis server",
             "type": "shell",
-            "command": "docker run --rm -it --name redis -p 6379:6379 redis:latest",
+            "command": "docker start redis 2>/dev/null || docker run --rm -it --name redis -p 6379:6379 redis:latest",
             "group": "test",
-            "problemMatcher": [],
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": ".",
+                    "file": 1,
+                    "location": 2,
+                    "message": 3
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".",
+                    "endsPattern": "Ready to accept connections"
+                }
+            }
         },
         {
             "label": "MQTT broker port forwarding",
             "type": "shell",
             "command": "kubectl port-forward --namespace azure-iot-operations pod/aio-broker-frontend-0 19884 19884",
             "group": "test",
-            "problemMatcher": [],
+            "problemMatcher": []
         },
         {
             "label": "App deployment",
             "type": "shell",
             "command": "kubectl apply -f ./deploy/k8s.yaml",
             "group": "test",
-            "problemMatcher": [],
+            "problemMatcher": []
         },
         {
             "label": "Line count stats (microdcs,app)",
@@ -96,10 +126,10 @@
                     "env": {
                         "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
                     }
-                },
+                }
             },
             "group": "none",
-            "problemMatcher": [],
+            "problemMatcher": []
         },
         {
             "label": "Line count stats (other)",
@@ -110,17 +140,17 @@
                     "env": {
                         "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
                     }
-                },
+                }
             },
             "group": "none",
-            "problemMatcher": [],
+            "problemMatcher": []
         },
         {
             "label": "Run test coverage",
             "type": "shell",
             "command": "${command:python.interpreterPath} -m pytest --cov=microdcs --cov-report=term-missing tests/",
             "group": "test",
-            "problemMatcher": [],
-        },
+            "problemMatcher": []
+        }
     ]
 }
