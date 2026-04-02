@@ -58,7 +58,7 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
     def _client(self) -> aiomqtt.Client:
         properties = None
         if self._runtime_config.sat_token_path.exists():
-            with open(self._runtime_config.sat_token_path, "r") as f:
+            with open(self._runtime_config.sat_token_path, "rb") as f:
                 sat_token = f.read()
                 properties = Properties(PacketTypes.CONNECT)
                 properties.AuthenticationMethod = "K8S-SAT"
