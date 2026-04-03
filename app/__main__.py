@@ -108,7 +108,8 @@ microdcs.register_protocol_binding(
 )
 
 # Add additional task to MicroDCS main task group
-# microdcs.add_additional_task(additional_task())
+# additional_task = MyAdditionalTask()
+# microdcs.add_additional_task(additional_task)
 
 # Run MicroDCS main application logic
 loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None

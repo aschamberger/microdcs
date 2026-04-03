@@ -1,10 +1,14 @@
 import logging
-from typing import Coroutine
 
 import redis.asyncio as redis
 
 from microdcs import RuntimeConfig, SystemEventTaskGroup
-from microdcs.common import CloudEventProcessor, ProtocolBinding, ProtocolHandler
+from microdcs.common import (
+    AdditionalTask,
+    CloudEventProcessor,
+    ProtocolBinding,
+    ProtocolHandler,
+)
 from microdcs.redis import RedisKeySchema
 
 logger = logging.getLogger("app.main")
@@ -30,7 +34,7 @@ class MicroDCS:
         ] = {}
         self._handler_bindings: dict[type[ProtocolHandler], set[ProtocolBinding]] = {}
         self._processors: set[CloudEventProcessor] = set()
-        self._additional_tasks: set[Coroutine] = set()
+        self._additional_tasks: set[AdditionalTask] = set()
 
     def register_protocol_handler(
         self, handler: ProtocolHandler, instrumented_handler: ProtocolHandler
@@ -51,7 +55,7 @@ class MicroDCS:
         self._handler_bindings[protocol_handler_cls].add(binding)
         self._processors.add(binding.processor)
 
-    def add_additional_task(self, task: Coroutine):
+    def add_additional_task(self, task: AdditionalTask):
         self._additional_tasks.add(task)
 
     async def main(self):
@@ -86,8 +90,9 @@ class MicroDCS:
                     handler_to_use.register_binding(binding)
                 task_group.create_task(handler_to_use.task())
 
-                for task in self._additional_tasks:
-                    task_group.create_task(task)
+            for task in self._additional_tasks:
+                task.register_shutdown_event(task_group.shutdown_event)
+                task_group.create_task(task.task())
 
             # Post start every registered processor
             for processor in self._processors:

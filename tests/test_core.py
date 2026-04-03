@@ -61,6 +61,14 @@ def _register_mock_handler_and_binding(dcs: MicroDCS):
     return mock_handler, mock_otel_handler, mock_binding, mock_proc
 
 
+def _create_mock_additional_task() -> MagicMock:
+    """Create a mock AdditionalTask instance."""
+    mock_task = MagicMock()
+    mock_task.task = AsyncMock()
+    mock_task.register_shutdown_event = MagicMock()
+    return mock_task
+
+
 class TestMain:
     """Tests for MicroDCS.main() coroutine."""
 
@@ -112,3 +120,21 @@ class TestMain:
             assert mock_tg.create_task.call_count >= 1
 
             dcs.redis_connection_pool.aclose.assert_awaited_once()  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_main_runs_additional_tasks_with_shutdown_event(self):
+        """main() registers shutdown event and creates task for additional tasks."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _register_mock_handler_and_binding(dcs)
+        mock_task = _create_mock_additional_task()
+        dcs._additional_tasks.add(mock_task)
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            mock_tg = _setup_task_group_mock(mock_tg_cls)
+
+            await dcs.main()
+
+            mock_task.register_shutdown_event.assert_called_once_with(
+                mock_tg.shutdown_event
+            )
+            assert mock_tg.create_task.call_count >= 2  # handler + additional task

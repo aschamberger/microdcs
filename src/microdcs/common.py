@@ -854,6 +854,35 @@ class CloudEventProcessor(ABC):
         return response_cloudevents
 
 
+class AdditionalTask(ABC):
+    """Abstract base class for additional tasks that run alongside protocol handlers."""
+
+    def __init__(self):
+        self._shutdown_event: asyncio.Event = asyncio.Event()
+
+    def register_shutdown_event(self, event: asyncio.Event) -> None:
+        self._shutdown_event = event
+
+    @abstractmethod
+    async def task(self) -> None:
+        """Long-running task entry point, called by the main task group.
+
+        Implementations should monitor ``self._shutdown_event`` to exit
+        gracefully when the application is shutting down::
+
+            async def task(self) -> None:
+                while not self._shutdown_event.is_set():
+                    # do work ...
+                    try:
+                        await asyncio.wait_for(
+                            self._shutdown_event.wait(), timeout=interval
+                        )
+                    except asyncio.TimeoutError:
+                        pass  # timeout expired, loop continues
+        """
+        pass
+
+
 PB = TypeVar("PB", bound="ProtocolBinding")
 
 
