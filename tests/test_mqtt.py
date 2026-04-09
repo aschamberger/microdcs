@@ -1094,6 +1094,282 @@ class TestMQTTHandler:
                 await handler.task()
 
 
+class TestMQTTHandlerShutdown:
+    """Tests for the 5-phase graceful shutdown sequence in MQTTHandler.task()."""
+
+    def _setup_handler_for_shutdown(self):
+        """Create a handler with mocked client ready for shutdown testing.
+
+        Returns (handler, client, binding, processor) with async client/sub mocked.
+        """
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+        proc = _make_processor()
+        binding = _make_binding(handler, processor=proc)
+        handler._shutdown_event = asyncio.Event()
+
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.subscribe = AsyncMock()
+        client.unsubscribe = AsyncMock()
+        client._client = MagicMock()
+        client._client.ack = MagicMock()
+        client.messages = MagicMock()
+        client.messages.__aiter__ = MagicMock(return_value=iter([]))
+
+        return handler, client, binding, proc
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_unsubscribes_all_topics(self):
+        """Phase 1: unsubscribe from all binding topics and response topics."""
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+
+        # Signal shutdown immediately when asyncio.wait is called
+        async def trigger_shutdown(waitables, **kwargs):
+            handler._shutdown_event.set()
+            shutdown_waiter = [
+                w for w in waitables if not isinstance(w, MagicMock)
+            ]
+            done = set()
+            for w in shutdown_waiter:
+                if hasattr(w, "get_name") or True:
+                    try:
+                        await asyncio.wait_for(w, timeout=0.1)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
+                    done.add(w)
+            return done, set()
+
+        with patch.object(handler, "_client", return_value=client):
+            # Use a real event loop approach: set shutdown event right away
+            handler._shutdown_event.set()
+
+            # Patch create_task to return futures we control
+            real_create_task = asyncio.create_task
+
+            tasks_created = []
+
+            def track_create_task(coro, **kwargs):
+                task = real_create_task(coro, **kwargs)
+                tasks_created.append(task)
+                return task
+
+            with patch("microdcs.mqtt.asyncio.create_task", side_effect=track_create_task):
+                await handler.task()
+
+        # Verify unsubscribe was called for all topics and response topic
+        unsubscribe_calls = [
+            str(c.args[0]) for c in client.unsubscribe.call_args_list
+        ]
+        for topic in binding.topics:
+            assert topic in unsubscribe_calls
+        assert binding.response_topic in unsubscribe_calls
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_unsubscribe_failure_continues(self):
+        """Phase 1: unsubscribe failures are logged but don't abort shutdown."""
+        import aiomqtt as _aiomqtt
+
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+        client.unsubscribe = AsyncMock(
+            side_effect=_aiomqtt.MqttError("unsubscribe failed")
+        )
+        handler._shutdown_event.set()
+
+        real_create_task = asyncio.create_task
+
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=lambda coro, **kw: real_create_task(coro, **kw),
+            ),
+        ):
+            # Should complete without raising despite unsubscribe failures
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_cancels_workers_before_publishers(self):
+        """Phase 2+4: workers are cancelled before publishers."""
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+        handler._shutdown_event.set()
+
+        cancel_order: list[str] = []
+        original_cancel_and_wait = handler._cancel_and_wait
+
+        call_count = 0
+
+        async def track_cancel_and_wait(tasks):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                cancel_order.append("workers")
+            elif call_count == 2:
+                cancel_order.append("publishers")
+            await original_cancel_and_wait(tasks)
+
+        real_create_task = asyncio.create_task
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch.object(
+                handler, "_cancel_and_wait", side_effect=track_cancel_and_wait
+            ),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=lambda coro, **kw: real_create_task(coro, **kw),
+            ),
+        ):
+            await handler.task()
+
+        assert cancel_order == ["workers", "publishers"]
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_drains_outgoing_queue(self):
+        """Phase 3: outgoing queue is drained between worker and publisher cancel."""
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+        handler._shutdown_event.set()
+
+        real_create_task = asyncio.create_task
+        drain_observed = asyncio.Event()
+
+        # Intercept the publisher so it blocks without consuming queue items
+        async def stalling_publisher(c, b):
+            await asyncio.sleep(999)
+
+        original_join = binding.outgoing_queue.join
+
+        async def track_join():
+            # Mark item done so join completes
+            binding.outgoing_queue.task_done()
+            drain_observed.set()
+
+        binding.outgoing_queue.join = track_join
+
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch.object(
+                handler, "_outgoing_message_publisher", side_effect=stalling_publisher
+            ),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=lambda coro, **kw: real_create_task(coro, **kw),
+            ),
+        ):
+            # Put item after setup so it stays in the queue until Phase 3
+            await binding.outgoing_queue.put((CloudEvent(), MessageIntent.EVENT))
+            await handler.task()
+
+        assert drain_observed.is_set()
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_waits_for_expiry_tasks(self):
+        """Phase 5: pending expiration tasks are awaited."""
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+        handler._shutdown_event.set()
+
+        expiry_ran = asyncio.Event()
+
+        async def fake_expiry():
+            expiry_ran.set()
+
+        expiry_task = asyncio.create_task(fake_expiry())
+        handler._expiration_timeout_tasks["test-id"] = expiry_task
+
+        real_create_task = asyncio.create_task
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=lambda coro, **kw: real_create_task(coro, **kw),
+            ),
+        ):
+            await handler.task()
+
+        assert expiry_ran.is_set()
+        assert expiry_task.done()
+
+    @pytest.mark.asyncio
+    async def test_worker_crash_propagates_exception(self):
+        """When a worker dies unexpectedly, its exception is re-raised."""
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+
+        worker_error = RuntimeError("worker exploded")
+
+        async def crashing_worker(c):
+            raise worker_error
+
+        real_create_task = asyncio.create_task
+        call_idx = 0
+
+        def create_task_with_crash(coro, **kw):
+            nonlocal call_idx
+            call_idx += 1
+            # First create_task calls are workers (1 per message_workers config),
+            # then publishers, then shutdown_waiter
+            task = real_create_task(coro, **kw)
+            return task
+
+        # Patch _process_messages to crash
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch.object(handler, "_process_messages", side_effect=crashing_worker),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=create_task_with_crash,
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="worker exploded"):
+                await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_force_shutdown_cancels_expiry_tasks(self):
+        """CancelledError during wait cancels all pending expiration tasks."""
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+
+        # Create a long-running expiry task
+        async def long_expiry():
+            await asyncio.sleep(999)
+
+        expiry_task = asyncio.create_task(long_expiry())
+        handler._expiration_timeout_tasks["pending-id"] = expiry_task
+
+        real_create_task = asyncio.create_task
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=lambda coro, **kw: real_create_task(coro, **kw),
+            ),
+            patch(
+                "microdcs.mqtt.asyncio.wait",
+                side_effect=asyncio.CancelledError(),
+            ),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await handler.task()
+
+        # Let the event loop process the cancellation
+        await asyncio.sleep(0)
+        assert expiry_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_mqtt_error_during_shutdown_exits(self):
+        """MqttError while shutdown event is set exits the retry loop."""
+        import aiomqtt as _aiomqtt
+
+        handler, client, binding, _ = self._setup_handler_for_shutdown()
+        handler._shutdown_event.set()
+
+        client.__aenter__ = AsyncMock(
+            side_effect=_aiomqtt.MqttError("connection lost")
+        )
+
+        with patch.object(handler, "_client", return_value=client):
+            # Should exit cleanly, not retry forever
+            await handler.task()
+
+
 # ===================================================================
 # OTELInstrumentedMQTTHandler
 # ===================================================================
