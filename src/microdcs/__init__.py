@@ -89,6 +89,16 @@ class LoggingConfig:
 
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
+        if not getattr(self, "_initialized", False):
+            return
+        if (
+            not self.disable_if_otel_enabled
+            or os.getenv("OTEL_LOGS_EXPORTER", "none").lower() == "none"
+        ):
+            self.set_logging_config()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_initialized", True)
         if (
             not self.disable_if_otel_enabled
             or os.getenv("OTEL_LOGS_EXPORTER", "none").lower() == "none"

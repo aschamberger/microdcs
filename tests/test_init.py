@@ -80,26 +80,23 @@ class TestLoggingConfig:
         assert cfg.level == "INFO"
         assert cfg.filename == "app.log"
 
-    def test_set_logging_config_called_when_otel_disabled(self):
-        """When OTEL_LOGS_EXPORTER is 'none' (default), logging should be configured."""
+    def test_set_logging_config_called_once_when_otel_disabled(self):
+        """When OTEL_LOGS_EXPORTER is 'none' (default), logging is configured exactly once."""
         with (
             patch.dict(os.environ, {"OTEL_LOGS_EXPORTER": "none"}),
             patch.object(LoggingConfig, "set_logging_config") as mock_set,
         ):
             LoggingConfig()
-        assert mock_set.called
+        mock_set.assert_called_once()
 
     def test_set_logging_config_not_called_when_otel_enabled(self):
         """When OTEL_LOGS_EXPORTER is set and disable_if_otel_enabled is True,
-        set_logging_config should NOT be called after __init__."""
+        set_logging_config should NOT be called."""
         with (
             patch.dict(os.environ, {"OTEL_LOGS_EXPORTER": "otlp"}),
             patch.object(LoggingConfig, "set_logging_config") as mock_set,
         ):
             LoggingConfig()
-        # set_logging_config is still invoked during __init__ for each field set,
-        # but the branch guard should prevent it when OTEL is active
-        # We just verify it was NOT called (the guard blocks it)
         assert not mock_set.called
 
     def test_set_logging_config_produces_valid_dict_config(self):
