@@ -6,12 +6,13 @@ MicroDCS is an open-standards-based Python framework for building distributed se
 
 If you are new to the project, use this reading path:
 
-1. [Overall Design](overall-design.md) for the architectural model and project assumptions
-2. [Technical Standards](technical-standards.md) for the protocol and specification choices
-3. [Information Model Standards](information-model-standards.md) for the data-model background
-4. [Your First Processor](your-first-processor.md) for a hands-on tutorial building a CloudEvent processor
-5. [Development](development.md) for local development workflow and implementation details
-6. [Persistence](persistence.md) for the Redis-backed persistence model
+1. [Concepts at a Glance](concepts.md) for the key terms, standards, and framework abstractions
+2. [Overall Design](overall-design.md) for the architectural model and project assumptions
+3. [Technical Standards](technical-standards.md) for the protocol and specification choices
+4. [Information Model Standards](information-model-standards.md) for the data-model background
+5. [Your First Processor](your-first-processor.md) for a hands-on tutorial building a CloudEvent processor
+6. [Development](development.md) for local development workflow and implementation details
+7. [Persistence](persistence.md) for the Redis-backed persistence model
 
 ## What MicroDCS Provides
 
