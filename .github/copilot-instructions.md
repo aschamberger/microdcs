@@ -77,6 +77,7 @@ docker build -t aschamberger/microdcs .
 - All model dataclasses use `@dataclass(kw_only=True)` and extend `DataClassMixin` (which provides `orjson` + `msgpack` serialization via mashumaro).
 - Each CloudEvent-capable model has an inner `class Config(DataClassConfig)` with `cloudevent_type` and `cloudevent_dataschema` string attributes.
 - Files in `models/` named `*_mixin.py` and `*_ext.py` are hand-written. Files matching a JSON schema name (e.g. `greetings.py`, `machinery_jobs.py`) are **auto-generated** – never edit them directly. Regenerate with `uv run dataclassgen dataclasses`.
+- Package exports are static: whenever adding a new model module or public model class, update `src/microdcs/models/__init__.py` so users can import from `microdcs.models`.
 - Hidden fields (prefixed `_`) are excluded from serialization by `DataClassMixin.__post_serialize__`.
 - Validation constraints use `field(metadata={"min_length": N, "max_length": N})` with `DataClassValidationMixin`.
 - When creating a new JSON schema, the top-level `title` must **not** match any `$defs` class name, or the code generator will suffix the class with a number (e.g. `Ping` → `Ping1`).
@@ -84,6 +85,7 @@ docker build -t aschamberger/microdcs .
 ### Processors
 
 - Subclass `CloudEventProcessor` and decorate the class with `@processor_config(binding=ProcessorBinding.NORTHBOUND|SOUTHBOUND)`.
+- Package exports are static: whenever adding a new processor class, update `src/microdcs/processors/__init__.py` (including `__all__`) so users can import from `microdcs.processors`.
 - **Must implement** three abstract methods: `process_response_cloudevent(self, cloudevent)`, `handle_cloudevent_expiration(self, cloudevent, timeout)`, and `trigger_outgoing_event(self, **kwargs)`. All return `list[CloudEvent] | CloudEvent | None`.
 - Use `@incoming(MyDataClass)` to register a handler for incoming CloudEvents of that type.
 - Use `@outgoing(MyDataClass)` to register a handler for producing outgoing CloudEvents.
