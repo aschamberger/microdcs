@@ -63,7 +63,7 @@ class RedisKeySchema:
         """
         # hash key to keep the Redis key size consistent and small
         raw = f"{cloudevent_source}:{cloudevent_id}"
-        return f"cededupe:{hashlib.md5(raw.encode()).hexdigest()}"
+        return f"cededupe:{hashlib.blake2b(raw.encode(), digest_size=16).hexdigest()}"
 
     @prefixed_key
     def transaction_dedupe_key(self, scope: str, transaction_id: str) -> str:
@@ -73,7 +73,9 @@ class RedisKeySchema:
         """
         # hash key to keep the Redis key size consistent and small
         raw = f"{scope}:{transaction_id}"
-        return f"transdedupe:{hashlib.md5(raw.encode()).hexdigest()}"
+        return (
+            f"transdedupe:{hashlib.blake2b(raw.encode(), digest_size=16).hexdigest()}"
+        )
 
     @prefixed_key
     def counter_key(self, name: str) -> str:

@@ -111,7 +111,7 @@ class TestRedisKeySchema:
     def test_cloudevent_dedupe_key(self):
         key = self.schema.cloudevent_dedupe_key("src", "id-1")
         raw = "src:id-1"
-        expected_hash = hashlib.md5(raw.encode()).hexdigest()
+        expected_hash = hashlib.blake2b(raw.encode(), digest_size=16).hexdigest()
         assert key == f"test:cededupe:{expected_hash}"
 
     def test_cloudevent_dedupe_key_consistency(self):
@@ -127,7 +127,7 @@ class TestRedisKeySchema:
     def test_transaction_dedupe_key(self):
         key = self.schema.transaction_dedupe_key("scope1", "tx-1")
         raw = "scope1:tx-1"
-        expected_hash = hashlib.md5(raw.encode()).hexdigest()
+        expected_hash = hashlib.blake2b(raw.encode(), digest_size=16).hexdigest()
         assert key == f"test:transdedupe:{expected_hash}"
 
     def test_transaction_dedupe_key_consistency(self):
