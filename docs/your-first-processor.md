@@ -162,6 +162,8 @@ class PingPongProcessor(CloudEventProcessor):
 | `NORTHBOUND` | commands | data, events, metadata |
 | `SOUTHBOUND` | data, events, metadata | commands |
 
+The names come from the OT/ISA-95 automation pyramid. **Northbound** means the processor faces *up* toward higher-level systems (MES, ERP, cloud) — it receives commands from above and publishes data/events/metadata back up. **Southbound** means the processor faces *down* toward field-level systems (PLCs, sensors, equipment) — it receives data/events/metadata from below and sends commands down. In practice: if your processor *executes* work when told to, it is northbound; if it *orchestrates* other systems by issuing commands, it is southbound.
+
 You can override the defaults with explicit `subscribe_intents` and `publish_intents` sets.
 
 **`@incoming(Ping)`** — Registers `handle_ping` as the callback for incoming CloudEvents whose `type` matches `Ping.Config.cloudevent_type`. The framework deserializes the CloudEvent payload into a `Ping` instance and passes it as the first argument.
