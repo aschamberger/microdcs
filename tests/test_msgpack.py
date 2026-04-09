@@ -739,6 +739,158 @@ class TestMessagePackHandler:
 
 
 # ===================================================================
+# MessagePackHandler – Reconnection / Backoff
+# ===================================================================
+
+
+class TestMessagePackHandlerReconnection:
+    """Tests for the MessagePack retry/backoff loop."""
+
+    @pytest.mark.asyncio
+    async def test_eaddrinuse_retries_with_backoff(self):
+        """EADDRINUSE triggers retry with exponential backoff."""
+        import errno
+
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+
+        mock_server = AsyncMock()
+        call_count = 0
+
+        async def fail_then_shutdown(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 3:
+                handler._shutdown_event.set()
+            raise OSError(errno.EADDRINUSE, "Address in use")
+
+        mock_server.__aenter__ = AsyncMock(side_effect=fail_then_shutdown)
+
+        with (
+            patch.object(handler, "_server", return_value=mock_server),
+            patch("microdcs.msgpack.random.uniform", return_value=0),
+        ):
+            await handler.task()
+
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_eaddrnotavail_is_fatal(self):
+        """EADDRNOTAVAIL is a fatal config error – no retry."""
+        import errno
+
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+
+        mock_server = AsyncMock()
+        mock_server.__aenter__ = AsyncMock(
+            side_effect=OSError(errno.EADDRNOTAVAIL, "Address not available")
+        )
+
+        with (
+            patch.object(handler, "_server", return_value=mock_server),
+            pytest.raises(OSError, match="Address not available"),
+        ):
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_eacces_is_fatal(self):
+        """EACCES is a fatal config error – no retry."""
+        import errno
+
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+
+        mock_server = AsyncMock()
+        mock_server.__aenter__ = AsyncMock(
+            side_effect=OSError(errno.EACCES, "Permission denied")
+        )
+
+        with (
+            patch.object(handler, "_server", return_value=mock_server),
+            pytest.raises(OSError, match="Permission denied"),
+        ):
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_during_backoff_exits(self):
+        """Shutdown event during backoff sleep exits the retry loop."""
+        import errno
+
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+
+        mock_server = AsyncMock()
+        mock_server.__aenter__ = AsyncMock(
+            side_effect=OSError(errno.EADDRINUSE, "Address in use")
+        )
+
+        async def signal_shutdown(coro, timeout):
+            handler._shutdown_event.set()
+
+        with (
+            patch.object(handler, "_server", return_value=mock_server),
+            patch("asyncio.wait_for", side_effect=signal_shutdown),
+        ):
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_backoff_caps_at_max(self):
+        """Backoff increases but does not exceed 60 seconds."""
+        import errno
+
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+
+        mock_server = AsyncMock()
+        call_count = 0
+
+        async def fail_always(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 8:
+                handler._shutdown_event.set()
+            raise OSError(errno.EADDRINUSE, "Address in use")
+
+        mock_server.__aenter__ = AsyncMock(side_effect=fail_always)
+
+        sleep_times: list[float] = []
+
+        async def capture_sleep(coro, timeout):
+            sleep_times.append(timeout)
+            if handler._shutdown_event.is_set():
+                return  # simulate event completing → break
+            raise asyncio.TimeoutError
+
+        with (
+            patch.object(handler, "_server", return_value=mock_server),
+            patch("microdcs.msgpack.random.uniform", return_value=0),
+            patch("asyncio.wait_for", side_effect=capture_sleep),
+        ):
+            await handler.task()
+
+        assert sleep_times[0] == 1
+        assert sleep_times[1] == 2
+        assert sleep_times[2] == 4
+        assert sleep_times[-1] == 60
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_propagates(self):
+        """CancelledError is not retried — it propagates immediately."""
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+
+        mock_server = AsyncMock()
+        mock_server.__aenter__ = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with (
+            patch.object(handler, "_server", return_value=mock_server),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await handler.task()
+
+
+# ===================================================================
 # OTELInstrumentedMessagePackHandler
 # ===================================================================
 

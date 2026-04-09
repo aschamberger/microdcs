@@ -1128,15 +1128,13 @@ class TestMQTTHandlerShutdown:
         # Signal shutdown immediately when asyncio.wait is called
         async def trigger_shutdown(waitables, **kwargs):
             handler._shutdown_event.set()
-            shutdown_waiter = [
-                w for w in waitables if not isinstance(w, MagicMock)
-            ]
+            shutdown_waiter = [w for w in waitables if not isinstance(w, MagicMock)]
             done = set()
             for w in shutdown_waiter:
                 if hasattr(w, "get_name") or True:
                     try:
                         await asyncio.wait_for(w, timeout=0.1)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                    except asyncio.TimeoutError, asyncio.CancelledError:
                         pass
                     done.add(w)
             return done, set()
@@ -1155,13 +1153,13 @@ class TestMQTTHandlerShutdown:
                 tasks_created.append(task)
                 return task
 
-            with patch("microdcs.mqtt.asyncio.create_task", side_effect=track_create_task):
+            with patch(
+                "microdcs.mqtt.asyncio.create_task", side_effect=track_create_task
+            ):
                 await handler.task()
 
         # Verify unsubscribe was called for all topics and response topic
-        unsubscribe_calls = [
-            str(c.args[0]) for c in client.unsubscribe.call_args_list
-        ]
+        unsubscribe_calls = [str(c.args[0]) for c in client.unsubscribe.call_args_list]
         for topic in binding.topics:
             assert topic in unsubscribe_calls
         assert binding.response_topic in unsubscribe_calls
@@ -1359,13 +1357,128 @@ class TestMQTTHandlerShutdown:
         handler, client, binding, _ = self._setup_handler_for_shutdown()
         handler._shutdown_event.set()
 
-        client.__aenter__ = AsyncMock(
-            side_effect=_aiomqtt.MqttError("connection lost")
-        )
+        client.__aenter__ = AsyncMock(side_effect=_aiomqtt.MqttError("connection lost"))
 
         with patch.object(handler, "_client", return_value=client):
             # Should exit cleanly, not retry forever
             await handler.task()
+
+
+# ===================================================================
+# MQTTHandler – Reconnection / Backoff
+# ===================================================================
+
+
+class TestMQTTHandlerReconnection:
+    """Tests for the MQTT retry/backoff loop."""
+
+    def _setup_handler(self):
+        handler = _make_handler()
+        handler._redis_client.ping = AsyncMock()
+        binding = _make_binding(handler, topics={"test/topic"})
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.subscribe = AsyncMock()
+        return handler, client, binding
+
+    @pytest.mark.asyncio
+    async def test_mqtt_error_retries_with_backoff(self):
+        """MqttError triggers retry with exponential backoff (1 → 2 → 4)."""
+        import aiomqtt as _aiomqtt
+
+        handler, client, _ = self._setup_handler()
+
+        call_count = 0
+
+        async def fail_then_shutdown(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 3:
+                handler._shutdown_event.set()
+            raise _aiomqtt.MqttError("connection lost")
+
+        client.__aenter__ = AsyncMock(side_effect=fail_then_shutdown)
+
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch("microdcs.mqtt.random.uniform", return_value=0),
+        ):
+            await handler.task()
+
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_shutdown_event_during_mqtt_error_exits_immediately(self):
+        """If shutdown is already set when MqttError occurs, exits without backoff."""
+        import aiomqtt as _aiomqtt
+
+        handler, client, _ = self._setup_handler()
+        handler._shutdown_event.set()
+
+        client.__aenter__ = AsyncMock(side_effect=_aiomqtt.MqttError("connection lost"))
+
+        with patch.object(handler, "_client", return_value=client):
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_during_backoff_exits(self):
+        """Shutdown event during backoff sleep exits the retry loop."""
+        import aiomqtt as _aiomqtt
+
+        handler, client, _ = self._setup_handler()
+
+        client.__aenter__ = AsyncMock(side_effect=_aiomqtt.MqttError("connection lost"))
+
+        async def signal_shutdown(coro, timeout):
+            handler._shutdown_event.set()
+
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch(
+                "asyncio.wait_for",
+                side_effect=signal_shutdown,
+            ),
+        ):
+            await handler.task()
+
+    @pytest.mark.asyncio
+    async def test_backoff_caps_at_max(self):
+        """Backoff increases but does not exceed 60 seconds."""
+        import aiomqtt as _aiomqtt
+
+        handler, client, _ = self._setup_handler()
+
+        sleep_times: list[float] = []
+        call_count = 0
+
+        async def fail_always(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 8:
+                handler._shutdown_event.set()
+            raise _aiomqtt.MqttError("connection lost")
+
+        client.__aenter__ = AsyncMock(side_effect=fail_always)
+
+        original_wait_for = asyncio.wait_for
+
+        async def capture_sleep(coro, timeout):
+            sleep_times.append(timeout)
+            raise asyncio.TimeoutError
+
+        with (
+            patch.object(handler, "_client", return_value=client),
+            patch("microdcs.mqtt.random.uniform", return_value=0),
+            patch("asyncio.wait_for", side_effect=capture_sleep),
+        ):
+            await handler.task()
+
+        # Backoff: 1, 2, 4, 8, 16, 32, 60, 60 (capped)
+        assert sleep_times[0] == 1
+        assert sleep_times[1] == 2
+        assert sleep_times[2] == 4
+        assert sleep_times[-1] == 60  # capped at max
 
 
 # ===================================================================
