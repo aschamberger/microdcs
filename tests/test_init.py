@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -52,6 +52,7 @@ class TestMessagePackConfig:
         assert cfg.keep_alive is True
         assert cfg.max_queued_connections == 100
         assert cfg.max_concurrent_requests == 10
+        assert cfg.max_buffer_size == 8 * 1024 * 1024
 
 
 class TestProcessingConfig:
@@ -237,6 +238,68 @@ class TestRuntimeConfig:
         ):
             cfg = RuntimeConfig(prefix="CUSTOM_")
         assert cfg.redis.hostname == "custom-host"
+
+    @pytest.mark.asyncio
+    async def test_validate_success_runs_prechecks(self):
+        cfg = RuntimeConfig()
+        with (
+            patch.object(cfg, "_check_tcp_connection", new=AsyncMock()) as mock_tcp,
+            patch.object(cfg, "_check_bindable", new=AsyncMock()) as mock_bind,
+        ):
+            await cfg.validate()
+
+        assert mock_tcp.await_count == 2
+        mock_bind.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_rejects_invalid_port_ranges(self):
+        cfg = RuntimeConfig()
+        cfg.redis.port = 70000
+        cfg.mqtt.port = 0
+        with pytest.raises(ValueError, match="redis.port|mqtt.port"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_rejects_negative_intervals(self):
+        cfg = RuntimeConfig()
+        cfg.processing.message_expiry_interval = -1
+        with pytest.raises(ValueError, match="processing.message_expiry_interval"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_rejects_empty_required_fields(self):
+        cfg = RuntimeConfig()
+        cfg.redis.key_prefix = "  "
+        with pytest.raises(ValueError, match="redis.key_prefix"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_fails_on_connectivity_error(self):
+        cfg = RuntimeConfig()
+        with (
+            patch.object(
+                cfg,
+                "_check_tcp_connection",
+                new=AsyncMock(side_effect=ValueError("redis down")),
+            ),
+            patch.object(cfg, "_check_bindable", new=AsyncMock()),
+        ):
+            with pytest.raises(ValueError, match="redis down"):
+                await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_fails_on_bind_precheck_error(self):
+        cfg = RuntimeConfig()
+        with (
+            patch.object(cfg, "_check_tcp_connection", new=AsyncMock()),
+            patch.object(
+                cfg,
+                "_check_bindable",
+                new=AsyncMock(side_effect=ValueError("port busy")),
+            ),
+        ):
+            with pytest.raises(ValueError, match="port busy"):
+                await cfg.validate()
 
 
 # ---------------------------------------------------------------------------

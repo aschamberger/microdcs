@@ -60,6 +60,7 @@ class MicroDCS:
 
     async def main(self):
         logger.info("Starting main application logic")
+        await self.runtime_config.validate()
         # Initialise every registered processor
         for processor in self._processors:
             await processor.initialize()

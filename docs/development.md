@@ -43,6 +43,44 @@ the size of buffered, not-yet-decoded payload data.
 This helps protect the process from excessive memory usage caused by oversized or
 malformed input streams.
 
+## Configuration Validation
+
+At startup, the runtime configuration is validated before protocol handlers enter
+their main loops. Validation fails fast with a clear error message if any check
+does not pass.
+
+Checked constraints include:
+
+* Required non-empty values:
+	* instance_id
+	* redis.hostname
+	* redis.key_prefix
+	* mqtt.hostname
+	* mqtt.identifier
+	* msgpack.hostname
+* Port ranges:
+	* redis.port, mqtt.port, msgpack.port must be in 1..65535
+* Positive values:
+	* mqtt.connect_timeout, mqtt.publish_timeout, mqtt.message_workers
+	* msgpack.max_queued_connections, msgpack.max_concurrent_requests
+	* msgpack.max_buffer_size
+* Non-negative values:
+	* mqtt.incoming_queue_size, mqtt.outgoing_queue_size
+	* mqtt.dedupe_ttl_seconds, mqtt.binding_outgoing_queue_size
+	* msgpack.binding_outgoing_queue_size
+	* processing.shutdown_grace_period
+	* processing.message_expiry_interval (when configured)
+
+Startup pre-check sequence:
+
+1. Validate static field constraints (required fields, ranges, and bounds).
+2. Check TCP connectivity to Redis using redis.hostname:redis.port.
+3. Check TCP connectivity to MQTT broker using mqtt.hostname:mqtt.port.
+4. Check MessagePack server bindability on msgpack.hostname:msgpack.port.
+
+Environment variables are still parsed from APP_* settings, then validated by
+these runtime checks.
+
 Generate typed models from a JSON Schema file:
 
 ```bash

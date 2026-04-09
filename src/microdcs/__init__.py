@@ -196,6 +196,114 @@ class RuntimeConfig:
 
                         setattr(getattr(self, field_main.name), field_child.name, value)
 
+    async def _check_tcp_connection(
+        self, service_name: str, hostname: str, port: int, timeout_seconds: int = 3
+    ) -> None:
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(hostname, port),
+                timeout=timeout_seconds,
+            )
+            writer.close()
+            await writer.wait_closed()
+        except Exception as exc:
+            raise ValueError(
+                f"Unable to connect to {service_name} at {hostname}:{port}: {exc}"
+            ) from exc
+
+    async def _check_bindable(
+        self, service_name: str, hostname: str, port: int, timeout_seconds: int = 3
+    ) -> None:
+        server: asyncio.base_events.Server | None = None
+        try:
+            server = await asyncio.wait_for(
+                asyncio.start_server(lambda _reader, _writer: None, hostname, port),
+                timeout=timeout_seconds,
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"Unable to bind {service_name} to {hostname}:{port}: {exc}"
+            ) from exc
+        finally:
+            if server is not None:
+                server.close()
+                await server.wait_closed()
+
+    async def validate(self) -> None:
+        errors: list[str] = []
+
+        def require_non_empty(value: str, field_name: str) -> None:
+            if not value or not value.strip():
+                errors.append(f"{field_name} must not be empty")
+
+        def require_port(port: int, field_name: str) -> None:
+            if port < 1 or port > 65535:
+                errors.append(f"{field_name} must be in range 1..65535")
+
+        def require_non_negative(value: int, field_name: str) -> None:
+            if value < 0:
+                errors.append(f"{field_name} must be >= 0")
+
+        def require_positive(value: int, field_name: str) -> None:
+            if value <= 0:
+                errors.append(f"{field_name} must be > 0")
+
+        require_non_empty(self.instance_id, "instance_id")
+        require_non_empty(self.redis.hostname, "redis.hostname")
+        require_non_empty(self.redis.key_prefix, "redis.key_prefix")
+        require_non_empty(self.mqtt.hostname, "mqtt.hostname")
+        require_non_empty(self.mqtt.identifier, "mqtt.identifier")
+        require_non_empty(self.msgpack.hostname, "msgpack.hostname")
+
+        require_port(self.redis.port, "redis.port")
+        require_port(self.mqtt.port, "mqtt.port")
+        require_port(self.msgpack.port, "msgpack.port")
+
+        require_positive(self.mqtt.connect_timeout, "mqtt.connect_timeout")
+        require_positive(self.mqtt.publish_timeout, "mqtt.publish_timeout")
+        require_non_negative(self.mqtt.incoming_queue_size, "mqtt.incoming_queue_size")
+        require_non_negative(self.mqtt.outgoing_queue_size, "mqtt.outgoing_queue_size")
+        require_positive(self.mqtt.message_workers, "mqtt.message_workers")
+        require_non_negative(self.mqtt.dedupe_ttl_seconds, "mqtt.dedupe_ttl_seconds")
+        require_non_negative(
+            self.mqtt.binding_outgoing_queue_size,
+            "mqtt.binding_outgoing_queue_size",
+        )
+
+        require_positive(
+            self.msgpack.max_queued_connections,
+            "msgpack.max_queued_connections",
+        )
+        require_positive(
+            self.msgpack.max_concurrent_requests,
+            "msgpack.max_concurrent_requests",
+        )
+        require_positive(self.msgpack.max_buffer_size, "msgpack.max_buffer_size")
+        require_non_negative(
+            self.msgpack.binding_outgoing_queue_size,
+            "msgpack.binding_outgoing_queue_size",
+        )
+
+        require_non_negative(
+            self.processing.shutdown_grace_period,
+            "processing.shutdown_grace_period",
+        )
+        if self.processing.message_expiry_interval is not None:
+            require_non_negative(
+                self.processing.message_expiry_interval,
+                "processing.message_expiry_interval",
+            )
+
+        if errors:
+            raise ValueError("RuntimeConfig validation failed: " + "; ".join(errors))
+
+        # Connectivity and bindability pre-checks so startup fails fast with clear errors.
+        await self._check_tcp_connection("Redis", self.redis.hostname, self.redis.port)
+        await self._check_tcp_connection("MQTT", self.mqtt.hostname, self.mqtt.port)
+        await self._check_bindable(
+            "MessagePack server", self.msgpack.hostname, self.msgpack.port
+        )
+
 
 class SystemEventTaskGroup(asyncio.TaskGroup):
     """Custom TaskGroup with two-phase shutdown: graceful event then force-cancel."""

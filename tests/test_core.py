@@ -25,6 +25,7 @@ def _create_microdcs(otel_enabled: bool) -> MicroDCS:
     with patch.object(MicroDCS, "__init__", lambda self: None):
         dcs = MicroDCS()
     dcs.runtime_config = MagicMock()
+    dcs.runtime_config.validate = AsyncMock()
     dcs.runtime_config.processing.otel_instrumentation_enabled = otel_enabled
     dcs.redis_connection_pool = AsyncMock()
     dcs.redis_key_schema = MagicMock()
@@ -85,6 +86,8 @@ class TestMain:
 
             await dcs.main()
 
+            dcs.runtime_config.validate.assert_awaited_once()  # type: ignore[union-attr]
+
             # Non-OTEL handler was used
             mock_handler.register_binding.assert_called_once_with(mock_binding)
             mock_otel_handler.register_binding.assert_not_called()
@@ -111,6 +114,8 @@ class TestMain:
             mock_tg = _setup_task_group_mock(mock_tg_cls)
 
             await dcs.main()
+
+            dcs.runtime_config.validate.assert_awaited_once()  # type: ignore[union-attr]
 
             # OTEL handler was used
             mock_otel_handler.register_binding.assert_called_once_with(mock_binding)
