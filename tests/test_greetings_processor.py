@@ -233,3 +233,11 @@ class TestGreetingsCloudEventProcessor:
         ce = CloudEvent()
         result = await proc.handle_cloudevent_expiration(ce, 10)
         assert result is None
+
+    # --- trigger_outgoing_event ---
+
+    @pytest.mark.asyncio
+    async def test_trigger_outgoing_event_returns_none(self):
+        proc = _make_processor()
+        result = await proc.trigger_outgoing_event(event_type=Hello)
+        assert result is None

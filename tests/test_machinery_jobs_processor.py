@@ -1362,3 +1362,19 @@ class TestIsJobAcceptable:
         acceptance_processor._work_master_dao.is_member.assert_not_called()
         acceptance_processor._material_class_list_dao.is_member.assert_not_called()
         acceptance_processor._material_definition_list_dao.is_member.assert_not_called()
+
+
+# ===================================================================
+# trigger_outgoing_event
+# ===================================================================
+
+
+class TestTriggerOutgoingEvent:
+    @pytest.mark.asyncio
+    async def test_trigger_outgoing_event_returns_none(
+        self, processor: MachineryJobsCloudEventProcessor
+    ):
+        from microdcs.models.machinery_jobs import StoreCall
+
+        result = await processor.trigger_outgoing_event(event_type=StoreCall)
+        assert result is None
