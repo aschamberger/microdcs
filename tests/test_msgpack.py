@@ -1502,6 +1502,31 @@ class TestMessagePackProtocolBinding:
         binding.publish_handler(ce, MessageIntent.EVENT)
         assert not binding.outgoing_queue.empty()
 
+    def test_publish_handler_raises_when_queue_full(self):
+        """RuntimeError raised when outgoing queue is full."""
+        processor = _make_processor()
+        config = MessagePackConfig(binding_outgoing_queue_size=1)
+        binding = MessagePackProtocolBinding(
+            processor,
+            ProcessingConfig(binding_outgoing_queue_max_size=1),
+            config,
+        )
+        ce = CloudEvent(type="com.test.sample.v1")
+        binding.publish_handler(ce, MessageIntent.EVENT)
+        with pytest.raises(RuntimeError, match="Outgoing queue is full"):
+            binding.publish_handler(ce, MessageIntent.EVENT)
+
+    def test_publish_handler_with_filter_drops_no_type(self):
+        """Events with no type are dropped when filter is active."""
+        processor = _make_processor()
+        config = MessagePackConfig()
+        binding = MessagePackProtocolBinding(
+            processor, ProcessingConfig(), config, {"com.test.*"}
+        )
+        ce = CloudEvent(type=None)
+        binding.publish_handler(ce, MessageIntent.EVENT)
+        assert binding.outgoing_queue.empty()
+
     def test_publish_event_routes_to_binding(self):
         """processor.publish_event() routes through binding's publish_handler."""
         processor = _make_processor()
