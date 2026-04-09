@@ -3,22 +3,23 @@
 import asyncio
 import inspect
 import ssl
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgpack
 import pytest
+from conftest import (
+    ConcreteProcessor,
+    PlainPayload,
+    SamplePayload,
+    make_concrete_processor,
+)
 
 from microdcs import MessagePackConfig, ProcessingConfig
 from microdcs.common import (
     CloudEvent,
-    CloudEventProcessor,
     Direction,
     MessageIntent,
-    ProcessorBinding,
-    processor_config,
 )
-from microdcs.dataclass import DataClassConfig, DataClassMixin
 from microdcs.msgpack import (
     MessagePackHandler,
     MessagePackProtocolBinding,
@@ -34,47 +35,8 @@ from microdcs.redis import RedisKeySchema
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class SamplePayload(DataClassMixin):
-    value: str = "hello"
-
-    class Config(DataClassConfig):
-        cloudevent_type: str = "com.test.sample.v1"
-        cloudevent_dataschema: str = "https://example.com/sample-v1"
-
-
-@dataclass
-class PlainPayload(DataClassMixin):
-    """A dataclass WITHOUT DataClassConfig — used to test the 'no Config' path."""
-
-    value: str = "plain"
-
-
-@processor_config(binding=ProcessorBinding.SOUTHBOUND)
-class ConcreteProcessor(CloudEventProcessor):
-    """Minimal concrete subclass so we can test the ABC methods."""
-
-    async def process_cloudevent(self, cloudevent):
-        return await self.callback_incoming(cloudevent)
-
-    async def process_response_cloudevent(self, cloudevent):
-        return None
-
-    async def handle_cloudevent_expiration(self, cloudevent, timeout):
-        return None
-
-    async def trigger_outgoing_event(self, **kwargs):
-        return None
-
-
 def _make_processor(**kwargs) -> ConcreteProcessor:
-    cfg = ProcessingConfig()
-    return ConcreteProcessor(
-        instance_id="test-id",
-        runtime_config=cfg,
-        config_identifier="test",
-        **kwargs,
-    )
+    return make_concrete_processor(**kwargs)
 
 
 def _make_handler(**kwargs) -> MessagePackHandler:

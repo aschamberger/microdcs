@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import redis.asyncio as redis
+from conftest import make_woodworking_job_order
 
 from microdcs import ProcessingConfig
 from microdcs.common import CloudEvent
@@ -20,18 +21,15 @@ from microdcs.models.machinery_jobs import (
     CancelResponse,
     ClearCall,
     ClearResponse,
-    EUInformation,
     ISA95EquipmentDataType,
     ISA95JobOrderAndStateDataType,
     ISA95JobOrderDataType,
     ISA95MaterialDataType,
     ISA95PersonnelDataType,
     ISA95PhysicalAssetDataType,
-    ISA95PropertyDataType,
     ISA95StateDataType,
     ISA95WorkMasterDataType,
     LocalizedText,
-    OutputInformationDataType,
     PauseCall,
     PauseResponse,
     RequestJobResponseByJobOrderIDCall,
@@ -78,114 +76,6 @@ CANCEL_CE_TYPE = CancelCall.Config.cloudevent_type
 CLEAR_CE_TYPE = ClearCall.Config.cloudevent_type
 REVOKE_START_CE_TYPE = RevokeStartCall.Config.cloudevent_type
 UPDATE_CE_TYPE = UpdateCall.Config.cloudevent_type
-
-
-# ===================================================================
-# OPC UA B.3 Example Data – Woodworking job order
-# ===================================================================
-
-
-def _make_woodworking_job_order(job_order_id: str = "12345") -> ISA95JobOrderDataType:
-    """Create a job order based on OPC UA Machinery Jobs B.3 example.
-
-    A woodworking machine breaks a tree trunk into a shelf floor,
-    four table legs, and a bag of chips.
-    """
-    tree_input = ISA95MaterialDataType(
-        material_use="Material consumed",
-        quantity="1",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="pcs", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="TreeTrunk",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_771", value="200"),
-            ISA95PropertyDataType(id="Location", value="Cutting_line_input_1"),
-        ],
-    )
-
-    shelf_floor_output = ISA95MaterialDataType(
-        material_use="Material produced",
-        quantity="1",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="pcs", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="Shelf_Floor_0010",
-                    order_number="Order_Forest_Utilize_01",
-                    lot_number="Forest_Spruce_ShelfFloor_1245",
-                    serial_number="FSSF_1234568",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_1234", value="2500"),
-            ISA95PropertyDataType(id="Param_1235", value="1500"),
-            ISA95PropertyDataType(id="Param_1236", value="15.8"),
-            ISA95PropertyDataType(id="Location", value="Cutting_line_output_1"),
-        ],
-    )
-
-    table_legs_output = ISA95MaterialDataType(
-        material_use="Material produced",
-        quantity="4",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="pcs", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="Table_Leg_012",
-                    order_number="Order_Forest_Utilize_01",
-                    lot_number="Forest_Spruce_TableLeg_124",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_1234", value="125"),
-            ISA95PropertyDataType(id="Param_1235", value="855"),
-            ISA95PropertyDataType(id="Param_1236", value="125"),
-            ISA95PropertyDataType(id="Location", value="Cutting_line_output_2"),
-        ],
-    )
-
-    chips_output = ISA95MaterialDataType(
-        material_use="Material produced",
-        quantity="1.75",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="m^3", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="SpruceChips_012",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_333", value="Spruce"),
-            ISA95PropertyDataType(id="Location", value="BagFiller_output_1"),
-        ],
-    )
-
-    return ISA95JobOrderDataType(
-        job_order_id=job_order_id,
-        description=[
-            LocalizedText(text="Order_Forest_Utilize_01", locale="en"),
-        ],
-        start_time="2023-01-27T10:17:00Z",
-        end_time="2023-01-27T10:19:00Z",
-        material_requirements=[
-            tree_input,
-            shelf_floor_output,
-            table_legs_output,
-            chips_output,
-        ],
-    )
 
 
 # ===================================================================
@@ -262,7 +152,7 @@ def _mock_jobresponse_dao(proc: MachineryJobsCloudEventProcessor):
 
 class TestISA95JobOrderDataType:
     def test_woodworking_job_order_fields(self):
-        job = _make_woodworking_job_order()
+        job = make_woodworking_job_order()
         assert job.job_order_id == "12345"
         assert job.start_time == "2023-01-27T10:17:00Z"
         assert job.end_time == "2023-01-27T10:19:00Z"
@@ -270,7 +160,7 @@ class TestISA95JobOrderDataType:
         assert len(job.material_requirements) == 4
 
     def test_woodworking_job_serialization_round_trip(self):
-        job = _make_woodworking_job_order()
+        job = make_woodworking_job_order()
         json_dict = job.to_dict()
         # _state is a transient attribute (starts with _) stripped by __post_serialize__
         assert "_state" not in json_dict
@@ -281,7 +171,7 @@ class TestISA95JobOrderDataType:
         assert len(restored.material_requirements) == 4
 
     def test_material_requirements_content(self):
-        job = _make_woodworking_job_order()
+        job = make_woodworking_job_order()
         assert job.material_requirements is not None
         tree = job.material_requirements[0]
         assert tree.material_use == "Material consumed"
@@ -310,7 +200,7 @@ class TestStoreCall:
         assert StoreCall.Config.cloudevent_type == STORE_CE_TYPE
 
     def test_store_call_response_type(self):
-        call = StoreCall(job_order=_make_woodworking_job_order())
+        call = StoreCall(job_order=make_woodworking_job_order())
         resp = call.response(return_status=MethodReturnStatus.NO_ERROR)
         assert isinstance(resp, StoreResponse)
         assert resp.return_status == MethodReturnStatus.NO_ERROR
@@ -321,7 +211,7 @@ class TestStoreAndStartCall:
         assert StoreAndStartCall.Config.cloudevent_type == STORE_AND_START_CE_TYPE
 
     def test_store_and_start_call_response_type(self):
-        call = StoreAndStartCall(job_order=_make_woodworking_job_order())
+        call = StoreAndStartCall(job_order=make_woodworking_job_order())
         resp = call.response(return_status=MethodReturnStatus.NO_ERROR)
         assert isinstance(resp, StoreAndStartResponse)
 
@@ -378,7 +268,7 @@ class TestProcessStore:
     @pytest.mark.asyncio
     async def test_store_success(self, processor):
         _mock_dao_save(processor)
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
         result = await processor.process_store(
@@ -404,7 +294,7 @@ class TestProcessStore:
     @pytest.mark.asyncio
     async def test_store_job_not_acceptable(self, processor):
         _mock_dao_save(processor)
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
         with patch.object(
@@ -420,7 +310,7 @@ class TestProcessStore:
         processor._joborder_and_state_dao.save = AsyncMock(
             side_effect=Exception("Redis down")
         )
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
         result = await processor.process_store(method, scope=SCOPE)
@@ -431,7 +321,7 @@ class TestProcessStore:
     @pytest.mark.asyncio
     async def test_store_sets_not_allowed_to_start_state(self, processor):
         _mock_dao_save(processor)
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
         await processor.process_store(method, scope=SCOPE)
@@ -449,7 +339,7 @@ class TestProcessStoreAndStart:
     @pytest.mark.asyncio
     async def test_store_and_start_success(self, processor):
         _mock_dao_save(processor)
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         method = StoreAndStartCall(job_order=job_order)
 
         result = await processor.process_store_and_start(
@@ -465,7 +355,7 @@ class TestProcessStoreAndStart:
     @pytest.mark.asyncio
     async def test_store_and_start_sets_allowed_to_start_state(self, processor):
         _mock_dao_save(processor)
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         method = StoreAndStartCall(job_order=job_order)
 
         await processor.process_store_and_start(method, scope=SCOPE)
@@ -497,7 +387,7 @@ def _stored_job_order_and_state(
     job_order_id: str = "12345",
 ) -> ISA95JobOrderAndStateDataType:
     """Create a persisted ISA95JobOrderAndStateDataType in a given state."""
-    job_order = _make_woodworking_job_order(job_order_id)
+    job_order = make_woodworking_job_order(job_order_id)
     job_order._state = state
     state_data = []
     if "_" in state:
@@ -835,7 +725,7 @@ class TestProcessUpdate:
         stored = _stored_job_order_and_state("NotAllowedToStart_Ready")
         _mock_dao_retrieve(processor, stored)
 
-        updated_job = _make_woodworking_job_order()
+        updated_job = make_woodworking_job_order()
         updated_job.priority = 10
         method = UpdateCall(
             job_order=updated_job,
@@ -854,7 +744,7 @@ class TestProcessUpdate:
         stored = _stored_job_order_and_state("AllowedToStart_Ready")
         _mock_dao_retrieve(processor, stored)
 
-        updated_job = _make_woodworking_job_order()
+        updated_job = make_woodworking_job_order()
         updated_job.priority = 5
         method = UpdateCall(job_order=updated_job)
 
@@ -872,7 +762,7 @@ class TestProcessUpdate:
         with patch.object(
             processor, "is_job_acceptable", new_callable=AsyncMock, return_value=False
         ):
-            updated_job = _make_woodworking_job_order()
+            updated_job = make_woodworking_job_order()
             method = UpdateCall(job_order=updated_job)
 
             result = await processor.process_update(method, scope=SCOPE)
@@ -894,7 +784,7 @@ class TestProcessUpdate:
     async def test_update_unknown_job_order(self, processor):
         _mock_dao_retrieve(processor, None)
 
-        updated_job = _make_woodworking_job_order("99999")
+        updated_job = make_woodworking_job_order("99999")
         method = UpdateCall(job_order=updated_job)
 
         result = await processor.process_update(method, scope=SCOPE)
@@ -909,7 +799,7 @@ class TestProcessUpdate:
         stored = _stored_job_order_and_state("Running")
         _mock_dao_retrieve(processor, stored)
 
-        updated_job = _make_woodworking_job_order()
+        updated_job = make_woodworking_job_order()
         method = UpdateCall(job_order=updated_job)
 
         result = await processor.process_update(method, scope=SCOPE)
@@ -924,7 +814,7 @@ class TestProcessUpdate:
         stored = _stored_job_order_and_state("NotAllowedToStart_Ready")
         _mock_dao_retrieve(processor, stored)
 
-        updated_job = _make_woodworking_job_order()
+        updated_job = make_woodworking_job_order()
         updated_job.priority = 99
         method = UpdateCall(job_order=updated_job)
 
@@ -1012,7 +902,7 @@ class TestProcessEvent:
     @pytest.mark.asyncio
     async def test_process_event_known_type(self, processor):
         _mock_dao_save(processor)
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         store_call = StoreCall(job_order=job_order)
         ce = CloudEvent(
             type=STORE_CE_TYPE,
@@ -1049,7 +939,7 @@ class TestSendEvent:
         mock_handler = MagicMock()
         processor.register_publish_handler(mock_handler)
 
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         job_order_and_state = ISA95JobOrderAndStateDataType(
             job_order=job_order,
             state=[
@@ -1068,7 +958,7 @@ class TestSendEvent:
         mock_handler = MagicMock()
         processor.register_publish_handler(mock_handler)
 
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         job_order_and_state = ISA95JobOrderAndStateDataType(
             job_order=job_order,
             state=[],
@@ -1120,7 +1010,7 @@ class TestFullB3Lifecycle:
         _mock_dao_save(processor)
 
         # 1. Store
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
         result = await processor.process_store(store, scope=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -1190,7 +1080,7 @@ class TestFullB3Lifecycle:
         _mock_dao_save(processor)
 
         # 1. StoreAndStart
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         store_and_start = StoreAndStartCall(job_order=job_order)
         result = await processor.process_store_and_start(store_and_start, scope=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -1217,7 +1107,7 @@ class TestFullB3Lifecycle:
         _mock_dao_save(processor)
 
         # 1. Store
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
         result = await processor.process_store(store, scope=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -1236,7 +1126,7 @@ class TestFullB3Lifecycle:
         _mock_dao_save(processor)
 
         # 1. Store
-        job_order = _make_woodworking_job_order()
+        job_order = make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
         result = await processor.process_store(store, scope=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR

@@ -6,17 +6,19 @@ import orjson
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis
+from conftest import (
+    app_available,
+    integration,
+    make_woodworking_job_order,
+    mqtt_available,
+    redis_available,
+)
 
 from microdcs import MQTTConfig, ProcessingConfig, RedisConfig
 from microdcs.common import CloudEvent, MessageIntent
 from microdcs.models.greetings import Hello, HiddenObject
 from microdcs.models.machinery_jobs import (
-    EUInformation,
-    ISA95JobOrderDataType,
-    ISA95MaterialDataType,
-    ISA95PropertyDataType,
     LocalizedText,
-    OutputInformationDataType,
     StartCall,
     StoreAndStartCall,
     StoreAndStartResponse,
@@ -28,7 +30,6 @@ from microdcs.mqtt import MQTTHandler
 from microdcs.processors.greetings import GreetingsCloudEventProcessor
 from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
 from microdcs.redis import RedisKeySchema
-from tests.conftest import app_available, integration, mqtt_available, redis_available
 
 MQTT_CONFIG = MQTTConfig()
 REDIS_CONFIG = RedisConfig()
@@ -252,116 +253,6 @@ async def test_publish_hello_with_additional_payload_fields(
     assert names == {"Bob", "Alice"}
 
 
-# ===================================================================
-# OPC UA Machinery Jobs B.3 example – Woodworking job order
-# ===================================================================
-
-
-def _make_b3_woodworking_job_order(
-    job_order_id: str = "12345",
-) -> ISA95JobOrderDataType:
-    """Create a job order matching the OPC UA Machinery Jobs B.3 example.
-
-    A woodworking machine breaks a tree trunk into a shelf floor,
-    four table legs, and a bag of spruce chips.
-    https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/B.3
-    """
-    tree_input = ISA95MaterialDataType(
-        material_use="Material consumed",
-        quantity="1",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="pcs", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="TreeTrunk",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_771", value="200"),
-            ISA95PropertyDataType(id="Location", value="Cutting_line_input_1"),
-        ],
-    )
-
-    shelf_floor_output = ISA95MaterialDataType(
-        material_use="Material produced",
-        quantity="1",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="pcs", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="Shelf_Floor_0010",
-                    order_number="Order_Forest_Utilize_01",
-                    lot_number="Forest_Spruce_ShelfFloor_1245",
-                    serial_number="FSSF_1234568",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_1234", value="2500"),
-            ISA95PropertyDataType(id="Param_1235", value="1500"),
-            ISA95PropertyDataType(id="Param_1236", value="15.8"),
-            ISA95PropertyDataType(id="Location", value="Cutting_line_output_1"),
-        ],
-    )
-
-    table_legs_output = ISA95MaterialDataType(
-        material_use="Material produced",
-        quantity="4",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="pcs", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="Table_Leg_012",
-                    order_number="Order_Forest_Utilize_01",
-                    lot_number="Forest_Spruce_TableLeg_124",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_1234", value="125"),
-            ISA95PropertyDataType(id="Param_1235", value="855"),
-            ISA95PropertyDataType(id="Param_1236", value="125"),
-            ISA95PropertyDataType(id="Location", value="Cutting_line_output_2"),
-        ],
-    )
-
-    chips_output = ISA95MaterialDataType(
-        material_use="Material produced",
-        quantity="1.75",
-        engineering_units=EUInformation(
-            display_name=LocalizedText(text="m^3", locale="en"),
-        ),
-        properties=[
-            ISA95PropertyDataType(
-                id="Identification",
-                value=OutputInformationDataType(
-                    item_number="SpruceChips_012",
-                ).to_dict(),
-            ),
-            ISA95PropertyDataType(id="Param_333", value="Spruce"),
-            ISA95PropertyDataType(id="Location", value="BagFiller_output_1"),
-        ],
-    )
-
-    return ISA95JobOrderDataType(
-        job_order_id=job_order_id,
-        description=[
-            LocalizedText(text="Order_Forest_Utilize_01", locale="en"),
-        ],
-        start_time="2023-01-27T10:17:00Z",
-        end_time="2023-01-27T10:19:00Z",
-        material_requirements=[
-            tree_input,
-            shelf_floor_output,
-            table_legs_output,
-            chips_output,
-        ],
-    )
-
 
 @pytest.mark.asyncio
 @integration
@@ -370,7 +261,7 @@ def _make_b3_woodworking_job_order(
 @app_available
 async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
     """Send a StoreCall and verify a successful StoreResponse."""
-    job_order = _make_b3_woodworking_job_order(job_order_id="store-test-1")
+    job_order = make_woodworking_job_order(job_order_id="store-test-1")
     store_call = StoreCall(
         job_order=job_order,
         comment=[LocalizedText(text="Store woodworking job", locale="en")],
@@ -403,7 +294,7 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
 @app_available
 async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandler):
     """Send a StoreAndStartCall and verify a successful StoreAndStartResponse."""
-    job_order = _make_b3_woodworking_job_order(job_order_id="store-and-start-1")
+    job_order = make_woodworking_job_order(job_order_id="store-and-start-1")
     store_and_start_call = StoreAndStartCall(
         job_order=job_order,
         comment=[
@@ -441,7 +332,7 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
 async def test_publish_start_job_order_message(mqtt_handler: MQTTHandler):
     """Store a job order then start it, verifying both responses."""
     # First, store the job so it exists in Redis
-    job_order = _make_b3_woodworking_job_order(job_order_id="start-test-1")
+    job_order = make_woodworking_job_order(job_order_id="start-test-1")
     store_call = StoreCall(
         job_order=job_order,
         comment=[LocalizedText(text="Store before start", locale="en")],
