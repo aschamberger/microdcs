@@ -16,6 +16,8 @@ def _close_coroutine_arg(coro, *_args, **_kwargs):
 
 
 def _setup_task_group_mock(mock_tg_cls: MagicMock) -> AsyncMock:
+    """Configure a mock SystemEventTaskGroup that silently closes coroutines
+    passed to ``create_task`` so they don't trigger 'never awaited' warnings."""
     mock_tg = AsyncMock()
     mock_tg.create_task = MagicMock(side_effect=_close_coroutine_arg)
     mock_tg_cls.return_value.__aenter__ = AsyncMock(return_value=mock_tg)
