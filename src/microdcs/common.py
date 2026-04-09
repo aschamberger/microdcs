@@ -675,27 +675,66 @@ class CloudEventProcessor(ABC):
     async def process_response_cloudevent(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
-        """Handle a cloud event that is a response to a previously published event.
-        Can be used to handle responses from commands to react on the outcome
-        of the command (e.g. success, failure, or other status)."""
+        """Handle a response event correlated to a previously sent request/event.
+
+        This hook is called when a transport receives a message on a configured
+        response topic/channel and maps it to a CloudEvent. Typical use cases are:
+        - updating local process/job state based on response status
+        - emitting follow-up events after successful/failed commands
+        - triggering compensating actions for negative acknowledgements
+
+        Return semantics:
+        - ``None``: no follow-up event should be published
+        - ``CloudEvent``: publish one follow-up event
+        - ``list[CloudEvent]``: publish multiple follow-up events
+
+        Implementations should treat this method as idempotent where practical,
+        because response delivery can be at-least-once depending on transport QoS.
+        """
         pass
 
     @abstractmethod
     async def handle_cloudevent_expiration(
         self, cloudevent: CloudEvent, timeout: int
     ) -> list[CloudEvent] | CloudEvent | None:
-        """Handle a cloud event that has reached its expiry time or expiry interval.
-        Can be used to trigger retries, compensating actions, or cleanup tasks."""
+        """Handle a timeout/expiry callback for a previously published event.
+
+        This hook is invoked after the configured expiry interval elapses for an
+        outbound event. Use it to implement timeout behavior such as:
+        - retrying a command/event
+        - raising timeout alarms/events
+        - performing cleanup or state rollback
+
+        Args:
+            cloudevent: The original event that expired.
+            timeout: The expiry interval in seconds that elapsed.
+
+        Return semantics:
+        - ``None``: no timeout follow-up should be published
+        - ``CloudEvent``: publish one timeout follow-up event
+        - ``list[CloudEvent]``: publish multiple timeout follow-up events
+        """
         pass
 
     @abstractmethod
     async def trigger_outgoing_event(
         self, **kwargs
     ) -> list[CloudEvent] | CloudEvent | None:
-        """Trigger an outgoing event with optional kwargs for the callback.
-        Supposed to be using the registered outgoing callbacks.
-        Callbacks registered with @outgoing can be triggered by calling
-        callback_outgoing() with the corresponding payload type and intent.
+        """Entry point for application-driven outbound event generation.
+
+        Implement this method when outbound events are initiated by local logic
+        (timers, API calls, state changes) rather than by an incoming CloudEvent.
+        A common pattern is to translate ``kwargs`` into a dataclass payload,
+        call ``callback_outgoing(...)`` for the matching ``@outgoing`` callback,
+        and return the resulting CloudEvent(s).
+
+        Return semantics:
+        - ``None``: nothing should be published
+        - ``CloudEvent``: publish one generated event
+        - ``list[CloudEvent]``: publish multiple generated events
+
+        Keep ``kwargs`` names stable and documented in concrete processors so
+        callers can use this method as a clear processor API.
         """
         pass
 
