@@ -281,6 +281,14 @@ class TestProcessStore:
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
         processor._joborder_and_state_dao.save.assert_awaited_once()
+        saved_obj: ISA95JobOrderAndStateDataType = (
+            processor._joborder_and_state_dao.save.call_args[0][0]
+        )
+        assert saved_obj.job_order is not None
+        assert saved_obj.job_order.job_order_id == job_order.job_order_id
+        assert saved_obj.job_order.material_requirements is not None
+        assert len(saved_obj.job_order.material_requirements) == 4
+        assert saved_obj.state is not None
 
     @pytest.mark.asyncio
     async def test_store_none_job_order(self, processor):
