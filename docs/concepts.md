@@ -103,6 +103,81 @@ flowchart LR
   Processor --- MsgPackBinding[MsgPackProtocolBinding] --- MsgPackHandler
 ```
 
+### MessagePack-RPC Transport
+
+MicroDCS includes a **MessagePack-RPC** transport alongside MQTT. It is a TCP-based, binary RPC server built on the [MessagePack-RPC specification](https://github.com/msgpack-rpc/msgpack-rpc/blob/master/spec.md) and supports three frame types:
+
+| Frame type | Direction | Purpose |
+|---|---|---|
+| REQUEST | Client → Server | Call an RPC method and wait for a response |
+| RESPONSE | Server → Client | Return result or error for a request |
+| NOTIFICATION | Both | Fire-and-forget message (no response expected) |
+
+The server exposes two built-in RPC methods:
+
+- **`publish(cloudevent_dict, transportmetadata)`** — Submits a CloudEvent for processing. The server deserializes it, routes it through all registered processors, and returns the response CloudEvents as a list of dicts.
+- **`heartbeat(timestamp)`** — A notification-only keepalive. No return value.
+
+Outgoing CloudEvents (produced by processors) are sent to all connected clients as **NOTIFICATION** frames with method name `cloudevent` and params `[cloudevent_dict, intent_value]`.
+
+#### Why MessagePack-RPC? The Sidecar Pattern
+
+The MessagePack-RPC transport is designed for **sidecar container deployments** where different concerns run in separate containers within the same pod:
+
+```mermaid
+flowchart LR
+  subgraph Pod
+    API["FastAPI container\n(HTTP API, business logic)"] -- "MessagePack-RPC\n(localhost:8888)" --> DCS["MicroDCS container\n(async event loop)"]
+    DCS -- "MQTT v5" --> Broker[MQTT Broker]
+    DCS -- "Redis" --> Redis[(Redis)]
+  end
+  Client -- HTTP --> API
+```
+
+This separation keeps the MicroDCS async event loop fast and unblocked for time-critical control sequences, while the API container handles HTTP requests, authentication, and synchronous business logic. The API container acts as an RPC client that calls `publish` to inject CloudEvents into the processing pipeline, and receives outgoing events via notification frames.
+
+Typical use cases:
+
+- A **FastAPI** sidecar exposes a REST API for operators or external systems, translating HTTP requests into CloudEvents sent via MessagePack-RPC
+- A **device connector** sidecar translates proprietary device protocols into CloudEvents
+- A **data pipeline** sidecar collects and batches telemetry before forwarding to the DCS
+
+#### Client Usage
+
+MicroDCS ships a `MessagePackRpcClient` for use in sidecar containers:
+
+```python
+from microdcs.msgpack import MessagePackRpcClient
+
+async with MessagePackRpcClient(host="localhost", port=8888) as client:
+    # Send a CloudEvent for processing (REQUEST → RESPONSE)
+    cloudevent_dict = {
+        "type": "com.example.ping.v1",
+        "source": "urn:api:sidecar",
+        "datacontenttype": "application/json; charset=utf-8",
+        "data": b'{"message": "hello"}',
+    }
+    responses = await client.call("publish", cloudevent_dict)
+    # responses is a list of CloudEvent dicts
+
+    # Send a heartbeat (NOTIFICATION, no response)
+    await client.notify("heartbeat", 1234567890)
+```
+
+#### Configuration
+
+The MessagePack-RPC server is configured via environment variables with prefix `APP_MSGPACK_`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `APP_MSGPACK_HOSTNAME` | `localhost` | Listen address |
+| `APP_MSGPACK_PORT` | `8888` | Listen port |
+| `APP_MSGPACK_TLS_CERT_PATH` | `/var/run/certs/ca.crt` | TLS certificate (enabled when file exists) |
+| `APP_MSGPACK_MAX_QUEUED_CONNECTIONS` | `100` | TCP backlog |
+| `APP_MSGPACK_MAX_CONCURRENT_REQUESTS` | `10` | Per-client concurrency limit (backpressure) |
+| `APP_MSGPACK_MAX_BUFFER_SIZE` | `8388608` (8 MiB) | Max unpacker buffer to bound memory usage |
+| `APP_MSGPACK_BINDING_OUTGOING_QUEUE_SIZE` | `5` | Outgoing notification queue depth |
+
 ### Message Intent
 
 Messages are categorized by **intent**, which maps to the MQTT topic structure:
@@ -162,6 +237,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Hidden fields** | Dataclass fields prefixed with `_`. Excluded from serialization, transported via custom metadata. |
 | **ISA-95** | International standard for manufacturing operations integration. Defines job orders, responses, and the automation pyramid. |
 | **Message intent** | Category of a message: `DATA`, `EVENT`, `COMMAND`, or `META`. Maps to MQTT topic segments. |
+| **MessagePack-RPC** | Binary TCP-based RPC transport. Used in sidecar deployments to decouple HTTP/API containers from the MicroDCS event loop. |
 | **MicroDCS** | The application class that wires handlers, bindings, and processors together and runs the main event loop. |
 | **Mixin** | Hand-written `*_mixin.py` class that provides `__post_init__` logic for hidden fields and metadata handling. |
 | **Northbound** | Processor direction facing up the ISA-95 pyramid. Subscribes to commands, publishes data/events/metadata. |
@@ -169,6 +245,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Processor binding** | Connects a processor to a protocol handler. Manages topic patterns and outgoing queue. |
 | **Protocol handler** | Manages transport connections (MQTT or MessagePack-RPC). Runs as an async task. |
 | **Response chain** | The mechanism by which request dataclasses create typed response objects via `.response()`. |
+| **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |
 | **Southbound** | Processor direction facing down the ISA-95 pyramid. Subscribes to data/events/metadata, publishes commands. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
 | **`__request_object__`** | `InitVar` field in response dataclasses. Automatically populated by `.response()` with the request instance. |

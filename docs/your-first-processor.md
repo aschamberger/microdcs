@@ -218,6 +218,41 @@ asyncio.run(microdcs.main())
 
 The `config_identifier` string (`"ping-pong"`) determines the MQTT topic namespace for this processor's bindings.
 
+### Adding a MessagePack-RPC Binding
+
+To also expose the processor over MessagePack-RPC (e.g. for a sidecar container), register a `MessagePackHandler` and a `MessagePackProtocolBinding` for the same processor:
+
+```python
+from microdcs.msgpack import (
+    MessagePackHandler,
+    MessagePackProtocolBinding,
+    OTELInstrumentedMessagePackHandler,
+)
+
+microdcs.register_protocol_handler(
+    MessagePackHandler(
+        microdcs.runtime_config.msgpack,
+        microdcs.redis_connection_pool,
+        microdcs.redis_key_schema,
+    ),
+    OTELInstrumentedMessagePackHandler(
+        microdcs.runtime_config.msgpack,
+        microdcs.redis_connection_pool,
+        microdcs.redis_key_schema,
+    ),
+)
+
+microdcs.register_protocol_binding(
+    MessagePackProtocolBinding(
+        ping_pong_processor,
+        microdcs.runtime_config.processing,
+        microdcs.runtime_config.msgpack,
+    )
+)
+```
+
+The processor instance is the same — one processor, multiple transports. A sidecar container can now call the `publish` RPC method to submit CloudEvents for processing, and receives outgoing events as notification frames. See [MessagePack-RPC Transport](concepts.md#messagepack-rpc-transport) for the sidecar architecture and client usage.
+
 ## The Response Chain
 
 The response chain is the mechanism by which a request dataclass creates properly typed response objects. It is built from three components:
