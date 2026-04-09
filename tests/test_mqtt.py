@@ -735,6 +735,104 @@ class TestMQTTHandler:
             pass
 
     @pytest.mark.asyncio
+    async def test_publish_message_no_expiry_task_when_interval_zero(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=0,
+        )
+        await handler._publish_message(client, ce, processor=proc)
+        assert len(handler._expiration_timeout_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_publish_message_no_expiry_task_when_interval_none(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=None,
+        )
+        await handler._publish_message(client, ce, processor=proc)
+        assert len(handler._expiration_timeout_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_publish_message_no_expiry_task_without_processor(self):
+        handler = _make_handler()
+        client = AsyncMock()
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=30,
+        )
+        await handler._publish_message(client, ce, processor=None)
+        assert len(handler._expiration_timeout_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_expiry_task_fires_and_invokes_handler(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        proc.handle_cloudevent_expiration = AsyncMock(return_value=None)
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=30,
+        )
+        await handler._publish_message(client, ce, processor=proc)
+        assert ce.id in handler._expiration_timeout_tasks
+        # Await the task (handle_cloudevent_expiration is an AsyncMock so resolves immediately)
+        await handler._expiration_timeout_tasks[ce.id]
+        proc.handle_cloudevent_expiration.assert_awaited_once_with(ce, 30)
+
+    @pytest.mark.asyncio
+    async def test_expiry_task_done_callback_removes_from_dict(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        proc.handle_cloudevent_expiration = AsyncMock(return_value=None)
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=30,
+        )
+        await handler._publish_message(client, ce, processor=proc)
+        assert ce.id in handler._expiration_timeout_tasks
+        # Await to let done callback fire
+        await handler._expiration_timeout_tasks[ce.id]
+        # Allow event loop to process done callbacks
+        await asyncio.sleep(0)
+        assert ce.id not in handler._expiration_timeout_tasks
+
+    @pytest.mark.asyncio
+    async def test_expiry_task_done_callback_logs_error(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        proc.handle_cloudevent_expiration = AsyncMock(
+            side_effect=RuntimeError("handler failed")
+        )
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=30,
+        )
+        await handler._publish_message(client, ce, processor=proc)
+        assert ce.id is not None
+        task = handler._expiration_timeout_tasks[ce.id]
+        # Task should complete with the error logged (not propagated — it's in a done callback)
+        with pytest.raises(RuntimeError, match="handler failed"):
+            await task
+        # Allow event loop to process done callbacks
+        await asyncio.sleep(0)
+        # Task still cleaned up from dict
+        assert ce.id not in handler._expiration_timeout_tasks
+
+    @pytest.mark.asyncio
     async def test_publish_message_with_retain(self):
         handler = _make_handler()
         client = AsyncMock()
@@ -1460,8 +1558,6 @@ class TestMQTTHandlerReconnection:
             raise _aiomqtt.MqttError("connection lost")
 
         client.__aenter__ = AsyncMock(side_effect=fail_always)
-
-        original_wait_for = asyncio.wait_for
 
         async def capture_sleep(coro, timeout):
             sleep_times.append(timeout)
