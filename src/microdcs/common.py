@@ -644,6 +644,14 @@ class CloudEventProcessor(ABC):
         after start (e.g. publishing metadata).
         """
 
+    async def shutdown(self) -> None:
+        """Optional async shutdown hook.
+
+        Called once during graceful shutdown after the task group has exited.
+        Override in subclasses that need to release resources acquired in
+        ``initialize()`` (e.g. closing database connections, flushing buffers).
+        """
+
     def register_publish_handler(
         self, handler: Callable[[CloudEvent, MessageIntent], None]
     ) -> None:

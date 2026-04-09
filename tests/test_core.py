@@ -52,6 +52,7 @@ def _register_mock_handler_and_binding(dcs: MicroDCS):
     mock_proc = MagicMock()
     mock_proc.initialize = AsyncMock()
     mock_proc.post_start = AsyncMock()
+    mock_proc.shutdown = AsyncMock()
 
     mock_binding = MagicMock()
     mock_binding.processor = mock_proc
@@ -308,6 +309,38 @@ class TestGracefulShutdown:
             await dcs.main()
 
         assert call_order == ["initialize", "create_task", "post_start"]
+
+    @pytest.mark.asyncio
+    async def test_processor_shutdown_called_after_task_group_exits(self):
+        """Processor shutdown() is called after the task group exits."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        mock_proc.shutdown.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_processor_shutdown_called_before_redis_close(self):
+        """Processor shutdown() runs before Redis connection pool is closed."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+
+        call_order: list[str] = []
+        mock_proc.shutdown = AsyncMock(
+            side_effect=lambda: call_order.append("shutdown")
+        )
+        dcs.redis_connection_pool.aclose = AsyncMock(
+            side_effect=lambda: call_order.append("redis_close")
+        )
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        assert call_order == ["shutdown", "redis_close"]
 
 
 class TestHandlerCrashPropagation:

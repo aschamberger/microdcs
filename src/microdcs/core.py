@@ -101,6 +101,10 @@ class MicroDCS:
 
         logger.info("Main application logic has completed")
 
+        # Shutdown every registered processor
+        for processor in self._processors:
+            await processor.shutdown()
+
         logger.info("Closing Redis connection pool")
         await self.redis_connection_pool.aclose()
 
