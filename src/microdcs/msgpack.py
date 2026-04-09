@@ -106,8 +106,11 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
         ssl_context = None
         if self._runtime_config.tls_cert_path.exists():
             ssl_context = ssl.create_default_context(
-                cafile=str(self._runtime_config.tls_cert_path)
+                ssl.Purpose.CLIENT_AUTH,
+                cafile=str(self._runtime_config.tls_cert_path),
             )
+            if self._runtime_config.tls_client_auth:
+                ssl_context.verify_mode = ssl.CERT_REQUIRED
         return MessagePackRpcServer(
             dispatcher=self._dispatch_method,
             hostname=self._runtime_config.hostname,

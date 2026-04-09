@@ -268,7 +268,9 @@ class TestRuntimeConfig:
     async def test_validate_rejects_non_positive_binding_queue_max(self):
         cfg = RuntimeConfig()
         cfg.processing.binding_outgoing_queue_max_size = 0
-        with pytest.raises(ValueError, match="processing.binding_outgoing_queue_max_size"):
+        with pytest.raises(
+            ValueError, match="processing.binding_outgoing_queue_max_size"
+        ):
             await cfg.validate()
 
     @pytest.mark.asyncio

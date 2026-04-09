@@ -21,6 +21,10 @@ class RedisConfig:
     hostname: str = "localhost"
     port: int = 6379
     key_prefix: str = "microdcs"
+    username: str | None = None
+    password: str | None = None
+    ssl: bool = False
+    ssl_ca_certs: Path | None = None
 
 
 @dataclass
@@ -44,6 +48,7 @@ class MessagePackConfig:
     hostname: str = "localhost"
     port: int = 8888
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
+    tls_client_auth: bool = False
     keep_alive: bool = True
     max_queued_connections: int = 100
     max_concurrent_requests: int = 10

@@ -179,6 +179,37 @@ class TestCloudEventSerialization:
         assert ce.custommetadata is not None
         assert ce.custommetadata["x-my-ext"] == "ext-val"
 
+    def test_custommetadata_injection_strips_colliding_fields(self):
+        """Injected custommetadata keys that collide with CloudEvent fields are stripped on deserialize."""
+        raw = {
+            "specversion": "1.0",
+            "source": "legit-source",
+            "id": "abc",
+            "type": "legit-type",
+            "custommetadata": {"source": "evil-source", "type": "evil-type"},
+        }
+        ce = CloudEvent.from_dict(raw)
+        # The colliding keys must be stripped from custommetadata
+        assert ce.custommetadata is not None
+        assert "source" not in ce.custommetadata
+        assert "type" not in ce.custommetadata
+        # The legitimate values must be preserved
+        assert ce.source == "legit-source"
+        assert ce.type == "legit-type"
+
+    def test_custommetadata_injection_does_not_overwrite_on_serialize(self):
+        """Even if a CloudEvent has colliding keys in custommetadata, they don't overwrite on serialize."""
+        ce = CloudEvent(
+            source="legit-source",
+            type="legit-type",
+        )
+        # Manually inject a colliding key (simulating in-memory manipulation)
+        assert ce.custommetadata is not None
+        ce.custommetadata["source"] = "evil-source"
+        d = ce.to_dict()
+        # The colliding key must not overwrite the spec attribute
+        assert d["source"] == "legit-source"
+
     def test_error_context_serialized_as_csv_pairs(self):
         ce = CloudEvent(
             source="test",

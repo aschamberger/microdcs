@@ -315,6 +315,11 @@ class CloudEvent(DataClassMixin):
                     dict["custommetadata"] = {}
                 dict["custommetadata"][k] = dict[k]
                 del dict[k]
+        # Remove any custom metadata keys that collide with CloudEvent fields
+        # to prevent field injection on round-trip serialization
+        if dict.get("custommetadata"):
+            for field_name in cls.__dataclass_fields__:
+                dict["custommetadata"].pop(field_name, None)
         return dict
 
     def __post_serialize__(
@@ -332,7 +337,8 @@ class CloudEvent(DataClassMixin):
         custommetadata = dict.pop("custommetadata", None)
         if custommetadata is not None:
             for k, v in custommetadata.items():
-                dict[k] = v
+                if k not in self.__dataclass_fields__:
+                    dict[k] = v
         dict.pop("transportmetadata", None)
         if context and context.get("remove_data"):
             dict.pop("data", None)

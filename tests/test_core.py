@@ -1,8 +1,11 @@
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import redis.asyncio as redis
 
+from microdcs import RedisConfig
 from microdcs.core import MicroDCS
 
 
@@ -154,9 +157,7 @@ class TestStartupFailureRecovery:
         """main() propagates RuntimeConfig.validate() errors."""
         dcs = _create_microdcs(otel_enabled=False)
         _register_mock_handler_and_binding(dcs)
-        dcs.runtime_config.validate = AsyncMock(
-            side_effect=ValueError("bad config")
-        )
+        dcs.runtime_config.validate = AsyncMock(side_effect=ValueError("bad config"))
 
         with pytest.raises(ValueError, match="bad config"):
             await dcs.main()
@@ -169,9 +170,7 @@ class TestStartupFailureRecovery:
         """main() propagates processor.initialize() errors before task group starts."""
         dcs = _create_microdcs(otel_enabled=False)
         _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
-        mock_proc.initialize = AsyncMock(
-            side_effect=RuntimeError("init boom")
-        )
+        mock_proc.initialize = AsyncMock(side_effect=RuntimeError("init boom"))
 
         with pytest.raises(RuntimeError, match="init boom"):
             await dcs.main()
@@ -270,10 +269,12 @@ class TestGracefulShutdown:
         _register_mock_handler_and_binding(dcs)
 
         with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
-            mock_tg_cls.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
-                create_task=MagicMock(side_effect=_close_coroutine_arg),
-                shutdown_event=MagicMock(),
-            ))
+            mock_tg_cls.return_value.__aenter__ = AsyncMock(
+                return_value=MagicMock(
+                    create_task=MagicMock(side_effect=_close_coroutine_arg),
+                    shutdown_event=MagicMock(),
+                )
+            )
             mock_tg_cls.return_value.__aexit__ = AsyncMock(
                 side_effect=ExceptionGroup("boom", [RuntimeError("handler died")])
             )
@@ -356,9 +357,7 @@ class TestHandlerCrashPropagation:
         async def failing_handler():
             raise RuntimeError("handler crashed")
 
-        handler, otel_handler, binding, _ = (
-            _register_mock_handler_and_binding(dcs)
-        )
+        handler, otel_handler, binding, _ = _register_mock_handler_and_binding(dcs)
         handler.task = failing_handler
         # Replace first handler entry with this one
         handler_cls = type(handler)
@@ -426,3 +425,41 @@ class TestHandlerCrashPropagation:
 
         # The long-running handler was cancelled by the task group
         assert completed.is_set()
+
+
+class TestRedisConnectionPool:
+    """Tests for Redis connection pool configuration in MicroDCS.__init__."""
+
+    def _make_dcs_with_redis_config(self, **redis_overrides) -> MicroDCS:
+        redis_cfg = RedisConfig(**redis_overrides)
+        with patch("microdcs.core.RuntimeConfig") as mock_rc:
+            mock_rc.return_value.redis = redis_cfg
+            mock_rc.return_value.redis.key_prefix = redis_cfg.key_prefix
+            dcs = MicroDCS()
+        return dcs
+
+    def test_default_no_auth_no_ssl(self):
+        dcs = self._make_dcs_with_redis_config()
+        pool = dcs.redis_connection_pool
+        assert pool.connection_kwargs.get("username") is None
+        assert pool.connection_kwargs.get("password") is None
+        assert pool.connection_class is not redis.SSLConnection
+
+    def test_username_password_passed(self):
+        dcs = self._make_dcs_with_redis_config(username="myuser", password="secret")
+        pool = dcs.redis_connection_pool
+        assert pool.connection_kwargs["username"] == "myuser"
+        assert pool.connection_kwargs["password"] == "secret"
+
+    def test_ssl_enabled(self):
+        dcs = self._make_dcs_with_redis_config(ssl=True)
+        pool = dcs.redis_connection_pool
+        assert pool.connection_class is redis.SSLConnection
+
+    def test_ssl_with_ca_certs(self):
+        dcs = self._make_dcs_with_redis_config(
+            ssl=True, ssl_ca_certs=Path("/fake/ca.crt")
+        )
+        pool = dcs.redis_connection_pool
+        assert pool.connection_class is redis.SSLConnection
+        assert pool.connection_kwargs["ssl_ca_certs"] == "/fake/ca.crt"

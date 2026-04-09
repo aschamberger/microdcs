@@ -21,10 +21,23 @@ class MicroDCS:
         logger.debug("Runtime config: %s", self.runtime_config)
 
         logger.info("Initializing Redis connection pool")
+        redis_kwargs: dict = {
+            "host": self.runtime_config.redis.hostname,
+            "port": self.runtime_config.redis.port,
+            "protocol": 3,
+        }
+        if self.runtime_config.redis.username is not None:
+            redis_kwargs["username"] = self.runtime_config.redis.username
+        if self.runtime_config.redis.password is not None:
+            redis_kwargs["password"] = self.runtime_config.redis.password
+        if self.runtime_config.redis.ssl:
+            redis_kwargs["connection_class"] = redis.SSLConnection
+            if self.runtime_config.redis.ssl_ca_certs is not None:
+                redis_kwargs["ssl_ca_certs"] = str(
+                    self.runtime_config.redis.ssl_ca_certs
+                )
         self.redis_connection_pool: redis.ConnectionPool = redis.ConnectionPool(
-            host=self.runtime_config.redis.hostname,
-            port=self.runtime_config.redis.port,
-            protocol=3,
+            **redis_kwargs
         )
         self.redis_key_schema: RedisKeySchema = RedisKeySchema(
             self.runtime_config.redis.key_prefix

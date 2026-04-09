@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import ssl
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -413,8 +414,22 @@ class TestMessagePackHandler:
         handler._runtime_config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
         with patch("ssl.create_default_context") as mock_ssl:
             server = handler._server()
-            mock_ssl.assert_called_once()
+            mock_ssl.assert_called_once_with(
+                ssl.Purpose.CLIENT_AUTH, cafile="/fake/cert"
+            )
             assert server._ssl_context is not None
+
+    def test_server_with_tls_client_auth(self):
+        handler = _make_handler()
+        handler._runtime_config.tls_cert_path = MagicMock()
+        handler._runtime_config.tls_cert_path.exists.return_value = True
+        handler._runtime_config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
+        handler._runtime_config.tls_client_auth = True
+        with patch("ssl.create_default_context") as mock_ssl:
+            mock_ctx = MagicMock()
+            mock_ssl.return_value = mock_ctx
+            handler._server()
+            assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
 
     @pytest.mark.asyncio
     async def test_send_response_success(self):

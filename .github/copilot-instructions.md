@@ -105,11 +105,28 @@ docker build -t aschamberger/microdcs .
 - Integration tests requiring external services (MQTT broker, Redis) use skip markers from `conftest.py` (`mqtt_available`, `redis_available`, `msgpack_server_available`) and `@pytest.mark.integration`.
 - Unit tests mock external dependencies extensively (`unittest.mock.AsyncMock`, `MagicMock`, `patch`).
 - Test classes group related tests (e.g., `class TestHello:`, `class TestGreetingsCloudEventProcessor:`).
+- All code (source and tests) must have zero Pylance errors. Use type narrowing (e.g. `assert x is not None`) where needed to satisfy the type checker.
 
 ### Async Patterns
 
 - The framework is fully async (`asyncio`). The main loop uses `SystemEventTaskGroup` (a custom `asyncio.TaskGroup` subclass) for graceful signal handling (SIGINT/SIGTERM).
 - Protocol handlers run as tasks within this group; each handler manages its own connection lifecycle with retry/backoff.
+
+### Design Decisions
+
+These are intentional choices — do not flag them as issues in reviews:
+
+- **Comma-delimited config parsing is safe**: `set[str]`/`list[str]` env var fields (e.g. MQTT topics, `name:path` pairs) use comma splitting without escaping. This is fine because MQTT topic names cannot contain commas per the spec, and all current list/set fields use structured `name:path` values where commas are not valid.
+- **Fail-fast startup**: `MicroDCS.main()` has no try/except around processor `initialize()` or handler startup. If a component can't start, the process should crash immediately rather than run in a degraded state. Kubernetes restart policies handle recovery.
+- **`_event_attributes` is not dead code**: It is populated by processor mixin classes (e.g. `machinery_jobs_mixin.py`), not in the base `CloudEventProcessor.__init__`. Check subclass mixins before assuming it's unused.
+- **Queue backpressure uses `RuntimeError`**: `ProtocolBinding._enqueue_outgoing_event()` raises on queue full intentionally. Silent blocking would hide overload; an explicit error surfaces the problem for the caller to handle.
+- **`ContextVar` is async-only**: The framework is fully async with no thread-pool executors. `ContextVar` works correctly in asyncio task-local scope. If threading is ever introduced, this needs revisiting.
+- **Dual OTEL handler registration**: Plain + instrumented handler pairs are a pragmatic pattern. A factory/strategy would add abstraction without clear benefit — the wiring happens once in `app/__main__.py`.
+- **`get_protocol_handler()` same-module resolution**: Handler references are resolved within the registering module. This is by design — handlers are always registered in the app entry point, not across library modules.
+- **Error context uses comma/equals encoding**: `mdcserrorcontext` serializes as `key=value,key=value`. Values containing `,` or keys containing `=` will corrupt the dict. This is acceptable because error context is only set by application code with simple single-word keys and numeric/string values — it is never populated from external input.
+- **`custommetadata` has no explicit size limit**: Transport-level limits already bound payload size (MessagePack `max_buffer_size=8MB`, MQTT broker max packet size). An explicit size check on `custommetadata` would be redundant defense-in-depth.
+- **MQTT TLS uses Python defaults for hostname verification**: `aiomqtt.TLSParameters(ca_certs=...)` relies on `ssl.create_default_context()` which sets `check_hostname=True` and `verify_mode=CERT_REQUIRED` by default. These defaults are secure.
+- **Expiration tasks are safe with `id=None`**: There is an explicit `cloudevent.id is not None` guard before creating expiration tasks, so `None` IDs never enter the `_expiration_timeout_tasks` dict.
 
 ### Known Issues / Workarounds
 
