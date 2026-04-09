@@ -114,4 +114,3 @@ docker build -t aschamberger/microdcs .
 ### Known Issues / Workarounds
 
 - MQTT handler has FIXMEs for aiomqtt manual ack pending upstream PR merge (`aiomqtt#346`).
-- OPC UA Machinery Jobs processor has a TODO for job acceptance logic validation.

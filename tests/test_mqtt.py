@@ -1237,8 +1237,6 @@ class TestMQTTHandlerShutdown:
         async def stalling_publisher(c, b):
             await asyncio.sleep(999)
 
-        original_join = binding.outgoing_queue.join
-
         async def track_join():
             # Mark item done so join completes
             binding.outgoing_queue.task_done()
