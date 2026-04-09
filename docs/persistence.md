@@ -45,7 +45,12 @@ All DAO classes are async and use `redis.asyncio`. They are initialized with a s
 
 ```python
 import redis.asyncio as redis
-from microdcs.redis import RedisKeySchema, CloudEventDedupeDAO, JobOrderAndStateDAO, JobResponseDAO
+from microdcs.redis import (
+    RedisKeySchema,
+    CloudEventDedupeDAO,
+    JobOrderAndStateDAO,
+    JobResponseDAO,
+)
 
 # Create connection pool and key schema (usually done by MicroDCS core)
 pool = redis.ConnectionPool(host="localhost", port=6379, protocol=3)

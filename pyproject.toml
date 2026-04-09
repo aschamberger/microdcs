@@ -45,3 +45,6 @@ testpaths = ["tests"]
 markers = [
     "integration: integration tests requiring external services (MQTT, Redis)",
 ]
+
+[tool.ruff]
+format.preview = true

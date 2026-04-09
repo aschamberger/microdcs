@@ -74,11 +74,18 @@ The generator produces dataclasses that look like this (simplified):
 
 ```python
 from dataclasses import dataclass
-from microdcs.dataclass import DataClassConfig, DataClassResponseMixin, DataClassValidationMixin
+from microdcs.dataclass import (
+    DataClassConfig,
+    DataClassResponseMixin,
+    DataClassValidationMixin,
+)
 from microdcs.models.ping_pong_mixin import PingPongDataClassMixin
 
+
 @dataclass(kw_only=True)
-class Ping(DataClassValidationMixin, DataClassResponseMixin["Pong"], PingPongDataClassMixin):
+class Ping(
+    DataClassValidationMixin, DataClassResponseMixin["Pong"], PingPongDataClassMixin
+):
     __request_object__: InitVar[Ping | None] = None
     message: str
 
@@ -86,6 +93,7 @@ class Ping(DataClassValidationMixin, DataClassResponseMixin["Pong"], PingPongDat
         response_type: str = "Pong"
         cloudevent_type: str = "com.example.ping.v1"
         cloudevent_dataschema: str = "https://example.com/schemas/ping-pong/v1.0.0/ping"
+
 
 @dataclass(kw_only=True)
 class Pong(DataClassValidationMixin, PingPongDataClassMixin):
@@ -277,10 +285,12 @@ class StoreCall(DataClassResponseMixin["StoreResponse"], ...):
     job_order_id: str
     job_order: ISA95JobOrderDataType
 
+
 @dataclass(kw_only=True)
 class StoreResponse(...):
     job_order_id: str
     return_status: MethodReturnStatus
+
 
 # In the processor:
 response = store_call.response(
@@ -362,6 +372,7 @@ from microdcs.dataclass import DataClassMixin
 
 if TYPE_CHECKING:
     from app.models.ping_pong import PingPong
+
 
 class PingPongDataClassMixin(DataClassMixin):
     def __post_init__(
