@@ -674,6 +674,28 @@ class TestMessagePackHandler:
         writer.close.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_handle_client_uses_configured_unpacker_buffer_limit(self):
+        handler = _make_handler()
+        handler._runtime_config.max_buffer_size = 1234
+        server = handler._server()
+        reader = AsyncMock()
+        writer = MagicMock()
+        writer.get_extra_info = MagicMock(return_value=("127.0.0.1", 9999))
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+
+        reader.read = AsyncMock(return_value=b"")
+
+        with patch("microdcs.msgpack.msgpack.Unpacker") as unpacker_cls:
+            unpacker = MagicMock()
+            unpacker.__iter__.return_value = iter([])
+            unpacker_cls.return_value = unpacker
+
+            await server._handle_client(reader, writer)
+
+        unpacker_cls.assert_called_once_with(raw=False, max_buffer_size=1234)
+
+    @pytest.mark.asyncio
     async def test_task_redis_ping_success(self):
         handler = _make_handler()
         mock_server = AsyncMock()
@@ -952,6 +974,22 @@ class TestMessagePackRpcClient:
         mock_reader.read = AsyncMock(side_effect=ConnectionResetError("reset"))
         # Should not raise (prints error)
         await client._reader_loop()
+
+    @pytest.mark.asyncio
+    async def test_reader_loop_uses_configured_unpacker_buffer_limit(self):
+        client = MessagePackRpcClient(max_buffer_size=5678)
+        mock_reader = AsyncMock()
+        client.reader = mock_reader
+        mock_reader.read = AsyncMock(return_value=b"")
+
+        with patch("microdcs.msgpack.msgpack.Unpacker") as unpacker_cls:
+            unpacker = MagicMock()
+            unpacker.__iter__.return_value = iter([])
+            unpacker_cls.return_value = unpacker
+
+            await client._reader_loop()
+
+        unpacker_cls.assert_called_once_with(raw=False, max_buffer_size=5678)
 
 
 # ===================================================================

@@ -115,6 +115,7 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
             ssl_context=ssl_context,
             max_queued_connections=self._runtime_config.max_queued_connections,
             max_concurrent_requests=self._runtime_config.max_concurrent_requests,
+            max_buffer_size=self._runtime_config.max_buffer_size,
         )
 
     async def _outgoing_message_publisher(
@@ -339,12 +340,14 @@ class MessagePackRpcServer:
         ssl_context: ssl.SSLContext | None = None,
         max_queued_connections: int = 100,
         max_concurrent_requests: int = 10,
+        max_buffer_size: int = 8 * 1024 * 1024,
     ):
         self._host = hostname
         self._port = port
         self._ssl_context = ssl_context
         self._max_queued_connections = max_queued_connections
         self._max_concurrent_requests = max_concurrent_requests
+        self._max_buffer_size = max_buffer_size
         self._server: asyncio.Server | None = None
         self._methods: dict[str, Callable] = {}
         self._dispatcher = dispatcher
@@ -455,7 +458,10 @@ class MessagePackRpcServer:
         # 3. Active Task Tracking (for cleanup)
         active_tasks = set()
 
-        unpacker = msgpack.Unpacker(raw=False)
+        unpacker = msgpack.Unpacker(
+            raw=False,
+            max_buffer_size=self._max_buffer_size,
+        )
 
         try:
             while True:
@@ -554,9 +560,15 @@ class MessagePackRpcServer:
 
 
 class MessagePackRpcClient:
-    def __init__(self, host="localhost", port=8888):
+    def __init__(
+        self,
+        host="localhost",
+        port=8888,
+        max_buffer_size: int = 8 * 1024 * 1024,
+    ):
         self._host = host
         self._port = port
+        self._max_buffer_size = max_buffer_size
         self.reader = None
         self.writer = None
         self._id_counter = itertools.count(1)
@@ -637,7 +649,10 @@ class MessagePackRpcClient:
                 "Client is not connected. Did you forget 'await client.connect()'?"
             )
 
-        unpacker = msgpack.Unpacker(raw=False)
+        unpacker = msgpack.Unpacker(
+            raw=False,
+            max_buffer_size=self._max_buffer_size,
+        )
         try:
             while True:
                 data = await self.reader.read(4096)

@@ -32,6 +32,17 @@ Run the example application:
 uv run python -m app
 ```
 
+## MessagePack Buffer Limit
+
+The MessagePack-RPC transport sets `msgpack.Unpacker(max_buffer_size=...)` to bound
+the size of buffered, not-yet-decoded payload data.
+
+* Default limit: `8388608` bytes (8 MiB)
+* Runtime override: set `APP_MSGPACK_MAX_BUFFER_SIZE`
+
+This helps protect the process from excessive memory usage caused by oversized or
+malformed input streams.
+
 Generate typed models from a JSON Schema file:
 
 ```bash

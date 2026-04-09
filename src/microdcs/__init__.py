@@ -47,6 +47,7 @@ class MessagePackConfig:
     keep_alive: bool = True
     max_queued_connections: int = 100
     max_concurrent_requests: int = 10
+    max_buffer_size: int = 8 * 1024 * 1024
     binding_outgoing_queue_size: int = 5
 
 
