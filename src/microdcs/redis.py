@@ -344,15 +344,19 @@ class JobOrderAndStateDAO:
         job_order_id = job_order_and_state.job_order.job_order_id
         logger.debug(f"Saving Job Order with ID {job_order_id} to Redis")
         key = self.key_schema.joborder_key(job_order_id)
-        await self.redis.json().set(
-            key,
-            "$",
-            job_order_and_state.to_dict(context={"add_cloudevent_dataschema": True}),
-        )  # type: ignore[reportGeneralTypeIssues]
-        # Add to the sorted set with priority as score
         priority = getattr(job_order_and_state.job_order, "priority", 0) or 0
         list_key = self.key_schema.joborder_list_key(scope)
-        await self.redis.zadd(list_key, {job_order_id: priority})  # type: ignore[reportGeneralTypeIssues]
+        # Execute state document + sorted-set index update atomically.
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.json().set(
+                key,
+                "$",
+                job_order_and_state.to_dict(
+                    context={"add_cloudevent_dataschema": True}
+                ),
+            )
+            pipe.zadd(list_key, {job_order_id: priority})
+            await pipe.execute()
 
     async def retrieve(self, job_order_id: str) -> ISA95JobOrderAndStateDataType | None:
         """
@@ -384,8 +388,11 @@ class JobOrderAndStateDAO:
         """
         logger.debug(f"Deleting Job Order with ID {job_order_id} from Redis")
         key = self.key_schema.joborder_key(job_order_id)
-        await self.redis.delete(key)
-        await self.remove_from_list(job_order_id, scope)
+        list_key = self.key_schema.joborder_list_key(scope)
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.delete(key)
+            pipe.zrem(list_key, job_order_id)
+            await pipe.execute()
 
     async def remove_from_list(self, job_order_id: str, scope: str) -> None:
         """
@@ -481,15 +488,17 @@ class JobResponseDAO:
             state_str = self.normalize_state(job_response.job_state)
             if state_str:
                 ctx["add_normalized_state"] = state_str
-        await self.redis.json().set(
-            key,
-            "$",
-            job_response.to_dict(context=ctx),
-        )  # type: ignore[reportGeneralTypeIssues]
-        # Add to the sorted set with start_time as score
         start_time = getattr(job_response, "start_time", 0) or 0
         list_key = self.key_schema.jobresponse_list_key(scope)
-        await self.redis.zadd(list_key, {job_response_id: start_time})  # type: ignore[reportGeneralTypeIssues]
+        # Execute state document + sorted-set index update atomically.
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.json().set(
+                key,
+                "$",
+                job_response.to_dict(context=ctx),
+            )
+            pipe.zadd(list_key, {job_response_id: start_time})
+            await pipe.execute()
 
     async def retrieve(self, job_response_id: str):
         """
@@ -575,8 +584,11 @@ class JobResponseDAO:
         """
         logger.debug(f"Deleting Job Response with ID {job_response_id} from Redis")
         key = self.key_schema.jobresponse_key(job_response_id)
-        await self.redis.delete(key)
-        await self.remove_from_list(job_response_id, scope)
+        list_key = self.key_schema.jobresponse_list_key(scope)
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.delete(key)
+            pipe.zrem(list_key, job_response_id)
+            await pipe.execute()
 
     async def remove_from_list(self, job_response_id: str, scope: str) -> None:
         """

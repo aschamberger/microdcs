@@ -208,6 +208,16 @@ def _make_redis_mock() -> AsyncMock:
     # redis.ft() is a sync call that returns a sub-client with async methods
     ft_sub = AsyncMock()
     mock.ft = MagicMock(return_value=ft_sub)
+    # redis.pipeline(...) returns a sync object used as an async context manager
+    pipe = AsyncMock()
+    pipe.__aenter__.return_value = pipe
+    pipe.__aexit__.return_value = False
+    pipe_json_sub = MagicMock()
+    pipe.json = MagicMock(return_value=pipe_json_sub)
+    pipe.zadd = MagicMock()
+    pipe.zrem = MagicMock()
+    pipe.delete = MagicMock()
+    mock.pipeline = MagicMock(return_value=pipe)
     return mock
 
 
@@ -379,13 +389,16 @@ class TestJobOrderAndStateDAO:
         ):
             await self.dao.save(jo, scope="s1")
 
-        json_mock = self.redis.json()
-        json_mock.set.assert_awaited_once()
+        pipe = self.redis.pipeline.return_value
+        self.redis.pipeline.assert_called_once_with(transaction=True)
+        pipe.execute.assert_awaited_once()
+        json_mock = pipe.json()
+        json_mock.set.assert_called_once()
         call_args = json_mock.set.call_args
         assert call_args.args[0] == self.schema.joborder_key("jo-1")
         assert call_args.args[1] == "$"
 
-        self.redis.zadd.assert_awaited_once_with(
+        pipe.zadd.assert_called_once_with(
             self.schema.joborder_list_key("s1"), {"jo-1": 5}
         )
 
@@ -408,7 +421,8 @@ class TestJobOrderAndStateDAO:
         jo = self._make_job_order_and_state(priority=None)  # type: ignore[arg-type]
         with patch.object(jo, "to_dict", return_value={}):
             await self.dao.save(jo, scope="s1")
-        self.redis.zadd.assert_awaited_once_with(
+        pipe = self.redis.pipeline.return_value
+        pipe.zadd.assert_called_once_with(
             self.schema.joborder_list_key("s1"), {"jo-1": 0}
         )
 
@@ -442,10 +456,11 @@ class TestJobOrderAndStateDAO:
     @pytest.mark.asyncio
     async def test_delete_removes_key_and_list_entry(self):
         await self.dao.delete("jo-1", scope="s1")
-        self.redis.delete.assert_awaited_once_with(self.schema.joborder_key("jo-1"))
-        self.redis.zrem.assert_awaited_once_with(
-            self.schema.joborder_list_key("s1"), "jo-1"
-        )
+        pipe = self.redis.pipeline.return_value
+        self.redis.pipeline.assert_called_once_with(transaction=True)
+        pipe.delete.assert_called_once_with(self.schema.joborder_key("jo-1"))
+        pipe.zrem.assert_called_once_with(self.schema.joborder_list_key("s1"), "jo-1")
+        pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
@@ -501,13 +516,16 @@ class TestJobResponseDAO:
         with patch.object(jr, "to_dict", return_value={"JobResponseID": "jr-1"}):
             await self.dao.save(jr, scope="s1")
 
-        json_mock = self.redis.json()
-        json_mock.set.assert_awaited_once()
+        pipe = self.redis.pipeline.return_value
+        self.redis.pipeline.assert_called_once_with(transaction=True)
+        pipe.execute.assert_awaited_once()
+        json_mock = pipe.json()
+        json_mock.set.assert_called_once()
         call_args = json_mock.set.call_args
         assert call_args.args[0] == self.schema.jobresponse_key("jr-1")
         assert call_args.args[1] == "$"
 
-        self.redis.zadd.assert_awaited_once_with(
+        pipe.zadd.assert_called_once_with(
             self.schema.jobresponse_list_key("s1"), {"jr-1": 0}
         )
 
@@ -573,10 +591,13 @@ class TestJobResponseDAO:
     @pytest.mark.asyncio
     async def test_delete_removes_key_and_list_entry(self):
         await self.dao.delete("jr-1", scope="s1")
-        self.redis.delete.assert_awaited_once_with(self.schema.jobresponse_key("jr-1"))
-        self.redis.zrem.assert_awaited_once_with(
+        pipe = self.redis.pipeline.return_value
+        self.redis.pipeline.assert_called_once_with(transaction=True)
+        pipe.delete.assert_called_once_with(self.schema.jobresponse_key("jr-1"))
+        pipe.zrem.assert_called_once_with(
             self.schema.jobresponse_list_key("s1"), "jr-1"
         )
+        pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_remove_from_list(self):
