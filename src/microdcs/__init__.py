@@ -362,18 +362,25 @@ class SystemEventTaskGroup(asyncio.TaskGroup):
             "Setting up signal handlers for: %s",
             ", ".join(s.name for s in self._signals),
         )
+        self._win_signal_watcher: bool = False
         try:
             loop = asyncio.get_running_loop()
             for sig in self._signals:
                 loop.add_signal_handler(sig, self.shutdown, sig)
         except NotImplementedError:  # Windows compatibility
-            self._win_signal = None
+            self._win_signal: int | None = None
 
-            def set_win_signal(sig: int, frame: FrameType | None):
-                self._win_signal = sig
+            def set_win_signal(sig_num: int, frame: FrameType | None):
+                self._win_signal = sig_num
 
             for sig in self._signals:
                 signal.signal(sig, set_win_signal)
+
+            self._win_signal_watcher = True
+
+    async def __aenter__(self):
+        result = await super().__aenter__()
+        if self._win_signal_watcher:
 
             async def win_signal_watcher():
                 while self._win_signal is None:
@@ -381,3 +388,4 @@ class SystemEventTaskGroup(asyncio.TaskGroup):
                 self.shutdown(signal.Signals(self._win_signal))
 
             self.create_task(win_signal_watcher())
+        return result

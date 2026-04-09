@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -353,3 +354,32 @@ class TestSystemEventTaskGroup:
     @staticmethod
     async def _append(lst: list[int], val: int) -> None:
         lst.append(val)
+
+    @pytest.mark.asyncio
+    async def test_windows_signal_fallback(self):
+        """When add_signal_handler raises NotImplementedError, the Windows
+        polling fallback is used."""
+        import signal as sig
+
+        real_loop = asyncio.get_running_loop()
+        original_add = real_loop.add_signal_handler
+
+        def raise_not_impl(*args, **kwargs):
+            raise NotImplementedError
+
+        real_loop.add_signal_handler = raise_not_impl  # type: ignore
+        try:
+            with patch.object(sig, "signal"):  # don't change real handlers
+                async with SystemEventTaskGroup(
+                    grace_period=0, signals={sig.SIGINT}
+                ) as tg:
+                    assert hasattr(tg, "_win_signal")
+                    assert tg._win_signal is None
+                    # Simulate signal arrival
+                    tg._win_signal = sig.SIGINT.value
+                    # Give the watcher time to detect it
+                    await asyncio.sleep(1.5)
+
+            assert tg.shutdown_event.is_set()
+        finally:
+            real_loop.add_signal_handler = original_add  # type: ignore
