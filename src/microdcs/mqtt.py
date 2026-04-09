@@ -149,8 +149,15 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 )
             )
             self._expiration_timeout_tasks[cloudevent.id].add_done_callback(
-                lambda _task, _id=cloudevent.id: self._expiration_timeout_tasks.pop(
-                    _id, None
+                lambda _task, _id=cloudevent.id: (
+                    logger.error(
+                        "Expiration task for event %s failed: %s",
+                        _id,
+                        _task.exception(),
+                    )
+                    if not _task.cancelled() and _task.exception() is not None
+                    else None,
+                    self._expiration_timeout_tasks.pop(_id, None),
                 )
             )
 
@@ -442,7 +449,10 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                             shutdown_waiter.cancel()
                             await self._cancel_and_wait(all_tasks)
                             for task in done:
-                                if not task.cancelled() and task.exception() is not None:
+                                if (
+                                    not task.cancelled()
+                                    and task.exception() is not None
+                                ):
                                     raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
 
                     except asyncio.CancelledError:
