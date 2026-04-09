@@ -29,6 +29,7 @@ theme:
     - navigation.footer
 nav:
   - Home: index.md
+  - Your First Processor: your-first-processor.md
   - Overall Design:
       - Overview: overall-design.md
       - Technical Standards: technical-standards.md

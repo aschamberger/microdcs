@@ -78,5 +78,6 @@ uv run microdcs dataclassgen dataclasses my-schema.schema.json
 
 ## Additional Documentation
 
+* [Your First Processor](https://aschamberger.github.io/microdcs/your-first-processor/)
 * [Overall Design](https://aschamberger.github.io/microdcs/overall-design/)
 * [Development](https://aschamberger.github.io/microdcs/development/)
