@@ -891,6 +891,18 @@ class TestMQTTHandler:
         assert ce.type == "com.test.sample.v1"
         assert ce.source == "test-source"
 
+    def test_cloudevent_from_message_invalid_correlation_data(self):
+        handler = _make_handler()
+        props = MagicMock()
+        props.CorrelationData = b"\x00\x01"  # Not 16 bytes — invalid UUID
+        del props.MessageExpiryInterval
+        del props.ContentType
+        del props.ResponseTopic
+        props.UserProperty = []
+        msg = _make_mqtt_message(properties=props)
+        with pytest.raises(ValueError):
+            handler._cloudevent_from_message(msg)
+
     def test_cloudevent_from_message_custom_metadata(self):
         handler = _make_handler()
         props = MagicMock()

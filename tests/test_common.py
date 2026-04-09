@@ -339,6 +339,22 @@ class TestCloudEventPayload:
         with pytest.raises(ValueError, match="Unsupported content type"):
             ce.unserialize_payload(SamplePayload)
 
+    def test_unserialize_corrupted_json_raises(self):
+        ce = CloudEvent(
+            datacontenttype="application/json",
+            data=b"{not valid json",
+        )
+        with pytest.raises(Exception):
+            ce.unserialize_payload(SamplePayload)
+
+    def test_unserialize_corrupted_msgpack_raises(self):
+        ce = CloudEvent(
+            datacontenttype="application/msgpack",
+            data=b"\xff\xfe\xfd",
+        )
+        with pytest.raises(Exception):
+            ce.unserialize_payload(SamplePayload)
+
     def test_serialize_json_payload(self):
         payload = SamplePayload(value="ser")
         ce = CloudEvent(datacontenttype="application/json")
