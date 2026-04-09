@@ -972,8 +972,36 @@ class ProtocolBinding(Generic[PH], ABC):
 
         self.processor = processor
         self.processing_config = processing_config
-        self.outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue(queue_size)
+        max_queue_size = self.processing_config.binding_outgoing_queue_max_size
+        effective_queue_size = queue_size if queue_size > 0 else max_queue_size
+        if effective_queue_size > max_queue_size:
+            logger.warning(
+                "Configured binding queue size %d exceeds processing max %d. Capping to max.",
+                effective_queue_size,
+                max_queue_size,
+            )
+            effective_queue_size = max_queue_size
+        if effective_queue_size <= 0:
+            raise ValueError("Outgoing binding queue size must be > 0")
+
+        self.outgoing_queue: Queue[tuple[CloudEvent, MessageIntent]] = Queue(
+            effective_queue_size
+        )
         self.outgoing_ce_type_filter = outgoing_ce_type_filter
+
+    def _enqueue_outgoing_event(
+        self,
+        cloudevent: CloudEvent,
+        intent: MessageIntent,
+    ) -> None:
+        try:
+            self.outgoing_queue.put_nowait((cloudevent, intent))
+        except asyncio.QueueFull as exc:
+            raise RuntimeError(
+                "Outgoing queue is full. Apply backpressure or increase "
+                "processing.binding_outgoing_queue_max_size / protocol "
+                "binding_outgoing_queue_size."
+            ) from exc
 
     def publish_handler(self, cloudevent: CloudEvent, intent: MessageIntent) -> None:
         """Default publish handler that puts the event into the outgoing queue.
@@ -984,7 +1012,7 @@ class ProtocolBinding(Generic[PH], ABC):
             self.outgoing_ce_type_filter is None
             or len(self.outgoing_ce_type_filter) == 0
         ):
-            self.outgoing_queue.put_nowait((cloudevent, intent))
+            self._enqueue_outgoing_event(cloudevent, intent)
             return
         if cloudevent.type is None:
             logger.warning(
@@ -994,5 +1022,5 @@ class ProtocolBinding(Generic[PH], ABC):
             return
         for filter in self.outgoing_ce_type_filter:
             if filter == cloudevent.type or fnmatch.fnmatch(cloudevent.type, filter):
-                self.outgoing_queue.put_nowait((cloudevent, intent))
+                self._enqueue_outgoing_event(cloudevent, intent)
                 return

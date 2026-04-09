@@ -218,6 +218,70 @@ class TestRegisterMQTTProcessor:
         handler.register_binding(binding)
         for topic in binding.topics:
             assert topic.startswith("$share/mygroup/")
+
+    def test_binding_queue_size_falls_back_to_processing_max_when_zero(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+            binding_outgoing_queue_max_size=7,
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(binding_outgoing_queue_size=0),
+        )
+        handler.register_binding(binding)
+        assert binding.outgoing_queue.maxsize == 7
+
+    def test_binding_queue_size_is_capped_by_processing_max(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+            binding_outgoing_queue_max_size=3,
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(binding_outgoing_queue_size=10),
+        )
+        handler.register_binding(binding)
+        assert binding.outgoing_queue.maxsize == 3
+
+    def test_publish_handler_raises_when_binding_queue_is_full(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+            binding_outgoing_queue_max_size=1,
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(binding_outgoing_queue_size=1),
+        )
+        handler.register_binding(binding)
+
+        ce = CloudEvent(type="com.test.any")
+        binding.publish_handler(ce, MessageIntent.COMMAND)
+        with pytest.raises(RuntimeError, match="Outgoing queue is full"):
+            binding.publish_handler(ce, MessageIntent.COMMAND)
         # Response topic does NOT get shared subscription prefix
         assert not binding.response_topic.startswith("$share/")
 

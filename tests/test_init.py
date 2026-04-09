@@ -64,6 +64,7 @@ class TestProcessingConfig:
         assert cfg.shared_subscription_name is None
         assert cfg.topic_prefixes == set()
         assert cfg.response_topics == set()
+        assert cfg.binding_outgoing_queue_max_size == 1000
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +265,13 @@ class TestRuntimeConfig:
         cfg = RuntimeConfig()
         cfg.processing.message_expiry_interval = -1
         with pytest.raises(ValueError, match="processing.message_expiry_interval"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_rejects_non_positive_binding_queue_max(self):
+        cfg = RuntimeConfig()
+        cfg.processing.binding_outgoing_queue_max_size = 0
+        with pytest.raises(ValueError, match="processing.binding_outgoing_queue_max_size"):
             await cfg.validate()
 
     @pytest.mark.asyncio

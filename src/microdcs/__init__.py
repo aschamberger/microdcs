@@ -106,6 +106,7 @@ class ProcessingConfig:
     topic_wildcard_levels: set[str] = field(default_factory=set)
     response_topics: set[str] = field(default_factory=set)
     shutdown_grace_period: int = 30
+    binding_outgoing_queue_max_size: int = 1000
 
     def get_topic_prefix_for_identifier(self, topic_identifier: str) -> str | None:
         for entry in self.topic_prefixes:
@@ -287,6 +288,10 @@ class RuntimeConfig:
         require_non_negative(
             self.processing.shutdown_grace_period,
             "processing.shutdown_grace_period",
+        )
+        require_positive(
+            self.processing.binding_outgoing_queue_max_size,
+            "processing.binding_outgoing_queue_max_size",
         )
         if self.processing.message_expiry_interval is not None:
             require_non_negative(
