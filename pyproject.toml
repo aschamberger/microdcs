@@ -12,6 +12,7 @@ dependencies = [
     "mashumaro[orjson]>=3.17",
     "msgpack>=1.1.2",
     "opentelemetry-distro>=0.60b1",
+    "opentelemetry-instrumentation-redis>=0.62b0",
     "redis[hiredis]>=7.1.0",
     "transitions>=0.9.3",
     "typer>=0.24.0",

@@ -55,7 +55,8 @@
                     // "OTEL_PYTHON_LOG_FORMAT": "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s resource.service.name=%(otelServiceName)s trace_sampled=%(otelTraceSampled)s] - %(message)s",
                     "OTEL_PYTHON_LOG_LEVEL": "debug",
                     "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED": "true",
-                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading"
+                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading",
+                    "OTEL_SEMCONV_STABILITY_OPT_IN": "http,database,messaging"
                 }
             },
             "group": "test",
