@@ -35,6 +35,8 @@ nav:
       - Overview: overall-design.md
       - Technical Standards: technical-standards.md
       - Information Model Standards: information-model-standards.md
+      - SFC Engine: sfc_engine.md
+      - Machinery Jobs – MES Publishing: machinery-jobs-mes-publishing.md
   - Development:
       - Overview: development.md
       - Persistence: persistence.md

@@ -16,3 +16,4 @@ MicroDCS is designed to help build OT and manufacturing applications with modern
 * Metadata required to identify and process payloads is carried through MQTT properties and CloudEvent attributes instead of being embedded in custom transport formats
 * Application implementations should work with generated dataclasses and processor abstractions rather than directly parsing MQTT or MessagePack payloads
 * The application assumes a UNS-style topic structure with at least `data`, `events`, and `commands` topics, with optional `metadata` topics for retained capability publication
+* The MQTT broker must be configured with retained message persistence enabled so that retained topics survive broker restarts. Without persistence, a broker restart clears all retained topics and components relying on retained state (e.g. the Job Order Publisher) lose their recovery anchor until the next publish cycle. For Mosquitto this requires `persistence true` in `mosquitto.conf`.
