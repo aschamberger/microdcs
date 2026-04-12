@@ -64,6 +64,54 @@ Work Masters with recipe content are pushed from the MOM layer into MicroDCS via
 
 The `WorkMasterDAO.retrieve()` method is updated to deserialize as `ISA95WorkMasterDataTypeExt`, which is backward-compatible since both new fields have `None` defaults.
 
+## Station Configuration Delivery
+
+### Problem
+
+The `MachineryJobsCloudEventProcessor.is_job_acceptable()` validates incoming Job Orders against seven configurable checks: max downloadable job orders, equipment IDs, material class IDs, material definition IDs, personnel IDs, physical asset IDs, and Work Master IDs. The corresponding DAOs exist (`EquipmentListDAO`, `MaterialClassListDAO`, `MaterialDefinitionListDAO`, `PersonnelListDAO`, `PhysicalAssetListDAO`, `WorkMasterDAO`) with `add_to_list()` / `remove_from_list()` / `is_member()` methods, but **there is no delivery mechanism** — these lists must be populated externally before any Job Order can pass validation.
+
+Similarly, `max_downloadable_job_orders` is currently a code-configured value in `JobAcceptanceConfig`. In production, the MES/MOM layer controls how many concurrent jobs a station is allowed to hold, so this must also be updatable at runtime.
+
+### Design: MOM-Pushed Configuration via CloudEvents
+
+All station configuration — resource lists and operational parameters — is pushed from the MES/MOM layer into MicroDCS via CloudEvents on the NB processor, following the same pattern as Job Orders:
+
+| Configuration | CloudEvent type | DAO | Operation |
+|---|---|---|---|
+| Equipment list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.equipment.v1` | `EquipmentListDAO` | `add_to_list()` / `remove_from_list()` |
+| Material class list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.materialclass.v1` | `MaterialClassListDAO` | `add_to_list()` / `remove_from_list()` |
+| Material definition list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.materialdefinition.v1` | `MaterialDefinitionListDAO` | `add_to_list()` / `remove_from_list()` |
+| Personnel list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.personnel.v1` | `PersonnelListDAO` | `add_to_list()` / `remove_from_list()` |
+| Physical asset list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.physicalasset.v1` | `PhysicalAssetListDAO` | `add_to_list()` / `remove_from_list()` |
+| Work Masters | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1` | `WorkMasterDAO` | `save()` |
+| Max downloadable job orders | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1` | – (updates `JobAcceptanceConfig` in-memory + persists to Redis) | set value |
+
+Each configuration CloudEvent carries the ISA-95 resource data type(s) in its payload:
+
+- **Equipment**: `ISA95EquipmentDataType` — validated field: `id`
+- **Material**: `ISA95MaterialDataType` — validated fields: `material_class_id`, `material_definition_id`
+- **Personnel**: `ISA95PersonnelDataType` — validated field: `id`
+- **Physical asset**: `ISA95PhysicalAssetDataType` — validated field: `id`
+- **Work Master**: `ISA95WorkMasterDataTypeExt` — stored with full content including `data` and `dataschema`
+- **Job acceptance**: simple payload with `max_downloadable_job_orders: int`
+
+All configuration is scoped — the CloudEvent `subject` carries the scope, and each DAO operates per-scope. This allows different stations (scopes) to have different allowed resource sets.
+
+### Operation Semantics
+
+Configuration CloudEvents support **add** and **remove** operations, distinguished by a `mdcsoperation` CloudEvent extension attribute:
+
+| `mdcsoperation` | Behavior |
+|---|---|
+| `add` (default) | Add the resource ID(s) to the list / store the Work Master / set the config value |
+| `remove` | Remove the resource ID(s) from the list / delete the Work Master |
+
+This allows the MES layer to incrementally update resource lists without full replacement. A full sync is achieved by clearing and re-adding (the MES layer's responsibility).
+
+### Prerequisite Relationship
+
+Station configuration delivery is a prerequisite for SFC engine execution — jobs cannot be accepted (and therefore cannot reach `AllowedToStart` or `Running`) until the resource lists and Work Masters are populated. This is why configuration delivery is implemented early in the plan, before the SFC engine itself.
+
 ## SFC Recipe Schema
 
 The recipe schema uses IEC 61131-3 SFC terminology and semantics without the graphical/PLC baggage of PLCopen TC6 XML. It is defined as a JSON Schema (`sfc_recipe.schema.json`) and follows the existing code generation pipeline.
@@ -315,7 +363,26 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 7. Update `docs/concepts.md`: add "Extended Work Master" to the ISA-95 Job Management section explaining the opaque data envelope; add glossary entries for **Work Master**, **Extended Work Master**, **`dataschema` (Work Master)**
 8. Update `docs/information-model-standards.md`: add "Extended Work Master (ISA95WorkMasterDataTypeExt)" subsection after OPC UA / Machinery Job Management with field table, code snippet, and DAO behavior
 
-### Phase 2: SFC Recipe Schema and Dataclasses
+### Phase 2: Station Configuration Delivery
+
+**Goal**: Enable MOM to push station configuration (resource lists, Work Masters, operational parameters) into MicroDCS via CloudEvents.
+
+1. Define CloudEvent data models for each configuration type: equipment, material class, material definition, personnel, physical asset, Work Master, and job acceptance config
+2. Add `mdcsoperation` CloudEvent extension attribute (`add` / `remove`) to the CloudEvent model
+3. Add `@incoming` handlers on the NB processor for each configuration CloudEvent type, dispatching to the corresponding DAO
+4. Add `@incoming` handler for `ISA95WorkMasterDataTypeExt` CloudEvents — store via `WorkMasterDAO.save()` (includes recipe `data` + `dataschema`)
+5. Add `@incoming` handler for job acceptance configuration — update `max_downloadable_job_orders` in-memory and persist to Redis
+6. Add a `JobAcceptanceConfigDAO` for persisting `max_downloadable_job_orders` to Redis so the value survives pod restarts
+7. Update `MachineryJobsCloudEventProcessor.__init__()` to load persisted `max_downloadable_job_orders` on startup (falling back to code-configured default)
+8. Define CloudEvent types (all under `com.github.schamberger.ISA95-JOBCONTROL_V2.config.*`) and topic structure for configuration delivery
+9. Add unit tests for each configuration handler (add and remove operations)
+10. Add unit tests for `JobAcceptanceConfigDAO` persistence and startup loading
+11. Update this document's "Station Configuration Delivery" section with final CloudEvent types, topic structures, and code snippets
+12. Update `docs/concepts.md`: add "Station Configuration Delivery" section explaining MOM-pushed configuration; add glossary entries for **Station configuration**, **`mdcsoperation`**
+13. Update `docs/information-model-standards.md`: add "Station Configuration CloudEvents" subsection listing all configuration CloudEvent types, payloads, and operation semantics
+14. Update `docs/persistence.md`: add `JobAcceptanceConfigDAO` to the DAO table and key schema
+
+### Phase 3: SFC Recipe Schema and Dataclasses
 
 **Goal**: Define the recipe format and generate typed dataclasses.
 
@@ -331,7 +398,7 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 10. Update `docs/technical-standards.md`: add "IEC 61131-3 SFC" section referencing SFC terminology usage and its relationship to the recipe schema
 11. Update `docs/development.md`: add SFC recipe dataclass generation command (`uv run microdcs dataclassgen dataclasses schemas/sfc_recipe.schema.json`)
 
-### Phase 3: SFC Engine (Core)
+### Phase 4: SFC Engine (Core)
 
 **Goal**: Implement the basic sequential execution engine as an `AdditionalTask`.
 
@@ -352,7 +419,7 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 15. Update `docs/persistence.md`: expand key schema table with SFC execution state keys; add "SFC Execution State" section documenting `SfcExecutionDAO` and `ActionStateDAO` with usage examples
 16. Update `docs/your-first-processor.md`: add note in overview that processors are stateless protocol adapters and point to SFC Engine docs for multi-step orchestration
 
-### Phase 4: Branching
+### Phase 5: Branching
 
 **Goal**: Add parallel and selection branching support.
 
@@ -363,7 +430,7 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 5. Update this document's "State Machine Integration" section with final branching implementation details
 6. Update `docs/concepts.md`: expand the SFC Engine section with branching semantics (simultaneous/selection divergence and convergence)
 
-### Phase 5: Application Wiring
+### Phase 6: Application Wiring
 
 **Goal**: Integrate into the example application.
 
@@ -376,16 +443,6 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 7. Update `docs/development.md`: add SFC engine runtime wiring example (`SfcEngine` instantiation + `add_additional_task`)
 8. Update `docs/index.md`: add SFC Engine to the "Start Here" reading path and mention recipe-driven station orchestration in the overview
 
-### Phase 6: Work Master Delivery
-
-**Goal**: Enable MOM to push Work Masters with recipes into the system.
-
-1. Add an `@incoming` handler for `ISA95WorkMasterDataType` CloudEvents (either on the NB processor or a dedicated processor)
-2. Store received Work Masters via `WorkMasterDAO.save()`
-3. Define the CloudEvent type and topic for Work Master delivery
-4. Add unit tests for the delivery flow
-5. Update this document's "Work Master Delivery" subsection with final topic structure and CloudEvent type
-
 ## Design Decisions
 
 - **Opaque `data` + `dataschema` on Work Master**: Follows the CloudEvent envelope pattern. The NB processor and DAO stay ignorant of recipe content. Any future recipe format can be added by defining a new `dataschema` URI without touching existing code.
@@ -394,3 +451,5 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 - **`transitions` library reuse**: The `HierarchicalGraphMachine` is already proven in the codebase for the OPC UA job state machine. SFC steps/transitions map naturally to its states/triggers model.
 - **IEC 61131-3 SFC terminology**: Uses standardized names (step, transition, action, qualifier, selection/simultaneous divergence) from IEC 61131-3 without adopting the PLCopen TC6 graphical exchange format.
 - **Two interaction patterns**: `push_command` and `pull_event` cover the two real-world equipment integration scenarios observed in discrete manufacturing (automotive). The pattern is declared per action in the recipe, not globally.
+- **Station configuration delivery before SFC engine**: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, `is_job_acceptable()` rejects every Job Order and no job ever reaches `AllowedToStart`. Configuration delivery is therefore Phase 2 — after the Work Master extension (Phase 1) but before the SFC engine (Phase 4). This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.
+- **`mdcsoperation` extension attribute for add/remove**: Using a CloudEvent extension attribute to distinguish add vs. remove keeps the payload structure identical for both operations. Incremental updates (add one equipment ID, remove one) avoid the complexity of full-replacement semantics and allow the MES layer to manage resource lists without MicroDCS needing to reconcile diffs.
