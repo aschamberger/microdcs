@@ -2,6 +2,8 @@
 
 This page describes the design and implementation plan for the SFC (Sequential Function Chart) engine — a station-level execution layer that bridges the northbound OPC UA Job Management interface with southbound equipment interactions.
 
+> **What is SFC?** If you are unfamiliar with Sequential Function Chart (SFC) concepts, see the [Sequential Function Charts (SFCs)](#sequential-function-charts-sfcs) section at the end of this document.
+
 ## Problem Statement
 
 The existing `MachineryJobsCloudEventProcessor` implements the OPC UA Machinery Job Management state machine. It handles Store, StoreAndStart, Start, Pause, Resume, Stop, Abort, Cancel, and Clear commands from the MES/MOM layer and manages job state transitions in Redis. However, the transition from `AllowedToStart` to `Running` — and everything that happens while running — is intentionally left open. The OPC UA specification treats this as an implementation detail.
@@ -453,3 +455,57 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 - **Two interaction patterns**: `push_command` and `pull_event` cover the two real-world equipment integration scenarios observed in discrete manufacturing (automotive). The pattern is declared per action in the recipe, not globally.
 - **Station configuration delivery before SFC engine**: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, `is_job_acceptable()` rejects every Job Order and no job ever reaches `AllowedToStart`. Configuration delivery is therefore Phase 2 — after the Work Master extension (Phase 1) but before the SFC engine (Phase 4). This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.
 - **`mdcsoperation` extension attribute for add/remove**: Using a CloudEvent extension attribute to distinguish add vs. remove keeps the payload structure identical for both operations. Incremental updates (add one equipment ID, remove one) avoid the complexity of full-replacement semantics and allow the MES layer to manage resource lists without MicroDCS needing to reconcile diffs.
+
+## Sequential Function Charts (SFCs)
+
+A **Sequential Function Chart** is a graphical programming language used primarily in industrial automation and PLC (Programmable Logic Controller) programming to describe the sequential behavior of a control system. It's one of the five languages defined in the **IEC 61131-3** standard.
+
+The core idea is simple: a complex process is broken into a series of **steps** connected by **transitions**, making it easy to visualize and reason about the order in which things happen.
+
+### The Three Building Blocks
+
+**1. Steps (Rectangles)**
+A step represents a stable *state* the system is in — a moment where certain actions are being performed. At any given time, one or more steps are "active." Each step can have actions associated with it (e.g., "run motor," "open valve").
+
+**2. Transitions (Horizontal Lines)**
+A transition sits between steps and defines the *condition* that must be true before the system moves forward. It acts as a gate — once the condition is met (e.g., a sensor reading, a timer expiring, a button press), the current step deactivates and the next one activates.
+
+**3. Actions**
+Actions are the actual work tied to a step. They can be qualified — for example, an action might run only once when a step activates, run continuously while the step is active, or persist even after the step ends.
+
+### Key Structural Patterns
+
+- **Sequence** — Steps execute one after another in a straight line.
+- **Selection branch (OR)** — Multiple possible paths forward; the first transition that becomes true is taken.
+- **Parallel branch (AND)** — Multiple paths execute *simultaneously*, and all must complete before converging again.
+- **Loops** — A transition can point back to an earlier step, creating repetition.
+
+### Why Use SFCs?
+
+- **Readability** — The flowchart-like visual makes it easy for engineers and technicians to understand a process at a glance.
+- **Modularity** — Complex behavior is decomposed into clean, manageable steps.
+- **Debugging** — You can watch which step is currently active in real time, making it much easier to spot where a process gets stuck.
+- **Standardization** — Being part of IEC 61131-3, SFCs are supported across many industrial platforms (Siemens, Rockwell, Beckhoff, etc.).
+
+> While SFCs are the ultimate tool for macro-level orchestration, the actual micro-level logic — what specifically turns on inside a Step, or the exact boolean math inside a Transition — is almost always written in another IEC 61131-3 language, like Structured Text or Ladder Diagram. SFC acts as the skeleton and project manager of a program; the other languages do the heavy lifting inside.
+
+### A Simple Example
+
+Imagine a bottle-filling machine:
+<div style="width: 30%; margin: auto;">
+
+```mermaid
+flowchart TD
+    S0([▶ Start]) --> T0{sensor detects bottle?}
+    T0 -->|yes| S1[Open Valve]
+    S1 --> T1{tank full?}
+    T1 -->|yes| S2[Close Valve]
+    S2 --> T2{valve closed?}
+    T2 -->|yes| S3[Eject Bottle]
+    S3 --> T3{bottle ejected?}
+    T3 -->|yes| S0
+```
+</div>
+Each rectangle is a **step**, each diamond is a **transition condition**. The logic is immediately obvious just from looking at it — no need to trace through nested `if` statements in code.
+
+SFCs are essentially a **state machine** expressed visually, and they shine whenever a process is inherently sequential — manufacturing lines, batch processing, robotics, and anywhere you need reliable, inspectable control logic.
