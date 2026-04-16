@@ -113,13 +113,11 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         self._topic_prefix = runtime_config.get_topic_prefix_for_identifier(
             self._config_identifier
         )
-        self._event_attributes.extend(
-            [
-                CloudeventAttributeTuple("subject", "subject"),
-                CloudeventAttributeTuple("correlationid", "correlationid"),
-                CloudeventAttributeTuple("cloudevent_id", "id"),
-            ]
-        )
+        self._event_attributes.extend([
+            CloudeventAttributeTuple("subject", "subject"),
+            CloudeventAttributeTuple("correlationid", "correlationid"),
+            CloudeventAttributeTuple("cloudevent_id", "id"),
+        ])
         self._redis_client: redis.Redis = redis.Redis(
             connection_pool=redis_connection_pool
         )
@@ -383,7 +381,9 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             self._state_machine.remove_model(method.job_order)
 
         try:
-            await self._joborder_and_state_dao.save(job_order_and_state, scope)
+            await self._joborder_and_state_dao.save(
+                job_order_and_state, scope, transition
+            )
         except Exception:
             logger.exception(
                 "Failed to persist job order and state for job order %s in scope %s",
@@ -457,7 +457,9 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             self._state_machine.remove_model(job_order_and_state.job_order)
 
         try:
-            await self._joborder_and_state_dao.save(job_order_and_state, scope)
+            await self._joborder_and_state_dao.save(
+                job_order_and_state, scope, transition
+            )
         except Exception:
             logger.exception(
                 "Failed to persist job order and state for job order %s in scope %s",
@@ -541,7 +543,9 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         job_order_and_state.state = self.build_job_state_object(current_state)
 
         try:
-            await self._joborder_and_state_dao.save(job_order_and_state, scope)
+            await self._joborder_and_state_dao.save(
+                job_order_and_state, scope, transition
+            )
         except Exception:
             logger.exception(
                 "Failed to persist job order and state for job order %s in scope %s",

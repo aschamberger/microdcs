@@ -236,6 +236,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **DataClassResponseMixin** | Generic mixin that adds `.response()` to request dataclasses, enabling typed response creation. |
 | **Hidden fields** | Dataclass fields prefixed with `_`. Excluded from serialization, transported via custom metadata. |
 | **ISA-95** | International standard for manufacturing operations integration. Defines job orders, responses, and the automation pyramid. |
+| **Job Change Stream** | A Redis stream (`joborder:changes:{scope}`) written atomically by `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()` on every state change. Consumed by the Job Order Publisher to drive retained MQTT topic updates. A global sentinel stream (`joborder:changes:_global`) mirrors every entry for new-scope discovery. |
 | **Message intent** | Category of a message: `DATA`, `EVENT`, `COMMAND`, or `META`. Maps to MQTT topic segments. |
 | **MessagePack-RPC** | Binary TCP-based RPC transport. Used in sidecar deployments to decouple HTTP/API containers from the MicroDCS event loop. |
 | **MicroDCS** | The application class that wires handlers, bindings, and processors together and runs the main event loop. |
@@ -245,7 +246,9 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Processor binding** | Connects a processor to a protocol handler. Manages topic patterns and outgoing queue. |
 | **Protocol handler** | Manages transport connections (MQTT or MessagePack-RPC). Runs as an async task. |
 | **Response chain** | The mechanism by which request dataclasses create typed response objects via `.response()`. |
+| **Retained Topic** | An MQTT v5 topic published with the retained flag set. The broker stores the last message and delivers it immediately to new subscribers. MicroDCS uses retained topics (with a 48-hour Message Expiry Interval) to expose current job order and result state to the MES so that reconnecting clients receive the full picture without replaying events. |
 | **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |
 | **Southbound** | Processor direction facing down the ISA-95 pyramid. Subscribes to data/events/metadata, publishes commands. |
+| **State Index** | A retained MQTT topic (`{prefix}/{scope}/state-index`) published by the Job Order Publisher on every job state transition. Contains the sequence number, scope, timestamp, and a compact list of all active jobs with their current state and `has_result` flag. Used by the MES to detect gaps after a connectivity outage and to know which per-job retained topics to fetch. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
 | **`__request_object__`** | `InitVar` field in response dataclasses. Automatically populated by `.response()` with the request instance. |

@@ -2,6 +2,7 @@ import functools
 import hashlib
 import logging
 import re
+from datetime import UTC, datetime
 
 import redis.asyncio as redis
 from redis.commands.search.field import TagField
@@ -197,6 +198,51 @@ class RedisKeySchema:
         """
         return "event:responder:list"
 
+    @prefixed_key
+    def job_change_stream(self, scope: str) -> str:
+        """
+        joborder:changes:[scope]
+        Redis type: stream
+        Change log consumed by the Job Order Publisher.
+        """
+        return f"joborder:changes:{scope}"
+
+    @prefixed_key
+    def job_change_stream_global(self) -> str:
+        """
+        joborder:changes:_global
+        Redis type: stream
+        Sentinel stream — every DAO save appends here for new-scope discovery.
+        """
+        return "joborder:changes:_global"
+
+    @prefixed_key
+    def pub_seq(self, scope: str) -> str:
+        """
+        pubseq:[scope]
+        Redis type: string (integer)
+        Monotonic sequence counter per scope for state-index publishes.
+        """
+        return f"pubseq:{scope}"
+
+    @prefixed_key
+    def publisher_cursors(self) -> str:
+        """
+        publisher:stream-cursors
+        Redis type: hash
+        Last-processed stream ID per scope, for publisher restart recovery.
+        """
+        return "publisher:stream-cursors"
+
+    @prefixed_key
+    def active_scopes(self) -> str:
+        """
+        active-scopes
+        Redis type: set
+        All scopes that have had at least one job stored.
+        """
+        return "active-scopes"
+
 
 class CloudEventDedupeDAO:
     """
@@ -327,7 +373,10 @@ class JobOrderAndStateDAO:
         self.key_schema = key_schema
 
     async def save(
-        self, job_order_and_state: ISA95JobOrderAndStateDataType, scope: str
+        self,
+        job_order_and_state: ISA95JobOrderAndStateDataType,
+        scope: str,
+        change_type: str,
     ) -> None:
         """
         Save a Job Order to Redis.
@@ -335,6 +384,8 @@ class JobOrderAndStateDAO:
         The Job Order is serialized to JSON using the `to_json` method,
         with context to add the CloudEvent dataschema.
         The Job Order ID is also added to the sorted set with priority as score.
+        A change record is appended to the per-scope and global sentinel streams
+        atomically within the same pipeline transaction.
         """
         if (
             not job_order_and_state.job_order
@@ -346,6 +397,16 @@ class JobOrderAndStateDAO:
         key = self.key_schema.joborder_key(job_order_id)
         priority = getattr(job_order_and_state.job_order, "priority", 0) or 0
         list_key = self.key_schema.joborder_list_key(scope)
+        stream_key = self.key_schema.job_change_stream(scope)
+        global_stream_key = self.key_schema.job_change_stream_global()
+        active_scopes_key = self.key_schema.active_scopes()
+        ts = datetime.now(UTC).isoformat()
+        change_fields = {
+            "change_type": change_type,
+            "job_order_id": job_order_id,
+            "scope": scope,
+            "ts": ts,
+        }
         # Execute state document + sorted-set index update atomically.
         async with self.redis.pipeline(transaction=True) as pipe:
             pipe.json().set(
@@ -356,6 +417,9 @@ class JobOrderAndStateDAO:
                 ),
             )
             pipe.zadd(list_key, {job_order_id: priority})
+            pipe.xadd(stream_key, change_fields, maxlen=5000, approximate=True)  # type: ignore[reportGeneralTypeIssues]
+            pipe.xadd(global_stream_key, change_fields, maxlen=5000, approximate=True)  # type: ignore[reportGeneralTypeIssues]
+            pipe.sadd(active_scopes_key, scope)
             await pipe.execute()
 
     async def retrieve(self, job_order_id: str) -> ISA95JobOrderAndStateDataType | None:
@@ -490,6 +554,15 @@ class JobResponseDAO:
                 ctx["add_normalized_state"] = state_str
         start_time = getattr(job_response, "start_time", 0) or 0
         list_key = self.key_schema.jobresponse_list_key(scope)
+        stream_key = self.key_schema.job_change_stream(scope)
+        global_stream_key = self.key_schema.job_change_stream_global()
+        ts = datetime.now(UTC).isoformat()
+        change_fields = {
+            "change_type": "ResultUpdate",
+            "job_order_id": job_response.job_order_id or "",
+            "scope": scope,
+            "ts": ts,
+        }
         # Execute state document + sorted-set index update atomically.
         async with self.redis.pipeline(transaction=True) as pipe:
             pipe.json().set(
@@ -498,6 +571,8 @@ class JobResponseDAO:
                 job_response.to_dict(context=ctx),
             )
             pipe.zadd(list_key, {job_response_id: start_time})
+            pipe.xadd(stream_key, change_fields, maxlen=5000, approximate=True)  # type: ignore[reportGeneralTypeIssues]
+            pipe.xadd(global_stream_key, change_fields, maxlen=5000, approximate=True)  # type: ignore[reportGeneralTypeIssues]
             await pipe.execute()
 
     async def retrieve(self, job_response_id: str):

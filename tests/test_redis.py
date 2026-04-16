@@ -193,6 +193,27 @@ class TestRedisKeySchema:
     def test_event_responder_key(self):
         assert self.schema.event_responder_key() == "test:event:responder:list"
 
+    def test_job_change_stream(self):
+        assert self.schema.job_change_stream("s1") == "test:joborder:changes:s1"
+
+    def test_job_change_stream_different_scopes(self):
+        assert self.schema.job_change_stream("a") != self.schema.job_change_stream("b")
+
+    def test_job_change_stream_global(self):
+        assert self.schema.job_change_stream_global() == "test:joborder:changes:_global"
+
+    def test_pub_seq(self):
+        assert self.schema.pub_seq("s1") == "test:pubseq:s1"
+
+    def test_pub_seq_different_scopes(self):
+        assert self.schema.pub_seq("a") != self.schema.pub_seq("b")
+
+    def test_publisher_cursors(self):
+        assert self.schema.publisher_cursors() == "test:publisher:stream-cursors"
+
+    def test_active_scopes(self):
+        assert self.schema.active_scopes() == "test:active-scopes"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -217,6 +238,8 @@ def _make_redis_mock() -> AsyncMock:
     pipe.zadd = MagicMock()
     pipe.zrem = MagicMock()
     pipe.delete = MagicMock()
+    pipe.xadd = MagicMock()
+    pipe.sadd = MagicMock()
     mock.pipeline = MagicMock(return_value=pipe)
     return mock
 
@@ -387,7 +410,7 @@ class TestJobOrderAndStateDAO:
         with patch.object(
             jo, "to_dict", return_value={"JobOrder": {"JobOrderID": "jo-1"}}
         ):
-            await self.dao.save(jo, scope="s1")
+            await self.dao.save(jo, scope="s1", change_type="Store")
 
         pipe = self.redis.pipeline.return_value
         self.redis.pipeline.assert_called_once_with(transaction=True)
@@ -406,7 +429,7 @@ class TestJobOrderAndStateDAO:
     async def test_save_raises_when_no_job_order(self):
         jo = ISA95JobOrderAndStateDataType()
         with pytest.raises(ValueError, match="job_order_id"):
-            await self.dao.save(jo, scope="s1")
+            await self.dao.save(jo, scope="s1", change_type="Store")
 
     @pytest.mark.asyncio
     async def test_save_raises_when_no_job_order_id(self):
@@ -414,13 +437,13 @@ class TestJobOrderAndStateDAO:
             job_order=ISA95JobOrderDataType(job_order_id=None),
         )
         with pytest.raises(ValueError, match="job_order_id"):
-            await self.dao.save(jo, scope="s1")
+            await self.dao.save(jo, scope="s1", change_type="Store")
 
     @pytest.mark.asyncio
     async def test_save_with_zero_priority(self):
         jo = self._make_job_order_and_state(priority=None)  # type: ignore[arg-type]
         with patch.object(jo, "to_dict", return_value={}):
-            await self.dao.save(jo, scope="s1")
+            await self.dao.save(jo, scope="s1", change_type="Store")
         pipe = self.redis.pipeline.return_value
         pipe.zadd.assert_called_once_with(
             self.schema.joborder_list_key("s1"), {"jo-1": 0}
@@ -477,6 +500,53 @@ class TestJobOrderAndStateDAO:
         self.redis.zrange.assert_awaited_once_with(
             self.schema.joborder_list_key("s1"), 0, -1
         )
+
+    @pytest.mark.asyncio
+    async def test_save_appends_to_scope_stream(self):
+        jo = self._make_job_order_and_state()
+        with patch.object(jo, "to_dict", return_value={}):
+            await self.dao.save(jo, scope="s1", change_type="Store")
+        pipe = self.redis.pipeline.return_value
+        stream_key = self.schema.job_change_stream("s1")
+        xadd_calls = pipe.xadd.call_args_list
+        scope_call = next(c for c in xadd_calls if c.args[0] == stream_key)
+        fields = scope_call.args[1]
+        assert fields["change_type"] == "Store"
+        assert fields["job_order_id"] == "jo-1"
+        assert fields["scope"] == "s1"
+        assert "ts" in fields
+        assert scope_call.kwargs == {"maxlen": 5000, "approximate": True}
+
+    @pytest.mark.asyncio
+    async def test_save_appends_to_global_sentinel_stream(self):
+        jo = self._make_job_order_and_state()
+        with patch.object(jo, "to_dict", return_value={}):
+            await self.dao.save(jo, scope="s1", change_type="Start")
+        pipe = self.redis.pipeline.return_value
+        global_key = self.schema.job_change_stream_global()
+        xadd_calls = pipe.xadd.call_args_list
+        global_call = next(c for c in xadd_calls if c.args[0] == global_key)
+        assert global_call.args[1]["change_type"] == "Start"
+        assert global_call.args[1]["scope"] == "s1"
+
+    @pytest.mark.asyncio
+    async def test_save_adds_scope_to_active_scopes(self):
+        jo = self._make_job_order_and_state()
+        with patch.object(jo, "to_dict", return_value={}):
+            await self.dao.save(jo, scope="s1", change_type="Store")
+        pipe = self.redis.pipeline.return_value
+        pipe.sadd.assert_called_once_with(self.schema.active_scopes(), "s1")
+
+    @pytest.mark.asyncio
+    async def test_save_xadd_not_called_on_pipeline_failure(self):
+        jo = self._make_job_order_and_state()
+        pipe = self.redis.pipeline.return_value
+        pipe.execute.side_effect = Exception("Redis error")
+        with patch.object(jo, "to_dict", return_value={}):
+            with pytest.raises(Exception, match="Redis error"):
+                await self.dao.save(jo, scope="s1", change_type="Store")
+        # xadd was queued but execute raised — nothing committed
+        pipe.execute.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -667,6 +737,34 @@ class TestJobResponseDAO:
 
         ctx = mock_to_dict.call_args.kwargs["context"]
         assert "add_normalized_state" not in ctx
+
+    @pytest.mark.asyncio
+    async def test_save_appends_result_update_to_scope_stream(self):
+        jr = self._make_job_response(job_order_id="jo-1")
+        with patch.object(jr, "to_dict", return_value={"JobResponseID": "jr-1"}):
+            await self.dao.save(jr, scope="s1")
+        pipe = self.redis.pipeline.return_value
+        stream_key = self.schema.job_change_stream("s1")
+        xadd_calls = pipe.xadd.call_args_list
+        scope_call = next(c for c in xadd_calls if c.args[0] == stream_key)
+        fields = scope_call.args[1]
+        assert fields["change_type"] == "ResultUpdate"
+        assert fields["job_order_id"] == "jo-1"
+        assert fields["scope"] == "s1"
+        assert "ts" in fields
+        assert scope_call.kwargs == {"maxlen": 5000, "approximate": True}
+
+    @pytest.mark.asyncio
+    async def test_save_appends_result_update_to_global_sentinel_stream(self):
+        jr = self._make_job_response(job_order_id="jo-1")
+        with patch.object(jr, "to_dict", return_value={"JobResponseID": "jr-1"}):
+            await self.dao.save(jr, scope="s1")
+        pipe = self.redis.pipeline.return_value
+        global_key = self.schema.job_change_stream_global()
+        xadd_calls = pipe.xadd.call_args_list
+        global_call = next(c for c in xadd_calls if c.args[0] == global_key)
+        assert global_call.args[1]["change_type"] == "ResultUpdate"
+        assert global_call.args[1]["scope"] == "s1"
 
     # -- initialize -----------------------------------------------------------
 
