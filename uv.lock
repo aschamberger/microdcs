@@ -457,7 +457,7 @@ requires-dist = [
     { name = "msgpack", specifier = ">=1.1.2" },
     { name = "opentelemetry-distro", specifier = ">=0.60b1" },
     { name = "opentelemetry-instrumentation-redis", specifier = ">=0.62b0" },
-    { name = "redis", extras = ["hiredis"], specifier = ">=7.1.0" },
+    { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
     { name = "transitions", specifier = ">=0.9.3" },
     { name = "typer", specifier = ">=0.24.0" },
 ]
