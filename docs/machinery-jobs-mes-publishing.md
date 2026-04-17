@@ -35,7 +35,9 @@ Publishing complete lists on every transition would retransmit unchanged large p
 
 ### Component overview
 
-The extension adds one new component — the **Job Order Publisher** — as a separate Kubernetes Deployment. The stream write that feeds it is encapsulated in the existing DAOs, so no processor — northbound or southbound — needs to be aware of the publishing infrastructure.
+The extension adds one new component — the **Job Order Publisher** — alongside the existing command processors. The publisher can run as a separate Kubernetes Deployment or co-located in the same container, controlled by `RuntimeConfig.is_processor_instance` and `RuntimeConfig.is_publisher_instance` (env vars `APP_IS_PROCESSOR_INSTANCE`, `APP_IS_PUBLISHER_INSTANCE`, both default `True`). The stream write that feeds the publisher is encapsulated in the existing DAOs, so no processor — northbound or southbound — needs to be aware of the publishing infrastructure.
+
+The `MQTTPublisher` class in `src/microdcs/mqtt.py` is registered via `MicroDCS.add_additional_task()` and runs alongside protocol handlers in the main task group. It shares the `create_mqtt_client()` connection factory with `MQTTHandler` for consistent TLS/SAT-token authentication and reconnect behaviour.
 
 ```mermaid
 flowchart TB
@@ -72,9 +74,11 @@ flowchart TB
   retained --> MES
 ```
 
-### Why a separate container
+### Why a separate container is recommended
 
 The command processor scales horizontally and is latency-sensitive — it handles real-time commands from the MES and the DCS. The publisher is a singleton, throughput-oriented, and not latency-sensitive (MQTT retained delivery is inherently best-effort). Keeping them separate gives independent restart policies, resource limits, logging, and alerting. A bug or resource leak in the publisher does not affect command processing.
+
+For development and simple deployments, both roles can co-exist in a single container by leaving both `APP_IS_PROCESSOR_INSTANCE` and `APP_IS_PUBLISHER_INSTANCE` at their default value of `true`. For production, set one flag per deployment to separate concerns.
 
 ### High availability
 
@@ -314,17 +318,18 @@ Scope: changes to the existing codebase only. No new containers.
 
 Acceptance: `joborder:changes:{scope}` contains one entry per successful DAO save. Stream is bounded by `maxlen=5000`.
 
-### Phase 2 – Publisher models and MQTT client
+### Phase 2 – Publisher models, MQTT publisher, and instance-role flags
 
-Scope: new module scaffolding, no business logic.
+Scope: models, MQTT infrastructure, runtime configuration for multi-node deployment.
 
-1. Create `src/microdcs/publishers/` package
-2. Implement `StateIndexEntry` and `StateIndex` as `@dataclass(kw_only=True)` classes extending `DataClassMixin` (consistent with all other MicroDCS models — the project does not use Pydantic)
-3. Implement async MQTT wrapper using `aiomqtt` supporting retained publish with TTL and zero-byte delete
-4. Integration test: publish retained with TTL to a test broker, verify retained on reconnect, verify deletion
-5. Update this document's "Job Order Publisher" section with final module structure and MQTT wrapper API
+1. Add `StateIndexEntry` and `StateIndex` as `@dataclass(kw_only=True)` classes extending `DataClassMixin` in `src/microdcs/models/machinery_jobs_ext.py` (consistent with all other MicroDCS models — the project does not use Pydantic)
+2. Extract `create_mqtt_client(config, **kwargs)` standalone function in `src/microdcs/mqtt.py` — shared between `MQTTHandler` (subscriber) and `MQTTPublisher` (retained-publish writer) to avoid duplicating connection setup (hostname, port, TLS, SAT-token authentication, protocol version). `MQTTHandler._client()` refactored to call it with handler-specific kwargs (`clean_start`, `max_queued_*`)
+3. Implement `MQTTPublisher` as an `AdditionalTask` subclass in `src/microdcs/mqtt.py` — manages an `aiomqtt.Client` connection with automatic reconnect/backoff. Exposes `publish_retained(topic, payload, ttl)` (QoS 1, retained, MQTT v5 Message Expiry Interval) and `delete_retained(topic)` (zero-byte retained publish). Registered via `MicroDCS.add_additional_task()`
+4. Add `is_processor_instance: bool` and `is_publisher_instance: bool` to `RuntimeConfig` (env vars `APP_IS_PROCESSOR_INSTANCE`, `APP_IS_PUBLISHER_INSTANCE`, both default `True`). `MicroDCS.main()` conditionally creates protocol handler tasks (when `is_processor_instance`) and additional tasks (when `is_publisher_instance`). This supports three deployment modes: single-container (both True), multi-node processor + single publisher (one flag each), and publisher-only (processor False)
+5. Integration tests for retained publish/delete in `tests/test_mqtt_integration.py`. Unit tests for `create_mqtt_client`, `MQTTPublisher`, `StateIndexEntry`, `StateIndex`, and instance-role flags in `MicroDCS.main()`
+6. `src/microdcs/publishers/` package kept as an empty placeholder for Phase 3's `JobOrderPublisher` business logic
 
-Acceptance: retained publish and delete work correctly against a real broker in CI.
+Acceptance: retained publish and delete work correctly against a real broker in CI. `is_processor_instance=False` skips handler/processor lifecycle. `is_publisher_instance=False` skips additional tasks.
 
 ### Phase 3 – Publisher core logic
 

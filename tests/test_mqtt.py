@@ -24,6 +24,7 @@ from microdcs.mqtt import (
     MQTTProtocolBinding,
     OTELInstrumentedMQTTHandler,
     QoS,
+    create_mqtt_client,
 )
 from microdcs.redis import RedisKeySchema
 
@@ -575,6 +576,57 @@ class TestCloudEventProcessorCallbacks:
         assert isinstance(result, list)
         assert len(result) == 2
         assert len(published) == 2
+
+
+# ===================================================================
+# create_mqtt_client
+# ===================================================================
+
+
+class TestCreateMqttClient:
+    def test_creates_client_with_config_values(self):
+        config = MQTTConfig()
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(config)
+            call_kwargs = mock_cls.call_args[1]
+            assert call_kwargs["hostname"] == config.hostname
+            assert call_kwargs["port"] == config.port
+            assert call_kwargs["identifier"] == config.identifier
+            assert call_kwargs["timeout"] == config.connect_timeout
+
+    def test_forwards_extra_kwargs(self):
+        config = MQTTConfig()
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(
+                config, clean_start=True, max_queued_incoming_messages=10
+            )
+            call_kwargs = mock_cls.call_args[1]
+            assert call_kwargs["clean_start"] is True
+            assert call_kwargs["max_queued_incoming_messages"] == 10
+
+    def test_with_sat_and_tls(self):
+        config = MQTTConfig()
+        config.sat_token_path = MagicMock()
+        config.sat_token_path.exists.return_value = True
+        config.tls_cert_path = MagicMock()
+        config.tls_cert_path.exists.return_value = True
+        config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
+
+        mock_file = MagicMock()
+        mock_file.__enter__ = MagicMock(return_value=MagicMock(read=lambda: "token"))
+        mock_file.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("microdcs.mqtt.aiomqtt.Client") as mock_cls,
+            patch("builtins.open", return_value=mock_file),
+        ):
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(config)
+            call_kwargs = mock_cls.call_args[1]
+            assert call_kwargs["properties"] is not None
+            assert call_kwargs["tls_params"] is not None
 
 
 # ===================================================================

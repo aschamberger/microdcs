@@ -26,7 +26,7 @@ from microdcs.models.machinery_jobs import (
     StoreResponse,
 )
 from microdcs.models.machinery_jobs_ext import MethodReturnStatus
-from microdcs.mqtt import MQTTHandler
+from microdcs.mqtt import MQTTHandler, MQTTPublisher
 from microdcs.processors.greetings import GreetingsCloudEventProcessor
 from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
 from microdcs.redis import RedisKeySchema
@@ -253,7 +253,6 @@ async def test_publish_hello_with_additional_payload_fields(
     assert names == {"Bob", "Alice"}
 
 
-
 @pytest.mark.asyncio
 @integration
 @mqtt_available
@@ -462,3 +461,124 @@ async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
     response_data = orjson.loads(responses[0].payload)
     assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
     _assert_cloudevent_type(responses[0], StoreResponse.Config.cloudevent_type)
+
+
+# ---------------------------------------------------------------------------
+# MQTTPublisher integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@mqtt_available
+class TestMQTTPublisherIntegration:
+    """Integration tests requiring a running MQTT broker (e.g. Mosquitto)."""
+
+    @pytest.mark.asyncio
+    async def test_publish_retained_and_receive_on_reconnect(self):
+        topic = "microdcs-test/integration/retained"
+        payload = b'{"test": "retained"}'
+
+        # Publish a retained message
+        publisher = MQTTPublisher(MQTTConfig())
+        publisher._client = aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-pub-retained",
+        )
+        async with publisher._client:
+            await publisher.publish_retained(topic, payload, ttl=60)
+
+        # Reconnect as a new client and verify the retained message is delivered
+        async with aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-sub-retained",
+        ) as sub:
+            await sub.subscribe(topic, qos=1)
+            msg = await asyncio.wait_for(
+                sub.messages.__anext__(),
+                timeout=5.0,  # type: ignore[reportAttributeAccessIssue]
+            )
+            assert msg.payload == payload
+            assert msg.retain is True
+
+        # Clean up retained topic
+        publisher._client = aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-cleanup-retained",
+        )
+        async with publisher._client:
+            await publisher.delete_retained(topic)
+
+    @pytest.mark.asyncio
+    async def test_delete_retained_clears_topic(self):
+        topic = "microdcs-test/integration/delete"
+        payload = b"to-be-deleted"
+
+        # Publish retained
+        publisher = MQTTPublisher(MQTTConfig())
+        publisher._client = aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-pub-del",
+        )
+        async with publisher._client:
+            await publisher.publish_retained(topic, payload, ttl=60)
+
+        # Delete retained
+        publisher._client = aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-del",
+        )
+        async with publisher._client:
+            await publisher.delete_retained(topic)
+
+        # Reconnect and verify no retained message is delivered
+        async with aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-sub-del",
+        ) as sub:
+            await sub.subscribe(topic, qos=1)
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    sub.messages.__anext__(),
+                    timeout=2.0,  # type: ignore[reportAttributeAccessIssue]
+                )
+
+    @pytest.mark.asyncio
+    async def test_publish_retained_string_payload(self):
+        topic = "microdcs-test/integration/retained-str"
+        payload = '{"message": "hello"}'
+
+        publisher = MQTTPublisher(MQTTConfig())
+        publisher._client = aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-pub-str",
+        )
+        async with publisher._client:
+            await publisher.publish_retained(topic, payload, ttl=60)
+
+        async with aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-sub-str",
+        ) as sub:
+            await sub.subscribe(topic, qos=1)
+            msg = await asyncio.wait_for(
+                sub.messages.__anext__(),
+                timeout=5.0,  # type: ignore[reportAttributeAccessIssue]
+            )
+            assert msg.payload == payload.encode()
+
+        # Cleanup
+        publisher._client = aiomqtt.Client(
+            hostname=MQTT_CONFIG.hostname,
+            port=MQTT_CONFIG.port,
+            identifier="test-cleanup-str",
+        )
+        async with publisher._client:
+            await publisher.delete_retained(topic)

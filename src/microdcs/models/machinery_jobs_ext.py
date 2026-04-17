@@ -1,6 +1,8 @@
+from dataclasses import dataclass, field
 from enum import IntEnum
 
-from microdcs.models.machinery_jobs import JobOrderControl
+from microdcs.dataclass import DataClassMixin
+from microdcs.models.machinery_jobs import ISA95StateDataType, JobOrderControl
 
 
 class MethodReturnStatus(IntEnum):
@@ -43,12 +45,10 @@ class JobOrderControlExt(JobOrderControl):
         @classmethod
         def init(cls):
             # add the not represented states
-            cls.opcua_state_machine_states.extend(
-                [
-                    {"name": "InitialState"},
-                    {"name": "EndState", "final": True},
-                ]
-            )
+            cls.opcua_state_machine_states.extend([
+                {"name": "InitialState"},
+                {"name": "EndState", "final": True},
+            ])
             # add state ids for new states
             cls.opcua_state_machine_state_ids["InitialState"] = "0"
             cls.opcua_state_machine_state_ids["EndState"] = "7"
@@ -71,32 +71,30 @@ class JobOrderControlExt(JobOrderControl):
                     t["trigger"] = "Run"
                     break
             # add the not represented transitions
-            cls.opcua_state_machine_transitions.extend(
-                [
-                    {
-                        "trigger": "Store",
-                        "source": "InitialState",
-                        "dest": "NotAllowedToStart",
-                    },
-                    {
-                        "trigger": "StoreAndStart",
-                        "source": "InitialState",
-                        "dest": "AllowedToStart",
-                    },
-                    {
-                        "trigger": "Cancel",
-                        "source": "NotAllowedToStart",
-                        "dest": "EndState",
-                    },
-                    {
-                        "trigger": "Cancel",
-                        "source": "AllowedToStart",
-                        "dest": "EndState",
-                    },
-                    {"trigger": "Clear", "source": "Aborted", "dest": "EndState"},
-                    {"trigger": "Clear", "source": "Ended", "dest": "EndState"},
-                ]
-            )
+            cls.opcua_state_machine_transitions.extend([
+                {
+                    "trigger": "Store",
+                    "source": "InitialState",
+                    "dest": "NotAllowedToStart",
+                },
+                {
+                    "trigger": "StoreAndStart",
+                    "source": "InitialState",
+                    "dest": "AllowedToStart",
+                },
+                {
+                    "trigger": "Cancel",
+                    "source": "NotAllowedToStart",
+                    "dest": "EndState",
+                },
+                {
+                    "trigger": "Cancel",
+                    "source": "AllowedToStart",
+                    "dest": "EndState",
+                },
+                {"trigger": "Clear", "source": "Aborted", "dest": "EndState"},
+                {"trigger": "Clear", "source": "Ended", "dest": "EndState"},
+            ])
             # fix effect key for renamed trigger (FromAllowedToStartToRunning -> Run)
             cls.opcua_state_machine_effects["Run"] = (
                 cls.opcua_state_machine_effects.pop("FromAllowedToStartToRunning")
@@ -125,3 +123,22 @@ class JobOrderControlExt(JobOrderControl):
             """Get the state name for a given state tuple. This is needed to map the state id(s) to the state name for the OPC UA format."""
             state_name = "_".join([t[0] for t in state_tuples])
             return state_name
+
+
+@dataclass(kw_only=True)
+class StateIndexEntry(DataClassMixin):
+    """A single job's summary within the state index."""
+
+    job_order_id: str
+    state: list[ISA95StateDataType] = field(default_factory=list)
+    has_result: bool = False
+
+
+@dataclass(kw_only=True)
+class StateIndex(DataClassMixin):
+    """Compact retained payload listing all active jobs for a scope."""
+
+    seq: int
+    scope: str
+    published_at: str
+    jobs: list[StateIndexEntry] = field(default_factory=list)

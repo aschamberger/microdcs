@@ -18,6 +18,7 @@ from paho.mqtt.properties import Properties
 
 from microdcs import MQTTConfig, ProcessingConfig
 from microdcs.common import (
+    AdditionalTask,
     CloudEvent,
     CloudEventProcessor,
     MessageIntent,
@@ -27,12 +28,44 @@ from microdcs.common import (
 from microdcs.redis import CloudEventDedupeDAO, RedisKeySchema
 
 logger = logging.getLogger("handler.mqtt")
+publisher_logger = logging.getLogger("publisher.mqtt")
 
 
 class QoS(enum.IntEnum):
     AT_MOST_ONCE = 0
     AT_LEAST_ONCE = 1
     EXACTLY_ONCE = 2
+
+
+def create_mqtt_client(config: MQTTConfig, **kwargs: Any) -> aiomqtt.Client:
+    """Create an ``aiomqtt.Client`` from a :class:`MQTTConfig`.
+
+    Shared between :class:`MQTTHandler` (subscriber) and
+    :class:`MQTTPublisher` (retained-publish writer) to avoid duplicating
+    connection setup.  Extra *kwargs* are forwarded to the
+    ``aiomqtt.Client`` constructor (e.g. ``clean_start``,
+    ``max_queued_incoming_messages``).
+    """
+    properties = None
+    if config.sat_token_path.exists():
+        with open(config.sat_token_path, "rb") as f:
+            sat_token = f.read()
+            properties = Properties(PacketTypes.CONNECT)
+            properties.AuthenticationMethod = "K8S-SAT"
+            properties.AuthenticationData = sat_token
+    tls_params = None
+    if config.tls_cert_path.exists():
+        tls_params = aiomqtt.TLSParameters(ca_certs=str(config.tls_cert_path))
+    return aiomqtt.Client(
+        protocol=aiomqtt.ProtocolVersion.V5,
+        hostname=config.hostname,
+        port=config.port,
+        identifier=config.identifier,
+        timeout=config.connect_timeout,
+        properties=properties,
+        tls_params=tls_params,
+        **kwargs,
+    )
 
 
 class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
@@ -56,29 +89,11 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
         self._expiration_timeout_tasks: dict[str, Any] = {}
 
     def _client(self) -> aiomqtt.Client:
-        properties = None
-        if self._runtime_config.sat_token_path.exists():
-            with open(self._runtime_config.sat_token_path, "rb") as f:
-                sat_token = f.read()
-                properties = Properties(PacketTypes.CONNECT)
-                properties.AuthenticationMethod = "K8S-SAT"
-                properties.AuthenticationData = sat_token
-        tls_params = None
-        if self._runtime_config.tls_cert_path.exists():
-            tls_params = aiomqtt.TLSParameters(
-                ca_certs=str(self._runtime_config.tls_cert_path)
-            )
-        client: aiomqtt.Client = aiomqtt.Client(
-            protocol=aiomqtt.ProtocolVersion.V5,
-            hostname=self._runtime_config.hostname,
-            port=self._runtime_config.port,
-            identifier=self._runtime_config.identifier,
-            timeout=self._runtime_config.connect_timeout,
+        client = create_mqtt_client(
+            self._runtime_config,
             clean_start=paho.mqtt.client.MQTT_CLEAN_START_FIRST_ONLY,
             max_queued_incoming_messages=self._runtime_config.incoming_queue_size,
             max_queued_outgoing_messages=self._runtime_config.outgoing_queue_size,
-            properties=properties,
-            tls_params=tls_params,
         )
         # FIXME: set this as a aiomqtt client property when https://github.com/empicano/aiomqtt/pull/346 is merged
         client._client.manual_ack_set(True)  # type: ignore #
@@ -683,3 +698,99 @@ class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
             and self.response_topic
         ):
             response.transportmetadata["mqtt_response_topic"] = self.response_topic
+
+
+class MQTTPublisher(AdditionalTask):
+    """MQTT publisher for retained messages with TTL and zero-byte delete.
+
+    Extends :class:`AdditionalTask` so it can be registered with
+    :class:`~microdcs.core.MicroDCS` via :meth:`add_additional_task` and
+    run alongside protocol handlers in the main task group.
+
+    The :meth:`task` method manages the MQTT connection lifecycle with
+    automatic reconnect.  :meth:`publish_retained` and
+    :meth:`delete_retained` are available while the connection is active.
+    """
+
+    def __init__(self, config: MQTTConfig) -> None:
+        super().__init__()
+        self._config = config
+        self._client: aiomqtt.Client | None = None
+
+    async def publish_retained(
+        self,
+        topic: str,
+        payload: bytes | str,
+        ttl: int,
+    ) -> None:
+        """Publish a retained message with an MQTT v5 Message Expiry Interval.
+
+        Args:
+            topic: The MQTT topic to publish to.
+            payload: The message payload (bytes or UTF-8 string).
+            ttl: Message Expiry Interval in seconds.
+        """
+        assert self._client is not None, "Client not connected — use from within task()"
+        properties = Properties(PacketTypes.PUBLISH)
+        properties.MessageExpiryInterval = ttl
+        publisher_logger.debug("Publishing retained message to %s (ttl=%d)", topic, ttl)
+        await self._client.publish(
+            topic,
+            payload,
+            qos=1,
+            retain=True,
+            properties=properties,
+        )
+
+    async def delete_retained(self, topic: str) -> None:
+        """Delete a retained topic by publishing a zero-byte retained message.
+
+        Args:
+            topic: The MQTT topic to clear.
+        """
+        assert self._client is not None, "Client not connected — use from within task()"
+        publisher_logger.debug("Deleting retained topic %s", topic)
+        await self._client.publish(
+            topic,
+            b"",
+            qos=1,
+            retain=True,
+        )
+
+    async def task(self) -> None:
+        publisher_logger.info(
+            "Starting MQTT publisher, connecting to %s:%d",
+            self._config.hostname,
+            self._config.port,
+        )
+        client = create_mqtt_client(self._config)
+        backoff = 1  # seconds
+        max_backoff = 60  # seconds
+        while True:
+            try:
+                async with client:
+                    self._client = client
+                    publisher_logger.info("MQTT publisher connected")
+                    await self._shutdown_event.wait()
+                    self._client = None
+                    publisher_logger.info("MQTT publisher shutdown complete")
+                    return
+            except aiomqtt.MqttError:
+                self._client = None
+                if self._shutdown_event.is_set():
+                    publisher_logger.info(
+                        "MQTT connection lost during shutdown; exiting"
+                    )
+                    return
+                sleep_time = backoff + random.uniform(0, 0.1 * backoff)
+                publisher_logger.warning(
+                    "Connection lost. Retrying in %.2fs...", sleep_time
+                )
+                try:
+                    await asyncio.wait_for(
+                        self._shutdown_event.wait(), timeout=sleep_time
+                    )
+                    publisher_logger.info("Shutdown during reconnect backoff; exiting")
+                    return
+                except asyncio.TimeoutError:
+                    backoff = min(backoff * 2, max_backoff)

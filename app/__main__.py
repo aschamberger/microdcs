@@ -3,7 +3,12 @@ import logging
 import os
 
 from microdcs.core import MicroDCS
-from microdcs.mqtt import MQTTHandler, MQTTProtocolBinding, OTELInstrumentedMQTTHandler
+from microdcs.mqtt import (
+    MQTTHandler,
+    MQTTProtocolBinding,
+    MQTTPublisher,
+    OTELInstrumentedMQTTHandler,
+)
 from microdcs.msgpack import (
     MessagePackHandler,
     MessagePackProtocolBinding,
@@ -108,8 +113,8 @@ microdcs.register_protocol_binding(
 )
 
 # Add additional task to MicroDCS main task group
-# additional_task = MyAdditionalTask()
-# microdcs.add_additional_task(additional_task)
+mqtt_publisher = MQTTPublisher(microdcs.runtime_config.mqtt)
+microdcs.add_additional_task(mqtt_publisher)
 
 # Run MicroDCS main application logic
 loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None

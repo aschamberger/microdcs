@@ -7,6 +7,7 @@ import redis.asyncio as redis
 
 from microdcs import RedisConfig
 from microdcs.core import MicroDCS
+from microdcs.mqtt import MQTTPublisher
 
 
 def _close_coroutine_arg(coro, *_args, **_kwargs):
@@ -32,6 +33,8 @@ def _create_microdcs(otel_enabled: bool) -> MicroDCS:
     dcs.runtime_config = MagicMock()
     dcs.runtime_config.validate = AsyncMock()
     dcs.runtime_config.processing.otel_instrumentation_enabled = otel_enabled
+    dcs.runtime_config.is_processor_instance = True
+    dcs.runtime_config.is_publisher_instance = True
     dcs.redis_connection_pool = AsyncMock()
     dcs.redis_key_schema = MagicMock()
     dcs._protocol_handlers = {}
@@ -465,3 +468,93 @@ class TestRedisConnectionPool:
         pool = dcs.redis_connection_pool
         assert pool.connection_class is redis.SSLConnection
         assert pool.connection_kwargs["ssl_ca_certs"] == "/fake/ca.crt"
+
+
+class TestInstanceRoleFlags:
+    """Tests for is_processor_instance / is_publisher_instance behaviour."""
+
+    @pytest.mark.asyncio
+    async def test_publisher_only_skips_processor_lifecycle(self):
+        """When is_processor_instance=False, handlers and processors are skipped."""
+        dcs = _create_microdcs(otel_enabled=False)
+        dcs.runtime_config.is_processor_instance = False
+        dcs.runtime_config.is_publisher_instance = True
+        _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+        mock_task = _create_mock_additional_task()
+        dcs._additional_tasks.add(mock_task)
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            mock_tg = _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        # Processor lifecycle NOT called
+        mock_proc.initialize.assert_not_awaited()
+        mock_proc.post_start.assert_not_awaited()
+        mock_proc.shutdown.assert_not_awaited()
+
+        # Additional task IS started
+        mock_task.register_shutdown_event.assert_called_once_with(
+            mock_tg.shutdown_event
+        )
+
+    @pytest.mark.asyncio
+    async def test_processor_only_skips_mqtt_publisher_task(self):
+        """When is_publisher_instance=False, MQTTPublisher tasks are skipped."""
+        dcs = _create_microdcs(otel_enabled=False)
+        dcs.runtime_config.is_processor_instance = True
+        dcs.runtime_config.is_publisher_instance = False
+        mock_handler, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+        mock_task = MagicMock(spec=MQTTPublisher)
+        mock_task.task = AsyncMock()
+        mock_task.register_shutdown_event = MagicMock()
+        dcs._additional_tasks.add(mock_task)
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            mock_tg = _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        # Handler registered and processor lifecycle called
+        mock_handler.register_binding.assert_called_once()
+        mock_proc.initialize.assert_awaited_once()
+        mock_proc.post_start.assert_awaited_once()
+        mock_proc.shutdown.assert_awaited_once()
+
+        # MQTTPublisher task NOT started
+        mock_task.register_shutdown_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_mqtt_additional_task_runs_when_publisher_false(self):
+        """Non-MQTTPublisher additional tasks run even when is_publisher_instance=False."""
+        dcs = _create_microdcs(otel_enabled=False)
+        dcs.runtime_config.is_processor_instance = True
+        dcs.runtime_config.is_publisher_instance = False
+        _register_mock_handler_and_binding(dcs)
+        mock_task = _create_mock_additional_task()
+        dcs._additional_tasks.add(mock_task)
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            mock_tg = _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        # Generic additional task IS started
+        mock_task.register_shutdown_event.assert_called_once_with(
+            mock_tg.shutdown_event
+        )
+
+    @pytest.mark.asyncio
+    async def test_both_flags_true_runs_everything(self):
+        """When both flags are True, handlers and additional tasks all run."""
+        dcs = _create_microdcs(otel_enabled=False)
+        mock_handler, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+        mock_task = _create_mock_additional_task()
+        dcs._additional_tasks.add(mock_task)
+
+        with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
+            mock_tg = _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        mock_handler.register_binding.assert_called_once()
+        mock_proc.initialize.assert_awaited_once()
+        mock_task.register_shutdown_event.assert_called_once()
+        # handler task + additional task
+        assert mock_tg.create_task.call_count >= 2

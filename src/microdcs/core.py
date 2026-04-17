@@ -9,6 +9,7 @@ from microdcs.common import (
     ProtocolBinding,
     ProtocolHandler,
 )
+from microdcs.mqtt import MQTTPublisher
 from microdcs.redis import RedisKeySchema
 
 logger = logging.getLogger("app.main")
@@ -74,49 +75,58 @@ class MicroDCS:
     async def main(self):
         logger.info("Starting main application logic")
         await self.runtime_config.validate()
-        # Initialise every registered processor
-        for processor in self._processors:
-            await processor.initialize()
+        # Initialise every registered processor (only when acting as processor)
+        if self.runtime_config.is_processor_instance:
+            for processor in self._processors:
+                await processor.initialize()
         async with SystemEventTaskGroup(
             grace_period=self.runtime_config.processing.shutdown_grace_period,
         ) as task_group:
-            for handler_cls, (
-                handler,
-                instrumented_handler,
-            ) in self._protocol_handlers.items():
-                if self.runtime_config.processing.otel_instrumentation_enabled:
-                    logger.info(
-                        f"Registering OTEL-instrumented handler: {handler_cls.__name__}"
-                    )
-                    handler_to_use = instrumented_handler
-                else:
-                    logger.info(
-                        f"Registering non-OTEL-instrumented handler: {handler_cls.__name__}"
-                    )
-                    handler_to_use = handler
-                handler_to_use.register_shutdown_event(task_group.shutdown_event)
-                bindings = self._handler_bindings.get(handler_cls)
-                if bindings is None:
-                    raise ValueError(
-                        f"No ProtocolBinding found for protocol handler {handler_cls.__name__}"
-                    )
-                for binding in bindings:
-                    handler_to_use.register_binding(binding)
-                task_group.create_task(handler_to_use.task())
+            if self.runtime_config.is_processor_instance:
+                for handler_cls, (
+                    handler,
+                    instrumented_handler,
+                ) in self._protocol_handlers.items():
+                    if self.runtime_config.processing.otel_instrumentation_enabled:
+                        logger.info(
+                            f"Registering OTEL-instrumented handler: {handler_cls.__name__}"
+                        )
+                        handler_to_use = instrumented_handler
+                    else:
+                        logger.info(
+                            f"Registering non-OTEL-instrumented handler: {handler_cls.__name__}"
+                        )
+                        handler_to_use = handler
+                    handler_to_use.register_shutdown_event(task_group.shutdown_event)
+                    bindings = self._handler_bindings.get(handler_cls)
+                    if bindings is None:
+                        raise ValueError(
+                            f"No ProtocolBinding found for protocol handler {handler_cls.__name__}"
+                        )
+                    for binding in bindings:
+                        handler_to_use.register_binding(binding)
+                    task_group.create_task(handler_to_use.task())
 
             for task in self._additional_tasks:
+                if (
+                    isinstance(task, MQTTPublisher)
+                    and not self.runtime_config.is_publisher_instance
+                ):
+                    continue
                 task.register_shutdown_event(task_group.shutdown_event)
                 task_group.create_task(task.task())
 
             # Post start every registered processor
-            for processor in self._processors:
-                await processor.post_start()
+            if self.runtime_config.is_processor_instance:
+                for processor in self._processors:
+                    await processor.post_start()
 
         logger.info("Main application logic has completed")
 
         # Shutdown every registered processor
-        for processor in self._processors:
-            await processor.shutdown()
+        if self.runtime_config.is_processor_instance:
+            for processor in self._processors:
+                await processor.shutdown()
 
         logger.info("Closing Redis connection pool")
         await self.redis_connection_pool.aclose()

@@ -148,6 +148,8 @@ class ProcessingConfig:
 @dataclass
 class RuntimeConfig:
     instance_id: str
+    is_processor_instance: bool
+    is_publisher_instance: bool
     redis: RedisConfig
     mqtt: MQTTConfig
     msgpack: MessagePackConfig
@@ -157,6 +159,13 @@ class RuntimeConfig:
     def __init__(self, prefix: str = "APP_"):
         # Get the ID from Env, fallback to UUID if running locally
         self.instance_id = os.getenv("POD_ID", str(uuid.uuid4()))
+        # Instance role flags (both True by default for single-container mode)
+        self.is_processor_instance = os.getenv(
+            f"{prefix}IS_PROCESSOR_INSTANCE", "true"
+        ) in ["1", "true", "True", "TRUE"]
+        self.is_publisher_instance = os.getenv(
+            f"{prefix}IS_PUBLISHER_INSTANCE", "true"
+        ) in ["1", "true", "True", "TRUE"]
         # Initialize nested dataclasses
         for field_main in fields(self):
             if dataclasses.is_dataclass(field_main.type) and callable(field_main.type):
