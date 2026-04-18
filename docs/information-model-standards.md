@@ -32,6 +32,11 @@ For OPC UA Machinery Job Management, the custom template also generates:
 * custom attributes `opcua_state_machine_states` and `opcua_state_machine_transitions` with ready to use dictionaries for usage with `transitions` library
 * custom attribute `opcua_state_machine_effects` storing transition events
 
+The specification defines two integration approaches:
+
+* **Event-based** — Clients subscribe to `ISA95JobOrderStatusEventType` events on each state transition. MicroDCS fully implements this mode through `MachineryJobsCloudEventProcessor`, which maps transitions to CloudEvents over MQTT.
+* **List/variable-based** — The `ISA95JobOrderReceiverObjectType` exposes a `JobOrderList` variable and the `ISA95JobResponseProviderObjectType` exposes a `JobOrderResponseList` variable. MicroDCS maps these to retained MQTT topics: per-job `order/{id}` and `result/{id}` topics correspond to individual entries in the OPC UA lists, while a `state-index` retained topic provides a compact summary equivalent to reading the full list variables. See [Machinery Jobs – MES Northbound Publishing](machinery-jobs-mes-publishing.md) for the retained topic layout and MES reconnect protocol.
+
 Some manual additions are still required for Machinery Job Management support:
 
 * `MethodReturnStatus` enum

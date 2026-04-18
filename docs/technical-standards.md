@@ -86,6 +86,16 @@ The QoS level used to deliver an Application Message outbound to the Client coul
 
 Setting a response topic in the application sets QoS=1 (at least once delivery) where we want to make sure it arrives at the destination, otherwise its a QoS=0 (at most once delivery) notification that can be lost.
 
+### [Retained Messages](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901104)
+
+MQTT retained messages allow the broker to store the last message published to a topic with the `RETAIN` flag set. When a new client subscribes to that topic, the broker delivers the stored message immediately — the subscriber does not need to wait for the next publish.
+
+MicroDCS uses retained messages for the northbound MES publishing interface. The Job Order Publisher maintains per-job and per-scope retained topics so that a reconnecting MES client can recover full state without replaying the event stream.
+
+Retained topics use MQTT v5 `MessageExpiryInterval` to auto-expire stale data (default 48 hours, configurable via `APP_PUBLISHER_RETAINED_TTL_SECONDS`). Deleting a retained topic is done by publishing a zero-byte retained message to the same topic, which instructs the broker to discard the stored message.
+
+See [Machinery Jobs – MES Northbound Publishing](machinery-jobs-mes-publishing.md) for the full topic layout and payload schemas.
+
 ## MessagePack-RPC
 
 MessagePack-RPC is supported as an additional transport option where a lightweight binary RPC channel is preferred.

@@ -378,3 +378,65 @@ Acceptance: correct retained topics on startup; correct publishes and deletions 
 4. Update `docs/technical-standards.md`: add "MQTT Retained Messages" subsection under MQTT v5 documenting the retained topic pattern, 48-hour TTL, and zero-byte deletion convention
 5. Update `docs/index.md`: add MES publishing to the "Start Here" reading path and mention retained-topic-based MES reconnect in the overview
 6. Update `docs/information-model-standards.md`: expand the Machinery Job Management section with the list/variable-based integration mode and how retained topics map to `JobOrderList` and `JobOrderResponseList`
+
+## MES Integration Reference
+
+This section is a consumer-facing reference for MES integration teams. It summarizes the retained topic layout, payload schemas, and reconnect protocol without requiring the full design context above.
+
+### Topic layout
+
+All topics below use the configured MQTT topic prefix (e.g. `app/jobs`) and are scoped per machine via the scope identifier (CloudEvent `subject`).
+
+| Topic | Retained | QoS | Payload type | Lifecycle |
+|---|---|---|---|---|
+| `{prefix}/{scope}/state-index` | Yes | 1 | `StateIndex` (JSON) | Updated on every state transition. Carries seq number for gap detection. |
+| `{prefix}/{scope}/order/{id}` | Yes | 1 | `ISA95JobOrderAndStateDataType` (JSON) | Created on `Store`/`StoreAndStart`, updated on `Update`, deleted on `Clear`. |
+| `{prefix}/{scope}/result/{id}` | Yes | 1 | `ISA95JobResponseDataType` (JSON) | Created when job reaches `Ended` or `Aborted`, deleted on `Clear`. |
+
+All retained topics carry an MQTT v5 `MessageExpiryInterval` of 48 hours (configurable via `APP_PUBLISHER_RETAINED_TTL_SECONDS`). Topics are deleted by publishing a zero-byte retained message.
+
+### State-index payload
+
+```json
+{
+  "seq": 103,
+  "scope": "machine-42",
+  "published_at": "2026-04-11T14:23:01Z",
+  "jobs": [
+    {
+      "job_order_id": "JO-2026-0441",
+      "state": [{"state_text": {"text": "Running", "locale": "en"}, "state_number": 3}],
+      "has_result": false
+    },
+    {
+      "job_order_id": "JO-2026-0442",
+      "state": [{"state_text": {"text": "Ended", "locale": "en"}, "state_number": 5}],
+      "has_result": true
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `seq` | int | Monotonically increasing per scope. Compare with last-seen value to detect missed transitions. |
+| `scope` | string | Machine scope identifier. |
+| `published_at` | string (ISO 8601) | Timestamp of this state-index publish. |
+| `jobs` | array | Active jobs (excludes `EndState`). |
+| `jobs[].job_order_id` | string | The job order ID. |
+| `jobs[].state` | array | Current OPC UA state(s) — top-level state plus optional substates. |
+| `jobs[].has_result` | bool | `true` if a `result/{id}` retained topic exists for this job. |
+
+### Reconnect resync protocol
+
+When the MES reconnects after a connectivity outage:
+
+1. **Subscribe** to `{prefix}/{scope}/state-index` — the broker delivers the latest retained message immediately.
+2. **Compare `seq`** with the last value seen before disconnection. If equal, no transitions were missed.
+3. **If gap detected**, iterate over `jobs` in the state-index:
+   - For jobs with `has_result: true` not yet processed: subscribe to `{prefix}/{scope}/result/{id}`, read the retained response data.
+   - For any job whose order data needs refreshing: subscribe to `{prefix}/{scope}/order/{id}`.
+4. **Clear processed jobs** — for each job in a clearable state (`Ended`/`Aborted`) whose response has been ingested, publish a `Clear` command CloudEvent to the command topic. This transitions the job to `EndState`, removes it from the state-index, and deletes its retained topics.
+5. **Update last-seen seq** to the current value.
+
+A reference implementation of this protocol is available in `tests/test_mes_integration.py` as the `MESResyncClient` class.
