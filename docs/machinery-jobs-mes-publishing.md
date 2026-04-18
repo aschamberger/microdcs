@@ -50,11 +50,9 @@ flowchart TB
   end
 
   subgraph K8s["Kubernetes"]
-    subgraph NB["Command Processor Deployment (×N pods)"]
-      proc["MachineryJobsCloudEventProcessor"]
-    end
-    subgraph SB["Southbound Processor Deployments"]
-      south["DCS-facing processors"]
+    subgraph NB["Processors Deployment (×N pods)"]
+      proc["Northbound MachineryJobsCloudEventProcessor"]
+      south["Southbound CloudEventProcessors"]
     end
     subgraph Publisher["Job Order Publisher Deployment (×1 pod)"]
       pub["JobOrderPublisher"]
