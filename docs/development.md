@@ -4,12 +4,39 @@ This page summarizes the local development workflow for MicroDCS, including envi
 
 ## Environment Setup
 
-MicroDCS targets Python 3.14 and uses `uv` for dependency management, virtual environment creation, and packaging.
+MicroDCS requires Python ≥ 3.14 and uses `uv` for dependency management, virtual environment creation, and packaging.
 
 ```bash
 # Install dependencies and create the local virtual environment
 uv sync
 ```
+
+### Why Python 3.14?
+
+Python 3.14 is the minimum version where the annotation semantics MicroDCS needs work correctly end-to-end without workarounds. The requirement is driven by **PEP 749 (Deferred Evaluation of Annotations)** and the new **`annotationlib`** module.
+
+MicroDCS relies heavily on runtime type inspection:
+
+* **mashumaro** resolves type annotations at runtime to build its JSON (orjson) and MessagePack serialization codecs. This means annotations must be real types at runtime, not opaque strings.
+* **`DataClassResponseMixin[R]`** uses `Generic[R]` with runtime introspection of `__orig_bases__` to determine the response type. Generated model code like `DataClassResponseMixin["Hello"]` passes a forward reference that must resolve correctly.
+* **`ProtocolBinding[PH]`** resolves its generic type parameter at runtime via `get_args()` to find the associated `ProtocolHandler` class, including lazy `ForwardRef` resolution through the 3.14 `annotationlib.ForwardRef`.
+* **Generated dataclasses** use `InitVar[Hello | None]`, union type aliases (`type Greetings = Hello | Bye`), and forward references freely. These all need to round-trip through `typing.get_type_hints()` correctly.
+* **`register_callback()`** unwraps `TypeAliasType` (the runtime object behind the `type X = Y` statement) and `UnionType` (`X | Y`) to register individual dataclass handlers.
+
+Before Python 3.14, there were two problematic alternatives:
+
+1. **PEP 563** (`from __future__ import annotations`) — stringifies all annotations at definition time. This breaks mashumaro's runtime codegen, `get_type_hints()` resolution of generic parameters, and any code that inspects annotations as live type objects.
+2. **No PEP 563** on older Python — requires careful class ordering to avoid `NameError` on forward references, manual `update_forward_refs()` calls, and `if TYPE_CHECKING` guards with duplicated imports. This is fragile and error-prone with generated code.
+
+PEP 749 solves this by making annotation evaluation lazy by default: annotations are stored in a form that is evaluated on access rather than at class creation time. This means forward references, union syntax, and type aliases all work correctly both as static type information and when inspected at runtime — exactly the semantics mashumaro, `get_type_hints()`, and the generic resolution patterns in MicroDCS require.
+
+Additional 3.14 features used throughout the codebase:
+
+* **`annotationlib.ForwardRef`** — the new lazy forward reference type, used in `ProtocolBinding.get_protocol_handler()` for generic parameter resolution
+* **`type` statement** (PEP 695, Python 3.12+) — used for type aliases like `type Greetings = Hello | Bye` in generated models and `type JobOrderIdCall = AbortCall | CancelCall | ...` in processors
+* **`StrEnum`** (Python 3.11+) — used for `Direction`, `MessageIntent`, `ProcessorBinding`, and `ErrorKind` enums
+* **`kw_only` dataclasses** (Python 3.10+) — used universally for all model dataclasses
+* **`match`/`case`** (Python 3.10+) — used in validation and content-type routing
 
 ## Common Commands
 

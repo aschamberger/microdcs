@@ -6,7 +6,7 @@ MicroDCS is a Python framework for building distributed sequence control (DCS) a
 
 ## Tech Stack
 
-- **Python ≥ 3.14** (uses modern features: `type` aliases, `|` union syntax, `StrEnum`, `kw_only` dataclasses)
+- **Python ≥ 3.14** (required for PEP 749 deferred annotation evaluation — see below; also uses `type` aliases, `|` union syntax, `StrEnum`, `kw_only` dataclasses)
 - **uv** – package manager, virtualenv, lockfile (`uv.lock`), build backend (`uv_build`)
 - **Key dependencies**: `aiomqtt`, `mashumaro[orjson]`, `msgpack`, `redis[hiredis]`, `transitions`, `opentelemetry-distro`
 - **Dev dependencies**: `datamodel-code-generator[ruff]`, `pytest`, `pytest-asyncio`, `pytest-cov`, `typer`
@@ -124,6 +124,7 @@ These are intentional choices — do not flag them as issues in reviews:
 - **Dual OTEL handler registration**: Plain + instrumented handler pairs are a pragmatic pattern. A factory/strategy would add abstraction without clear benefit — the wiring happens once in `app/__main__.py`.
 - **`get_protocol_handler()` same-module resolution**: Handler references are resolved within the registering module. This is by design — handlers are always registered in the app entry point, not across library modules.
 - **Error context uses comma/equals encoding**: `mdcserrorcontext` serializes as `key=value,key=value`. Values containing `,` or keys containing `=` will corrupt the dict. This is acceptable because error context is only set by application code with simple single-word keys and numeric/string values — it is never populated from external input.
+- **Python ≥ 3.14 is a hard requirement, not a preference**: The framework depends on PEP 749 (deferred annotation evaluation) because mashumaro resolves type annotations at runtime to build serialization codecs, `DataClassResponseMixin[R]` and `ProtocolBinding[PH]` introspect generic type parameters at runtime, and generated code uses forward references and `type` aliases that must round-trip through `get_type_hints()`. PEP 563 (`from __future__ import annotations`) would break mashumaro's codegen, and pre-3.14 Python without PEP 563 requires fragile manual forward-ref management. PEP 749 makes lazy evaluation the default, so all these patterns work correctly without workarounds. The `annotationlib.ForwardRef` import in `common.py` is a direct 3.14-only dependency.
 - **`custommetadata` has no explicit size limit**: Transport-level limits already bound payload size (MessagePack `max_buffer_size=8MB`, MQTT broker max packet size). An explicit size check on `custommetadata` would be redundant defense-in-depth.
 - **MQTT TLS uses Python defaults for hostname verification**: `aiomqtt.TLSParameters(ca_certs=...)` relies on `ssl.create_default_context()` which sets `check_hostname=True` and `verify_mode=CERT_REQUIRED` by default. These defaults are secure.
 - **Expiration tasks are safe with `id=None`**: There is an explicit `cloudevent.id is not None` guard before creating expiration tasks, so `None` IDs never enter the `_expiration_timeout_tasks` dict.
