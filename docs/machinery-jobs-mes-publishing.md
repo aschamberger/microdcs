@@ -367,13 +367,8 @@ Acceptance: correct retained topics on startup; correct publishes and deletions 
 ### Phase 4 – Kubernetes deployment and documentation
 
 1. Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)
-2. Write Kubernetes `Deployment` manifest: `replicas: 1`, resource limits, liveness probe (Redis ping), readiness probe (MQTT connected)
-3. Add MQTT credentials to secret management alongside existing broker credentials
-4. Deploy to staging and run a 30-minute connectivity interruption test: disconnect MES MQTT client, run jobs through several complete cycles including clearable states, reconnect, verify state-index seq gap, all retained topics present, no response data loss
-5. Update `docs/development.md`: add publisher deployment and configuration section covering `JobOrderPublisherConfig`, Kubernetes manifest, and local development setup
-6. Update this document's "Configuration" section with final environment variable names and defaults
-
-Acceptance: MES reconnect after 30-minute outage shows correct seq gap, all uncleared terminal jobs have retained result topics, `Clear` drains the backlog cleanly.
+2. Write Kubernetes `Deployment` manifest: `replicas: 1`, resource limits
+3. Update `docs/development.md`: add publisher deployment and configuration section covering `JobOrderPublisherConfig`, Kubernetes manifest, and local development setup
 
 ### Phase 5 – MES integration
 

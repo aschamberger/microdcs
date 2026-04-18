@@ -90,6 +90,12 @@ Every DAO save also appends an identical entry to `joborder:changes:_global`. Th
 
 `JobOrderAndStateDAO.save()` also issues `SADD active-scopes {scope}` inside the pipeline on every call. Since SADD is idempotent, this registers the scope on first Store and is a no-op on subsequent saves.
 
+### Publisher cursor persistence
+
+The `JobOrderPublisher` tracks its read position in each stream using Redis hash `publisher:stream-cursors`. After each successful XREAD batch, all cursors are saved with `HSET`. On startup (or after an MQTT reconnect), cursors are reloaded with `HGETALL` so the publisher resumes from where it left off without reprocessing entries.
+
+The publisher also maintains a monotonic sequence counter per scope (`pubseq:{scope}`) incremented with `INCR` on every state-index publish. The MES uses sequence gaps to detect missed updates after a connectivity outage.
+
 ## Redis API Usage Examples
 
 All DAO classes are async and use `redis.asyncio`. They are initialized with a shared `redis.ConnectionPool` and a `RedisKeySchema` instance.

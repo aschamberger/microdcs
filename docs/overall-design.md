@@ -17,3 +17,14 @@ MicroDCS is designed to help build OT and manufacturing applications with modern
 * Application implementations should work with generated dataclasses and processor abstractions rather than directly parsing MQTT or MessagePack payloads
 * The application assumes a UNS-style topic structure with at least `data`, `events`, and `commands` topics, with optional `metadata` topics for retained capability publication
 * The MQTT broker must be configured with retained message persistence enabled so that retained topics survive broker restarts. Without persistence, a broker restart clears all retained topics and components relying on retained state (e.g. the Job Order Publisher) lose their recovery anchor until the next publish cycle. For Mosquitto this requires `persistence true` in `mosquitto.conf`.
+
+## Deployment Modes
+
+MicroDCS supports two deployment modes controlled by two boolean flags on `RuntimeConfig`:
+
+| Mode | `APP_IS_PROCESSOR_INSTANCE` | `APP_IS_PUBLISHER_INSTANCE` | Description |
+|---|---|---|---|
+| **Single-container** | `true` (default) | `true` (default) | Both processor and publisher run in the same process. Simplest setup for development and low-scale deployments. |
+| **Split processor + publisher** | `true` / `false` | `false` / `true` | Processors scale horizontally (multiple replicas) with shared MQTT subscriptions while a single publisher replica maintains retained topics. Avoids conflicting retained writes. |
+
+When `is_processor_instance` is `false`, protocol handlers and bindings are not started. When `is_publisher_instance` is `false`, additional tasks that are `MQTTPublisher` instances are skipped.

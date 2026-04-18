@@ -191,6 +191,16 @@ Messages are categorized by **intent**, which maps to the MQTT topic structure:
 
 The processor's binding direction determines which intents it subscribes to and publishes on.
 
+### Publisher
+
+A **publisher** (`MQTTPublisher` subclass) is a long-running task that maintains retained MQTT topics based on Redis state changes. Unlike protocol handlers, publishers do not process incoming CloudEvents — they are write-only components that read from Redis streams and publish retained messages.
+
+`MQTTPublisher` manages an MQTT client connection with automatic reconnect/backoff, and exposes `publish_retained(topic, payload, ttl)` and `delete_retained(topic)`. Application-specific publishers subclass `MQTTPublisher` and override the `_run()` hook to implement their stream-reading loop.
+
+The `JobOrderPublisher` is the built-in publisher that maintains per-job retained topics (`order/{id}`, `result/{id}`) and a per-scope `state-index` topic. It consumes the [Job Change Stream](#glossary) written by the DAO layer and dispatches retained publishes based on the change type. See [Machinery Jobs – MES Northbound Publishing](machinery-jobs-mes-publishing.md) for the full design.
+
+Publishers are registered via `MicroDCS.add_additional_task()` and controlled by the `APP_IS_PUBLISHER_INSTANCE` flag, enabling separate deployment of processor and publisher roles.
+
 ### Response Chain
 
 The **response chain** is how a request dataclass creates a properly typed response object. It has three mechanisms:
@@ -245,6 +255,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **OPC UA** | Industrial interoperability standard. MicroDCS uses its information models (not its transport). |
 | **Processor binding** | Connects a processor to a protocol handler. Manages topic patterns and outgoing queue. |
 | **Protocol handler** | Manages transport connections (MQTT or MessagePack-RPC). Runs as an async task. |
+| **Publisher** | An `MQTTPublisher` subclass that reads Redis streams and maintains retained MQTT topics. Write-only — does not process incoming CloudEvents. Registered as an additional task and controlled by `APP_IS_PUBLISHER_INSTANCE`. |
 | **Response chain** | The mechanism by which request dataclasses create typed response objects via `.response()`. |
 | **Retained Topic** | An MQTT v5 topic published with the retained flag set. The broker stores the last message and delivers it immediately to new subscribers. MicroDCS uses retained topics (with a 48-hour Message Expiry Interval) to expose current job order and result state to the MES so that reconnecting clients receive the full picture without replaying events. |
 | **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |

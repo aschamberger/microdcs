@@ -1,12 +1,108 @@
 
 
+# MicroDCS Kubernetes Deployment
+#
+# Two Deployments:
+#   1. Processor – scales horizontally with shared MQTT subscriptions
+#   2. Publisher – single replica maintaining retained MQTT topics
+#
+# Both share the same container image, differentiated by APP_IS_PROCESSOR_INSTANCE
+# and APP_IS_PUBLISHER_INSTANCE environment variables.
 
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microdcs-processor
+  labels:
+    app: microdcs
+    role: processor
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: microdcs
+      role: processor
+  template:
+    metadata:
+      labels:
+        app: microdcs
+        role: processor
+    spec:
+      containers:
+        - name: microdcs
+          image: aschamberger/microdcs:latest
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          env:
+            - name: POD_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: APP_IS_PROCESSOR_INSTANCE
+              value: "true"
+            - name: APP_IS_PUBLISHER_INSTANCE
+              value: "false"
+            - name: APP_REDIS_HOSTNAME
+              value: redis
+            - name: APP_MQTT_HOSTNAME
+              value: mqtt-broker
+            - name: APP_PROCESSING_TOPIC_PREFIXES
+              value: "greetings:app/greetings,machinery-jobs:app/jobs"
+            - name: APP_PROCESSING_RESPONSE_TOPICS
+              value: "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses"
+            - name: APP_PROCESSING_SHARED_SUBSCRIPTION_NAME
+              value: "appsub"
 
-env:
-  - name: POD_ID
-    valueFrom:
-      fieldRef:
-        fieldPath: metadata.uid
-
-
-
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microdcs-publisher
+  labels:
+    app: microdcs
+    role: publisher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: microdcs
+      role: publisher
+  template:
+    metadata:
+      labels:
+        app: microdcs
+        role: publisher
+    spec:
+      containers:
+        - name: microdcs
+          image: aschamberger/microdcs:latest
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          env:
+            - name: POD_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: APP_IS_PROCESSOR_INSTANCE
+              value: "false"
+            - name: APP_IS_PUBLISHER_INSTANCE
+              value: "true"
+            - name: APP_REDIS_HOSTNAME
+              value: redis
+            - name: APP_MQTT_HOSTNAME
+              value: mqtt-broker
+            - name: APP_PROCESSING_TOPIC_PREFIXES
+              value: "greetings:app/greetings,machinery-jobs:app/jobs"
+            - name: APP_PUBLISHER_RETAINED_TTL_SECONDS
+              value: "172800"

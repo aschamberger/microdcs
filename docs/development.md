@@ -108,6 +108,50 @@ Startup pre-check sequence:
 Environment variables are still parsed from APP_* settings, then validated by
 these runtime checks.
 
+## Deployment Modes
+
+A MicroDCS application consists of two roles: **processor** (handles incoming events, runs state machines) and **publisher** (maintains retained MQTT topics for northbound MES integration). Both can run in a single process (default) or be split into separate Kubernetes deployments.
+
+### Instance Role Flags
+
+| Variable | Default | Effect |
+|---|---|---|
+| `APP_IS_PROCESSOR_INSTANCE` | `true` | Enables protocol handlers, bindings, and processor lifecycle |
+| `APP_IS_PUBLISHER_INSTANCE` | `true` | Enables `MQTTPublisher` additional tasks (e.g. `JobOrderPublisher`) |
+
+For production, set one flag to `false` per deployment: multiple processor replicas with shared MQTT subscriptions and a single publisher replica that owns retained topics.
+
+### Publisher Configuration (`APP_PUBLISHER_*`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `APP_PUBLISHER_RETAINED_TTL_SECONDS` | `172800` | MQTT v5 Message Expiry Interval for retained topics (48 hours) |
+| `APP_PUBLISHER_STREAM_READ_COUNT` | `50` | Max entries per Redis XREAD batch |
+| `APP_PUBLISHER_STREAM_BLOCK_MS` | `500` | XREAD BLOCK timeout (milliseconds) |
+
+The topic prefix identifier (e.g. `"machinery-jobs"`) is a constructor parameter of `JobOrderPublisher`, not an environment variable. It is wired in `app/__main__.py`.
+
+### Kubernetes Manifest
+
+The `deploy/k8s.yaml` manifest defines two Deployments:
+
+- **`microdcs-processor`** (`replicas: 2`) — processors only (`APP_IS_PUBLISHER_INSTANCE=false`)
+- **`microdcs-publisher`** (`replicas: 1`) — publisher only (`APP_IS_PROCESSOR_INSTANCE=false`)
+
+The publisher must be a single replica to avoid conflicting retained writes. The app handles MQTT and Redis reconnection internally with backoff, so health probes on external dependencies are not included — Kubernetes restart-on-crash is sufficient.
+
+### Local Development
+
+For local development, both roles run in a single process (default). Start MQTT and Redis via Docker and run the app:
+
+```bash
+docker start mosquitto 2>/dev/null || docker run --rm -it --name mosquitto -p 1883:1883 eclipse-mosquitto mosquitto -c /mosquitto-no-auth.conf
+docker start redis 2>/dev/null || docker run --rm -it --name redis -p 6379:6379 redis:latest
+uv run python -m app
+```
+
+Or use the VS Code task **Run App (plain)** which starts both services automatically.
+
 Generate typed models from a JSON Schema file:
 
 ```bash
