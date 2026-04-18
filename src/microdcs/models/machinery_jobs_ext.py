@@ -1,8 +1,13 @@
 from dataclasses import dataclass, field
 from enum import IntEnum
+from typing import Any
 
 from microdcs.dataclass import DataClassMixin
-from microdcs.models.machinery_jobs import ISA95StateDataType, JobOrderControl
+from microdcs.models.machinery_jobs import (
+    ISA95StateDataType,
+    ISA95WorkMasterDataType,
+    JobOrderControl,
+)
 
 
 class MethodReturnStatus(IntEnum):
@@ -142,3 +147,17 @@ class StateIndex(DataClassMixin):
     scope: str
     published_at: str
     jobs: list[StateIndexEntry] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class ISA95WorkMasterDataTypeExt(ISA95WorkMasterDataType):
+    """Extended Work Master with opaque recipe content.
+
+    Follows the CloudEvent envelope pattern: ``data`` carries the recipe
+    payload and ``dataschema`` identifies its structure.  Both fields
+    default to ``None`` so plain Work Masters without recipe content
+    remain valid.
+    """
+
+    data: dict[str, Any] | list[Any] | None = None
+    dataschema: str | None = None

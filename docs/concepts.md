@@ -34,6 +34,17 @@ The main companion specification used is [OPC 40001-3: Machinery Job Management]
 
 ISA-95 defines data structures for manufacturing operations: **job orders** (what to produce), **job responses** (status and results), and **work masters** (templates/recipes). MicroDCS maps these to Python dataclasses generated from JSON Schema and persists them in Redis. The `MachineryJobsCloudEventProcessor` implements the full OPC UA job state machine on top of these structures.
 
+#### Extended Work Master
+
+A standard Work Master (`ISA95WorkMasterDataType`) carries only an ID, description, and parameters — the OPC UA envelope. The **extended Work Master** (`ISA95WorkMasterDataTypeExt`) adds two optional fields following the CloudEvent envelope pattern:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `data` | `dict[str, Any] \| list[Any] \| None` | Recipe content as JSON — structure defined by `dataschema` |
+| `dataschema` | `str \| None` | URI identifying the schema that `data` adheres to |
+
+Both fields default to `None`, so Work Masters without recipe content remain valid. The `dataschema` URI discriminates the semantic type — an SFC recipe schema is one possible value, but the design is open to other recipe formats without changes to the Work Master envelope, the NB processor, or the DAO layer. The `WorkMasterDAO` stores and retrieves `ISA95WorkMasterDataTypeExt` instances, serializing the extended fields to Redis JSON when present.
+
 ## Framework Concepts
 
 ### CloudEvents
@@ -244,6 +255,8 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Custom metadata** | Key-value pairs carried in the CloudEvent envelope alongside the payload. Used for hidden field transport. |
 | **DataClassMixin** | Base mixin providing JSON and MessagePack serialization for all model dataclasses. |
 | **DataClassResponseMixin** | Generic mixin that adds `.response()` to request dataclasses, enabling typed response creation. |
+| **`dataschema` (Work Master)** | URI field on `ISA95WorkMasterDataTypeExt` identifying the schema that the Work Master's `data` payload adheres to. |
+| **Extended Work Master** | `ISA95WorkMasterDataTypeExt` — extends the OPC UA Work Master with opaque `data` and `dataschema` fields for carrying recipe content. |
 | **Hidden fields** | Dataclass fields prefixed with `_`. Excluded from serialization, transported via custom metadata. |
 | **ISA-95** | International standard for manufacturing operations integration. Defines job orders, responses, and the automation pyramid. |
 | **Job Change Stream** | A Redis stream (`joborder:changes:{scope}`) written atomically by `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()` on every state change. Consumed by the Job Order Publisher to drive retained MQTT topic updates. A global sentinel stream (`joborder:changes:_global`) mirrors every entry for new-scope discovery. |
@@ -262,4 +275,5 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Southbound** | Processor direction facing down the ISA-95 pyramid. Subscribes to data/events/metadata, publishes commands. |
 | **State Index** | A retained MQTT topic (`{prefix}/{scope}/state-index`) published by the Job Order Publisher on every job state transition. Contains the sequence number, scope, timestamp, and a compact list of all active jobs with their current state and `has_result` flag. Used by the MES to detect gaps after a connectivity outage and to know which per-job retained topics to fetch. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
+| **Work Master** | ISA-95 template/recipe referenced by Job Orders. Stored in Redis via `WorkMasterDAO`. The base type is `ISA95WorkMasterDataType`; the extended type `ISA95WorkMasterDataTypeExt` adds opaque recipe content. |
 | **`__request_object__`** | `InitVar` field in response dataclasses. Automatically populated by `.response()` with the request instance. |

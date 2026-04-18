@@ -64,7 +64,9 @@ class ISA95WorkMasterDataTypeExt(ISA95WorkMasterDataType):
 
 Work Masters with recipe content are pushed from the MOM layer into MicroDCS via CloudEvents and stored in Redis through the existing `WorkMasterDAO`. The NB processor's `is_job_acceptable()` validation works unchanged — it checks Work Master ID membership but does not interpret recipe content.
 
-The `WorkMasterDAO.retrieve()` method is updated to deserialize as `ISA95WorkMasterDataTypeExt`, which is backward-compatible since both new fields have `None` defaults.
+The `WorkMasterDAO.retrieve()` method is updated to deserialize as `ISA95WorkMasterDataTypeExt`, which is backward-compatible since both new fields have `None` defaults. The `WorkMasterDAO.save()` type hint accepts `ISA95WorkMasterDataTypeExt` directly, ensuring the extended fields (`data`, `dataschema`) are serialized to Redis JSON when present.
+
+> **Status**: Implemented. See `ISA95WorkMasterDataTypeExt` in `src/microdcs/models/machinery_jobs_ext.py` and updated `WorkMasterDAO` in `src/microdcs/redis.py`.
 
 ## Station Configuration Delivery
 
@@ -80,13 +82,13 @@ All station configuration — resource lists and operational parameters — is p
 
 | Configuration | CloudEvent type | DAO | Operation |
 |---|---|---|---|
-| Equipment list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.equipment.v1` | `EquipmentListDAO` | `add_to_list()` / `remove_from_list()` |
-| Material class list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.materialclass.v1` | `MaterialClassListDAO` | `add_to_list()` / `remove_from_list()` |
-| Material definition list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.materialdefinition.v1` | `MaterialDefinitionListDAO` | `add_to_list()` / `remove_from_list()` |
-| Personnel list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.personnel.v1` | `PersonnelListDAO` | `add_to_list()` / `remove_from_list()` |
-| Physical asset list | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.physicalasset.v1` | `PhysicalAssetListDAO` | `add_to_list()` / `remove_from_list()` |
-| Work Masters | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1` | `WorkMasterDAO` | `save()` |
-| Max downloadable job orders | `com.github.schamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1` | – (updates `JobAcceptanceConfig` in-memory + persists to Redis) | set value |
+| Equipment list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.equipment.v1` | `EquipmentListDAO` | `add_to_list()` / `remove_from_list()` |
+| Material class list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialclass.v1` | `MaterialClassListDAO` | `add_to_list()` / `remove_from_list()` |
+| Material definition list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialdefinition.v1` | `MaterialDefinitionListDAO` | `add_to_list()` / `remove_from_list()` |
+| Personnel list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.personnel.v1` | `PersonnelListDAO` | `add_to_list()` / `remove_from_list()` |
+| Physical asset list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.physicalasset.v1` | `PhysicalAssetListDAO` | `add_to_list()` / `remove_from_list()` |
+| Work Masters | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1` | `WorkMasterDAO` | `save()` |
+| Max downloadable job orders | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1` | – (updates `JobAcceptanceConfig` in-memory + persists to Redis) | set value |
 
 Each configuration CloudEvent carries the ISA-95 resource data type(s) in its payload:
 
@@ -376,7 +378,7 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 5. Add `@incoming` handler for job acceptance configuration — update `max_downloadable_job_orders` in-memory and persist to Redis
 6. Add a `JobAcceptanceConfigDAO` for persisting `max_downloadable_job_orders` to Redis so the value survives pod restarts
 7. Update `MachineryJobsCloudEventProcessor.__init__()` to load persisted `max_downloadable_job_orders` on startup (falling back to code-configured default)
-8. Define CloudEvent types (all under `com.github.schamberger.ISA95-JOBCONTROL_V2.config.*`) and topic structure for configuration delivery
+8. Define CloudEvent types (all under `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.*`) and topic structure for configuration delivery
 9. Add unit tests for each configuration handler (add and remove operations)
 10. Add unit tests for `JobAcceptanceConfigDAO` persistence and startup loading
 11. Update this document's "Station Configuration Delivery" section with final CloudEvent types, topic structures, and code snippets

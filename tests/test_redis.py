@@ -9,9 +9,9 @@ from microdcs.models.machinery_jobs import (
     ISA95JobOrderDataType,
     ISA95JobResponseDataType,
     ISA95StateDataType,
-    ISA95WorkMasterDataType,
     LocalizedText,
 )
+from microdcs.models.machinery_jobs_ext import ISA95WorkMasterDataTypeExt
 from microdcs.redis import (
     CloudEventDedupeDAO,
     CounterDAO,
@@ -868,8 +868,8 @@ class TestWorkMasterDAO:
 
     def _make_work_master(
         self, work_master_id: str = "wm-1"
-    ) -> ISA95WorkMasterDataType:
-        return ISA95WorkMasterDataType(id=work_master_id)
+    ) -> ISA95WorkMasterDataTypeExt:
+        return ISA95WorkMasterDataTypeExt(id=work_master_id)
 
     @pytest.mark.asyncio
     async def test_save_stores_json_and_adds_to_set(self):
@@ -889,7 +889,7 @@ class TestWorkMasterDAO:
 
     @pytest.mark.asyncio
     async def test_save_raises_when_no_id(self):
-        wm = ISA95WorkMasterDataType()
+        wm = ISA95WorkMasterDataTypeExt()
         with pytest.raises(ValueError, match="id"):
             await self.dao.save(wm, scope="s1")
 
@@ -905,7 +905,7 @@ class TestWorkMasterDAO:
         ]
 
         with patch.object(
-            ISA95WorkMasterDataType,
+            ISA95WorkMasterDataTypeExt,
             "from_dict",
             return_value=wm,
         ) as mock_from:
@@ -943,6 +943,88 @@ class TestWorkMasterDAO:
         self.redis.smembers.assert_awaited_once_with(
             self.schema.workmaster_list_key("s1")
         )
+
+    @pytest.mark.asyncio
+    async def test_save_ext_with_recipe_data(self):
+        wm = ISA95WorkMasterDataTypeExt(
+            id="wm-recipe",
+            data={"steps": [{"name": "Init", "initial": True}]},
+            dataschema="https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/",
+        )
+        with patch.object(
+            wm,
+            "to_dict",
+            return_value={
+                "ID": "wm-recipe",
+                "data": {"steps": [{"name": "Init", "initial": True}]},
+                "dataschema": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/",
+            },
+        ):
+            await self.dao.save(wm, scope="s1")
+
+        json_mock = self.redis.json()
+        json_mock.set.assert_awaited_once()
+        call_args = json_mock.set.call_args
+        assert call_args.args[0] == self.schema.workmaster_key("wm-recipe")
+
+    @pytest.mark.asyncio
+    async def test_retrieve_returns_ext_with_recipe_data(self):
+        recipe_data = {"steps": [{"name": "Init", "initial": True}]}
+        wm = ISA95WorkMasterDataTypeExt(
+            id="wm-recipe",
+            data=recipe_data,
+            dataschema="https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/",
+        )
+        fake_data = {
+            "ID": "wm-recipe",
+            "data": recipe_data,
+            "dataschema": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/",
+            "_dataschema": "s",
+        }
+
+        json_mock = self.redis.json()
+        json_mock.get.side_effect = [
+            ["some-schema"],
+            [fake_data],
+        ]
+
+        with patch.object(
+            ISA95WorkMasterDataTypeExt,
+            "from_dict",
+            return_value=wm,
+        ) as mock_from:
+            result = await self.dao.retrieve("wm-recipe")
+            mock_from.assert_called_once()
+            assert result is wm
+            assert isinstance(result, ISA95WorkMasterDataTypeExt)
+            assert result.data == recipe_data
+            assert (
+                result.dataschema
+                == "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/"
+            )
+
+    @pytest.mark.asyncio
+    async def test_retrieve_returns_ext_without_recipe_data(self):
+        wm = ISA95WorkMasterDataTypeExt(id="wm-plain")
+        fake_data = {"ID": "wm-plain", "_dataschema": "s"}
+
+        json_mock = self.redis.json()
+        json_mock.get.side_effect = [
+            ["some-schema"],
+            [fake_data],
+        ]
+
+        with patch.object(
+            ISA95WorkMasterDataTypeExt,
+            "from_dict",
+            return_value=wm,
+        ) as mock_from:
+            result = await self.dao.retrieve("wm-plain")
+            mock_from.assert_called_once()
+            assert result is wm
+            assert isinstance(result, ISA95WorkMasterDataTypeExt)
+            assert result.data is None
+            assert result.dataschema is None
 
 
 # ---------------------------------------------------------------------------

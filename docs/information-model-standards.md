@@ -57,6 +57,29 @@ Engineering-unit metadata is derived from the OPC UA EUInformation model and rel
 * [UNECE to OPC UA CSV](http://www.opcfoundation.org/UA/EngineeringUnits/UNECE/UNECE_to_OPCUA.csv)
 * [UA-Nodeset UNECE to OPC UA CSV](https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/refs/heads/latest/Schema/UNECE_to_OPCUA.csv)
 
+### Extended Work Master (`ISA95WorkMasterDataTypeExt`)
+
+The generated `ISA95WorkMasterDataType` carries only the OPC UA envelope fields (`id`, `description`, `parameters`). `ISA95WorkMasterDataTypeExt` (in `machinery_jobs_ext.py`) extends it with two optional fields following the CloudEvent opaque-data pattern:
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `data` | `dict[str, Any] \| list[Any] \| None` | `None` | Recipe content as JSON — structure defined by `dataschema` |
+| `dataschema` | `str \| None` | `None` | URI identifying the schema that `data` adheres to |
+
+```python
+@dataclass(kw_only=True)
+class ISA95WorkMasterDataTypeExt(ISA95WorkMasterDataType):
+    data: dict[str, Any] | list[Any] | None = None
+    dataschema: str | None = None
+```
+
+Both fields default to `None`, so existing Work Masters without recipe content remain valid. The `WorkMasterDAO` stores and retrieves `ISA95WorkMasterDataTypeExt` instances:
+
+- **`save()`** serializes all fields (including `data` and `dataschema` when present) to Redis JSON via `to_dict()`
+- **`retrieve()`** deserializes as `ISA95WorkMasterDataTypeExt`, so the caller always receives the extended type
+
+The `dataschema` URI discriminates the semantic type of the `data` payload. For example, an SFC recipe uses `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/`, but other recipe formats can be added by defining new `dataschema` URIs without touching the Work Master envelope, the NB processor, or the DAO layer.
+
 ## ISA-88/ISA-95
 
 ISA-88 and ISA-95 provide the manufacturing-domain concepts used by the framework's sequence control and job-management examples.

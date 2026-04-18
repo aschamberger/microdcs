@@ -13,8 +13,8 @@ from microdcs.models.machinery_jobs import (
     ISA95JobOrderAndStateDataType,
     ISA95JobResponseDataType,
     ISA95StateDataType,
-    ISA95WorkMasterDataType,
 )
+from microdcs.models.machinery_jobs_ext import ISA95WorkMasterDataTypeExt
 
 logger = logging.getLogger("redis")
 
@@ -718,7 +718,7 @@ class WorkMasterDAO:
         self.redis = redis_client
         self.key_schema = key_schema
 
-    async def save(self, work_master: ISA95WorkMasterDataType, scope: str) -> None:
+    async def save(self, work_master: ISA95WorkMasterDataTypeExt, scope: str) -> None:
         """
         Save a Work Master to Redis.
 
@@ -740,7 +740,7 @@ class WorkMasterDAO:
         list_key = self.key_schema.workmaster_list_key(scope)
         await self.redis.sadd(list_key, work_master_id)  # type: ignore[reportGeneralTypeIssues]
 
-    async def retrieve(self, work_master_id: str):
+    async def retrieve(self, work_master_id: str) -> ISA95WorkMasterDataTypeExt | None:
         """
         Retrieve a Work Master from Redis.
 
@@ -758,7 +758,7 @@ class WorkMasterDAO:
             if isinstance(data, list):
                 data = data[0]
             del data["_dataschema"]  # remove before deserialization
-            return ISA95WorkMasterDataType.from_dict(data)
+            return ISA95WorkMasterDataTypeExt.from_dict(data)
         else:
             return None
 
