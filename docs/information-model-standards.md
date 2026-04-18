@@ -80,6 +80,29 @@ Both fields default to `None`, so existing Work Masters without recipe content r
 
 The `dataschema` URI discriminates the semantic type of the `data` payload. For example, an SFC recipe uses `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/`, but other recipe formats can be added by defining new `dataschema` URIs without touching the Work Master envelope, the NB processor, or the DAO layer.
 
+### Station Configuration CloudEvents
+
+Station configuration is delivered from MES to MicroDCS via CloudEvents on the NB processor. Each configuration type has a dedicated CloudEvent type under `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.*` and reuses existing ISA-95 data types as payloads. The `method` CloudEvent extension attribute (`PUT` / `DELETE`) controls upsert vs. removal.
+
+Thin data model subclasses (in `machinery_jobs_ext.py`) override `Config.cloudevent_type` so the NB processor registers separate `@incoming` handlers while reusing the ISA-95 data types for serialization:
+
+| CloudEvent type | Data model | Payload type | DAO | Validated field(s) |
+|---|---|---|---|---|
+| `...config.equipment.v1` | `ConfigEquipment` | `ISA95EquipmentDataType` | `EquipmentListDAO` | `id` |
+| `...config.materialclass.v1` | `ConfigMaterialClass` | `ISA95MaterialDataType` | `MaterialClassListDAO` | `material_class_id` |
+| `...config.materialdefinition.v1` | `ConfigMaterialDefinition` | `ISA95MaterialDataType` | `MaterialDefinitionListDAO` | `material_definition_id` |
+| `...config.personnel.v1` | `ConfigPersonnel` | `ISA95PersonnelDataType` | `PersonnelListDAO` | `id` |
+| `...config.physicalasset.v1` | `ConfigPhysicalAsset` | `ISA95PhysicalAssetDataType` | `PhysicalAssetListDAO` | `id` |
+| `...config.workmaster.v1` | `ConfigWorkMaster` | `ISA95WorkMasterDataTypeExt` | `WorkMasterDAO` | `id` (full object stored) |
+| `...config.jobacceptance.v1` | `ConfigJobAcceptance` | `DataClassMixin` (custom) | `JobAcceptanceConfigDAO` | `max_downloadable_job_orders` |
+
+Operation semantics:
+
+- **`PUT`** (default): upsert — `add_to_list()` / `save()`
+- **`DELETE`**: removal — `remove_from_list()` / `delete()`
+
+All configuration is scoped via the CloudEvent `subject` field, allowing different stations to maintain independent resource sets.
+
 ## ISA-88/ISA-95
 
 ISA-88 and ISA-95 provide the manufacturing-domain concepts used by the framework's sequence control and job-management examples.

@@ -2,8 +2,12 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 
-from microdcs.dataclass import DataClassMixin
+from microdcs.dataclass import DataClassConfig, DataClassMixin
 from microdcs.models.machinery_jobs import (
+    ISA95EquipmentDataType,
+    ISA95MaterialDataType,
+    ISA95PersonnelDataType,
+    ISA95PhysicalAssetDataType,
     ISA95StateDataType,
     ISA95WorkMasterDataType,
     JobOrderControl,
@@ -161,3 +165,76 @@ class ISA95WorkMasterDataTypeExt(ISA95WorkMasterDataType):
 
     data: dict[str, Any] | list[Any] | None = None
     dataschema: str | None = None
+
+
+# ── Station configuration delivery models ────────────────────────────
+#
+# Thin subclasses that override ``Config.cloudevent_type`` so the NB
+# processor can register separate ``@incoming`` handlers for each
+# configuration CloudEvent type while reusing the ISA-95 data types
+# for (de)serialization.
+
+
+@dataclass(kw_only=True)
+class ConfigEquipment(ISA95EquipmentDataType):
+    class Config(ISA95EquipmentDataType.Config):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.equipment.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigEquipment/"
+
+
+@dataclass(kw_only=True)
+class ConfigMaterialClass(ISA95MaterialDataType):
+    class Config(ISA95MaterialDataType.Config):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialclass.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigMaterialClass/"
+
+
+@dataclass(kw_only=True)
+class ConfigMaterialDefinition(ISA95MaterialDataType):
+    class Config(ISA95MaterialDataType.Config):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialdefinition.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigMaterialDefinition/"
+
+
+@dataclass(kw_only=True)
+class ConfigPersonnel(ISA95PersonnelDataType):
+    class Config(ISA95PersonnelDataType.Config):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.personnel.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigPersonnel/"
+
+
+@dataclass(kw_only=True)
+class ConfigPhysicalAsset(ISA95PhysicalAssetDataType):
+    class Config(ISA95PhysicalAssetDataType.Config):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.physicalasset.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigPhysicalAsset/"
+
+
+@dataclass(kw_only=True)
+class ConfigWorkMaster(ISA95WorkMasterDataTypeExt):
+    class Config(ISA95WorkMasterDataTypeExt.Config):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigWorkMaster/"
+
+
+@dataclass(kw_only=True)
+class ConfigJobAcceptance(DataClassMixin):
+    max_downloadable_job_orders: int
+
+    class Config(DataClassConfig):
+        cloudevent_type: str = (
+            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1"
+        )
+        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigJobAcceptance/"

@@ -16,6 +16,7 @@ from microdcs.redis import (
     CloudEventDedupeDAO,
     CounterDAO,
     EquipmentListDAO,
+    JobAcceptanceConfigDAO,
     JobOrderAndStateDAO,
     JobResponseDAO,
     MaterialClassListDAO,
@@ -1136,3 +1137,33 @@ class TestMaterialDefinitionListDAO:
         self.redis.srem.assert_awaited_once_with(
             self.schema.materialdefinition_list_key("s1"), "md-1"
         )
+
+
+class TestJobAcceptanceConfigDAO:
+    def setup_method(self) -> None:
+        self.redis = _make_redis_mock()
+        self.schema = _make_schema()
+        self.dao = JobAcceptanceConfigDAO(self.redis, self.schema)
+
+    @pytest.mark.asyncio
+    async def test_save(self):
+        await self.dao.save(5, scope="s1")
+        self.redis.set.assert_awaited_once_with(self.schema.jobacceptance_key("s1"), 5)
+
+    @pytest.mark.asyncio
+    async def test_retrieve_found(self):
+        self.redis.get = AsyncMock(return_value=b"5")
+        result = await self.dao.retrieve(scope="s1")
+        assert result == 5
+        self.redis.get.assert_awaited_once_with(self.schema.jobacceptance_key("s1"))
+
+    @pytest.mark.asyncio
+    async def test_retrieve_not_found(self):
+        self.redis.get = AsyncMock(return_value=None)
+        result = await self.dao.retrieve(scope="s1")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_delete(self):
+        await self.dao.delete(scope="s1")
+        self.redis.delete.assert_awaited_once_with(self.schema.jobacceptance_key("s1"))

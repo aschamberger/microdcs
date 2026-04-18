@@ -1,6 +1,7 @@
 import asyncio
 import fnmatch
 import functools
+import inspect
 import logging
 import sys
 import typing
@@ -288,6 +289,11 @@ class CloudEvent(DataClassMixin):
     mdcserrorcontext: dict[str, Any] | None = None
     """This holds timeout limits, retry counts, stack traces, etc.
     (serialized to comma-delimited list of key-value pairs)"""
+
+    method: str | None = None
+    """HTTP-style method hint for the event. ``PUT`` (default when absent)
+    signals an upsert; ``DELETE`` signals removal. Used by station
+    configuration delivery handlers."""
 
     custommetadata: dict[str, Any] | None = field(default_factory=dict)
     """Holds any custom metadata associated with the event.
@@ -769,11 +775,19 @@ class CloudEventProcessor(ABC):
         return cloudevent
 
     def _cloudevent_attributes_for_callback(
-        self, cloudevent: CloudEvent
+        self, cloudevent: CloudEvent, callback: Callable[..., Any]
     ) -> dict[str, Any]:
         kwargs = {}
         for arg in self._event_attributes:
             kwargs[arg.attribute] = get_deep_attr(cloudevent, arg.path)
+        # Only pass kwargs that the callback accepts, unless it has **kwargs.
+        sig = inspect.signature(callback)
+        has_var_keyword = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if not has_var_keyword:
+            accepted = set(sig.parameters.keys())
+            kwargs = {k: v for k, v in kwargs.items() if k in accepted}
         return kwargs
 
     async def callback_incoming(
@@ -797,7 +811,7 @@ class CloudEventProcessor(ABC):
             return None
         logger.debug("Request before callback: %s", request)
 
-        kwargs = self._cloudevent_attributes_for_callback(request_cloudevent)
+        kwargs = self._cloudevent_attributes_for_callback(request_cloudevent, callback)
         call_callback = True
         responses: list[DataClassMixin] | DataClassMixin | None = None
         # a pre-callback can be defined to inspect the incoming cloudevent

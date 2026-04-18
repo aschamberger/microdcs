@@ -70,6 +70,8 @@ The `WorkMasterDAO.retrieve()` method is updated to deserialize as `ISA95WorkMas
 
 ## Station Configuration Delivery
 
+> **Status**: Implemented. Config data models in `src/microdcs/models/machinery_jobs_ext.py`, `method` extension on `CloudEvent` in `src/microdcs/common.py`, `JobAcceptanceConfigDAO` in `src/microdcs/redis.py`, and `@incoming` config handlers in `src/microdcs/processors/machinery_jobs.py`.
+
 ### Problem
 
 The `MachineryJobsCloudEventProcessor.is_job_acceptable()` validates incoming Job Orders against seven configurable checks: max downloadable job orders, equipment IDs, material class IDs, material definition IDs, personnel IDs, physical asset IDs, and Work Master IDs. The corresponding DAOs exist (`EquipmentListDAO`, `MaterialClassListDAO`, `MaterialDefinitionListDAO`, `PersonnelListDAO`, `PhysicalAssetListDAO`, `WorkMasterDAO`) with `add_to_list()` / `remove_from_list()` / `is_member()` methods, but **there is no delivery mechanism** — these lists must be populated externally before any Job Order can pass validation.
@@ -87,8 +89,8 @@ All station configuration — resource lists and operational parameters — is p
 | Material definition list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialdefinition.v1` | `MaterialDefinitionListDAO` | `add_to_list()` / `remove_from_list()` |
 | Personnel list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.personnel.v1` | `PersonnelListDAO` | `add_to_list()` / `remove_from_list()` |
 | Physical asset list | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.physicalasset.v1` | `PhysicalAssetListDAO` | `add_to_list()` / `remove_from_list()` |
-| Work Masters | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1` | `WorkMasterDAO` | `save()` |
-| Max downloadable job orders | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1` | – (updates `JobAcceptanceConfig` in-memory + persists to Redis) | set value |
+| Work Masters | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1` | `WorkMasterDAO` | `save()` / `delete()` |
+| Max downloadable job orders | `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1` | `JobAcceptanceConfigDAO` | `save()` / `delete()` |
 
 Each configuration CloudEvent carries the ISA-95 resource data type(s) in its payload:
 
@@ -103,14 +105,16 @@ All configuration is scoped — the CloudEvent `subject` carries the scope, and 
 
 ### Operation Semantics
 
-Configuration CloudEvents support **add** and **remove** operations, distinguished by a `mdcsoperation` CloudEvent extension attribute:
+Configuration CloudEvents use the `method` CloudEvent extension attribute to distinguish upsert from delete, following HTTP-style semantics:
 
-| `mdcsoperation` | Behavior |
+| `method` | Behavior |
 |---|---|
-| `add` (default) | Add the resource ID(s) to the list / store the Work Master / set the config value |
-| `remove` | Remove the resource ID(s) from the list / delete the Work Master |
+| `PUT` (default when absent) | Add the resource ID(s) to the list / store the Work Master / set the config value |
+| `DELETE` | Remove the resource ID(s) from the list / delete the Work Master / remove the config value |
 
-This allows the MES layer to incrementally update resource lists without full replacement. A full sync is achieved by clearing and re-adding (the MES layer's responsibility).
+Every configuration event is an **upsert** by default — if no `method` is present, the handler treats it as `PUT`. This allows the MES layer to incrementally update resource lists without full replacement. A full sync is achieved by clearing and re-adding (the MES layer's responsibility).
+
+The `method` field is mapped to the `ce_method` keyword argument in `@incoming` handlers via `CloudeventAttributeTuple("ce_method", "method")` to avoid a name collision with the OPC UA `method` positional parameter used in existing Job Management handlers.
 
 ### Prerequisite Relationship
 
@@ -371,20 +375,12 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 
 **Goal**: Enable MOM to push station configuration (resource lists, Work Masters, operational parameters) into MicroDCS via CloudEvents.
 
-1. Define CloudEvent data models for each configuration type: equipment, material class, material definition, personnel, physical asset, Work Master, and job acceptance config
-2. Add `mdcsoperation` CloudEvent extension attribute (`add` / `remove`) to the CloudEvent model
-3. Add `@incoming` handlers on the NB processor for each configuration CloudEvent type, dispatching to the corresponding DAO
-4. Add `@incoming` handler for `ISA95WorkMasterDataTypeExt` CloudEvents — store via `WorkMasterDAO.save()` (includes recipe `data` + `dataschema`)
-5. Add `@incoming` handler for job acceptance configuration — update `max_downloadable_job_orders` in-memory and persist to Redis
-6. Add a `JobAcceptanceConfigDAO` for persisting `max_downloadable_job_orders` to Redis so the value survives pod restarts
-7. Update `MachineryJobsCloudEventProcessor.__init__()` to load persisted `max_downloadable_job_orders` on startup (falling back to code-configured default)
-8. Define CloudEvent types (all under `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.*`) and topic structure for configuration delivery
-9. Add unit tests for each configuration handler (add and remove operations)
-10. Add unit tests for `JobAcceptanceConfigDAO` persistence and startup loading
-11. Update this document's "Station Configuration Delivery" section with final CloudEvent types, topic structures, and code snippets
-12. Update `docs/concepts.md`: add "Station Configuration Delivery" section explaining MOM-pushed configuration; add glossary entries for **Station configuration**, **`mdcsoperation`**
-13. Update `docs/information-model-standards.md`: add "Station Configuration CloudEvents" subsection listing all configuration CloudEvent types, payloads, and operation semantics
-14. Update `docs/persistence.md`: add `JobAcceptanceConfigDAO` to the DAO table and key schema
+1. ~~Define CloudEvent data models for each configuration type~~ — Done: thin subclasses (`ConfigEquipment`, `ConfigMaterialClass`, `ConfigMaterialDefinition`, `ConfigPersonnel`, `ConfigPhysicalAsset`, `ConfigWorkMaster`, `ConfigJobAcceptance`) in `machinery_jobs_ext.py`
+2. ~~Add `method` CloudEvent extension attribute~~ — Done: `method: str | None = None` on `CloudEvent`; mapped to `ce_method` kwarg in handlers via `CloudeventAttributeTuple`
+3. ~~Add `@incoming` handlers for each configuration CloudEvent type~~ — Done: 7 handlers on `MachineryJobsCloudEventProcessor`, each dispatching to the corresponding DAO based on `ce_method` (`PUT` / `DELETE`)
+4. ~~Add `JobAcceptanceConfigDAO`~~ — Done: persists per-scope `max_downloadable_job_orders` in Redis; `is_job_acceptable()` queries it for scope-specific override, falling back to the code-configured default
+5. ~~Add unit tests~~ — Done: `TestJobAcceptanceConfigDAO` in `test_redis.py`, config handler tests and scoped acceptance tests in `test_machinery_jobs_processor.py`
+6. ~~Update docs~~ — Done: `sfc_engine.md`, `concepts.md`, `information-model-standards.md`, `persistence.md`
 
 ### Phase 3: SFC Recipe Schema and Dataclasses
 
@@ -456,7 +452,7 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 - **IEC 61131-3 SFC terminology**: Uses standardized names (step, transition, action, qualifier, selection/simultaneous divergence) from IEC 61131-3 without adopting the PLCopen TC6 graphical exchange format.
 - **Two interaction patterns**: `push_command` and `pull_event` cover the two real-world equipment integration scenarios observed in discrete manufacturing (automotive). The pattern is declared per action in the recipe, not globally.
 - **Station configuration delivery before SFC engine**: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, `is_job_acceptable()` rejects every Job Order and no job ever reaches `AllowedToStart`. Configuration delivery is therefore Phase 2 — after the Work Master extension (Phase 1) but before the SFC engine (Phase 4). This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.
-- **`mdcsoperation` extension attribute for add/remove**: Using a CloudEvent extension attribute to distinguish add vs. remove keeps the payload structure identical for both operations. Incremental updates (add one equipment ID, remove one) avoid the complexity of full-replacement semantics and allow the MES layer to manage resource lists without MicroDCS needing to reconcile diffs.
+- **`method` extension attribute for PUT/DELETE**: Using an HTTP-style `method` CloudEvent extension attribute to distinguish upsert vs. delete keeps the payload structure identical for both operations. `PUT` (the default when `method` is absent) performs an upsert; `DELETE` removes the resource. Incremental updates (add one equipment ID, remove one) avoid the complexity of full-replacement semantics and allow the MES layer to manage resource lists without MicroDCS needing to reconcile diffs. The attribute is mapped to `ce_method` in handler kwargs to avoid a name collision with the OPC UA `method` positional parameter.
 
 ## Sequential Function Charts (SFCs)
 

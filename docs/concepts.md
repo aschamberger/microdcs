@@ -45,6 +45,19 @@ A standard Work Master (`ISA95WorkMasterDataType`) carries only an ID, descripti
 
 Both fields default to `None`, so Work Masters without recipe content remain valid. The `dataschema` URI discriminates the semantic type — an SFC recipe schema is one possible value, but the design is open to other recipe formats without changes to the Work Master envelope, the NB processor, or the DAO layer. The `WorkMasterDAO` stores and retrieves `ISA95WorkMasterDataTypeExt` instances, serializing the extended fields to Redis JSON when present.
 
+#### Station Configuration Delivery
+
+The `MachineryJobsCloudEventProcessor` validates incoming Job Orders against configurable checks (equipment IDs, material classes, personnel, physical assets, Work Master IDs, and max downloadable orders). The corresponding DAOs exist, but these lists must be populated before any Job Order can pass validation.
+
+**Station configuration** is pushed from the MES/MOM layer into MicroDCS via CloudEvents on the NB processor, using the same pattern as Job Orders. Each configuration type has a dedicated CloudEvent type (e.g. `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.equipment.v1`) and is scoped via the CloudEvent `subject`.
+
+Operations use the `method` CloudEvent extension attribute following HTTP-style semantics:
+
+- **`PUT`** (default when `method` is absent) — upsert: add the resource to the list, store the Work Master, or set the config value
+- **`DELETE`** — remove the resource from the list, delete the Work Master, or remove the config value
+
+The `max_downloadable_job_orders` setting is persisted per scope via `JobAcceptanceConfigDAO` in Redis, so it survives pod restarts. The `is_job_acceptable()` method queries the DAO for a scope-specific override and falls back to the code-configured default in `JobAcceptanceConfig`.
+
 ## Framework Concepts
 
 ### CloudEvents
@@ -62,7 +75,7 @@ Both fields default to `None`, so Work Masters without recipe content remain val
 | `causationid` | Points to the event that caused this one (causal chain) |
 | `expiryinterval` | Seconds until the event is no longer useful (maps to MQTT Message Expiry Interval) |
 
-MicroDCS extends the base spec with error attributes (`mdcserrorkind`, `mdcserrormessage`) and `custommetadata` for hidden-field round-tripping.
+MicroDCS extends the base spec with error attributes (`mdcserrorkind`, `mdcserrormessage`), a `method` attribute for station configuration delivery (`PUT` / `DELETE`), and `custommetadata` for hidden-field round-tripping.
 
 ### Processor
 
@@ -262,6 +275,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Job Change Stream** | A Redis stream (`joborder:changes:{scope}`) written atomically by `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()` on every state change. Consumed by the Job Order Publisher to drive retained MQTT topic updates. A global sentinel stream (`joborder:changes:_global`) mirrors every entry for new-scope discovery. |
 | **Message intent** | Category of a message: `DATA`, `EVENT`, `COMMAND`, or `META`. Maps to MQTT topic segments. |
 | **MessagePack-RPC** | Binary TCP-based RPC transport. Used in sidecar deployments to decouple HTTP/API containers from the MicroDCS event loop. |
+| **`method` (CloudEvent)** | HTTP-style extension attribute on CloudEvent (`PUT` / `DELETE`). Used by station configuration delivery handlers to distinguish upsert from delete. Mapped to `ce_method` in handler kwargs. |
 | **MicroDCS** | The application class that wires handlers, bindings, and processors together and runs the main event loop. |
 | **Mixin** | Hand-written `*_mixin.py` class that provides `__post_init__` logic for hidden fields and metadata handling. |
 | **Northbound** | Processor direction facing up the ISA-95 pyramid. Subscribes to commands, publishes data/events/metadata. |
@@ -273,6 +287,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Retained Topic** | An MQTT v5 topic published with the retained flag set. The broker stores the last message and delivers it immediately to new subscribers. MicroDCS uses retained topics (with a 48-hour Message Expiry Interval) to expose current job order and result state to the MES so that reconnecting clients receive the full picture without replaying events. |
 | **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |
 | **Southbound** | Processor direction facing down the ISA-95 pyramid. Subscribes to data/events/metadata, publishes commands. |
+| **Station configuration** | Resource lists (equipment, material, personnel, physical assets), Work Masters, and operational parameters (max downloadable job orders) pushed from MES into MicroDCS via CloudEvents. Scoped per station via CloudEvent `subject`. |
 | **State Index** | A retained MQTT topic (`{prefix}/{scope}/state-index`) published by the Job Order Publisher on every job state transition. Contains the sequence number, scope, timestamp, and a compact list of all active jobs with their current state and `has_result` flag. Used by the MES to detect gaps after a connectivity outage and to know which per-job retained topics to fetch. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
 | **Work Master** | ISA-95 template/recipe referenced by Job Orders. Stored in Redis via `WorkMasterDAO`. The base type is `ISA95WorkMasterDataType`; the extended type `ISA95WorkMasterDataTypeExt` adds opaque recipe content. |

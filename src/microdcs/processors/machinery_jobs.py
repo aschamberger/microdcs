@@ -52,11 +52,19 @@ from microdcs.models.machinery_jobs import (
     UpdateResponse,
 )
 from microdcs.models.machinery_jobs_ext import (
+    ConfigEquipment,
+    ConfigJobAcceptance,
+    ConfigMaterialClass,
+    ConfigMaterialDefinition,
+    ConfigPersonnel,
+    ConfigPhysicalAsset,
+    ConfigWorkMaster,
     JobOrderControlExt,
     MethodReturnStatus,
 )
 from microdcs.redis import (
     EquipmentListDAO,
+    JobAcceptanceConfigDAO,
     JobOrderAndStateDAO,
     JobResponseDAO,
     MaterialClassListDAO,
@@ -118,6 +126,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             CloudeventAttributeTuple("subject", "subject"),
             CloudeventAttributeTuple("correlationid", "correlationid"),
             CloudeventAttributeTuple("cloudevent_id", "id"),
+            CloudeventAttributeTuple("ce_method", "method"),
         ])
         self._redis_client: redis.Redis = redis.Redis(
             connection_pool=redis_connection_pool
@@ -148,6 +157,9 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             self._redis_client, redis_key_schema
         )
         self._work_master_dao = WorkMasterDAO(self._redis_client, redis_key_schema)
+        self._job_acceptance_config_dao = JobAcceptanceConfigDAO(
+            self._redis_client, redis_key_schema
+        )
         self._state_machine = HierarchicalGraphMachine(
             model=None,
             states=JobOrderControlExt.Config.opcua_state_machine_states,
@@ -192,11 +204,17 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             cfg.check_max_downloadable_job_orders
             and cfg.max_downloadable_job_orders > 0
         ):
+            scoped_max = await self._job_acceptance_config_dao.retrieve(scope)
+            max_orders = (
+                scoped_max
+                if scoped_max is not None
+                else cfg.max_downloadable_job_orders
+            )
             current_jobs = await self._joborder_and_state_dao.list(scope)
-            if len(current_jobs) >= cfg.max_downloadable_job_orders:
+            if len(current_jobs) >= max_orders:
                 logger.warning(
                     "Max downloadable job orders reached (%d) for scope %s",
-                    cfg.max_downloadable_job_orders,
+                    max_orders,
                     scope,
                 )
                 return False
@@ -853,3 +871,151 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             "Triggering outgoing events is currently not implemented in this processor!"
         )
         return None
+
+    # ── Station configuration delivery handlers ─────────────────────────
+
+    @scope_from_subject
+    @incoming(ConfigEquipment)
+    async def process_config_equipment(
+        self, config: ConfigEquipment, *, scope: str, ce_method: str | None = None, **_
+    ) -> None:
+        if ce_method == "DELETE":
+            if config.id:
+                await self._equipment_list_dao.remove_from_list(config.id, scope)
+                logger.info("Removed equipment %s from scope %s", config.id, scope)
+        else:
+            if config.id:
+                await self._equipment_list_dao.add_to_list(config.id, scope)
+                logger.info("Upserted equipment %s for scope %s", config.id, scope)
+
+    @scope_from_subject
+    @incoming(ConfigMaterialClass)
+    async def process_config_material_class(
+        self,
+        config: ConfigMaterialClass,
+        *,
+        scope: str,
+        ce_method: str | None = None,
+        **_,
+    ) -> None:
+        if ce_method == "DELETE":
+            if config.material_class_id:
+                await self._material_class_list_dao.remove_from_list(
+                    config.material_class_id, scope
+                )
+                logger.info(
+                    "Removed material class %s from scope %s",
+                    config.material_class_id,
+                    scope,
+                )
+        else:
+            if config.material_class_id:
+                await self._material_class_list_dao.add_to_list(
+                    config.material_class_id, scope
+                )
+                logger.info(
+                    "Upserted material class %s for scope %s",
+                    config.material_class_id,
+                    scope,
+                )
+
+    @scope_from_subject
+    @incoming(ConfigMaterialDefinition)
+    async def process_config_material_definition(
+        self,
+        config: ConfigMaterialDefinition,
+        *,
+        scope: str,
+        ce_method: str | None = None,
+        **_,
+    ) -> None:
+        if ce_method == "DELETE":
+            if config.material_definition_id:
+                await self._material_definition_list_dao.remove_from_list(
+                    config.material_definition_id, scope
+                )
+                logger.info(
+                    "Removed material definition %s from scope %s",
+                    config.material_definition_id,
+                    scope,
+                )
+        else:
+            if config.material_definition_id:
+                await self._material_definition_list_dao.add_to_list(
+                    config.material_definition_id, scope
+                )
+                logger.info(
+                    "Upserted material definition %s for scope %s",
+                    config.material_definition_id,
+                    scope,
+                )
+
+    @scope_from_subject
+    @incoming(ConfigPersonnel)
+    async def process_config_personnel(
+        self, config: ConfigPersonnel, *, scope: str, ce_method: str | None = None, **_
+    ) -> None:
+        if ce_method == "DELETE":
+            if config.id:
+                await self._personnel_list_dao.remove_from_list(config.id, scope)
+                logger.info("Removed personnel %s from scope %s", config.id, scope)
+        else:
+            if config.id:
+                await self._personnel_list_dao.add_to_list(config.id, scope)
+                logger.info("Upserted personnel %s for scope %s", config.id, scope)
+
+    @scope_from_subject
+    @incoming(ConfigPhysicalAsset)
+    async def process_config_physical_asset(
+        self,
+        config: ConfigPhysicalAsset,
+        *,
+        scope: str,
+        ce_method: str | None = None,
+        **_,
+    ) -> None:
+        if ce_method == "DELETE":
+            if config.id:
+                await self._physical_asset_list_dao.remove_from_list(config.id, scope)
+                logger.info("Removed physical asset %s from scope %s", config.id, scope)
+        else:
+            if config.id:
+                await self._physical_asset_list_dao.add_to_list(config.id, scope)
+                logger.info("Upserted physical asset %s for scope %s", config.id, scope)
+
+    @scope_from_subject
+    @incoming(ConfigWorkMaster)
+    async def process_config_work_master(
+        self, config: ConfigWorkMaster, *, scope: str, ce_method: str | None = None, **_
+    ) -> None:
+        if ce_method == "DELETE":
+            if config.id:
+                await self._work_master_dao.delete(config.id, scope)
+                logger.info("Deleted work master %s from scope %s", config.id, scope)
+        else:
+            if config.id:
+                await self._work_master_dao.save(config, scope)
+                logger.info("Upserted work master %s for scope %s", config.id, scope)
+
+    @scope_from_subject
+    @incoming(ConfigJobAcceptance)
+    async def process_config_job_acceptance(
+        self,
+        config: ConfigJobAcceptance,
+        *,
+        scope: str,
+        ce_method: str | None = None,
+        **_,
+    ) -> None:
+        if ce_method == "DELETE":
+            await self._job_acceptance_config_dao.delete(scope)
+            logger.info("Deleted job acceptance config for scope %s", scope)
+        else:
+            await self._job_acceptance_config_dao.save(
+                config.max_downloadable_job_orders, scope
+            )
+            logger.info(
+                "Upserted job acceptance config (max_downloadable_job_orders=%d) for scope %s",
+                config.max_downloadable_job_orders,
+                scope,
+            )

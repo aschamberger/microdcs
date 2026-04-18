@@ -183,6 +183,14 @@ class RedisKeySchema:
         return f"materialdefinition:list:{scope}"
 
     @prefixed_key
+    def jobacceptance_key(self, scope: str) -> str:
+        """
+        jobacceptance:[scope]
+        Redis type: string (integer value)
+        """
+        return f"jobacceptance:{scope}"
+
+    @prefixed_key
     def event_receiver_key(self) -> str:
         """
         event:receiver:list
@@ -963,3 +971,35 @@ class MaterialDefinitionListDAO:
     async def is_member(self, material_definition_id: str, scope: str) -> bool:
         key = self.key_schema.materialdefinition_list_key(scope)
         return bool(await self.redis.sismember(key, material_definition_id))  # type: ignore[reportGeneralTypeIssues]
+
+
+class JobAcceptanceConfigDAO:
+    """
+    Data Access Object for persisting per-scope job acceptance configuration.
+
+    Stores the ``max_downloadable_job_orders`` value per scope so it
+    survives pod restarts.
+    """
+
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        key_schema: RedisKeySchema,
+    ):
+        self.redis = redis_client
+        self.key_schema = key_schema
+
+    async def save(self, max_downloadable_job_orders: int, scope: str) -> None:
+        key = self.key_schema.jobacceptance_key(scope)
+        await self.redis.set(key, max_downloadable_job_orders)
+
+    async def retrieve(self, scope: str) -> int | None:
+        key = self.key_schema.jobacceptance_key(scope)
+        value = await self.redis.get(key)
+        if value is not None:
+            return int(value)
+        return None
+
+    async def delete(self, scope: str) -> None:
+        key = self.key_schema.jobacceptance_key(scope)
+        await self.redis.delete(key)

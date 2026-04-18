@@ -51,7 +51,17 @@ from microdcs.models.machinery_jobs import (
     UpdateCall,
     UpdateResponse,
 )
-from microdcs.models.machinery_jobs_ext import JobOrderControlExt, MethodReturnStatus
+from microdcs.models.machinery_jobs_ext import (
+    ConfigEquipment,
+    ConfigJobAcceptance,
+    ConfigMaterialClass,
+    ConfigMaterialDefinition,
+    ConfigPersonnel,
+    ConfigPhysicalAsset,
+    ConfigWorkMaster,
+    JobOrderControlExt,
+    MethodReturnStatus,
+)
 from microdcs.processors.machinery_jobs import (
     JobAcceptanceConfig,
     MachineryJobsCloudEventProcessor,
@@ -256,6 +266,13 @@ class TestMachineryJobsProcessorRegistration:
             UPDATE_CE_TYPE,
             RequestJobResponseByJobOrderIDCall.Config.cloudevent_type,
             RequestJobResponseByJobOrderStateCall.Config.cloudevent_type,
+            ConfigEquipment.Config.cloudevent_type,
+            ConfigMaterialClass.Config.cloudevent_type,
+            ConfigMaterialDefinition.Config.cloudevent_type,
+            ConfigPersonnel.Config.cloudevent_type,
+            ConfigPhysicalAsset.Config.cloudevent_type,
+            ConfigWorkMaster.Config.cloudevent_type,
+            ConfigJobAcceptance.Config.cloudevent_type,
         }
         assert expected.issubset(registered_types)
 
@@ -295,7 +312,7 @@ class TestProcessStore:
     async def test_store_none_job_order(self, processor):
         method = StoreCall(job_order=None)
 
-        result = await processor.process_store(method, scope=SCOPE)
+        result = await processor.process_store(method, subject=SCOPE)
 
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -309,7 +326,7 @@ class TestProcessStore:
         with patch.object(
             processor, "is_job_acceptable", new_callable=AsyncMock, return_value=False
         ):
-            result = await processor.process_store(method, scope=SCOPE)
+            result = await processor.process_store(method, subject=SCOPE)
 
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
@@ -322,7 +339,7 @@ class TestProcessStore:
         job_order = make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
-        result = await processor.process_store(method, scope=SCOPE)
+        result = await processor.process_store(method, subject=SCOPE)
 
         assert isinstance(result, StoreResponse)
         assert result.return_status == MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
@@ -333,7 +350,7 @@ class TestProcessStore:
         job_order = make_woodworking_job_order()
         method = StoreCall(job_order=job_order)
 
-        await processor.process_store(method, scope=SCOPE)
+        await processor.process_store(method, subject=SCOPE)
 
         saved_args = processor._joborder_and_state_dao.save.call_args
         saved_obj: ISA95JobOrderAndStateDataType = saved_args[0][0]
@@ -367,7 +384,7 @@ class TestProcessStoreAndStart:
         job_order = make_woodworking_job_order()
         method = StoreAndStartCall(job_order=job_order)
 
-        await processor.process_store_and_start(method, scope=SCOPE)
+        await processor.process_store_and_start(method, subject=SCOPE)
 
         saved_args = processor._joborder_and_state_dao.save.call_args
         saved_obj: ISA95JobOrderAndStateDataType = saved_args[0][0]
@@ -380,7 +397,7 @@ class TestProcessStoreAndStart:
     async def test_store_and_start_none_job_order(self, processor):
         method = StoreAndStartCall(job_order=None)
 
-        result = await processor.process_store_and_start(method, scope=SCOPE)
+        result = await processor.process_store_and_start(method, subject=SCOPE)
 
         assert isinstance(result, StoreAndStartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -456,7 +473,7 @@ class TestProcessStart:
     async def test_start_with_none_job_order_id(self, processor):
         method = StartCall(job_order_id=None)
 
-        result = await processor.process_start(method, scope=SCOPE)
+        result = await processor.process_start(method, subject=SCOPE)
 
         assert isinstance(result, StartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -466,7 +483,7 @@ class TestProcessStart:
         _mock_dao_retrieve(processor, None)
         method = StartCall(job_order_id="nonexistent")
 
-        result = await processor.process_start(method, scope=SCOPE)
+        result = await processor.process_start(method, subject=SCOPE)
 
         assert isinstance(result, StartResponse)
         assert result.return_status == MethodReturnStatus.UNKNOWN_JOB_ORDER_ID
@@ -480,7 +497,7 @@ class TestProcessStart:
 
         method = StartCall(job_order_id="12345")
 
-        result = await processor.process_start(method, scope=SCOPE)
+        result = await processor.process_start(method, subject=SCOPE)
 
         assert isinstance(result, StartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -498,7 +515,7 @@ class TestProcessAbort:
             comment=[LocalizedText(text="Emergency abort", locale="en")],
         )
 
-        result = await processor.process_abort(method, scope=SCOPE)
+        result = await processor.process_abort(method, subject=SCOPE)
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -511,7 +528,7 @@ class TestProcessAbort:
 
         method = AbortCall(job_order_id="12345")
 
-        result = await processor.process_abort(method, scope=SCOPE)
+        result = await processor.process_abort(method, subject=SCOPE)
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -524,7 +541,7 @@ class TestProcessAbort:
 
         method = AbortCall(job_order_id="12345")
 
-        result = await processor.process_abort(method, scope=SCOPE)
+        result = await processor.process_abort(method, subject=SCOPE)
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -537,7 +554,7 @@ class TestProcessAbort:
 
         method = AbortCall(job_order_id="12345")
 
-        result = await processor.process_abort(method, scope=SCOPE)
+        result = await processor.process_abort(method, subject=SCOPE)
 
         assert isinstance(result, AbortResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -553,7 +570,7 @@ class TestProcessPauseResume:
 
         method = PauseCall(job_order_id="12345")
 
-        result = await processor.process_pause(method, scope=SCOPE)
+        result = await processor.process_pause(method, subject=SCOPE)
 
         assert isinstance(result, PauseResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -567,7 +584,7 @@ class TestProcessPauseResume:
 
         method = ResumeCall(job_order_id="12345")
 
-        result = await processor.process_resume(method, scope=SCOPE)
+        result = await processor.process_resume(method, subject=SCOPE)
 
         assert isinstance(result, ResumeResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -581,7 +598,7 @@ class TestProcessPauseResume:
 
         method = PauseCall(job_order_id="12345")
 
-        result = await processor.process_pause(method, scope=SCOPE)
+        result = await processor.process_pause(method, subject=SCOPE)
 
         assert isinstance(result, PauseResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -597,7 +614,7 @@ class TestProcessStop:
 
         method = StopCall(job_order_id="12345")
 
-        result = await processor.process_stop(method, scope=SCOPE)
+        result = await processor.process_stop(method, subject=SCOPE)
 
         assert isinstance(result, StopResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -611,7 +628,7 @@ class TestProcessStop:
 
         method = StopCall(job_order_id="12345")
 
-        result = await processor.process_stop(method, scope=SCOPE)
+        result = await processor.process_stop(method, subject=SCOPE)
 
         assert isinstance(result, StopResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -627,7 +644,7 @@ class TestProcessCancel:
 
         method = CancelCall(job_order_id="12345")
 
-        result = await processor.process_cancel(method, scope=SCOPE)
+        result = await processor.process_cancel(method, subject=SCOPE)
 
         assert isinstance(result, CancelResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -641,7 +658,7 @@ class TestProcessCancel:
 
         method = CancelCall(job_order_id="12345")
 
-        result = await processor.process_cancel(method, scope=SCOPE)
+        result = await processor.process_cancel(method, subject=SCOPE)
 
         assert isinstance(result, CancelResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -655,7 +672,7 @@ class TestProcessCancel:
 
         method = CancelCall(job_order_id="12345")
 
-        result = await processor.process_cancel(method, scope=SCOPE)
+        result = await processor.process_cancel(method, subject=SCOPE)
 
         assert isinstance(result, CancelResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -671,7 +688,7 @@ class TestProcessClear:
 
         method = ClearCall(job_order_id="12345")
 
-        result = await processor.process_clear(method, scope=SCOPE)
+        result = await processor.process_clear(method, subject=SCOPE)
 
         assert isinstance(result, ClearResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -685,7 +702,7 @@ class TestProcessClear:
 
         method = ClearCall(job_order_id="12345")
 
-        result = await processor.process_clear(method, scope=SCOPE)
+        result = await processor.process_clear(method, subject=SCOPE)
 
         assert isinstance(result, ClearResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -699,7 +716,7 @@ class TestProcessClear:
 
         method = ClearCall(job_order_id="12345")
 
-        result = await processor.process_clear(method, scope=SCOPE)
+        result = await processor.process_clear(method, subject=SCOPE)
 
         assert isinstance(result, ClearResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -715,7 +732,7 @@ class TestProcessRevokeStart:
 
         method = RevokeStartCall(job_order_id="12345")
 
-        result = await processor.process_revoke_start(method, scope=SCOPE)
+        result = await processor.process_revoke_start(method, subject=SCOPE)
 
         assert isinstance(result, RevokeStartResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -741,7 +758,7 @@ class TestProcessUpdate:
             comment=[LocalizedText(text="Increase priority", locale="en")],
         )
 
-        result = await processor.process_update(method, scope=SCOPE)
+        result = await processor.process_update(method, subject=SCOPE)
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -757,7 +774,7 @@ class TestProcessUpdate:
         updated_job.priority = 5
         method = UpdateCall(job_order=updated_job)
 
-        result = await processor.process_update(method, scope=SCOPE)
+        result = await processor.process_update(method, subject=SCOPE)
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.NO_ERROR
@@ -774,7 +791,7 @@ class TestProcessUpdate:
             updated_job = make_woodworking_job_order()
             method = UpdateCall(job_order=updated_job)
 
-            result = await processor.process_update(method, scope=SCOPE)
+            result = await processor.process_update(method, subject=SCOPE)
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
@@ -784,7 +801,7 @@ class TestProcessUpdate:
     async def test_update_none_job_order(self, processor):
         method = UpdateCall(job_order=None)
 
-        result = await processor.process_update(method, scope=SCOPE)
+        result = await processor.process_update(method, subject=SCOPE)
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -796,7 +813,7 @@ class TestProcessUpdate:
         updated_job = make_woodworking_job_order("99999")
         method = UpdateCall(job_order=updated_job)
 
-        result = await processor.process_update(method, scope=SCOPE)
+        result = await processor.process_update(method, subject=SCOPE)
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.UNKNOWN_JOB_ORDER_ID
@@ -811,7 +828,7 @@ class TestProcessUpdate:
         updated_job = make_woodworking_job_order()
         method = UpdateCall(job_order=updated_job)
 
-        result = await processor.process_update(method, scope=SCOPE)
+        result = await processor.process_update(method, subject=SCOPE)
 
         assert isinstance(result, UpdateResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
@@ -827,7 +844,7 @@ class TestProcessUpdate:
         updated_job.priority = 99
         method = UpdateCall(job_order=updated_job)
 
-        await processor.process_update(method, scope=SCOPE)
+        await processor.process_update(method, subject=SCOPE)
 
         saved_args = processor._joborder_and_state_dao.save.call_args
         saved_obj: ISA95JobOrderAndStateDataType = saved_args[0][0]
@@ -849,7 +866,9 @@ class TestRequestJobResponseByJobOrderID:
         _mock_jobresponse_dao(processor)
         method = RequestJobResponseByJobOrderIDCall(job_order_id=None)
 
-        result = await processor.process_request_job_response_by_id(method, scope=SCOPE)
+        result = await processor.process_request_job_response_by_id(
+            method, subject=SCOPE
+        )
 
         assert isinstance(result, RequestJobResponseByJobOrderIDResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
@@ -859,7 +878,9 @@ class TestRequestJobResponseByJobOrderID:
         _mock_jobresponse_dao(processor)
         method = RequestJobResponseByJobOrderIDCall(job_order_id="nonexistent")
 
-        result = await processor.process_request_job_response_by_id(method, scope=SCOPE)
+        result = await processor.process_request_job_response_by_id(
+            method, subject=SCOPE
+        )
 
         assert isinstance(result, RequestJobResponseByJobOrderIDResponse)
         assert result.return_status == MethodReturnStatus.UNKNOWN_JOB_ORDER_ID
@@ -1021,7 +1042,7 @@ class TestFullB3Lifecycle:
         # 1. Store
         job_order = make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
-        result = await processor.process_store(store, scope=SCOPE)
+        result = await processor.process_store(store, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         # Capture the saved object to feed into subsequent steps
@@ -1030,7 +1051,7 @@ class TestFullB3Lifecycle:
 
         # 2. Start (NotAllowedToStart → AllowedToStart)
         start = StartCall(job_order_id="12345")
-        result = await processor.process_start(start, scope=SCOPE)
+        result = await processor.process_start(start, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1056,7 +1077,7 @@ class TestFullB3Lifecycle:
 
         # 4. Pause (Running → Interrupted)
         pause = PauseCall(job_order_id="12345")
-        result = await processor.process_pause(pause, scope=SCOPE)
+        result = await processor.process_pause(pause, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1064,7 +1085,7 @@ class TestFullB3Lifecycle:
 
         # 5. Resume (Interrupted → Running)
         resume = ResumeCall(job_order_id="12345")
-        result = await processor.process_resume(resume, scope=SCOPE)
+        result = await processor.process_resume(resume, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1072,7 +1093,7 @@ class TestFullB3Lifecycle:
 
         # 6. Stop (Running → Ended)
         stop = StopCall(job_order_id="12345")
-        result = await processor.process_stop(stop, scope=SCOPE)
+        result = await processor.process_stop(stop, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1080,7 +1101,7 @@ class TestFullB3Lifecycle:
 
         # 7. Clear (Ended → EndState)
         clear = ClearCall(job_order_id="12345")
-        result = await processor.process_clear(clear, scope=SCOPE)
+        result = await processor.process_clear(clear, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
@@ -1091,7 +1112,7 @@ class TestFullB3Lifecycle:
         # 1. StoreAndStart
         job_order = make_woodworking_job_order()
         store_and_start = StoreAndStartCall(job_order=job_order)
-        result = await processor.process_store_and_start(store_and_start, scope=SCOPE)
+        result = await processor.process_store_and_start(store_and_start, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1099,7 +1120,7 @@ class TestFullB3Lifecycle:
 
         # 2. Abort (AllowedToStart → Aborted)
         abort = AbortCall(job_order_id="12345")
-        result = await processor.process_abort(abort, scope=SCOPE)
+        result = await processor.process_abort(abort, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1107,7 +1128,7 @@ class TestFullB3Lifecycle:
 
         # 3. Clear (Aborted → EndState)
         clear = ClearCall(job_order_id="12345")
-        result = await processor.process_clear(clear, scope=SCOPE)
+        result = await processor.process_clear(clear, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
@@ -1118,7 +1139,7 @@ class TestFullB3Lifecycle:
         # 1. Store
         job_order = make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
-        result = await processor.process_store(store, scope=SCOPE)
+        result = await processor.process_store(store, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1126,7 +1147,7 @@ class TestFullB3Lifecycle:
 
         # 2. Cancel (NotAllowedToStart → EndState)
         cancel = CancelCall(job_order_id="12345")
-        result = await processor.process_cancel(cancel, scope=SCOPE)
+        result = await processor.process_cancel(cancel, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
     @pytest.mark.asyncio
@@ -1137,7 +1158,7 @@ class TestFullB3Lifecycle:
         # 1. Store
         job_order = make_woodworking_job_order()
         store = StoreCall(job_order=job_order)
-        result = await processor.process_store(store, scope=SCOPE)
+        result = await processor.process_store(store, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1145,7 +1166,7 @@ class TestFullB3Lifecycle:
 
         # 2. Start
         start = StartCall(job_order_id="12345")
-        result = await processor.process_start(start, scope=SCOPE)
+        result = await processor.process_start(start, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1153,7 +1174,7 @@ class TestFullB3Lifecycle:
 
         # 3. RevokeStart (AllowedToStart → NotAllowedToStart)
         revoke = RevokeStartCall(job_order_id="12345")
-        result = await processor.process_revoke_start(revoke, scope=SCOPE)
+        result = await processor.process_revoke_start(revoke, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
         saved = processor._joborder_and_state_dao.save.call_args[0][0]
@@ -1161,7 +1182,7 @@ class TestFullB3Lifecycle:
 
         # 4. Cancel (NotAllowedToStart → EndState)
         cancel = CancelCall(job_order_id="12345")
-        result = await processor.process_cancel(cancel, scope=SCOPE)
+        result = await processor.process_cancel(cancel, subject=SCOPE)
         assert result.return_status == MethodReturnStatus.NO_ERROR
 
 
@@ -1213,6 +1234,7 @@ class TestIsJobAcceptable:
         proc._personnel_list_dao.is_member = AsyncMock(return_value=True)
         proc._physical_asset_list_dao.is_member = AsyncMock(return_value=True)
         proc._work_master_dao.is_member = AsyncMock(return_value=True)
+        proc._job_acceptance_config_dao.retrieve = AsyncMock(return_value=None)
         return proc
 
     @pytest.mark.asyncio
@@ -1387,3 +1409,228 @@ class TestTriggerOutgoingEvent:
 
         result = await processor.trigger_outgoing_event(event_type=StoreCall)
         assert result is None
+
+
+# ===================================================================
+# Station configuration delivery handlers
+# ===================================================================
+
+
+class TestProcessConfigEquipment:
+    @pytest.mark.asyncio
+    async def test_put_adds_to_list(self, processor):
+        processor._equipment_list_dao.add_to_list = AsyncMock()
+        config = ConfigEquipment(id="eq-1")
+        await processor.process_config_equipment(config, subject=SCOPE, ce_method="PUT")
+        processor._equipment_list_dao.add_to_list.assert_awaited_once_with(
+            "eq-1", SCOPE
+        )
+
+    @pytest.mark.asyncio
+    async def test_default_method_adds_to_list(self, processor):
+        processor._equipment_list_dao.add_to_list = AsyncMock()
+        config = ConfigEquipment(id="eq-1")
+        await processor.process_config_equipment(config, subject=SCOPE)
+        processor._equipment_list_dao.add_to_list.assert_awaited_once_with(
+            "eq-1", SCOPE
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_list(self, processor):
+        processor._equipment_list_dao.remove_from_list = AsyncMock()
+        config = ConfigEquipment(id="eq-1")
+        await processor.process_config_equipment(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._equipment_list_dao.remove_from_list.assert_awaited_once_with(
+            "eq-1", SCOPE
+        )
+
+
+class TestProcessConfigMaterialClass:
+    @pytest.mark.asyncio
+    async def test_put_adds_to_list(self, processor):
+        processor._material_class_list_dao.add_to_list = AsyncMock()
+        config = ConfigMaterialClass(material_class_id="mc-1")
+        await processor.process_config_material_class(
+            config, subject=SCOPE, ce_method="PUT"
+        )
+        processor._material_class_list_dao.add_to_list.assert_awaited_once_with(
+            "mc-1", SCOPE
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_list(self, processor):
+        processor._material_class_list_dao.remove_from_list = AsyncMock()
+        config = ConfigMaterialClass(material_class_id="mc-1")
+        await processor.process_config_material_class(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._material_class_list_dao.remove_from_list.assert_awaited_once_with(
+            "mc-1", SCOPE
+        )
+
+
+class TestProcessConfigMaterialDefinition:
+    @pytest.mark.asyncio
+    async def test_put_adds_to_list(self, processor):
+        processor._material_definition_list_dao.add_to_list = AsyncMock()
+        config = ConfigMaterialDefinition(material_definition_id="md-1")
+        await processor.process_config_material_definition(
+            config, subject=SCOPE, ce_method="PUT"
+        )
+        processor._material_definition_list_dao.add_to_list.assert_awaited_once_with(
+            "md-1", SCOPE
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_list(self, processor):
+        processor._material_definition_list_dao.remove_from_list = AsyncMock()
+        config = ConfigMaterialDefinition(material_definition_id="md-1")
+        await processor.process_config_material_definition(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._material_definition_list_dao.remove_from_list.assert_awaited_once_with(
+            "md-1", SCOPE
+        )
+
+
+class TestProcessConfigPersonnel:
+    @pytest.mark.asyncio
+    async def test_put_adds_to_list(self, processor):
+        processor._personnel_list_dao.add_to_list = AsyncMock()
+        config = ConfigPersonnel(id="p-1")
+        await processor.process_config_personnel(config, subject=SCOPE, ce_method="PUT")
+        processor._personnel_list_dao.add_to_list.assert_awaited_once_with("p-1", SCOPE)
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_list(self, processor):
+        processor._personnel_list_dao.remove_from_list = AsyncMock()
+        config = ConfigPersonnel(id="p-1")
+        await processor.process_config_personnel(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._personnel_list_dao.remove_from_list.assert_awaited_once_with(
+            "p-1", SCOPE
+        )
+
+
+class TestProcessConfigPhysicalAsset:
+    @pytest.mark.asyncio
+    async def test_put_adds_to_list(self, processor):
+        processor._physical_asset_list_dao.add_to_list = AsyncMock()
+        config = ConfigPhysicalAsset(id="pa-1")
+        await processor.process_config_physical_asset(
+            config, subject=SCOPE, ce_method="PUT"
+        )
+        processor._physical_asset_list_dao.add_to_list.assert_awaited_once_with(
+            "pa-1", SCOPE
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_list(self, processor):
+        processor._physical_asset_list_dao.remove_from_list = AsyncMock()
+        config = ConfigPhysicalAsset(id="pa-1")
+        await processor.process_config_physical_asset(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._physical_asset_list_dao.remove_from_list.assert_awaited_once_with(
+            "pa-1", SCOPE
+        )
+
+
+class TestProcessConfigWorkMaster:
+    @pytest.mark.asyncio
+    async def test_put_saves(self, processor):
+        processor._work_master_dao.save = AsyncMock()
+        config = ConfigWorkMaster(id="wm-1")
+        await processor.process_config_work_master(
+            config, subject=SCOPE, ce_method="PUT"
+        )
+        processor._work_master_dao.save.assert_awaited_once_with(config, SCOPE)
+
+    @pytest.mark.asyncio
+    async def test_delete_deletes(self, processor):
+        processor._work_master_dao.delete = AsyncMock()
+        config = ConfigWorkMaster(id="wm-1")
+        await processor.process_config_work_master(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._work_master_dao.delete.assert_awaited_once_with("wm-1", SCOPE)
+
+
+class TestProcessConfigJobAcceptance:
+    @pytest.mark.asyncio
+    async def test_put_saves(self, processor):
+        processor._job_acceptance_config_dao.save = AsyncMock()
+        config = ConfigJobAcceptance(max_downloadable_job_orders=10)
+        await processor.process_config_job_acceptance(
+            config, subject=SCOPE, ce_method="PUT"
+        )
+        processor._job_acceptance_config_dao.save.assert_awaited_once_with(10, SCOPE)
+
+    @pytest.mark.asyncio
+    async def test_delete_deletes(self, processor):
+        processor._job_acceptance_config_dao.delete = AsyncMock()
+        config = ConfigJobAcceptance(max_downloadable_job_orders=10)
+        await processor.process_config_job_acceptance(
+            config, subject=SCOPE, ce_method="DELETE"
+        )
+        processor._job_acceptance_config_dao.delete.assert_awaited_once_with(SCOPE)
+
+
+class TestIsJobAcceptableWithScopedConfig:
+    @pytest.mark.asyncio
+    async def test_scoped_max_overrides_default(self):
+        pool = MagicMock(spec=redis.ConnectionPool)
+        pool.connection_kwargs = {}
+        schema = RedisKeySchema(prefix="test")
+        proc = MachineryJobsCloudEventProcessor(
+            instance_id="test",
+            runtime_config=_processing_config(),
+            config_identifier="machinery_jobs",
+            redis_connection_pool=pool,
+            redis_key_schema=schema,
+            job_acceptance_config=JobAcceptanceConfig(
+                check_max_downloadable_job_orders=True,
+                max_downloadable_job_orders=10,
+            ),
+        )
+        proc._joborder_and_state_dao.list = AsyncMock(return_value=["j1", "j2"])
+        proc._job_acceptance_config_dao.retrieve = AsyncMock(return_value=2)
+        job_order = make_woodworking_job_order()
+
+        result = await proc.is_job_acceptable(job_order, SCOPE)
+
+        assert result is False
+        proc._job_acceptance_config_dao.retrieve.assert_awaited_once_with(SCOPE)
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_default_when_no_scoped_config(self):
+        pool = MagicMock(spec=redis.ConnectionPool)
+        pool.connection_kwargs = {}
+        schema = RedisKeySchema(prefix="test")
+        proc = MachineryJobsCloudEventProcessor(
+            instance_id="test",
+            runtime_config=_processing_config(),
+            config_identifier="machinery_jobs",
+            redis_connection_pool=pool,
+            redis_key_schema=schema,
+            job_acceptance_config=JobAcceptanceConfig(
+                check_max_downloadable_job_orders=True,
+                max_downloadable_job_orders=10,
+            ),
+        )
+        proc._joborder_and_state_dao.list = AsyncMock(return_value=["j1", "j2"])
+        proc._job_acceptance_config_dao.retrieve = AsyncMock(return_value=None)
+        proc._equipment_list_dao.is_member = AsyncMock(return_value=True)
+        proc._material_class_list_dao.is_member = AsyncMock(return_value=True)
+        proc._material_definition_list_dao.is_member = AsyncMock(return_value=True)
+        proc._personnel_list_dao.is_member = AsyncMock(return_value=True)
+        proc._physical_asset_list_dao.is_member = AsyncMock(return_value=True)
+        proc._work_master_dao.is_member = AsyncMock(return_value=True)
+        job_order = make_woodworking_job_order()
+
+        result = await proc.is_job_acceptable(job_order, SCOPE)
+
+        assert result is True
