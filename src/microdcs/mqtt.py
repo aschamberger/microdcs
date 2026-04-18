@@ -708,14 +708,17 @@ class MQTTPublisher(AdditionalTask):
     run alongside protocol handlers in the main task group.
 
     The :meth:`task` method manages the MQTT connection lifecycle with
-    automatic reconnect.  :meth:`publish_retained` and
-    :meth:`delete_retained` are available while the connection is active.
+    automatic reconnect.  Override :meth:`_run` in subclasses to perform
+    work while connected (the default implementation waits for shutdown).
+    :meth:`publish_retained` and :meth:`delete_retained` are available
+    while the connection is active.
     """
 
     def __init__(self, config: MQTTConfig) -> None:
         super().__init__()
         self._config = config
         self._client: aiomqtt.Client | None = None
+        self._connected: asyncio.Event = asyncio.Event()
 
     async def publish_retained(
         self,
@@ -757,6 +760,16 @@ class MQTTPublisher(AdditionalTask):
             retain=True,
         )
 
+    async def _run(self) -> None:
+        """Execute while the MQTT connection is active.
+
+        Override in subclasses to perform work (e.g. stream processing).
+        The default implementation waits for the shutdown event.  Any
+        :class:`aiomqtt.MqttError` raised here is caught by :meth:`task`
+        which triggers reconnection.
+        """
+        await self._shutdown_event.wait()
+
     async def task(self) -> None:
         publisher_logger.info(
             "Starting MQTT publisher, connecting to %s:%d",
@@ -770,13 +783,16 @@ class MQTTPublisher(AdditionalTask):
             try:
                 async with client:
                     self._client = client
+                    self._connected.set()
                     publisher_logger.info("MQTT publisher connected")
-                    await self._shutdown_event.wait()
+                    await self._run()
                     self._client = None
+                    self._connected.clear()
                     publisher_logger.info("MQTT publisher shutdown complete")
                     return
             except aiomqtt.MqttError:
                 self._client = None
+                self._connected.clear()
                 if self._shutdown_event.is_set():
                     publisher_logger.info(
                         "MQTT connection lost during shutdown; exiting"

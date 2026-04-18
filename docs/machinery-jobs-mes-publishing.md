@@ -243,14 +243,21 @@ In addition to `active-scopes`, a **sentinel stream** `joborder:changes:_global`
 
 ## Job Order Publisher
 
-The publisher is a standalone asyncio service in a new `src/microdcs/publishers/` module. It has no command routing logic — it only reads from Redis and writes to MQTT.
+The publisher is implemented as `JobOrderPublisher(MQTTPublisher)` in `src/microdcs/publishers/machinery_jobs.py`. It inherits MQTT connection lifecycle and reconnect/backoff from `MQTTPublisher` and overrides the `_run()` hook with its business logic. It has no command routing logic — it only reads from Redis and writes to MQTT.
+
+### Class hierarchy
+
+`MQTTPublisher` (in `src/microdcs/mqtt.py`) manages the MQTT connection with automatic reconnect and exposes `publish_retained()` / `delete_retained()`. Its `task()` method calls an overridable `_run()` hook inside the `async with client:` block. If `_run()` raises `MqttError`, `task()` reconnects and calls `_run()` again. A `_connected: asyncio.Event` is set while connected and cleared on disconnect.
+
+`JobOrderPublisher` extends `MQTTPublisher` — it inherits all of the above and overrides `_run()` with the XREAD loop. Because it IS a `MQTTPublisher`, the `isinstance(task, MQTTPublisher)` check in `MicroDCS.main()` naturally skips it when `is_publisher_instance=False`.
 
 ### Startup
 
-1. Connect to Redis and the MQTT broker
-2. Load last-processed stream IDs from `publisher:stream-cursors` to resume after restart without reprocessing
-3. For each scope in `active-scopes`, publish the current state-index retained message to cover the gap during the pod restart
-4. Enter the main XREAD loop
+1. MQTT connection established by inherited `MQTTPublisher.task()` (with reconnect/backoff)
+2. `_run()` begins: load last-processed stream IDs from `publisher:stream-cursors` via `HGETALL`
+3. Load `active-scopes` via `SMEMBERS`
+4. For each scope, publish the current state-index retained message to cover the gap during pod restart
+5. Enter the main XREAD loop
 
 ### Main loop
 
@@ -291,13 +298,23 @@ The state-index update always reads the full job list for the scope from `JobOrd
 
 ### Configuration
 
+`PublisherConfig` is a `@dataclass` on `RuntimeConfig`, parsed from environment variables with prefix `APP_PUBLISHER_`:
+
 ```python
 @dataclass
-class JobOrderPublisherConfig:
+class PublisherConfig:
     retained_ttl_seconds: int = 172800  # 48 hours
     stream_read_count: int = 50
     stream_block_ms: int = 500
 ```
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `APP_PUBLISHER_RETAINED_TTL_SECONDS` | `172800` | MQTT v5 Message Expiry Interval for retained topics (seconds) |
+| `APP_PUBLISHER_STREAM_READ_COUNT` | `50` | Max entries per XREAD batch |
+| `APP_PUBLISHER_STREAM_BLOCK_MS` | `500` | XREAD BLOCK timeout (milliseconds) |
+
+The topic prefix identifier (e.g. `"machinery-jobs"`) is passed as a constructor parameter to `JobOrderPublisher`, matching the processor pattern where `config_identifier` is provided at wiring time in `app/__main__.py`. It is resolved via `ProcessingConfig.get_topic_prefix_for_identifier()`.
 
 The publisher reuses the existing `RedisConfig` and `MQTTConfig` from `RuntimeConfig` for Redis and MQTT connections — these are not duplicated. Topic prefixes are resolved from `ProcessingConfig.topic_prefixes` using the same `get_topic_prefix_for_identifier()` mechanism as the MQTT binding. QoS 1 is hardcoded (matching the MQTT processor) and not exposed as configuration.
 
@@ -331,26 +348,25 @@ Acceptance: retained publish and delete work correctly against a real broker in 
 
 ### Phase 3 – Publisher core logic
 
-Scope: `JobOrderPublisher` class and all dispatch handlers.
+Scope: `JobOrderPublisher` class, dispatch handlers, `MQTTPublisher` `_run()` hook pattern, and `PublisherConfig`.
 
-1. Implement `_load_cursors` / `_save_cursors` using `publisher:stream-cursors` (includes global sentinel cursor)
-2. Implement XREAD BLOCK loop with per-scope streams + global sentinel stream; discover new scopes from sentinel entries
-3. Implement `_publish_state_index`: read `JobOrderAndStateDAO.list(scope)`, exclude `EndState` jobs, check `JobResponseDAO` for `has_result`, `INCR pubseq:{scope}`, publish retained with configured TTL
-4. Implement `_publish_job_order`: read DAO, serialize, publish retained `order/{id}` with configured TTL
-5. Implement `_publish_job_result`: read DAO, check job state is clearable (`Ended` / `Aborted`) before publishing retained `result/{id}` with configured TTL; ignore `ResultUpdate` for in-progress jobs
-6. Implement `_delete_job_topics`: zero-byte retained publish for `order/{id}` and `result/{id}`
-7. Implement startup sequence: load cursors, publish initial state-index for all active scopes, enter loop
-8. Integration tests: inject stream entries to Redis, verify correct retained topics appear on broker
-9. Update this document's "Dispatch handlers" table and "Main loop" section with final implementation details
-10. Update `docs/concepts.md`: add a new "Job Order Publisher" section under Framework Concepts explaining the publisher as a standalone component consuming Redis streams and writing retained MQTT topics; add glossary entries for **Job Order Publisher**, **Sequence Number (pubseq)**, **Stream Cursor**
-11. Update `docs/overall-design.md`: add the publisher as a component in the system architecture description
-12. Update `docs/persistence.md`: add "Job Order Publisher State" section documenting `SfcExecutionDAO`-equivalent cursor persistence and sequence counter usage
+1. Refactor `MQTTPublisher` to support subclassing: add `_connected: asyncio.Event` (set on connect, cleared on disconnect) and extract `_run()` hook method called inside the `async with client:` block. Base `_run()` does `await self._shutdown_event.wait()`. MQTT errors from `_run()` propagate to `task()` reconnect logic
+2. Add `PublisherConfig` dataclass to `RuntimeConfig` (env prefix `APP_PUBLISHER_`): `retained_ttl_seconds=172800`, `stream_read_count=50`, `stream_block_ms=500`
+3. Implement `JobOrderPublisher(MQTTPublisher)` in `src/microdcs/publishers/machinery_jobs.py` — overrides `_run()` with XREAD loop and dispatch logic. Uses `JobOrderAndStateDAO` and `JobResponseDAO` for reads, `MQTTPublisher.publish_retained()` and `MQTTPublisher.delete_retained()` for writes. Constructor takes `MQTTConfig`, `PublisherConfig`, `ProcessingConfig`, `redis.ConnectionPool`, `RedisKeySchema`
+4. `_load_cursors` / `_save_cursors`: `HGETALL` / `HSET` on `publisher:stream-cursors`. Cursors saved after each successful XREAD batch — on MQTT disconnect the error propagates from `_run()` to `task()` reconnect, and `_run()` is called again with cursors reloaded from Redis (idempotent replay)
+5. Startup sequence in `_run()`: load cursors → load `active-scopes` → publish initial state-index for all scopes → enter XREAD loop. Initial publish covers the gap during pod restart
+6. XREAD BLOCK loop with per-scope streams + global sentinel stream. New scopes discovered from `_global` stream entries
+7. Dispatch: `Store`/`StoreAndStart`/`Update` → `_publish_job_order`; `ResultUpdate` → `_publish_job_result` (only if clearable); `Clear` → `_delete_job_topics`; all → `_publish_state_index`. State-index excludes `EndState` jobs, checks `has_result` via `JobResponseDAO`, atomically increments `pubseq:{scope}`
+8. `isinstance(task, MQTTPublisher)` check in `MicroDCS.main()` naturally covers `JobOrderPublisher` — no `core.py` changes needed
+9. `app/__main__.py` wiring: `JobOrderPublisher` replaces standalone `MQTTPublisher` registration
+10. Unit tests for all dispatch handlers, cursor load/save, state-index build, `_run()` lifecycle, `_connected` event, and scope discovery in `tests/test_job_order_publisher.py`. Package export tests in `tests/test_package_exports.py`
+11. Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)
 
-Acceptance: correct retained topics on startup; correct publishes and deletions per stream entry; sequence number increments monotonically; cursor survives restart without reprocessing.
+Acceptance: correct retained topics on startup; correct publishes and deletions per stream entry; sequence number increments monotonically; cursor survives restart without reprocessing. `JobOrderPublisher` inherits reconnect/backoff from `MQTTPublisher`.
 
-### Phase 4 – Kubernetes deployment
+### Phase 4 – Kubernetes deployment and documentation
 
-1. Add `JobOrderPublisherConfig` to configuration schema
+1. Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)
 2. Write Kubernetes `Deployment` manifest: `replicas: 1`, resource limits, liveness probe (Redis ping), readiness probe (MQTT connected)
 3. Add MQTT credentials to secret management alongside existing broker credentials
 4. Deploy to staging and run a 30-minute connectivity interruption test: disconnect MES MQTT client, run jobs through several complete cycles including clearable states, reconnect, verify state-index seq gap, all retained topics present, no response data loss

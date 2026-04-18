@@ -146,6 +146,13 @@ class ProcessingConfig:
 
 
 @dataclass
+class PublisherConfig:
+    retained_ttl_seconds: int = 172800  # 48 hours
+    stream_read_count: int = 50
+    stream_block_ms: int = 500
+
+
+@dataclass
 class RuntimeConfig:
     instance_id: str
     is_processor_instance: bool
@@ -155,6 +162,7 @@ class RuntimeConfig:
     msgpack: MessagePackConfig
     logging: LoggingConfig
     processing: ProcessingConfig
+    publisher: PublisherConfig
 
     def __init__(self, prefix: str = "APP_"):
         # Get the ID from Env, fallback to UUID if running locally

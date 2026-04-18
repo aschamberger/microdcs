@@ -6,7 +6,6 @@ from microdcs.core import MicroDCS
 from microdcs.mqtt import (
     MQTTHandler,
     MQTTProtocolBinding,
-    MQTTPublisher,
     OTELInstrumentedMQTTHandler,
 )
 from microdcs.msgpack import (
@@ -19,6 +18,7 @@ from microdcs.processors.machinery_jobs import (
     JobAcceptanceConfig,
     MachineryJobsCloudEventProcessor,
 )
+from microdcs.publishers import JobOrderPublisher
 
 logger = logging.getLogger("app.main")
 
@@ -112,9 +112,16 @@ microdcs.register_protocol_binding(
     )
 )
 
-# Add additional task to MicroDCS main task group
-mqtt_publisher = MQTTPublisher(microdcs.runtime_config.mqtt)
-microdcs.add_additional_task(mqtt_publisher)
+# Add job order publisher as additional task
+job_order_publisher = JobOrderPublisher(
+    microdcs.runtime_config.mqtt,
+    microdcs.runtime_config.publisher,
+    microdcs.runtime_config.processing,
+    "machinery-jobs",
+    microdcs.redis_connection_pool,
+    microdcs.redis_key_schema,
+)
+microdcs.add_additional_task(job_order_publisher)
 
 # Run MicroDCS main application logic
 loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None

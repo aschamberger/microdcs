@@ -86,6 +86,7 @@ UPDATE_CE_TYPE = UpdateCall.Config.cloudevent_type
 def _processing_config() -> ProcessingConfig:
     return ProcessingConfig(
         cloudevent_source="https://aschamberger.github.com/micro-dcs/test",
+        topic_prefixes={"machinery_jobs:app/jobs"},
     )
 
 

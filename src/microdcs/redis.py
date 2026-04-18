@@ -453,7 +453,7 @@ class JobOrderAndStateDAO:
         logger.debug(f"Deleting Job Order with ID {job_order_id} from Redis")
         key = self.key_schema.joborder_key(job_order_id)
         list_key = self.key_schema.joborder_list_key(scope)
-        async with self.redis.pipeline(transaction=True) as pipe:
+        async with self.redis.pipeline(transaction=True) as pipe:  # type: ignore[reportGeneralTypeIssues]
             pipe.delete(key)
             pipe.zrem(list_key, job_order_id)
             await pipe.execute()
@@ -564,7 +564,7 @@ class JobResponseDAO:
             "ts": ts,
         }
         # Execute state document + sorted-set index update atomically.
-        async with self.redis.pipeline(transaction=True) as pipe:
+        async with self.redis.pipeline(transaction=True) as pipe:  # type: ignore[reportGeneralTypeIssues]
             pipe.json().set(
                 key,
                 "$",
@@ -614,10 +614,21 @@ class JobResponseDAO:
         escaped = _escape_tag(job_order_id)
         query = Query(f"@job_order_id:{{{escaped}}}").no_content().paging(0, 1)
         results = await self.redis.ft(index_name).search(query)
-        if results.total == 0:  # type: ignore[reportAttributeAccessIssue]
+        total = (
+            results.get(b"total_results", 0)
+            if isinstance(results, dict)
+            else results.total  # type: ignore[reportAttributeAccessIssue]
+        )
+        if total == 0:
             return None
         key_prefix = self.key_schema.jobresponse_key("")
-        job_response_id = results.docs[0].id.removeprefix(key_prefix)  # type: ignore[reportAttributeAccessIssue]
+        if isinstance(results, dict):
+            doc_id = results[b"results"][0][b"id"]
+            if isinstance(doc_id, bytes):
+                doc_id = doc_id.decode()
+        else:
+            doc_id = results.docs[0].id  # type: ignore[reportAttributeAccessIssue]
+        job_response_id = doc_id.removeprefix(key_prefix)
         return await self.retrieve(job_response_id)
 
     async def retrieve_by_state(
@@ -644,11 +655,22 @@ class JobResponseDAO:
         results = await self.redis.ft(index_name).search(query)
         key_prefix = self.key_schema.jobresponse_key("")
         responses: list[ISA95JobResponseDataType] = []
-        for doc in results.docs:  # type: ignore[reportAttributeAccessIssue]
-            job_response_id = doc.id.removeprefix(key_prefix)
-            response = await self.retrieve(job_response_id)
-            if response is not None:
-                responses.append(response)
+        if isinstance(results, dict):
+            docs = results.get(b"results", [])
+            for doc in docs:
+                doc_id = doc[b"id"]
+                if isinstance(doc_id, bytes):
+                    doc_id = doc_id.decode()
+                job_response_id = doc_id.removeprefix(key_prefix)
+                response = await self.retrieve(job_response_id)
+                if response is not None:
+                    responses.append(response)
+        else:
+            for doc in results.docs:  # type: ignore[reportAttributeAccessIssue]
+                job_response_id = doc.id.removeprefix(key_prefix)
+                response = await self.retrieve(job_response_id)
+                if response is not None:
+                    responses.append(response)
         return responses
 
     async def delete(self, job_response_id: str, scope: str) -> None:
@@ -660,7 +682,7 @@ class JobResponseDAO:
         logger.debug(f"Deleting Job Response with ID {job_response_id} from Redis")
         key = self.key_schema.jobresponse_key(job_response_id)
         list_key = self.key_schema.jobresponse_list_key(scope)
-        async with self.redis.pipeline(transaction=True) as pipe:
+        async with self.redis.pipeline(transaction=True) as pipe:  # type: ignore[reportGeneralTypeIssues]
             pipe.delete(key)
             pipe.zrem(list_key, job_response_id)
             await pipe.execute()

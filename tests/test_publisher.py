@@ -222,3 +222,27 @@ class TestMQTTPublisher:
         publisher = MQTTPublisher(config)
         assert publisher._config is config
         assert publisher._client is None
+        assert not publisher._connected.is_set()
+
+    @pytest.mark.asyncio
+    async def test_connected_event_set_during_task(self):
+        """_connected is set while connected and cleared after disconnect."""
+        mock_aiomqtt_client = AsyncMock()
+        mock_aiomqtt_client.__aenter__ = AsyncMock(return_value=mock_aiomqtt_client)
+        mock_aiomqtt_client.__aexit__ = AsyncMock(return_value=None)
+
+        connected_during_run = False
+
+        class TestPublisher(MQTTPublisher):
+            async def _run(self_inner) -> None:
+                nonlocal connected_during_run
+                connected_during_run = self_inner._connected.is_set()
+
+        with patch(
+            "microdcs.mqtt.create_mqtt_client", return_value=mock_aiomqtt_client
+        ):
+            publisher = TestPublisher(MagicMock())
+            await publisher.task()
+
+        assert connected_during_run is True
+        assert not publisher._connected.is_set()

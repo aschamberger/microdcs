@@ -59,3 +59,19 @@ class TestModelsPackageExports:
         assert expected
         for name in expected:
             assert hasattr(models, name)
+
+
+class TestPublishersPackageExports:
+    def test_known_imports_work_from_package(self):
+        import microdcs.publishers as publishers
+
+        assert publishers.JobOrderPublisher.__name__ == "JobOrderPublisher"
+
+    def test_all_submodule_defined_classes_are_exported(self):
+        import microdcs.publishers as publishers
+
+        expected = _defined_public_class_names(publishers)
+        assert expected
+        assert expected.issubset(set(publishers.__all__))
+        for name in expected:
+            assert hasattr(publishers, name)

@@ -110,9 +110,10 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         job_acceptance_config: JobAcceptanceConfig | None = None,
     ):
         super().__init__(instance_id, runtime_config, config_identifier)
-        self._topic_prefix = runtime_config.get_topic_prefix_for_identifier(
-            self._config_identifier
-        )
+        topic_prefix = runtime_config.get_topic_prefix_for_identifier(config_identifier)
+        if topic_prefix is None:
+            raise ValueError(f"No topic prefix configured for '{config_identifier}'")
+        self._topic_prefix = topic_prefix
         self._event_attributes.extend([
             CloudeventAttributeTuple("subject", "subject"),
             CloudeventAttributeTuple("correlationid", "correlationid"),
