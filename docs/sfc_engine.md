@@ -193,8 +193,8 @@ Each SFC action declares its interaction pattern, reflecting the two real-world 
 
 | Pattern | `interaction` value | MicroDCS mechanism | Example |
 |---|---|---|---|
-| Equipment pulls work | `pull_event` | SFC engine activates the step, waits for a matching `@incoming` CloudEvent from equipment | Camera publishes QA result, processor evaluates pass/fail |
-| Station pushes commands | `push_command` | SFC engine calls `callback_outgoing()` on step entry, waits for `process_response_cloudevent()` or timeout | Processor sends tighten command to tightening controller |
+| Equipment pulls work | `pull_event` | SFC engine activates the step, waits for a southbound CloudEventProcessor call matching CloudEvent `cloudevent_type` | Device asks for new task, processor responds with task and corresponding details  |
+| Station pushes commands | `push_command` | SFC engine calls southbound CloudEventProcessor | Processor sends tighten command to tightening controller |
 
 ### Example Recipe
 
