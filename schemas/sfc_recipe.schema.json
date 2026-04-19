@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/",
+  "title": "SFC Recipe",
+  "description": "JSON Schema for IEC 61131-3 SFC recipe definitions used by the MicroDCS SFC engine.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SfcRecipe"
+    }
+  ],
+  "$defs": {
+    "SfcActionQualifier": {
+      "anyOf": [
+        {
+          "const": "N",
+          "title": "NonStored",
+          "description": "Non-stored: action executes while the step is active."
+        },
+        {
+          "const": "P",
+          "title": "Pulse",
+          "description": "Pulse: action executes once on step entry."
+        },
+        {
+          "const": "P0",
+          "title": "FallingEdge",
+          "description": "Falling edge: action executes once on step exit."
+        },
+        {
+          "const": "P1",
+          "title": "RisingEdge",
+          "description": "Rising edge: action executes once on step entry (alias for P)."
+        },
+        {
+          "const": "S",
+          "title": "Set",
+          "description": "Set/stored: action starts on step entry and persists until explicitly reset."
+        },
+        {
+          "const": "R",
+          "title": "Reset",
+          "description": "Reset: cancels a previously set (stored) action."
+        },
+        {
+          "const": "L",
+          "title": "TimeLimited",
+          "description": "Time limited: action executes for a maximum duration."
+        },
+        {
+          "const": "D",
+          "title": "TimeDelayed",
+          "description": "Time delayed: action starts after a delay from step entry."
+        }
+      ],
+      "description": "IEC 61131-3 action qualifier controlling when and how an action executes relative to its step."
+    },
+    "SfcInteraction": {
+      "type": "string",
+      "enum": [
+        "push_command",
+        "pull_event"
+      ],
+      "description": "Equipment interaction pattern: push_command sends an outgoing command, pull_event waits for an incoming event."
+    },
+    "SfcBranchType": {
+      "type": "string",
+      "enum": [
+        "selection",
+        "simultaneous"
+      ],
+      "description": "Branch type: selection (OR — one path taken) or simultaneous (AND — all paths execute in parallel)."
+    },
+    "SfcStep": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string",
+          "description": "Unique step identifier."
+        },
+        "Initial": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this is the initial step (exactly one per recipe)."
+        }
+      },
+      "required": [
+        "Name"
+      ],
+      "description": "A named step in the SFC sequence. Steps are the states of the SFC state machine."
+    },
+    "SfcTransition": {
+      "type": "object",
+      "properties": {
+        "Source": {
+          "type": "string",
+          "description": "Source step or branch name."
+        },
+        "Target": {
+          "type": "string",
+          "description": "Target step or branch name."
+        },
+        "Condition": {
+          "type": "string",
+          "description": "Condition identifier — resolved at runtime."
+        },
+        "Priority": {
+          "type": "integer",
+          "default": 0,
+          "description": "Priority for selection divergence (lower = higher priority)."
+        }
+      },
+      "required": [
+        "Source",
+        "Target",
+        "Condition"
+      ],
+      "description": "A directed edge between steps (or branch constructs). Transitions carry conditions that determine when execution advances."
+    },
+    "SfcActionAssociation": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string",
+          "description": "Action identifier."
+        },
+        "Step": {
+          "type": "string",
+          "description": "Step name this action is associated with."
+        },
+        "Qualifier": {
+          "$ref": "#/$defs/SfcActionQualifier"
+        },
+        "Interaction": {
+          "$ref": "#/$defs/SfcInteraction"
+        },
+        "CloudeventType": {
+          "type": "string",
+          "description": "CloudEvent type for the outgoing command or expected incoming event."
+        },
+        "TimeoutSeconds": {
+          "type": "integer",
+          "description": "Maximum wait time in seconds before expiration handling."
+        },
+        "Parameters": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Step-specific parameters passed to the action."
+        }
+      },
+      "required": [
+        "Name",
+        "Step",
+        "Qualifier",
+        "Interaction",
+        "CloudeventType",
+        "TimeoutSeconds"
+      ],
+      "description": "Associates an action with a step, including the interaction pattern and IEC 61131-3 action qualifier."
+    },
+    "SfcBranch": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string",
+          "description": "Branch identifier (used as source/target in transitions)."
+        },
+        "Type": {
+          "$ref": "#/$defs/SfcBranchType"
+        },
+        "Branches": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "Each inner list is a sequence of step names forming one branch path."
+        }
+      },
+      "required": [
+        "Name",
+        "Type",
+        "Branches"
+      ],
+      "description": "Branching construct: selection (OR) or simultaneous (AND) divergence."
+    },
+    "SfcRecipe": {
+      "type": "object",
+      "properties": {
+        "Steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SfcStep"
+          },
+          "description": "All steps in the recipe."
+        },
+        "Transitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SfcTransition"
+          },
+          "description": "All transitions between steps and/or branch constructs."
+        },
+        "Actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SfcActionAssociation"
+          },
+          "description": "All action associations (step-to-action bindings)."
+        },
+        "Branches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SfcBranch"
+          },
+          "description": "All branching constructs (selection or simultaneous)."
+        }
+      },
+      "required": [
+        "Steps",
+        "Transitions",
+        "Actions"
+      ],
+      "x-cloudevent-type": "com.github.aschamberger.microdcs.sfc-recipe.v1",
+      "x-cloudevent-dataschema": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/",
+      "description": "An IEC 61131-3 SFC recipe definition. Contains steps, transitions, action associations, and optional branching constructs."
+    }
+  }
+}

@@ -122,6 +122,8 @@ Station configuration delivery is a prerequisite for SFC engine execution — jo
 
 ## SFC Recipe Schema
 
+> **Status**: Implemented. JSON Schema in `schemas/sfc_recipe.schema.json`, generated dataclasses in `src/microdcs/models/sfc_recipe.py`, `SFC_RECIPE_DATASCHEMA` constant in `src/microdcs/models/sfc_recipe_ext.py`.
+
 The recipe schema uses IEC 61131-3 SFC terminology and semantics without the graphical/PLC baggage of PLCopen TC6 XML. It is defined as a JSON Schema (`sfc_recipe.schema.json`) and follows the existing code generation pipeline.
 
 ### Why Not PLCopen TC6 XML Directly
@@ -275,6 +277,34 @@ ISA95WorkMasterDataTypeExt(
 )
 ```
 
+### Generated Dataclasses
+
+The JSON Schema is processed through the standard code generation pipeline:
+
+```bash
+uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
+```
+
+This generates `src/microdcs/models/sfc_recipe.py` with:
+
+| Generated type | Kind | Description |
+|---|---|---|
+| `SfcActionQualifier` | `StrEnum` | IEC 61131-3 action qualifiers (`N`, `P`, `P0`, `P1`, `S`, `R`, `L`, `D`) |
+| `SfcInteraction` | `StrEnum` | Equipment interaction patterns (`push_command`, `pull_event`) |
+| `SfcBranchType` | `StrEnum` | Branch types (`selection`, `simultaneous`) |
+| `SfcStep` | `@dataclass` | Step with `name` and `initial` flag |
+| `SfcTransition` | `@dataclass` | Transition with `source`, `target`, `condition`, `priority` |
+| `SfcActionAssociation` | `@dataclass` | Action binding with `step`, `qualifier`, `interaction`, `cloudevent_type`, `timeout_seconds`, `parameters` |
+| `SfcBranch` | `@dataclass` | Branch construct with `name`, `type`, `branches` |
+| `SfcRecipe` | `@dataclass` | Top-level recipe containing `steps`, `transitions`, `actions`, `branches` |
+
+The `SfcRecipe.Config` class carries:
+
+- `cloudevent_type`: `com.github.aschamberger.microdcs.sfc-recipe.v1`
+- `cloudevent_dataschema`: `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/`
+
+A hand-written `sfc_recipe_ext.py` provides the `SFC_RECIPE_DATASCHEMA` constant — the schema `$id` URI (`https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/`) used as the `dataschema` value on `ISA95WorkMasterDataTypeExt` to identify SFC recipe payloads. The SFC engine dispatches on this URI to select the recipe interpreter.
+
 ## SFC Engine Architecture
 
 ### Role in the System
@@ -386,17 +416,17 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 
 **Goal**: Define the recipe format and generate typed dataclasses.
 
-1. Create `schemas/sfc_recipe.schema.json` with steps, transitions, actions, branches
-2. Generate dataclasses via `dataclassgen`: `sfc_recipe.py` in `models/`
-3. Create `sfc_recipe_mixin.py` if needed for `transitions` library integration
-4. Add the SFC recipe `dataschema` URI constant
-5. Update `models/__init__.py` exports
-6. Add unit tests for recipe dataclass serialization/deserialization
-7. Update this document's "SFC Recipe Schema" section with the final JSON Schema and generated dataclass details
-8. Update `docs/concepts.md`: add glossary entries for **SFC recipe**, **Step**, **Transition**, **Action association**, **Action qualifier**, **Selection branch**, **Simultaneous branch**, **`push_command`**, **`pull_event`**
-9. Update `docs/information-model-standards.md`: add "SFC Recipe Schema" subsection covering recipe structure, generation command, and `dataschema` URI
-10. Update `docs/technical-standards.md`: add "IEC 61131-3 SFC" section referencing SFC terminology usage and its relationship to the recipe schema
-11. Update `docs/development.md`: add SFC recipe dataclass generation command (`uv run microdcs dataclassgen dataclasses schemas/sfc_recipe.schema.json`)
+1. ~~Create `schemas/sfc_recipe.schema.json` with steps, transitions, actions, branches~~ — Done: schema defines `SfcStep`, `SfcTransition`, `SfcActionAssociation`, `SfcBranch`, `SfcRecipe` with enums `SfcActionQualifier`, `SfcInteraction`, `SfcBranchType`
+2. ~~Generate dataclasses via `dataclassgen`: `sfc_recipe.py` in `models/`~~ — Done: `uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json`
+3. ~~Create `sfc_recipe_mixin.py` if needed for `transitions` library integration~~ — Not needed: pure data models with no `__post_init__` or state machine logic
+4. ~~Add the SFC recipe `dataschema` URI constant~~ — Done: `SFC_RECIPE_DATASCHEMA` in `sfc_recipe_ext.py`
+5. ~~Update `models/__init__.py` exports~~ — Done: added `sfc_recipe` and `sfc_recipe_ext` imports
+6. ~~Add unit tests for recipe dataclass serialization/deserialization~~ — Done: `test_sfc_recipe.py` with JSON/msgpack roundtrips, full example recipe, enum values, and config attributes
+7. ~~Update this document's "SFC Recipe Schema" section with the final JSON Schema and generated dataclass details~~ — Done
+8. ~~Update `docs/concepts.md`~~ — Done: added glossary entries for SFC recipe, step, transition, action association, action qualifier, selection/simultaneous branch, `push_command`, `pull_event`
+9. ~~Update `docs/information-model-standards.md`~~ — Done: added "SFC Recipe Schema" subsection
+10. ~~Update `docs/technical-standards.md`~~ — Done: added "IEC 61131-3 SFC" section
+11. ~~Update `docs/development.md`~~ — Done: added SFC recipe generation command
 
 ### Phase 4: SFC Engine (Core)
 

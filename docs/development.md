@@ -169,6 +169,12 @@ uv run microdcs dataclassgen dataclasses \
 	my-schema.schema.json
 ```
 
+Generate the SFC recipe dataclasses:
+
+```bash
+uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
+```
+
 ## Documentation
 
 The documentation site is built with MkDocs Material.

@@ -139,3 +139,9 @@ OpenTelemetry provides the tracing and metrics foundation for runtime observabil
 * [OpenTelemetry for Python](https://opentelemetry.io/docs/languages/python/)
 * [OpenTelemetry messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/)
 * [OpenTelemetry RPC semantic conventions](https://opentelemetry.io/docs/specs/semconv/rpc/)
+
+## IEC 61131-3 SFC
+
+The SFC recipe schema uses IEC 61131-3 Sequential Function Chart terminology — steps, transitions, action qualifiers (`N`, `P`, `S`, `R`, `L`, `D`, etc.), and selection/simultaneous divergence — to define machine-readable recipes without the graphical/PLC baggage of PLCopen TC6 XML. See [SFC Engine](sfc_engine.md) for the recipe format and engine architecture.
+
+* [IEC 61131-3 on Wikipedia](https://en.wikipedia.org/wiki/IEC_61131-3)

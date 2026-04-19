@@ -472,9 +472,7 @@ def outgoing(cloudevent_dataclass: type | UnionType | TypeAliasType) -> Callable
 def _filter_kwargs_for(func: Callable, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Keep only kwargs that *func* accepts (unless it has ``**kwargs``)."""
     sig = inspect.signature(func, follow_wrapped=False)
-    if any(
-        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-    ):
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
         return kwargs
     accepted = set(sig.parameters.keys())
     return {k: v for k, v in kwargs.items() if k in accepted}

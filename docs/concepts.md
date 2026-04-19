@@ -261,6 +261,8 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 
 | Term | Definition |
 |---|---|
+| **Action association** | SFC action bound to a step with a qualifier and interaction pattern (`push_command` or `pull_event`). See `SfcActionAssociation`. |
+| **Action qualifier** | IEC 61131-3 qualifier (`N`, `P`, `P0`, `P1`, `S`, `R`, `L`, `D`) controlling when and how an action executes relative to its step. See `SfcActionQualifier`. |
 | **Binding direction** | Whether a processor faces northbound (executes work) or southbound (orchestrates). Determines subscribe/publish intents. |
 | **CloudEvent** | A CNCF standard envelope for event data. All MicroDCS messages use this format. |
 | **CloudEventProcessor** | Base class for application logic. Handles a single domain's incoming and outgoing events. |
@@ -282,13 +284,20 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **OPC UA** | Industrial interoperability standard. MicroDCS uses its information models (not its transport). |
 | **Processor binding** | Connects a processor to a protocol handler. Manages topic patterns and outgoing queue. |
 | **Protocol handler** | Manages transport connections (MQTT or MessagePack-RPC). Runs as an async task. |
+| **`pull_event`** | SFC interaction pattern where the engine waits for equipment to deliver an incoming CloudEvent. |
 | **Publisher** | An `MQTTPublisher` subclass that reads Redis streams and maintains retained MQTT topics. Write-only — does not process incoming CloudEvents. Registered as an additional task and controlled by `APP_IS_PUBLISHER_INSTANCE`. |
 | **Response chain** | The mechanism by which request dataclasses create typed response objects via `.response()`. |
+| **Selection branch** | SFC OR-divergence: one path taken based on transition priorities/conditions. See `SfcBranch` with `SfcBranchType.selection`. |
+| **SFC recipe** | `SfcRecipe` dataclass — IEC 61131-3 SFC recipe containing steps, transitions, action associations, and optional branches. Stored as JSON in the Work Master's `data` field with `dataschema` set to `SFC_RECIPE_DATASCHEMA`. |
+| **Simultaneous branch** | SFC AND-divergence: all paths execute in parallel and must complete before convergence. See `SfcBranch` with `SfcBranchType.simultaneous`. |
 | **Retained Topic** | An MQTT v5 topic published with the retained flag set. The broker stores the last message and delivers it immediately to new subscribers. MicroDCS uses retained topics (with a 48-hour Message Expiry Interval) to expose current job order and result state to the MES so that reconnecting clients receive the full picture without replaying events. |
 | **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |
 | **Southbound** | Processor direction facing down the ISA-95 pyramid. Subscribes to data/events/metadata, publishes commands. |
 | **Station configuration** | Resource lists (equipment, material, personnel, physical assets), Work Masters, and operational parameters (max downloadable job orders) pushed from MES into MicroDCS via CloudEvents. Scoped per station via CloudEvent `subject`. |
+| **Step** | SFC named state. Maps to a `transitions` library state. Each step can have associated actions. See `SfcStep`. |
 | **State Index** | A retained MQTT topic (`{prefix}/{scope}/state-index`) published by the Job Order Publisher on every job state transition. Contains the sequence number, scope, timestamp, and a compact list of all active jobs with their current state and `has_result` flag. Used by the MES to detect gaps after a connectivity outage and to know which per-job retained topics to fetch. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
+| **Transition** | SFC directed edge between steps/branches. Carries a condition identifier resolved at runtime. See `SfcTransition`. |
 | **Work Master** | ISA-95 template/recipe referenced by Job Orders. Stored in Redis via `WorkMasterDAO`. The base type is `ISA95WorkMasterDataType`; the extended type `ISA95WorkMasterDataTypeExt` adds opaque recipe content. |
+| **`push_command`** | SFC interaction pattern where the engine sends an outgoing CloudEvent command to equipment. |
 | **`__request_object__`** | `InitVar` field in response dataclasses. Automatically populated by `.response()` with the request instance. |

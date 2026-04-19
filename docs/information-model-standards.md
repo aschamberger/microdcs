@@ -103,6 +103,16 @@ Operation semantics:
 
 All configuration is scoped via the CloudEvent `subject` field, allowing different stations to maintain independent resource sets.
 
+### SFC Recipe Schema
+
+The SFC recipe schema (`schemas/sfc_recipe.schema.json`) defines IEC 61131-3 SFC recipe structures — steps, transitions, action associations, and branches — as a JSON Schema. It follows the same code generation pipeline as other model schemas:
+
+```bash
+uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
+```
+
+The schema `$id` is `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/`. This URI is used as the `dataschema` value on `ISA95WorkMasterDataTypeExt` (via the `SFC_RECIPE_DATASCHEMA` constant) to identify Work Masters that carry SFC recipe payloads. See [SFC Engine](sfc_engine.md) for full details on the recipe format and engine architecture.
+
 ## ISA-88/ISA-95
 
 ISA-88 and ISA-95 provide the manufacturing-domain concepts used by the framework's sequence control and job-management examples.
