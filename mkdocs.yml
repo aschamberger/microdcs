@@ -40,6 +40,8 @@ nav:
   - Development:
       - Overview: development.md
       - Persistence: persistence.md
+  - Operations:
+      - Overview: operations.md
 copyright: Copyright &copy; 2026 Andreas Schamberger
 extra:
   social:
