@@ -344,20 +344,23 @@ Dashed arrows are direct Python method calls within the same process. Solid arro
 ### Execution Flow
 
 1. **Job arrives**: MES sends `Store` or `StoreAndStart` → NB processor transitions job to `NotAllowedToStart` or `AllowedToStart`
-2. **SFC engine picks up**: The NB processor notifies the SFC engine via a direct method call (or the engine polls Redis) when a job is ready to run. The engine:
+2. **Work item enqueued**: When the NB processor moves a job to `AllowedToStart`, it writes a `start_recipe` entry to the SFC work stream (`sfc:work:{scope}`) via `XADD`
+3. **Engine picks up**: One SFC engine instance receives the entry via `XREADGROUP` (consumer group `sfc-engine`). The engine:
     - Loads the Job Order from Redis
     - Resolves the Work Master ID → loads the extended Work Master with recipe from Redis
     - Dispatches on `dataschema` to select the recipe interpreter
     - Deserializes `data` into SFC recipe dataclasses
-3. **Triggers Run**: The engine calls `trigger()` on the NB processor's `HierarchicalGraphMachine` to transition the job to `Running`, then persists the state change
-4. **Walks the SFC**:
+    - Creates the SFC execution state in Redis
+4. **Triggers Run**: The engine calls `trigger()` on the NB processor's `HierarchicalGraphMachine` to transition the job to `Running`, then persists the state change and `XACK`s the stream entry
+5. **Walks the SFC** — all state mutations use atomic compare-and-swap (CAS) via Lua scripts:
     - Steps map to states in the `transitions` library
-    - For `push_command` actions: calls the SB processor's `callback_outgoing()` directly with the action's CloudEvent type and parameters, then awaits the result or timeout
-    - For `pull_event` actions: registers interest with the SB processor and waits for it to deliver a matching incoming event via callback
+    - For `push_command` actions: atomically sets action state `pending → dispatched`, calls the SB processor's `callback_outgoing()` directly, and writes the next work item to the stream in the same CAS if the response completes the step
+    - For `pull_event` actions: sets action state to `waiting` and returns — the step completes when any instance receives the matching incoming CloudEvent via MQTT shared subscription and performs the CAS `waiting → completed`
+    - On step completion: the CAS atomically advances the current step and (if the next step has a `push_command` action) writes a `dispatch_action:{name}` entry to the work stream — ensuring another instance can pick it up
     - Simultaneous branches execute via `asyncio.TaskGroup` — all branches must complete before convergence
     - Selection branches evaluate transition conditions/priorities to pick one path
-5. **Completes**: On recipe completion, triggers the NB job state to `Ended_Completed` via direct call and writes the `ISA95JobResponseDataType`
-6. **Handles failures**: On timeout, equipment error, or abort — triggers `Ended_Aborted` or `Aborted` on the NB processor as appropriate
+6. **Completes**: On recipe completion, triggers the NB job state to `Ended_Completed` via direct call and writes the `ISA95JobResponseDataType`
+7. **Handles failures**: On timeout, equipment error, or abort — triggers `Ended_Aborted` or `Aborted` on the NB processor as appropriate
 
 ### State Machine Integration
 
@@ -378,13 +381,99 @@ The SFC state machine is separate from the OPC UA job state machine. The SFC eng
 
 ### Persistence
 
-The SFC engine persists its execution state in Redis so that recipe execution can survive pod restarts:
+The SFC engine persists its execution state in Redis so that recipe execution can survive pod restarts and work can be distributed across instances:
 
 - Current step(s) and active branch states
-- Pending action completion status
+- Per-action state (`pending`, `dispatched`, `waiting`, `completed`, `failed`)
 - Job-to-recipe association
 
 This builds on the existing Redis JSON persistence pattern used by `JobOrderAndStateDAO`.
+
+### Multi-Instance Coordination
+
+The SFC engine runs as an `AdditionalTask` on **every** MicroDCS instance (not gated by a single-instance flag). Multiple instances coordinate through two Redis primitives: a **work stream with consumer groups** and **atomic compare-and-swap (CAS) state transitions**.
+
+#### SFC Work Stream
+
+A Redis stream `sfc:work:{scope}` with consumer group `sfc-engine` distributes work items:
+
+| Field | Value | Purpose |
+|---|---|---|
+| `job_id` | Job Order ID | Which job needs attention |
+| `action` | `start_recipe` / `dispatch_action:{name}` / `resume` | What to do |
+
+**Writers:**
+
+- **NB processor**: writes `start_recipe` when a job reaches `AllowedToStart`
+- **SFC engine**: writes `dispatch_action:{name}` atomically inside the CAS when a step completes and its successor has a `push_command` action
+- **SFC engine on startup**: writes `resume` for any jobs found in incomplete SFC state (recovery scan)
+
+**Readers:**
+
+- All SFC engine instances join consumer group `sfc-engine`
+- `XREADGROUP` distributes entries — each entry goes to exactly one consumer
+- `XAUTOCLAIM` with an idle timeout recovers unACKed entries from dead consumers — a surviving or replacement instance picks them up automatically
+
+#### Atomic Compare-and-Swap (CAS)
+
+Every SFC state mutation — action dispatch, action completion, step advancement — is performed by a **Lua script** that atomically:
+
+1. Reads the current action/step state from `sfc:execution:{job_id}`
+2. Verifies it matches the expected state (guard)
+3. Writes the new state
+4. Optionally `XADD`s a follow-up work item to the stream (e.g., `dispatch_action` for the next push step)
+5. Returns `OK` or `ALREADY_HANDLED`
+
+If two instances race — e.g., a stream consumer and an event receiver both try to advance the same action — only one CAS succeeds. The loser discards silently. This eliminates distributed locks and heartbeats.
+
+#### Recovery Flow
+
+On startup or reconnect, each SFC engine instance:
+
+1. Joins the consumer group (`XGROUP CREATE ... MKSTREAM`)
+2. Claims orphaned entries from dead consumers (`XAUTOCLAIM` with min-idle-time, e.g., 30 seconds)
+3. Scans Redis for SFC execution states where an action is `dispatched` but has been idle beyond a configurable threshold — re-dispatches via CAS (safe because equipment commands are idempotent)
+4. Begins the normal `XREADGROUP` loop
+
+#### Event Flow Examples
+
+**Push command — normal:**
+
+```
+NB processor: job → AllowedToStart → XADD sfc:work "start_recipe"
+Instance A:   XREADGROUP → picks up "start_recipe" → loads recipe → triggers Run
+              → step Init has push_command → CAS "pending → dispatched"
+              → calls SB processor callback_outgoing() → XACK
+              → equipment responds via MQTT → any instance receives it
+Instance B:   receives response → loads SFC state → CAS "dispatched → completed"
+              → next step has push_command → XADD sfc:work "dispatch_action:tighten"
+                (written atomically inside the CAS)
+Instance A:   XREADGROUP → picks up "dispatch_action:tighten" → dispatch → XACK
+```
+
+**Push command — instance dies mid-action:**
+
+```
+Instance A:   picks up "dispatch_action:tighten" → sends command → dies before XACK
+              (30 seconds pass)
+Instance B:   XAUTOCLAIM → gets orphaned "dispatch_action:tighten"
+              → loads SFC state → action is "dispatched" → re-dispatches command
+              (equipment handles idempotent re-delivery)
+```
+
+**Pull event — normal:**
+
+```
+SFC engine:   step QaCheck active, action camera_qa state = "waiting"
+              (no stream entry needed — engine just persisted state and returns)
+Equipment:    sends QA result CloudEvent → MQTT shared subscription
+Instance B:   SB processor receives event → signals SFC engine
+              → loads SFC state → CAS "waiting → completed" → advances step
+```
+
+#### Idempotency Contract
+
+Re-delivery of `push_command` actions is the fundamental recovery mechanism. After consumer death, `XAUTOCLAIM` hands the unACKed work item to another instance, which may re-dispatch an already-sent command. **Equipment must handle duplicate commands idempotently** — this is the contract that makes multi-instance recovery safe without distributed locks. The SFC engine adds a `correlation_id` (derived from `{job_id}:{action_name}:{attempt}`) to every outgoing command, giving equipment a stable key for deduplication.
 
 ## Implementation Plan
 
@@ -430,24 +519,28 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 
 ### Phase 4: SFC Engine (Core)
 
-**Goal**: Implement the basic sequential execution engine as an `AdditionalTask`.
+**Goal**: Implement the multi-instance sequential execution engine as an `AdditionalTask`.
 
 1. Create `src/microdcs/sfc_engine.py` with `SfcEngine(AdditionalTask)`
 2. Accept NB processor and SB processor references via constructor injection
-3. Implement recipe loading: Job Order → Work Master ID → Redis → recipe deserialization dispatched by `dataschema`
-4. Implement `Run` trigger on the NB processor's `HierarchicalGraphMachine` via direct call
-5. Implement linear step execution (no branching): step entry → action dispatch → wait for completion → transition evaluation → next step
-6. Implement `push_command` action pattern: call SB processor's `callback_outgoing()` directly + response/timeout handling
-7. Implement `pull_event` action pattern: register with SB processor for incoming event delivery + step completion signaling
-8. Implement job completion: `Ended_Completed` state transition on NB processor + `ISA95JobResponseDataType`
-9. Implement job failure: timeout → `Ended_Aborted`, equipment error → `Aborted` via NB processor
-10. Add Redis persistence for execution state
-11. Add unit tests with mocked processors and Redis
-12. Update this document's "SFC Engine Architecture" section with final class design, method signatures, and persistence schema
-13. Update `docs/concepts.md`: add a new "SFC Engine" section under Framework Concepts explaining the three-layer architecture (NB protocol → SFC orchestration → SB protocol) and the `AdditionalTask` base; add glossary entries for **SFC engine**, **AdditionalTask**, **Three-layer architecture**
-14. Update `docs/overall-design.md`: add "Three-Layer Architecture" subsection describing the NB protocol / SFC orchestration / SB protocol layer separation
-15. Update `docs/persistence.md`: expand key schema table with SFC execution state keys; add "SFC Execution State" section documenting `SfcExecutionDAO` and `ActionStateDAO` with usage examples
-16. Update `docs/your-first-processor.md`: add note in overview that processors are stateless protocol adapters and point to SFC Engine docs for multi-step orchestration
+3. Implement SFC work stream setup: consumer group creation (`XGROUP CREATE ... MKSTREAM`), `XREADGROUP` loop, `XAUTOCLAIM` for orphaned entries
+4. Implement recipe loading: Job Order → Work Master ID → Redis → recipe deserialization dispatched by `dataschema`
+5. Implement `Run` trigger on the NB processor's `HierarchicalGraphMachine` via direct call
+6. Implement linear step execution (no branching): step entry → action dispatch → wait for completion → transition evaluation → next step
+7. Implement `push_command` action pattern: atomic CAS `pending → dispatched` + call SB processor's `callback_outgoing()` directly + `correlation_id` for idempotent re-delivery
+8. Implement `pull_event` action pattern: CAS to `waiting` state + SB processor incoming event delivery + CAS `waiting → completed`
+9. Implement atomic CAS via Lua script: compare-and-swap on `sfc:execution:{job_id}` with optional `XADD` of follow-up work items
+10. Implement `SfcExecutionDAO` with Redis JSON persistence for execution state (current step, per-action states, branch states)
+11. Add SFC work stream and execution state keys to `RedisKeySchema`
+12. Implement recovery scan on startup: find `dispatched` actions idle beyond threshold, re-dispatch via CAS
+13. Implement job completion: `Ended_Completed` state transition on NB processor + `ISA95JobResponseDataType`
+14. Implement job failure: timeout → `Ended_Aborted`, equipment error → `Aborted` via NB processor
+15. Add unit tests with mocked processors, Redis, and multi-instance race scenarios
+16. Update this document's "SFC Engine Architecture" section with final class design, method signatures, and persistence schema
+17. Update `docs/concepts.md`: add a new "SFC Engine" section under Framework Concepts explaining the three-layer architecture (NB protocol → SFC orchestration → SB protocol), the `AdditionalTask` base, and multi-instance coordination; add glossary entries for **SFC engine**, **AdditionalTask**, **Three-layer architecture**, **SFC work stream**, **Atomic CAS**, **Idempotency contract**
+18. Update `docs/overall-design.md`: add "Three-Layer Architecture" subsection describing the NB protocol / SFC orchestration / SB protocol layer separation and multi-instance model
+19. Update `docs/persistence.md`: expand key schema table with SFC execution state keys and work stream; add "SFC Execution State" section documenting `SfcExecutionDAO`, CAS Lua scripts, and stream consumer group; add "SFC Work Stream" section with stream schema and consumer group semantics
+20. Update `docs/your-first-processor.md`: add note in overview that processors are stateless protocol adapters and point to SFC Engine docs for multi-step orchestration
 
 ### Phase 5: Branching
 
@@ -465,13 +558,14 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 **Goal**: Integrate into the example application.
 
 1. Instantiate `SfcEngine` in `app/__main__.py`, injecting the NB and SB processor references
-2. Register via `microdcs.add_additional_task(sfc_engine)` — the engine runs as a long-lived task within the `SystemEventTaskGroup` and monitors `_shutdown_event` for graceful shutdown
+2. Register via `microdcs.add_additional_task(sfc_engine)` — the engine runs as a long-lived task within the `SystemEventTaskGroup` on every instance and monitors `_shutdown_event` for graceful shutdown
 3. SB processors are still registered with their own protocol bindings as usual — the engine calls them directly, it does not replace their transport wiring
 4. Create example Work Master with SFC recipe for testing
-5. Integration test with MQTT broker and Redis
-6. Update `docs/your-first-processor.md`: add "SFC Engine Integration" subsection in "Wire It Up" explaining that the engine calls processors directly and showing wiring example
-7. Update `docs/development.md`: add SFC engine runtime wiring example (`SfcEngine` instantiation + `add_additional_task`)
-8. Update `docs/index.md`: add SFC Engine to the "Start Here" reading path and mention recipe-driven station orchestration in the overview
+5. Integration test with MQTT broker and Redis (including multi-instance recovery scenario)
+6. Update Kubernetes deployment: remove single-instance publisher gating for the SFC engine — all processor instances run the engine; document the idempotency contract for equipment integrators
+7. Update `docs/your-first-processor.md`: add "SFC Engine Integration" subsection in "Wire It Up" explaining that the engine calls processors directly and showing wiring example
+8. Update `docs/development.md`: add SFC engine runtime wiring example (`SfcEngine` instantiation + `add_additional_task`)
+9. Update `docs/index.md`: add SFC Engine to the "Start Here" reading path and mention recipe-driven station orchestration in the overview
 
 ## Design Decisions
 
@@ -483,6 +577,11 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 - **Two interaction patterns**: `push_command` and `pull_event` cover the two real-world equipment integration scenarios observed in discrete manufacturing (automotive). The pattern is declared per action in the recipe, not globally.
 - **Station configuration delivery before SFC engine**: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, `is_job_acceptable()` rejects every Job Order and no job ever reaches `AllowedToStart`. Configuration delivery is therefore Phase 2 — after the Work Master extension (Phase 1) but before the SFC engine (Phase 4). This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.
 - **`method` extension attribute for PUT/DELETE**: Using an HTTP-style `method` CloudEvent extension attribute to distinguish upsert vs. delete keeps the payload structure identical for both operations. `PUT` (the default when `method` is absent) performs an upsert; `DELETE` removes the resource. Incremental updates (add one equipment ID, remove one) avoid the complexity of full-replacement semantics and allow the MES layer to manage resource lists without MicroDCS needing to reconcile diffs. The attribute is mapped to `ce_method` in handler kwargs to avoid a name collision with the OPC UA `method` positional parameter.
+- **Multi-instance SFC engine, not single-instance**: Unlike the publisher (which is single-instance to avoid duplicate retained topic writes), the SFC engine runs on **every** instance. The publisher's problem is idempotent *output deduplication* on a shared MQTT broker, which is hard with standalone `XREAD`. The SFC engine's problem is *work distribution and recovery*, which maps cleanly to Redis consumer groups (`XREADGROUP` + `XAUTOCLAIM`). Running on every instance eliminates a single point of failure and lets K8s horizontal scaling naturally increase throughput.
+- **Atomic CAS via Lua scripts, not distributed locks**: Every SFC state mutation (action dispatch, completion, step advancement) uses a Redis Lua script that atomically reads the current state, verifies it matches an expected value, and writes the new state. This is a compare-and-swap — if two instances race on the same action, only one succeeds and the loser discards silently. This avoids the complexity and failure modes of distributed locks (heartbeats, TTL tuning, split-brain) while providing the same correctness guarantee. The CAS also atomically writes follow-up work items to the stream, preventing the gap between "state updated" and "next work item enqueued" that would require recovery logic.
+- **Equipment idempotency is a hard requirement**: After consumer death, `XAUTOCLAIM` hands unACKed work items to another instance, which may re-dispatch an already-sent `push_command`. The SFC engine includes a `correlation_id` on every outgoing command for equipment-side deduplication. This is the contract that makes multi-instance recovery safe without distributed locks or exactly-once delivery guarantees. Equipment that cannot handle duplicate commands must implement deduplication on the `correlation_id`.
+- **`XAUTOCLAIM` over heartbeat-based ownership**: Redis Stream consumer groups provide automatic pending-entry-list (PEL) tracking. `XAUTOCLAIM` with a min-idle-time (e.g., 30 seconds) transfers entries from dead consumers to live ones without any custom heartbeat mechanism. This leverages a built-in Redis primitive rather than reimplementing failure detection.
+- **Stream entries are work signals, not state**: The SFC work stream carries *intent* (`start_recipe`, `dispatch_action:{name}`, `resume`) rather than state snapshots. The authoritative state is always in the Redis JSON document (`sfc:execution:{job_id}`). A stream entry that arrives after the CAS has already advanced the state is harmlessly rejected by the guard check. This makes the system convergent — duplicate or stale stream entries cannot corrupt state.
 
 ## Sequential Function Charts (SFCs)
 
