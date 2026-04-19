@@ -152,6 +152,13 @@
             "command": "${command:python.interpreterPath} -m pytest --cov=microdcs --cov-report=term-missing tests/",
             "group": "test",
             "problemMatcher": []
+        },
+        {
+            "label": "Remove all containers",
+            "type": "shell",
+            "command": "docker rm -f $(docker ps -aq)",
+            "group": "test",
+            "problemMatcher": []
         }
     ]
 }

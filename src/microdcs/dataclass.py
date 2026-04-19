@@ -34,13 +34,13 @@ def type_has_config_class(cls: type) -> bool:
 
 
 def get_cloudevent_type(cls: type) -> str | None:
-    if type_has_config_class(cls):
+    if type_has_config_class(cls) and hasattr(cls.Config, "cloudevent_type"):
         return cls.Config.cloudevent_type
     return None
 
 
 def get_cloudevent_dataschema(cls: type) -> str | None:
-    if type_has_config_class(cls):
+    if type_has_config_class(cls) and hasattr(cls.Config, "cloudevent_dataschema"):
         return cls.Config.cloudevent_dataschema
     return None
 
