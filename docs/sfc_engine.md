@@ -392,14 +392,14 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 
 **Goal**: Enable Work Masters to carry recipe content without changing the NB processor.
 
-1. Add `ISA95WorkMasterDataTypeExt` to `machinery_jobs_ext.py` with `data` and `dataschema` fields
-2. Update `WorkMasterDAO.retrieve()` to deserialize as `ISA95WorkMasterDataTypeExt`
-3. Update `WorkMasterDAO.save()` type hint to accept the ext type
-4. Add unit tests for serialization roundtrip with and without recipe data
-5. Update existing `WorkMasterDAO` tests for the new return type
-6. Update this document's "Extended Work Master" section with final field names and code snippets
-7. Update `docs/concepts.md`: add "Extended Work Master" to the ISA-95 Job Management section explaining the opaque data envelope; add glossary entries for **Work Master**, **Extended Work Master**, **`dataschema` (Work Master)**
-8. Update `docs/information-model-standards.md`: add "Extended Work Master (ISA95WorkMasterDataTypeExt)" subsection after OPC UA / Machinery Job Management with field table, code snippet, and DAO behavior
+1. ~~Add `ISA95WorkMasterDataTypeExt` to `machinery_jobs_ext.py` with `data` and `dataschema` fields~~ — Done: `ISA95WorkMasterDataTypeExt` in `src/microdcs/models/machinery_jobs_ext.py`
+2. ~~Update `WorkMasterDAO.retrieve()` to deserialize as `ISA95WorkMasterDataTypeExt`~~ — Done: backward-compatible since both new fields have `None` defaults
+3. ~~Update `WorkMasterDAO.save()` type hint to accept the ext type~~ — Done: accepts `ISA95WorkMasterDataTypeExt` directly
+4. ~~Add unit tests for serialization roundtrip with and without recipe data~~ — Done
+5. ~~Update existing `WorkMasterDAO` tests for the new return type~~ — Done
+6. ~~Update this document's "Extended Work Master" section with final field names and code snippets~~ — Done
+7. ~~Update `docs/concepts.md`: add "Extended Work Master" to the ISA-95 Job Management section explaining the opaque data envelope; add glossary entries for **Work Master**, **Extended Work Master**, **`dataschema` (Work Master)**~~ — Done
+8. ~~Update `docs/information-model-standards.md`: add "Extended Work Master (ISA95WorkMasterDataTypeExt)" subsection after OPC UA / Machinery Job Management with field table, code snippet, and DAO behavior~~ — Done
 
 ### Phase 2: Station Configuration Delivery
 

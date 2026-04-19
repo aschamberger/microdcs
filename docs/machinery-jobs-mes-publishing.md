@@ -187,6 +187,8 @@ During an outage, steps 1–4 are deferred. Jobs accumulate in clearable states 
 
 ## Changes to existing DAOs
 
+> **Status**: Implemented. Key schema methods in `RedisKeySchema`, stream writes in `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()`, `active-scopes` set update, all in `src/microdcs/redis.py`.
+
 The stream write is encapsulated in `JobOrderAndStateDAO` and `JobResponseDAO` so that no processor needs to be aware of the publishing infrastructure. Any call to `save()` on either DAO automatically appends a change record to the scope stream. This makes it structurally impossible for a new processor — northbound or southbound — to write job state without the publisher being notified.
 
 `JobOrderAndStateDAO.save()` appends a record with the transition name as `change_type`:
@@ -242,6 +244,8 @@ The `active-scopes` set is updated with `SADD active-scopes {scope}` inside `Job
 In addition to `active-scopes`, a **sentinel stream** `joborder:changes:_global` receives an entry on every DAO save alongside the per-scope stream. The publisher's main XREAD loop always includes this global stream. When a message arrives on the global stream for a scope not yet tracked, the publisher adds the scope's per-scope stream to its XREAD set. This eliminates the need for periodic polling of `active-scopes` and ensures new scopes are discovered immediately.
 
 ## Job Order Publisher
+
+> **Status**: Implemented. `MQTTPublisher` and `create_mqtt_client()` in `src/microdcs/mqtt.py`, `StateIndexEntry` and `StateIndex` in `src/microdcs/models/machinery_jobs_ext.py`, `PublisherConfig` and instance-role flags in `src/microdcs/__init__.py`, `JobOrderPublisher` in `src/microdcs/publishers/machinery_jobs.py`, wiring in `app/__main__.py`.
 
 The publisher is implemented as `JobOrderPublisher(MQTTPublisher)` in `src/microdcs/publishers/machinery_jobs.py`. It inherits MQTT connection lifecycle and reconnect/backoff from `MQTTPublisher` and overrides the `_run()` hook with its business logic. It has no command routing logic — it only reads from Redis and writes to MQTT.
 
@@ -324,12 +328,12 @@ The publisher reuses the existing `RedisConfig` and `MQTTConfig` from `RuntimeCo
 
 Scope: changes to the existing codebase only. No new containers.
 
-1. Add `job_change_stream`, `job_change_stream_global`, `pub_seq`, `publisher_cursors`, `active_scopes` methods to `RedisKeySchema`
-2. Add `xadd` (per-scope stream + global sentinel stream) and `SADD active-scopes` to `JobOrderAndStateDAO.save()` inside the existing `pipeline(transaction=True)` block
-3. Add `xadd` (per-scope stream + global sentinel stream) to `JobResponseDAO.save()` inside the existing `pipeline(transaction=True)` block
-4. Unit tests: verify stream entries written atomically with DAO save; verify no entry written when pipeline fails
-5. Update `docs/persistence.md`: expand key schema table with `joborder:changes:{scope}` stream, `pubseq:{scope}`, `publisher:stream-cursors`, and `active-scopes` keys; add "Job Change Stream" section documenting the stream write pattern in `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()`
-6. Update `docs/concepts.md`: add glossary entries for **Job Change Stream**, **State Index**, **Retained Topic**
+1. ~~Add `job_change_stream`, `job_change_stream_global`, `pub_seq`, `publisher_cursors`, `active_scopes` methods to `RedisKeySchema`~~ — Done: all five methods in `RedisKeySchema` in `src/microdcs/redis.py`
+2. ~~Add `xadd` (per-scope stream + global sentinel stream) and `SADD active-scopes` to `JobOrderAndStateDAO.save()` inside the existing `pipeline(transaction=True)` block~~ — Done: atomic stream writes + `SADD` in `JobOrderAndStateDAO.save()`
+3. ~~Add `xadd` (per-scope stream + global sentinel stream) to `JobResponseDAO.save()` inside the existing `pipeline(transaction=True)` block~~ — Done: `ResultUpdate` stream entries in `JobResponseDAO.save()`
+4. ~~Unit tests: verify stream entries written atomically with DAO save; verify no entry written when pipeline fails~~ — Done: `test_save_appends_to_scope_stream`, `test_save_appends_to_global_sentinel_stream`, `test_save_adds_scope_to_active_scopes`, `test_save_xadd_not_called_on_pipeline_failure` in `test_redis.py`
+5. ~~Update `docs/persistence.md`: expand key schema table with `joborder:changes:{scope}` stream, `pubseq:{scope}`, `publisher:stream-cursors`, and `active-scopes` keys; add "Job Change Stream" section documenting the stream write pattern in `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()`~~ — Done
+6. ~~Update `docs/concepts.md`: add glossary entries for **Job Change Stream**, **State Index**, **Retained Topic**~~ — Done
 
 Acceptance: `joborder:changes:{scope}` contains one entry per successful DAO save. Stream is bounded by `maxlen=5000`.
 
@@ -337,12 +341,12 @@ Acceptance: `joborder:changes:{scope}` contains one entry per successful DAO sav
 
 Scope: models, MQTT infrastructure, runtime configuration for multi-node deployment.
 
-1. Add `StateIndexEntry` and `StateIndex` as `@dataclass(kw_only=True)` classes extending `DataClassMixin` in `src/microdcs/models/machinery_jobs_ext.py` (consistent with all other MicroDCS models — the project does not use Pydantic)
-2. Extract `create_mqtt_client(config, **kwargs)` standalone function in `src/microdcs/mqtt.py` — shared between `MQTTHandler` (subscriber) and `MQTTPublisher` (retained-publish writer) to avoid duplicating connection setup (hostname, port, TLS, SAT-token authentication, protocol version). `MQTTHandler._client()` refactored to call it with handler-specific kwargs (`clean_start`, `max_queued_*`)
-3. Implement `MQTTPublisher` as an `AdditionalTask` subclass in `src/microdcs/mqtt.py` — manages an `aiomqtt.Client` connection with automatic reconnect/backoff. Exposes `publish_retained(topic, payload, ttl)` (QoS 1, retained, MQTT v5 Message Expiry Interval) and `delete_retained(topic)` (zero-byte retained publish). Registered via `MicroDCS.add_additional_task()`
-4. Add `is_processor_instance: bool` and `is_publisher_instance: bool` to `RuntimeConfig` (env vars `APP_IS_PROCESSOR_INSTANCE`, `APP_IS_PUBLISHER_INSTANCE`, both default `True`). `MicroDCS.main()` conditionally creates protocol handler tasks (when `is_processor_instance`) and additional tasks (when `is_publisher_instance`). This supports three deployment modes: single-container (both True), multi-node processor + single publisher (one flag each), and publisher-only (processor False)
-5. Integration tests for retained publish/delete in `tests/test_mqtt_integration.py`. Unit tests for `create_mqtt_client`, `MQTTPublisher`, `StateIndexEntry`, `StateIndex`, and instance-role flags in `MicroDCS.main()`
-6. `src/microdcs/publishers/` package kept as an empty placeholder for Phase 3's `JobOrderPublisher` business logic
+1. ~~Add `StateIndexEntry` and `StateIndex` as `@dataclass(kw_only=True)` classes extending `DataClassMixin` in `src/microdcs/models/machinery_jobs_ext.py` (consistent with all other MicroDCS models — the project does not use Pydantic)~~ — Done: `StateIndexEntry` and `StateIndex` in `machinery_jobs_ext.py`
+2. ~~Extract `create_mqtt_client(config, **kwargs)` standalone function in `src/microdcs/mqtt.py` — shared between `MQTTHandler` (subscriber) and `MQTTPublisher` (retained-publish writer) to avoid duplicating connection setup (hostname, port, TLS, SAT-token authentication, protocol version). `MQTTHandler._client()` refactored to call it with handler-specific kwargs (`clean_start`, `max_queued_*`)~~ — Done: `create_mqtt_client()` standalone function in `mqtt.py`, used by both `MQTTHandler` and `MQTTPublisher`
+3. ~~Implement `MQTTPublisher` as an `AdditionalTask` subclass in `src/microdcs/mqtt.py` — manages an `aiomqtt.Client` connection with automatic reconnect/backoff. Exposes `publish_retained(topic, payload, ttl)` (QoS 1, retained, MQTT v5 Message Expiry Interval) and `delete_retained(topic)` (zero-byte retained publish). Registered via `MicroDCS.add_additional_task()`~~ — Done: `MQTTPublisher` with `publish_retained()`, `delete_retained()`, `_run()` hook, `_connected` event, and reconnect/backoff in `mqtt.py`
+4. ~~Add `is_processor_instance: bool` and `is_publisher_instance: bool` to `RuntimeConfig` (env vars `APP_IS_PROCESSOR_INSTANCE`, `APP_IS_PUBLISHER_INSTANCE`, both default `True`). `MicroDCS.main()` conditionally creates protocol handler tasks (when `is_processor_instance`) and additional tasks (when `is_publisher_instance`). This supports three deployment modes: single-container (both True), multi-node processor + single publisher (one flag each), and publisher-only (processor False)~~ — Done: instance-role flags in `RuntimeConfig`, conditional task creation in `MicroDCS.main()`
+5. ~~Integration tests for retained publish/delete in `tests/test_mqtt_integration.py`. Unit tests for `create_mqtt_client`, `MQTTPublisher`, `StateIndexEntry`, `StateIndex`, and instance-role flags in `MicroDCS.main()`~~ — Done: integration tests in `test_mqtt_integration.py`, unit tests in `test_job_order_publisher.py` and `test_core.py`
+6. ~~`src/microdcs/publishers/` package kept as an empty placeholder for Phase 3's `JobOrderPublisher` business logic~~ — Done: `publishers/__init__.py` with `JobOrderPublisher` export
 
 Acceptance: retained publish and delete work correctly against a real broker in CI. `is_processor_instance=False` skips handler/processor lifecycle. `is_publisher_instance=False` skips additional tasks.
 
@@ -350,34 +354,34 @@ Acceptance: retained publish and delete work correctly against a real broker in 
 
 Scope: `JobOrderPublisher` class, dispatch handlers, `MQTTPublisher` `_run()` hook pattern, and `PublisherConfig`.
 
-1. Refactor `MQTTPublisher` to support subclassing: add `_connected: asyncio.Event` (set on connect, cleared on disconnect) and extract `_run()` hook method called inside the `async with client:` block. Base `_run()` does `await self._shutdown_event.wait()`. MQTT errors from `_run()` propagate to `task()` reconnect logic
-2. Add `PublisherConfig` dataclass to `RuntimeConfig` (env prefix `APP_PUBLISHER_`): `retained_ttl_seconds=172800`, `stream_read_count=50`, `stream_block_ms=500`
-3. Implement `JobOrderPublisher(MQTTPublisher)` in `src/microdcs/publishers/machinery_jobs.py` — overrides `_run()` with XREAD loop and dispatch logic. Uses `JobOrderAndStateDAO` and `JobResponseDAO` for reads, `MQTTPublisher.publish_retained()` and `MQTTPublisher.delete_retained()` for writes. Constructor takes `MQTTConfig`, `PublisherConfig`, `ProcessingConfig`, `redis.ConnectionPool`, `RedisKeySchema`
-4. `_load_cursors` / `_save_cursors`: `HGETALL` / `HSET` on `publisher:stream-cursors`. Cursors saved after each successful XREAD batch — on MQTT disconnect the error propagates from `_run()` to `task()` reconnect, and `_run()` is called again with cursors reloaded from Redis (idempotent replay)
-5. Startup sequence in `_run()`: load cursors → load `active-scopes` → publish initial state-index for all scopes → enter XREAD loop. Initial publish covers the gap during pod restart
-6. XREAD BLOCK loop with per-scope streams + global sentinel stream. New scopes discovered from `_global` stream entries
-7. Dispatch: `Store`/`StoreAndStart`/`Update` → `_publish_job_order`; `ResultUpdate` → `_publish_job_result` (only if clearable); `Clear` → `_delete_job_topics`; all → `_publish_state_index`. State-index excludes `EndState` jobs, checks `has_result` via `JobResponseDAO`, atomically increments `pubseq:{scope}`
-8. `isinstance(task, MQTTPublisher)` check in `MicroDCS.main()` naturally covers `JobOrderPublisher` — no `core.py` changes needed
-9. `app/__main__.py` wiring: `JobOrderPublisher` replaces standalone `MQTTPublisher` registration
-10. Unit tests for all dispatch handlers, cursor load/save, state-index build, `_run()` lifecycle, `_connected` event, and scope discovery in `tests/test_job_order_publisher.py`. Package export tests in `tests/test_package_exports.py`
-11. Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)
+1. ~~Refactor `MQTTPublisher` to support subclassing: add `_connected: asyncio.Event` (set on connect, cleared on disconnect) and extract `_run()` hook method called inside the `async with client:` block. Base `_run()` does `await self._shutdown_event.wait()`. MQTT errors from `_run()` propagate to `task()` reconnect logic~~ — Done: `_run()` hook and `_connected` event in `MQTTPublisher` in `mqtt.py`
+2. ~~Add `PublisherConfig` dataclass to `RuntimeConfig` (env prefix `APP_PUBLISHER_`): `retained_ttl_seconds=172800`, `stream_read_count=50`, `stream_block_ms=500`~~ — Done: `PublisherConfig` in `src/microdcs/__init__.py`
+3. ~~Implement `JobOrderPublisher(MQTTPublisher)` in `src/microdcs/publishers/machinery_jobs.py` — overrides `_run()` with XREAD loop and dispatch logic. Uses `JobOrderAndStateDAO` and `JobResponseDAO` for reads, `MQTTPublisher.publish_retained()` and `MQTTPublisher.delete_retained()` for writes. Constructor takes `MQTTConfig`, `PublisherConfig`, `ProcessingConfig`, `redis.ConnectionPool`, `RedisKeySchema`~~ — Done: full `JobOrderPublisher` implementation with XREAD loop and dispatch
+4. ~~`_load_cursors` / `_save_cursors`: `HGETALL` / `HSET` on `publisher:stream-cursors`. Cursors saved after each successful XREAD batch — on MQTT disconnect the error propagates from `_run()` to `task()` reconnect, and `_run()` is called again with cursors reloaded from Redis (idempotent replay)~~ — Done: cursor persistence with idempotent replay on reconnect
+5. ~~Startup sequence in `_run()`: load cursors → load `active-scopes` → publish initial state-index for all scopes → enter XREAD loop. Initial publish covers the gap during pod restart~~ — Done
+6. ~~XREAD BLOCK loop with per-scope streams + global sentinel stream. New scopes discovered from `_global` stream entries~~ — Done
+7. ~~Dispatch: `Store`/`StoreAndStart`/`Update` → `_publish_job_order`; `ResultUpdate` → `_publish_job_result` (only if clearable); `Clear` → `_delete_job_topics`; all → `_publish_state_index`. State-index excludes `EndState` jobs, checks `has_result` via `JobResponseDAO`, atomically increments `pubseq:{scope}`~~ — Done: all dispatch handlers implemented with state-index exclusion and atomic `INCR`
+8. ~~`isinstance(task, MQTTPublisher)` check in `MicroDCS.main()` naturally covers `JobOrderPublisher` — no `core.py` changes needed~~ — Done
+9. ~~`app/__main__.py` wiring: `JobOrderPublisher` replaces standalone `MQTTPublisher` registration~~ — Done: `JobOrderPublisher` instantiated and registered via `add_additional_task()` in `app/__main__.py`
+10. ~~Unit tests for all dispatch handlers, cursor load/save, state-index build, `_run()` lifecycle, `_connected` event, and scope discovery in `tests/test_job_order_publisher.py`. Package export tests in `tests/test_package_exports.py`~~ — Done
+11. ~~Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)~~ — Done in Phase 4
 
 Acceptance: correct retained topics on startup; correct publishes and deletions per stream entry; sequence number increments monotonically; cursor survives restart without reprocessing. `JobOrderPublisher` inherits reconnect/backoff from `MQTTPublisher`.
 
 ### Phase 4 – Kubernetes deployment and documentation
 
-1. Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)
-2. Write Kubernetes `Deployment` manifest: `replicas: 1`, resource limits
-3. Update `docs/development.md`: add publisher deployment and configuration section covering `JobOrderPublisherConfig`, Kubernetes manifest, and local development setup
+1. ~~Update `docs/concepts.md`, `docs/overall-design.md`, `docs/persistence.md` with publisher component documentation (deferred to Phase 4)~~ — Done: glossary entries in `concepts.md`, deployment modes in `overall-design.md`, key schema and Job Change Stream section in `persistence.md`
+2. ~~Write Kubernetes `Deployment` manifest: `replicas: 1`, resource limits~~ — Done: two-deployment architecture (processor + publisher) in `deploy/k8s.yaml` with instance-role flags and publisher config
+3. ~~Update `docs/development.md`: add publisher deployment and configuration section covering `JobOrderPublisherConfig`, Kubernetes manifest, and local development setup~~ — Done
 
 ### Phase 5 – MES integration
 
-1. Document topic layout and payload schemas for the MES integration team
-2. Implement MES reconnect resync: read state-index, compare seq, fetch `order/{id}` and `result/{id}` for each listed job, reconcile internal state, call `Clear` for terminal jobs whose response has been processed
-3. End-to-end test covering high-cadence scenario (job every few seconds), 30-minute outage, reconnect resync, and confirmed zero response data loss
-4. Update `docs/technical-standards.md`: add "MQTT Retained Messages" subsection under MQTT v5 documenting the retained topic pattern, 48-hour TTL, and zero-byte deletion convention
-5. Update `docs/index.md`: add MES publishing to the "Start Here" reading path and mention retained-topic-based MES reconnect in the overview
-6. Update `docs/information-model-standards.md`: expand the Machinery Job Management section with the list/variable-based integration mode and how retained topics map to `JobOrderList` and `JobOrderResponseList`
+1. ~~Document topic layout and payload schemas for the MES integration team~~ — Done: MES Integration Reference section in this document with topic layout table, state-index payload schema, and reconnect resync protocol
+2. ~~Implement MES reconnect resync: read state-index, compare seq, fetch `order/{id}` and `result/{id}` for each listed job, reconcile internal state, call `Clear` for terminal jobs whose response has been processed~~ — Done: `MESResyncClient` reference implementation in `tests/test_mes_integration.py`
+3. End-to-end test covering high-cadence scenario (job every few seconds), 30-minute outage, reconnect resync, and confirmed zero response data loss — basic integration tests in `test_mes_integration.py`; full 30-minute outage stress test not yet implemented
+4. ~~Update `docs/technical-standards.md`: add "MQTT Retained Messages" subsection under MQTT v5 documenting the retained topic pattern, 48-hour TTL, and zero-byte deletion convention~~ — Done
+5. ~~Update `docs/index.md`: add MES publishing to the "Start Here" reading path and mention retained-topic-based MES reconnect in the overview~~ — Done
+6. ~~Update `docs/information-model-standards.md`: expand the Machinery Job Management section with the list/variable-based integration mode and how retained topics map to `JobOrderList` and `JobOrderResponseList`~~ — Done
 
 ## MES Integration Reference
 
