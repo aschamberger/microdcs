@@ -469,6 +469,17 @@ def outgoing(cloudevent_dataclass: type | UnionType | TypeAliasType) -> Callable
     return decorator
 
 
+def _filter_kwargs_for(func: Callable, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Keep only kwargs that *func* accepts (unless it has ``**kwargs``)."""
+    sig = inspect.signature(func, follow_wrapped=False)
+    if any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    ):
+        return kwargs
+    accepted = set(sig.parameters.keys())
+    return {k: v for k, v in kwargs.items() if k in accepted}
+
+
 def scope_from_subject(func: Callable) -> Callable:
     """Decorator that derives the ``scope`` keyword argument from ``subject``.
 
@@ -491,7 +502,7 @@ def scope_from_subject(func: Callable) -> Callable:
             kwargs["scope"] = subject.split("/")[0]
         else:
             kwargs["scope"] = None
-        return await func(*args, **kwargs)
+        return await func(*args, **_filter_kwargs_for(func, kwargs))
 
     return wrapper
 
@@ -544,7 +555,7 @@ def asset_id_from_subject(
                 kwargs[name] = factory(raw) if factory is not None else raw
             else:
                 kwargs[name] = None
-            return await f(*args, **kwargs)
+            return await f(*args, **_filter_kwargs_for(f, kwargs))
 
         return wrapper
 
@@ -781,7 +792,11 @@ class CloudEventProcessor(ABC):
         for arg in self._event_attributes:
             kwargs[arg.attribute] = get_deep_attr(cloudevent, arg.path)
         # Only pass kwargs that the callback accepts, unless it has **kwargs.
-        sig = inspect.signature(callback)
+        # Use follow_wrapped=False so we see the *wrapper's* signature when
+        # decorators like @scope_from_subject wrap the real handler with
+        # functools.wraps.  The wrapper needs to receive all kwargs (it has
+        # **kwargs) so it can consume e.g. ``subject`` before forwarding.
+        sig = inspect.signature(callback, follow_wrapped=False)
         has_var_keyword = any(
             p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
         )

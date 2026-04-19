@@ -9,7 +9,7 @@ from microdcs import MessagePackConfig
 from microdcs.common import CloudEvent
 from microdcs.models.greetings import Hello
 from microdcs.msgpack import MessagePackRpcClient
-from tests.conftest import integration, msgpack_server_available
+from conftest import integration, msgpack_server_available
 
 MSGPACK_CONFIG = MessagePackConfig()
 
