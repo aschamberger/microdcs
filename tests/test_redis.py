@@ -1,4 +1,5 @@
 import hashlib
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,11 @@ from microdcs.models.machinery_jobs import (
     LocalizedText,
 )
 from microdcs.models.machinery_jobs_ext import ISA95WorkMasterDataTypeExt
+from microdcs.models.sfc_recipe_ext import (
+    SfcActionExecution,
+    SfcActionState,
+    SfcExecutionState,
+)
 from microdcs.redis import (
     CloudEventDedupeDAO,
     CounterDAO,
@@ -24,6 +30,7 @@ from microdcs.redis import (
     PersonnelListDAO,
     PhysicalAssetListDAO,
     RedisKeySchema,
+    SfcExecutionDAO,
     TransactionDedupeDAO,
     WorkMasterDAO,
     _escape_tag,
@@ -241,6 +248,7 @@ def _make_redis_mock() -> AsyncMock:
     pipe.delete = MagicMock()
     pipe.xadd = MagicMock()
     pipe.sadd = MagicMock()
+    pipe.srem = MagicMock()
     mock.pipeline = MagicMock(return_value=pipe)
     return mock
 
@@ -1162,6 +1170,232 @@ class TestJobAcceptanceConfigDAO:
         self.redis.get = AsyncMock(return_value=None)
         result = await self.dao.retrieve(scope="s1")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# SfcExecutionDAO
+# ---------------------------------------------------------------------------
+
+
+class TestSfcExecutionDAO:
+    def setup_method(self) -> None:
+        self.redis = _make_redis_mock()
+        self.schema = _make_schema()
+        self.dao = SfcExecutionDAO(self.redis, self.schema)
+
+    def _make_state(self, **overrides: Any) -> SfcExecutionState:
+        defaults: dict[str, Any] = dict(
+            job_id="job-1",
+            scope="scope-1",
+            work_master_id="wm-1",
+            current_step="step_init",
+            active_steps=["step_init"],
+            actions={
+                "action_a": SfcActionExecution(name="action_a"),
+                "action_b": SfcActionExecution(
+                    name="action_b",
+                    state=SfcActionState.DISPATCHED,
+                    correlation_id="job-1:action_b:1",
+                    attempt=1,
+                ),
+            },
+        )
+        defaults.update(overrides)
+        return SfcExecutionState(**defaults)
+
+    @pytest.mark.asyncio
+    async def test_save_creates_json_and_adds_to_active_set(self):
+        state = self._make_state()
+        await self.dao.save(state)
+
+        pipe = self.redis.pipeline.return_value
+        pipe.json().set.assert_called_once()
+        call_args = pipe.json().set.call_args
+        assert call_args[0][0] == self.schema.sfc_execution_key("job-1")
+        assert call_args[0][1] == "$"
+        data = call_args[0][2]
+        assert data["job_id"] == "job-1"
+        assert data["current_step"] == "step_init"
+        pipe.sadd.assert_called_once_with(self.schema.sfc_active_jobs(), "job-1")
+
+    @pytest.mark.asyncio
+    async def test_save_completed_does_not_add_to_active_set(self):
+        state = self._make_state(completed=True)
+        await self.dao.save(state)
+
+        pipe = self.redis.pipeline.return_value
+        pipe.sadd.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_retrieve_returns_state(self):
+        from microdcs.models.sfc_recipe_ext import SfcActionState
+
+        stored = {
+            "job_id": "job-1",
+            "scope": "scope-1",
+            "work_master_id": "wm-1",
+            "current_step": "step_init",
+            "active_steps": ["step_init"],
+            "actions": {
+                "action_a": {
+                    "name": "action_a",
+                    "state": "pending",
+                    "correlation_id": None,
+                    "attempt": 0,
+                    "result": None,
+                    "error": None,
+                }
+            },
+            "completed": False,
+            "failed": False,
+            "error": None,
+        }
+        self.redis.json().get.return_value = [stored]
+
+        result = await self.dao.retrieve("job-1")
+        assert result is not None
+        assert result.job_id == "job-1"
+        assert result.current_step == "step_init"
+        assert result.actions["action_a"].state == SfcActionState.PENDING
+
+    @pytest.mark.asyncio
+    async def test_retrieve_not_found(self):
+        self.redis.json().get.return_value = None
+        result = await self.dao.retrieve("missing")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_key_and_active_set_member(self):
+        await self.dao.delete("job-1")
+
+        pipe = self.redis.pipeline.return_value
+        pipe.delete.assert_called_once_with(self.schema.sfc_execution_key("job-1"))
+        pipe.srem.assert_called_once_with(self.schema.sfc_active_jobs(), "job-1")
+
+    @pytest.mark.asyncio
+    async def test_list_active_jobs(self):
+        self.redis.smembers.return_value = {b"job-1", b"job-2"}
+        result = await self.dao.list_active_jobs()
+        assert result == {"job-1", "job-2"}
+
+    @pytest.mark.asyncio
+    async def test_cas_action_state_calls_evalsha(self):
+        from microdcs.models.sfc_recipe_ext import SfcActionState
+
+        self.redis.script_load = AsyncMock(return_value="sha123")
+        self.redis.evalsha = AsyncMock(return_value=b"OK")
+
+        result = await self.dao.cas_action_state(
+            job_id="job-1",
+            scope="scope-1",
+            action_name="action_a",
+            expected_state=SfcActionState.PENDING,
+            new_state=SfcActionState.DISPATCHED,
+            correlation_id="job-1:action_a:1",
+            attempt=1,
+        )
+        assert result == "OK"
+        self.redis.evalsha.assert_awaited_once()
+        args = self.redis.evalsha.call_args[0]
+        assert args[0] == "sha123"  # script SHA
+        assert args[1] == 2  # number of keys
+        assert args[3] == ""  # stream key (no follow-up)
+        assert args[4] == "action_a"
+        assert args[5] == "pending"
+        assert args[6] == "dispatched"
+
+    @pytest.mark.asyncio
+    async def test_cas_action_state_already_handled(self):
+        self.redis.script_load = AsyncMock(return_value="sha123")
+        self.redis.evalsha = AsyncMock(return_value=b"ALREADY_HANDLED")
+
+        from microdcs.models.sfc_recipe_ext import SfcActionState
+
+        result = await self.dao.cas_action_state(
+            job_id="job-1",
+            scope="scope-1",
+            action_name="action_a",
+            expected_state=SfcActionState.PENDING,
+            new_state=SfcActionState.DISPATCHED,
+        )
+        assert result == "ALREADY_HANDLED"
+
+    @pytest.mark.asyncio
+    async def test_cas_advance_step_calls_evalsha(self):
+        self.redis.script_load = AsyncMock(return_value="sha456")
+        self.redis.evalsha = AsyncMock(return_value=b"OK")
+
+        result = await self.dao.cas_advance_step(
+            job_id="job-1",
+            scope="scope-1",
+            expected_step="step_init",
+            new_step="step_2",
+            new_active_steps=["step_2"],
+        )
+        assert result == "OK"
+
+    @pytest.mark.asyncio
+    async def test_cas_finish_calls_evalsha(self):
+        self.redis.script_load = AsyncMock(return_value="sha789")
+        self.redis.evalsha = AsyncMock(return_value=b"OK")
+
+        result = await self.dao.cas_finish("job-1", "completed")
+        assert result == "OK"
+        args = self.redis.evalsha.call_args[0]
+        assert args[4] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_enqueue_work(self):
+        from microdcs.models.sfc_recipe_ext import SfcWorkAction
+
+        self.redis.xadd = AsyncMock(return_value=b"1234567890-0")
+        result = await self.dao.enqueue_work(
+            "scope-1", "job-1", SfcWorkAction.START_RECIPE
+        )
+        assert result == "1234567890-0"
+        self.redis.xadd.assert_awaited_once()
+        call_args = self.redis.xadd.call_args
+        assert call_args[0][0] == self.schema.sfc_work_stream("scope-1")
+        fields = call_args[0][1]
+        assert fields["job_id"] == "job-1"
+        assert fields["action"] == "start_recipe"
+        assert fields["scope"] == "scope-1"
+
+    @pytest.mark.asyncio
+    async def test_ensure_consumer_group_creates_group(self):
+        self.redis.xgroup_create = AsyncMock()
+        await self.dao.ensure_consumer_group("scope-1", "sfc-engine")
+        self.redis.xgroup_create.assert_awaited_once_with(
+            self.schema.sfc_work_stream("scope-1"),
+            "sfc-engine",
+            id="0",
+            mkstream=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_ensure_consumer_group_ignores_busygroup(self):
+        self.redis.xgroup_create = AsyncMock(
+            side_effect=redis.ResponseError(
+                "BUSYGROUP Consumer Group name already exists"
+            )
+        )
+        # Should not raise
+        await self.dao.ensure_consumer_group("scope-1", "sfc-engine")
+
+    @pytest.mark.asyncio
+    async def test_ensure_consumer_group_raises_other_errors(self):
+        self.redis.xgroup_create = AsyncMock(
+            side_effect=redis.ResponseError("ERR something else")
+        )
+        with pytest.raises(redis.ResponseError):
+            await self.dao.ensure_consumer_group("scope-1", "sfc-engine")
+
+
+class TestJobAcceptanceConfigDelete:
+    def setup_method(self) -> None:
+        self.redis = _make_redis_mock()
+        self.schema = _make_schema()
+        self.dao = JobAcceptanceConfigDAO(self.redis, self.schema)
 
     @pytest.mark.asyncio
     async def test_delete(self):

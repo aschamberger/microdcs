@@ -307,6 +307,8 @@ A hand-written `sfc_recipe_ext.py` provides the `SFC_RECIPE_DATASCHEMA` constant
 
 ## SFC Engine Architecture
 
+> **Status**: Implemented. `SfcEngine` in `src/microdcs/sfc_engine.py`, `SfcExecutionDAO` in `src/microdcs/redis.py`, 25 engine tests in `tests/test_sfc_engine.py`, 14 DAO tests in `tests/test_redis.py`.
+
 ### Role in the System
 
 The SFC engine is **not** a `CloudEventProcessor`. It is a separate orchestration layer that sits between the northbound and southbound processors and interacts with them via direct Python method calls — not CloudEvent round-trips. This separates three distinct concerns:
@@ -521,26 +523,26 @@ Re-delivery of `push_command` actions is the fundamental recovery mechanism. Aft
 
 **Goal**: Implement the multi-instance sequential execution engine as an `AdditionalTask`.
 
-1. Create `src/microdcs/sfc_engine.py` with `SfcEngine(AdditionalTask)`
-2. Accept NB processor and SB processor references via constructor injection
-3. Implement SFC work stream setup: consumer group creation (`XGROUP CREATE ... MKSTREAM`), `XREADGROUP` loop, `XAUTOCLAIM` for orphaned entries
-4. Implement recipe loading: Job Order → Work Master ID → Redis → recipe deserialization dispatched by `dataschema`
-5. Implement `Run` trigger on the NB processor's `HierarchicalGraphMachine` via direct call
-6. Implement linear step execution (no branching): step entry → action dispatch → wait for completion → transition evaluation → next step
-7. Implement `push_command` action pattern: atomic CAS `pending → dispatched` + call SB processor's `callback_outgoing()` directly + `correlation_id` for idempotent re-delivery
-8. Implement `pull_event` action pattern: CAS to `waiting` state + SB processor incoming event delivery + CAS `waiting → completed`
-9. Implement atomic CAS via Lua script: compare-and-swap on `sfc:execution:{job_id}` with optional `XADD` of follow-up work items
-10. Implement `SfcExecutionDAO` with Redis JSON persistence for execution state (current step, per-action states, branch states)
-11. Add SFC work stream and execution state keys to `RedisKeySchema`
-12. Implement recovery scan on startup: find `dispatched` actions idle beyond threshold, re-dispatch via CAS
-13. Implement job completion: `Ended_Completed` state transition on NB processor + `ISA95JobResponseDataType`
-14. Implement job failure: timeout → `Ended_Aborted`, equipment error → `Aborted` via NB processor
-15. Add unit tests with mocked processors, Redis, and multi-instance race scenarios
-16. Update this document's "SFC Engine Architecture" section with final class design, method signatures, and persistence schema
-17. Update `docs/concepts.md`: add a new "SFC Engine" section under Framework Concepts explaining the three-layer architecture (NB protocol → SFC orchestration → SB protocol), the `AdditionalTask` base, and multi-instance coordination; add glossary entries for **SFC engine**, **AdditionalTask**, **Three-layer architecture**, **SFC work stream**, **Atomic CAS**, **Idempotency contract**
-18. Update `docs/overall-design.md`: add "Three-Layer Architecture" subsection describing the NB protocol / SFC orchestration / SB protocol layer separation and multi-instance model
-19. Update `docs/persistence.md`: expand key schema table with SFC execution state keys and work stream; add "SFC Execution State" section documenting `SfcExecutionDAO`, CAS Lua scripts, and stream consumer group; add "SFC Work Stream" section with stream schema and consumer group semantics
-20. Update `docs/your-first-processor.md`: add note in overview that processors are stateless protocol adapters and point to SFC Engine docs for multi-step orchestration
+1. ~~Create `src/microdcs/sfc_engine.py` with `SfcEngine(AdditionalTask)`~~ — Done: `SfcEngine` in `src/microdcs/sfc_engine.py`
+2. ~~Accept NB processor and SB processor references via constructor injection~~ — Done: `nb_processor` + `sb_processors: Mapping[str, CloudEventProcessor]`
+3. ~~Implement SFC work stream setup: consumer group creation (`XGROUP CREATE ... MKSTREAM`), `XREADGROUP` loop, `XAUTOCLAIM` for orphaned entries~~ — Done: `_run_loop()` + `_read_work_items()` + `_autoclaim_orphaned()`
+4. ~~Implement recipe loading: Job Order → Work Master ID → Redis → recipe deserialization dispatched by `dataschema`~~ — Done: `_handle_start_recipe()` loads job order → resolves work master → checks `dataschema` → deserializes `SfcRecipe`
+5. ~~Implement `Run` trigger on the NB processor's `HierarchicalGraphMachine` via direct call~~ — Done: `_trigger_job_transition()` adds model to state machine, triggers, persists, removes model
+6. ~~Implement linear step execution (no branching): step entry → action dispatch → wait for completion → transition evaluation → next step~~ — Done: `_handle_dispatch_action()` + `_check_step_completion()` + `_evaluate_transitions()`
+7. ~~Implement `push_command` action pattern: atomic CAS `pending → dispatched` + call SB processor's `callback_outgoing()` directly + `correlation_id` for idempotent re-delivery~~ — Done: `_dispatch_push_command()`
+8. ~~Implement `pull_event` action pattern: CAS to `waiting` state + SB processor incoming event delivery + CAS `waiting → completed`~~ — Done: `_dispatch_pull_event()` + `complete_action()`
+9. ~~Implement atomic CAS via Lua script: compare-and-swap on `sfc:execution:{job_id}` with optional `XADD` of follow-up work items~~ — Done: 3 Lua scripts in `SfcExecutionDAO` (`cas_action_state`, `cas_advance_step`, `cas_finish`)
+10. ~~Implement `SfcExecutionDAO` with Redis JSON persistence for execution state (current step, per-action states, branch states)~~ — Done: `SfcExecutionDAO` in `src/microdcs/redis.py`
+11. ~~Add SFC work stream and execution state keys to `RedisKeySchema`~~ — Done: `sfc_work_stream(scope)`, `sfc_execution_key(job_id)`, `sfc_active_jobs()`
+12. ~~Implement recovery scan on startup: find `dispatched` actions idle beyond threshold, re-dispatch via CAS~~ — Done: `_recovery_scan()` enqueues `resume` for all active incomplete jobs
+13. ~~Implement job completion: `Ended_Completed` state transition on NB processor + `ISA95JobResponseDataType`~~ — Done: `_complete_job()`
+14. ~~Implement job failure: timeout → `Ended_Aborted`, equipment error → `Aborted` via NB processor~~ — Done: `_fail_job()`
+15. ~~Add unit tests with mocked processors, Redis, and multi-instance race scenarios~~ — Done: 25 tests in `tests/test_sfc_engine.py` + 14 tests in `tests/test_redis.py` for `SfcExecutionDAO`
+16. ~~Update this document's "SFC Engine Architecture" section with final class design, method signatures, and persistence schema~~ — Done
+17. ~~Update `docs/concepts.md`: add a new "SFC Engine" section under Framework Concepts explaining the three-layer architecture (NB protocol → SFC orchestration → SB protocol), the `AdditionalTask` base, and multi-instance coordination; add glossary entries for **SFC engine**, **AdditionalTask**, **Three-layer architecture**, **SFC work stream**, **Atomic CAS**, **Idempotency contract**~~ — Done
+18. ~~Update `docs/overall-design.md`: add "Three-Layer Architecture" subsection describing the NB protocol / SFC orchestration / SB protocol layer separation and multi-instance model~~ — Done
+19. ~~Update `docs/persistence.md`: expand key schema table with SFC execution state keys and work stream; add "SFC Execution State" section documenting `SfcExecutionDAO`, CAS Lua scripts, and stream consumer group; add "SFC Work Stream" section with stream schema and consumer group semantics~~ — Done
+20. ~~Update `docs/your-first-processor.md`: add note in overview that processors are stateless protocol adapters and point to SFC Engine docs for multi-step orchestration~~ — Done
 
 ### Phase 5: Branching
 

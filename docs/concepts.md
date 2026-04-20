@@ -257,12 +257,41 @@ All model dataclasses inherit from `DataClassMixin`, which provides:
 
 Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclasses`. Each generated class has an inner `Config(DataClassConfig)` with `cloudevent_type` and `cloudevent_dataschema` attributes that the framework uses for routing and envelope construction.
 
+### SFC Engine
+
+The **SFC engine** (`SfcEngine`) is the recipe execution layer. It is **not** a `CloudEventProcessor` — it is an `AdditionalTask` that orchestrates processors without touching serialization, topic structures, or transport concerns. This enforces a clean **three-layer architecture**:
+
+| Layer | Responsibility | Abstraction |
+|---|---|---|
+| **NB protocol** | OPC UA Job Management state machine, CloudEvent serialization, MQTT topics | `MachineryJobsCloudEventProcessor` |
+| **SFC orchestration** | Recipe interpretation, step sequencing, action dispatch, multi-instance coordination | `SfcEngine` (`AdditionalTask`) |
+| **SB protocol** | Equipment-specific CloudEvent shaping, transport binding | Equipment `CloudEventProcessor`(s) |
+
+The engine holds references to the NB processor (to trigger `Run` / state transitions on the OPC UA job state machine) and the SB processor(s) (to call `callback_outgoing()` for `push_command` actions and receive results for `pull_event` actions). All interaction is via direct Python method calls within the same process.
+
+#### AdditionalTask
+
+`AdditionalTask` is a simple ABC with a `_shutdown_event: asyncio.Event` and an abstract `task()` method. Tasks registered via `MicroDCS.add_additional_task()` run as long-lived async tasks within the `SystemEventTaskGroup`. The SFC engine uses `_shutdown_event` to exit its main loop gracefully on SIGINT/SIGTERM.
+
+#### Multi-Instance Coordination
+
+The SFC engine runs on **every** MicroDCS instance (not gated by a single-instance flag like the publisher). Multiple instances coordinate through two Redis primitives:
+
+- **SFC work stream** (`sfc:work:{scope}`): A Redis Stream with consumer group `sfc-engine`. Work items (`start_recipe`, `dispatch_action:{name}`, `resume`) are distributed across instances via `XREADGROUP`. `XAUTOCLAIM` with a configurable idle timeout recovers entries from dead consumers.
+- **Atomic CAS**: Every state mutation (action dispatch, completion, step advancement) uses a Redis Lua script that reads the current state, verifies it matches an expected value, and writes the new state — all atomically. If two instances race, only one CAS succeeds; the loser discards silently.
+
+Equipment must handle duplicate `push_command` deliveries idempotently — this is the **idempotency contract** that makes multi-instance recovery safe. The engine includes a `correlation_id` on every outgoing command for equipment-side deduplication.
+
+See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the full design, execution flow, and event flow examples.
+
 ## Glossary
 
 | Term | Definition |
 |---|---|
 | **Action association** | SFC action bound to a step with a qualifier and interaction pattern (`push_command` or `pull_event`). See `SfcActionAssociation`. |
 | **Action qualifier** | IEC 61131-3 qualifier (`N`, `P`, `P0`, `P1`, `S`, `R`, `L`, `D`) controlling when and how an action executes relative to its step. See `SfcActionQualifier`. |
+| **AdditionalTask** | ABC with a `_shutdown_event` and abstract `task()` method. Long-lived async tasks (SFC engine, publishers) subclass this and run inside the `SystemEventTaskGroup`. Registered via `MicroDCS.add_additional_task()`. |
+| **Atomic CAS** | Compare-and-swap operation executed as a Redis Lua script. Reads current state, verifies it matches an expected value, writes the new state, and optionally enqueues a follow-up work item — all atomically. Used by the SFC engine for lock-free multi-instance coordination. |
 | **Binding direction** | Whether a processor faces northbound (executes work) or southbound (orchestrates). Determines subscribe/publish intents. |
 | **CloudEvent** | A CNCF standard envelope for event data. All MicroDCS messages use this format. |
 | **CloudEventProcessor** | Base class for application logic. Handles a single domain's incoming and outgoing events. |
@@ -274,6 +303,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Extended Work Master** | `ISA95WorkMasterDataTypeExt` — extends the OPC UA Work Master with opaque `data` and `dataschema` fields for carrying recipe content. |
 | **Hidden fields** | Dataclass fields prefixed with `_`. Excluded from serialization, transported via custom metadata. |
 | **ISA-95** | International standard for manufacturing operations integration. Defines job orders, responses, and the automation pyramid. |
+| **Idempotency contract** | The guarantee that equipment must handle duplicate `push_command` deliveries without side effects. Each command carries a `correlation_id` for deduplication. Required for safe multi-instance SFC engine recovery via `XAUTOCLAIM`. |
 | **Job Change Stream** | A Redis stream (`joborder:changes:{scope}`) written atomically by `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()` on every state change. Consumed by the Job Order Publisher to drive retained MQTT topic updates. A global sentinel stream (`joborder:changes:_global`) mirrors every entry for new-scope discovery. |
 | **Message intent** | Category of a message: `DATA`, `EVENT`, `COMMAND`, or `META`. Maps to MQTT topic segments. |
 | **MessagePack-RPC** | Binary TCP-based RPC transport. Used in sidecar deployments to decouple HTTP/API containers from the MicroDCS event loop. |
@@ -288,7 +318,9 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Publisher** | An `MQTTPublisher` subclass that reads Redis streams and maintains retained MQTT topics. Write-only — does not process incoming CloudEvents. Registered as an additional task and controlled by `APP_IS_PUBLISHER_INSTANCE`. |
 | **Response chain** | The mechanism by which request dataclasses create typed response objects via `.response()`. |
 | **Selection branch** | SFC OR-divergence: one path taken based on transition priorities/conditions. See `SfcBranch` with `SfcBranchType.selection`. |
+| **SFC engine** | `SfcEngine(AdditionalTask)` — the recipe execution orchestration layer. Interprets SFC recipes, dispatches actions to SB processors, coordinates multi-instance execution via Redis consumer groups and atomic CAS. Not a processor — interacts with processors via direct method calls. |
 | **SFC recipe** | `SfcRecipe` dataclass — IEC 61131-3 SFC recipe containing steps, transitions, action associations, and optional branches. Stored as JSON in the Work Master's `data` field with `dataschema` set to `SFC_RECIPE_DATASCHEMA`. |
+| **SFC work stream** | Redis Stream (`sfc:work:{scope}`) with consumer group `sfc-engine`. Distributes work items (`start_recipe`, `dispatch_action:{name}`, `resume`) across SFC engine instances via `XREADGROUP`. `XAUTOCLAIM` recovers entries from dead consumers. |
 | **Simultaneous branch** | SFC AND-divergence: all paths execute in parallel and must complete before convergence. See `SfcBranch` with `SfcBranchType.simultaneous`. |
 | **Retained Topic** | An MQTT v5 topic published with the retained flag set. The broker stores the last message and delivers it immediately to new subscribers. MicroDCS uses retained topics (with a 48-hour Message Expiry Interval) to expose current job order and result state to the MES so that reconnecting clients receive the full picture without replaying events. |
 | **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |
@@ -297,6 +329,7 @@ Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclas
 | **Step** | SFC named state. Maps to a `transitions` library state. Each step can have associated actions. See `SfcStep`. |
 | **State Index** | A retained MQTT topic (`{prefix}/{scope}/state-index`) published by the Job Order Publisher on every job state transition. Contains the sequence number, scope, timestamp, and a compact list of all active jobs with their current state and `has_result` flag. Used by the MES to detect gaps after a connectivity outage and to know which per-job retained topics to fetch. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
+| **Three-layer architecture** | The separation of NB protocol handling → SFC orchestration → SB protocol handling. Processors handle serialization and transport; the SFC engine handles recipe logic; neither knows about the other's concerns. |
 | **Transition** | SFC directed edge between steps/branches. Carries a condition identifier resolved at runtime. See `SfcTransition`. |
 | **Work Master** | ISA-95 template/recipe referenced by Job Orders. Stored in Redis via `WorkMasterDAO`. The base type is `ISA95WorkMasterDataType`; the extended type `ISA95WorkMasterDataTypeExt` adds opaque recipe content. |
 | **`push_command`** | SFC interaction pattern where the engine sends an outgoing CloudEvent command to equipment. |

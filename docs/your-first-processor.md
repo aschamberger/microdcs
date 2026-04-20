@@ -12,6 +12,8 @@ This tutorial walks through building a CloudEvent processor from scratch, coveri
 
 A **processor** is a class that handles CloudEvents for a specific domain. It receives incoming events, deserializes them into typed dataclasses, runs your business logic, and returns response dataclasses that the framework wraps back into outgoing CloudEvents. Processors are protocol-agnostic — the same processor works over MQTT and MessagePack-RPC.
 
+Processors are **stateless protocol adapters** — they handle serialization, routing, and single request-response exchanges. For multi-step recipe orchestration (e.g., executing an SFC recipe across multiple equipment actions), see the [SFC Engine](sfc_engine.md), which coordinates processors via direct method calls without adding orchestration logic to the processors themselves.
+
 ## Step 1: Define a JSON Schema
 
 Create a schema file in `schemas/`. Here is a minimal example with a `Ping` request and a `Pong` response:

@@ -2,7 +2,9 @@ import functools
 import hashlib
 import logging
 import re
+from dataclasses import asdict
 from datetime import UTC, datetime
+from enum import StrEnum
 
 import redis.asyncio as redis
 from redis.commands.search.field import TagField
@@ -15,6 +17,12 @@ from microdcs.models.machinery_jobs import (
     ISA95StateDataType,
 )
 from microdcs.models.machinery_jobs_ext import ISA95WorkMasterDataTypeExt
+from microdcs.models.sfc_recipe_ext import (
+    SfcActionExecution,
+    SfcActionState,
+    SfcExecutionState,
+    SfcWorkAction,
+)
 
 logger = logging.getLogger("redis")
 
@@ -250,6 +258,33 @@ class RedisKeySchema:
         All scopes that have had at least one job stored.
         """
         return "active-scopes"
+
+    @prefixed_key
+    def sfc_work_stream(self, scope: str) -> str:
+        """
+        sfc:work:[scope]
+        Redis type: stream
+        Work items for the SFC engine consumer group.
+        """
+        return f"sfc:work:{scope}"
+
+    @prefixed_key
+    def sfc_execution_key(self, job_id: str) -> str:
+        """
+        sfc:execution:[job_id]
+        Redis type: json
+        SFC execution state for a running job.
+        """
+        return f"sfc:execution:{job_id}"
+
+    @prefixed_key
+    def sfc_active_jobs(self) -> str:
+        """
+        sfc:active-jobs
+        Redis type: set
+        All job IDs with active SFC execution state.
+        """
+        return "sfc:active-jobs"
 
 
 class CloudEventDedupeDAO:
@@ -1003,3 +1038,355 @@ class JobAcceptanceConfigDAO:
     async def delete(self, scope: str) -> None:
         key = self.key_schema.jobacceptance_key(scope)
         await self.redis.delete(key)
+
+
+class SfcExecutionDAO:
+    """Data Access Object for SFC engine execution state.
+
+    Stores per-job execution state as Redis JSON documents and provides
+    atomic compare-and-swap (CAS) operations via Lua scripts for
+    multi-instance coordination.
+    """
+
+    # Lua script: atomic CAS on action state within sfc:execution:{job_id}.
+    # KEYS[1] = sfc:execution:{job_id}
+    # KEYS[2] = sfc:work:{scope} (work stream, may be empty string if no follow-up)
+    # ARGV[1] = action name
+    # ARGV[2] = expected current state
+    # ARGV[3] = new state
+    # ARGV[4] = correlation_id (or empty string)
+    # ARGV[5] = attempt number (or empty string)
+    # ARGV[6] = JSON-encoded follow-up stream fields (or empty string)
+    # Returns: "OK", "ALREADY_HANDLED", or "NOT_FOUND"
+    _CAS_ACTION_STATE_LUA = """
+local key = KEYS[1]
+local stream_key = KEYS[2]
+local action_name = ARGV[1]
+local expected_state = ARGV[2]
+local new_state = ARGV[3]
+local correlation_id = ARGV[4]
+local attempt = ARGV[5]
+local stream_fields = ARGV[6]
+
+local path = '$.actions.' .. action_name .. '.state'
+local current = redis.call('JSON.GET', key, path)
+if current == nil or current == '' then
+    return 'NOT_FOUND'
+end
+
+-- JSON.GET returns a JSON array like '["pending"]'
+local current_state = string.match(current, '"([^"]+)"')
+if current_state ~= expected_state then
+    return 'ALREADY_HANDLED'
+end
+
+redis.call('JSON.SET', key, path, '"' .. new_state .. '"')
+if correlation_id ~= '' then
+    redis.call('JSON.SET', key, '$.actions.' .. action_name .. '.correlation_id', '"' .. correlation_id .. '"')
+end
+if attempt ~= '' then
+    redis.call('JSON.SET', key, '$.actions.' .. action_name .. '.attempt', tonumber(attempt))
+end
+
+if stream_fields ~= '' and stream_key ~= '' then
+    redis.call('XADD', stream_key, 'MAXLEN', '~', '5000', '*', unpack(cjson.decode(stream_fields)))
+end
+
+return 'OK'
+"""
+
+    # Lua script: atomic step advancement.
+    # KEYS[1] = sfc:execution:{job_id}
+    # KEYS[2] = sfc:work:{scope} (work stream, may be empty string if no follow-up)
+    # ARGV[1] = expected current step
+    # ARGV[2] = new current step
+    # ARGV[3] = JSON-encoded new active_steps list
+    # ARGV[4] = JSON-encoded follow-up stream fields (or empty string)
+    # Returns: "OK", "ALREADY_HANDLED", or "NOT_FOUND"
+    _CAS_ADVANCE_STEP_LUA = """
+local key = KEYS[1]
+local stream_key = KEYS[2]
+local expected_step = ARGV[1]
+local new_step = ARGV[2]
+local new_active_steps = ARGV[3]
+local stream_fields = ARGV[4]
+
+local current = redis.call('JSON.GET', key, '$.current_step')
+if current == nil or current == '' then
+    return 'NOT_FOUND'
+end
+
+local current_step = string.match(current, '"([^"]+)"')
+if current_step ~= expected_step then
+    return 'ALREADY_HANDLED'
+end
+
+redis.call('JSON.SET', key, '$.current_step', '"' .. new_step .. '"')
+redis.call('JSON.SET', key, '$.active_steps', new_active_steps)
+
+if stream_fields ~= '' and stream_key ~= '' then
+    redis.call('XADD', stream_key, 'MAXLEN', '~', '5000', '*', unpack(cjson.decode(stream_fields)))
+end
+
+return 'OK'
+"""
+
+    # Lua script: mark execution as completed/failed.
+    # KEYS[1] = sfc:execution:{job_id}
+    # KEYS[2] = sfc:active-jobs
+    # ARGV[1] = "completed" or "failed"
+    # ARGV[2] = error message (or empty string)
+    # Returns: "OK" or "NOT_FOUND"
+    _CAS_FINISH_LUA = """
+local key = KEYS[1]
+local active_jobs_key = KEYS[2]
+local finish_type = ARGV[1]
+local error_msg = ARGV[2]
+
+local exists = redis.call('JSON.TYPE', key, '$')
+if exists == nil or exists == '' then
+    return 'NOT_FOUND'
+end
+
+if finish_type == 'completed' then
+    redis.call('JSON.SET', key, '$.completed', 'true')
+elseif finish_type == 'failed' then
+    redis.call('JSON.SET', key, '$.failed', 'true')
+    if error_msg ~= '' then
+        redis.call('JSON.SET', key, '$.error', '"' .. error_msg .. '"')
+    end
+end
+
+local job_id_raw = redis.call('JSON.GET', key, '$.job_id')
+if job_id_raw and job_id_raw ~= '' then
+    local job_id = string.match(job_id_raw, '"([^"]+)"')
+    if job_id then
+        redis.call('SREM', active_jobs_key, job_id)
+    end
+end
+
+return 'OK'
+"""
+
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        key_schema: RedisKeySchema,
+    ):
+        self.redis = redis_client
+        self.key_schema = key_schema
+        self._cas_action_state_sha: str | None = None
+        self._cas_advance_step_sha: str | None = None
+        self._cas_finish_sha: str | None = None
+
+    async def _ensure_scripts(self) -> None:
+        if self._cas_action_state_sha is None:
+            self._cas_action_state_sha = await self.redis.script_load(
+                self._CAS_ACTION_STATE_LUA
+            )
+        if self._cas_advance_step_sha is None:
+            self._cas_advance_step_sha = await self.redis.script_load(
+                self._CAS_ADVANCE_STEP_LUA
+            )
+        if self._cas_finish_sha is None:
+            self._cas_finish_sha = await self.redis.script_load(self._CAS_FINISH_LUA)
+
+    async def save(self, state: SfcExecutionState) -> None:
+        """Create or overwrite the execution state for a job."""
+        key = self.key_schema.sfc_execution_key(state.job_id)
+        active_jobs_key = self.key_schema.sfc_active_jobs()
+        data = asdict(state)
+        # Convert enum values to strings for JSON storage
+        for action_data in data.get("actions", {}).values():
+            if isinstance(action_data.get("state"), StrEnum):
+                action_data["state"] = action_data["state"].value
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.json().set(key, "$", data)
+            if not state.completed and not state.failed:
+                pipe.sadd(active_jobs_key, state.job_id)  # type: ignore[reportGeneralTypeIssues]
+            await pipe.execute()
+
+    async def retrieve(self, job_id: str) -> SfcExecutionState | None:
+        """Load execution state for a job from Redis."""
+        key = self.key_schema.sfc_execution_key(job_id)
+        data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+        if not data:
+            return None
+        if isinstance(data, list):
+            data = data[0]
+        # Reconstruct dataclass from dict
+        actions = {}
+        for name, action_data in data.get("actions", {}).items():
+            actions[name] = SfcActionExecution(
+                name=action_data["name"],
+                state=SfcActionState(action_data["state"]),
+                correlation_id=action_data.get("correlation_id"),
+                attempt=action_data.get("attempt", 0),
+                result=action_data.get("result"),
+                error=action_data.get("error"),
+            )
+        return SfcExecutionState(
+            job_id=data["job_id"],
+            scope=data["scope"],
+            work_master_id=data["work_master_id"],
+            current_step=data["current_step"],
+            active_steps=data.get("active_steps", []),
+            actions=actions,
+            completed=data.get("completed", False),
+            failed=data.get("failed", False),
+            error=data.get("error"),
+        )
+
+    async def delete(self, job_id: str) -> None:
+        """Remove execution state for a job."""
+        key = self.key_schema.sfc_execution_key(job_id)
+        active_jobs_key = self.key_schema.sfc_active_jobs()
+        async with self.redis.pipeline(transaction=True) as pipe:
+            pipe.delete(key)
+            pipe.srem(active_jobs_key, job_id)  # type: ignore[reportGeneralTypeIssues]
+            await pipe.execute()
+
+    async def list_active_jobs(self) -> set[str]:
+        """Return all job IDs with active SFC execution state."""
+        key = self.key_schema.sfc_active_jobs()
+        members = await self.redis.smembers(key)  # type: ignore[reportGeneralTypeIssues]
+        return {m.decode() if isinstance(m, bytes) else m for m in members}
+
+    async def cas_action_state(
+        self,
+        job_id: str,
+        scope: str,
+        action_name: str,
+        expected_state: SfcActionState,
+        new_state: SfcActionState,
+        correlation_id: str = "",
+        attempt: int | None = None,
+        follow_up_stream_fields: list[str] | None = None,
+    ) -> str:
+        """Atomic compare-and-swap on an action's state.
+
+        Returns ``"OK"``, ``"ALREADY_HANDLED"``, or ``"NOT_FOUND"``.
+        """
+        await self._ensure_scripts()
+        key = self.key_schema.sfc_execution_key(job_id)
+        stream_key = (
+            self.key_schema.sfc_work_stream(scope) if follow_up_stream_fields else ""
+        )
+        import orjson
+
+        stream_fields_json = (
+            orjson.dumps(follow_up_stream_fields).decode()
+            if follow_up_stream_fields
+            else ""
+        )
+        result = await self.redis.evalsha(
+            self._cas_action_state_sha,  # type: ignore[arg-type]
+            2,
+            key,
+            stream_key,
+            action_name,
+            expected_state.value,
+            new_state.value,
+            correlation_id,
+            str(attempt) if attempt is not None else "",
+            stream_fields_json,
+        )
+        if isinstance(result, bytes):
+            return result.decode()
+        return str(result)
+
+    async def cas_advance_step(
+        self,
+        job_id: str,
+        scope: str,
+        expected_step: str,
+        new_step: str,
+        new_active_steps: list[str],
+        follow_up_stream_fields: list[str] | None = None,
+    ) -> str:
+        """Atomic compare-and-swap to advance the current step.
+
+        Returns ``"OK"``, ``"ALREADY_HANDLED"``, or ``"NOT_FOUND"``.
+        """
+        await self._ensure_scripts()
+        key = self.key_schema.sfc_execution_key(job_id)
+        stream_key = (
+            self.key_schema.sfc_work_stream(scope) if follow_up_stream_fields else ""
+        )
+        import orjson
+
+        active_steps_json = orjson.dumps(new_active_steps).decode()
+        stream_fields_json = (
+            orjson.dumps(follow_up_stream_fields).decode()
+            if follow_up_stream_fields
+            else ""
+        )
+        result = await self.redis.evalsha(
+            self._cas_advance_step_sha,  # type: ignore[arg-type]
+            2,
+            key,
+            stream_key,
+            expected_step,
+            new_step,
+            active_steps_json,
+            stream_fields_json,
+        )
+        if isinstance(result, bytes):
+            return result.decode()
+        return str(result)
+
+    async def cas_finish(
+        self,
+        job_id: str,
+        finish_type: str,
+        error: str = "",
+    ) -> str:
+        """Atomically mark a job as completed or failed.
+
+        Returns ``"OK"`` or ``"NOT_FOUND"``.
+        """
+        await self._ensure_scripts()
+        key = self.key_schema.sfc_execution_key(job_id)
+        active_jobs_key = self.key_schema.sfc_active_jobs()
+        result = await self.redis.evalsha(
+            self._cas_finish_sha,  # type: ignore[arg-type]
+            2,
+            key,
+            active_jobs_key,
+            finish_type,
+            error,
+        )
+        if isinstance(result, bytes):
+            return result.decode()
+        return str(result)
+
+    async def enqueue_work(
+        self,
+        scope: str,
+        job_id: str,
+        action: SfcWorkAction | str,
+    ) -> str:
+        """Add a work item to the SFC work stream.
+
+        Returns the stream entry ID.
+        """
+        stream_key = self.key_schema.sfc_work_stream(scope)
+        action_value = action.value if isinstance(action, SfcWorkAction) else action
+        entry_id = await self.redis.xadd(
+            stream_key,
+            {"job_id": job_id, "action": action_value, "scope": scope},
+            maxlen=5000,
+            approximate=True,
+        )
+        if isinstance(entry_id, bytes):
+            return entry_id.decode()
+        return str(entry_id)
+
+    async def ensure_consumer_group(self, scope: str, group: str) -> None:
+        """Create the consumer group on the SFC work stream if it doesn't exist."""
+        stream_key = self.key_schema.sfc_work_stream(scope)
+        try:
+            await self.redis.xgroup_create(stream_key, group, id="0", mkstream=True)
+        except redis.ResponseError as e:
+            if "BUSYGROUP" not in str(e):
+                raise

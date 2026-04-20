@@ -28,3 +28,40 @@ MicroDCS supports two deployment modes controlled by two boolean flags on `Runti
 | **Split processor + publisher** | `true` / `false` | `false` / `true` | Processors scale horizontally (multiple replicas) with shared MQTT subscriptions while a single publisher replica maintains retained topics. Avoids conflicting retained writes. |
 
 When `is_processor_instance` is `false`, protocol handlers and bindings are not started. When `is_publisher_instance` is `false`, additional tasks that are `MQTTPublisher` instances are skipped.
+
+## Three-Layer Architecture
+
+MicroDCS separates concerns into three layers. Each layer has a distinct responsibility and communicates with its neighbours via direct Python method calls (not CloudEvent round-trips):
+
+```mermaid
+flowchart LR
+  mom["MOM / MES"]
+  nb["NB Protocol Layer<br/>(MachineryJobsProcessor)"]
+  sfc["SFC Orchestration Layer<br/>(SfcEngine)"]
+  sb["SB Protocol Layer<br/>(Equipment Processors)"]
+  equipment["Equipment"]
+
+  mom -- "CloudEvents<br/>(MQTT / MsgPack-RPC)" --> nb
+  nb -. "direct call" .-> sfc
+  sfc -. "direct call" .-> nb
+  sfc -. "direct call" .-> sb
+  sb -- "CloudEvents<br/>(MQTT / MsgPack-RPC)" --> equipment
+
+  style sfc fill:#3949ab,color:#fff
+```
+
+| Layer | Responsibility | Key class |
+|---|---|---|
+| **NB protocol** | OPC UA Job Management state machine, CloudEvent serialization, MQTT topic structure, station configuration delivery | `MachineryJobsCloudEventProcessor` |
+| **SFC orchestration** | Recipe interpretation, step sequencing, action dispatch, multi-instance coordination via Redis consumer groups and atomic CAS | `SfcEngine` (`AdditionalTask`) |
+| **SB protocol** | Equipment-specific CloudEvent shaping, transport binding, protocol translation | Equipment `CloudEventProcessor`(s) |
+
+The SFC engine is **not** a processor. It is an `AdditionalTask` that runs on every instance and coordinates through Redis. This means:
+
+- The NB processor remains a pure OPC UA protocol handler — it does not know about SFC recipes or step sequencing
+- SB processors remain pure equipment protocol handlers — they can be tested and triggered independently
+- The SFC engine can be replaced with a different execution strategy without changing any processor code
+
+### Multi-Instance Model
+
+Unlike the publisher (single-instance to avoid duplicate retained writes), the SFC engine runs on **every** instance. Multiple instances coordinate through a Redis Stream consumer group (`XREADGROUP` + `XAUTOCLAIM`) and atomic compare-and-swap Lua scripts. This eliminates single points of failure and lets Kubernetes horizontal scaling naturally increase throughput. See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for details.
