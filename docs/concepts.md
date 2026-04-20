@@ -282,6 +282,15 @@ The SFC engine runs on **every** MicroDCS instance (not gated by a single-instan
 
 Equipment must handle duplicate `push_command` deliveries idempotently — this is the **idempotency contract** that makes multi-instance recovery safe. The engine includes a `correlation_id` on every outgoing command for equipment-side deduplication.
 
+#### Branching
+
+The SFC engine supports two branching types defined in the recipe's `branches` array:
+
+- **Simultaneous (AND) branch**: On entry, `current_step` is set to the branch name and all path first-steps are added to `active_steps`. Each path advances independently via the `cas_branch_advance` Lua script. Convergence occurs when all paths complete (`active_steps` becomes empty), then the exit transition is evaluated.
+- **Selection (OR) branch**: On entry, the engine evaluates entry transitions by priority (lowest value = highest priority) and activates only the winning path's first step. Convergence occurs when that single path completes.
+
+Branch exit transitions are distinguished from path-entry transitions by their target: exit transitions target a step (or branch) that is **not** one of the branch's path first-steps.
+
 See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the full design, execution flow, and event flow examples.
 
 ## Glossary
@@ -326,7 +335,7 @@ See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the ful
 | **Sidecar pattern** | Kubernetes pod design where a secondary container (e.g. FastAPI) communicates with the MicroDCS container via MessagePack-RPC. |
 | **Southbound** | Processor direction facing down the ISA-95 pyramid. Subscribes to data/events/metadata, publishes commands. |
 | **Station configuration** | Resource lists (equipment, material, personnel, physical assets), Work Masters, and operational parameters (max downloadable job orders) pushed from MES into MicroDCS via CloudEvents. Scoped per station via CloudEvent `subject`. |
-| **Step** | SFC named state. Maps to a `transitions` library state. Each step can have associated actions. See `SfcStep`. |
+| **Step** | SFC named state. Tracked in Redis via `SfcExecutionState` (`current_step` for linear flow, `active_steps` for branches). Each step can have associated actions. See `SfcStep`. |
 | **State Index** | A retained MQTT topic (`{prefix}/{scope}/state-index`) published by the Job Order Publisher on every job state transition. Contains the sequence number, scope, timestamp, and a compact list of all active jobs with their current state and `has_result` flag. Used by the MES to detect gaps after a connectivity outage and to know which per-job retained topics to fetch. |
 | **Takeover** | List of field names copied from request to response in `.response(takeover=[...])`. |
 | **Three-layer architecture** | The separation of NB protocol handling → SFC orchestration → SB protocol handling. Processors handle serialization and transport; the SFC engine handles recipe logic; neither knows about the other's concerns. |

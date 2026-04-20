@@ -1168,6 +1168,59 @@ end
 return 'OK'
 """
 
+    # Lua script: atomic branch step advancement.
+    # Replaces or removes a completed step from active_steps.
+    # KEYS[1] = sfc:execution:{job_id}
+    # KEYS[2] = sfc:work:{scope} (work stream, may be empty string)
+    # ARGV[1] = completed step name (must be present in active_steps)
+    # ARGV[2] = next step name (empty string = remove without replacement)
+    # ARGV[3] = JSON-encoded follow-up stream fields (or empty string)
+    # Returns: JSON-encoded new active_steps on success, "ALREADY_HANDLED"
+    #          if the completed step is not in active_steps, or "NOT_FOUND".
+    _CAS_BRANCH_ADVANCE_LUA = """
+local key = KEYS[1]
+local stream_key = KEYS[2]
+local completed_step = ARGV[1]
+local next_step = ARGV[2]
+local stream_fields = ARGV[3]
+
+local active_json = redis.call('JSON.GET', key, '$.active_steps')
+if active_json == nil or active_json == '' then
+    return 'NOT_FOUND'
+end
+
+local wrapper = cjson.decode(active_json)
+local active = wrapper
+if type(wrapper) == 'table' and #wrapper == 1 and type(wrapper[1]) == 'table' then
+    active = wrapper[1]
+end
+
+local found = false
+local new_active = {}
+for _, step in ipairs(active) do
+    if step == completed_step and not found then
+        found = true
+        if next_step ~= '' then
+            new_active[#new_active + 1] = next_step
+        end
+    else
+        new_active[#new_active + 1] = step
+    end
+end
+
+if not found then
+    return 'ALREADY_HANDLED'
+end
+
+redis.call('JSON.SET', key, '$.active_steps', cjson.encode(new_active))
+
+if stream_fields ~= '' and stream_key ~= '' then
+    redis.call('XADD', stream_key, 'MAXLEN', '~', '5000', '*', unpack(cjson.decode(stream_fields)))
+end
+
+return cjson.encode(new_active)
+"""
+
     def __init__(
         self,
         redis_client: redis.Redis,
@@ -1178,6 +1231,7 @@ return 'OK'
         self._cas_action_state_sha: str | None = None
         self._cas_advance_step_sha: str | None = None
         self._cas_finish_sha: str | None = None
+        self._cas_branch_advance_sha: str | None = None
 
     async def _ensure_scripts(self) -> None:
         if self._cas_action_state_sha is None:
@@ -1190,6 +1244,10 @@ return 'OK'
             )
         if self._cas_finish_sha is None:
             self._cas_finish_sha = await self.redis.script_load(self._CAS_FINISH_LUA)
+        if self._cas_branch_advance_sha is None:
+            self._cas_branch_advance_sha = await self.redis.script_load(
+                self._CAS_BRANCH_ADVANCE_LUA
+            )
 
     async def save(self, state: SfcExecutionState) -> None:
         """Create or overwrite the execution state for a job."""
@@ -1358,6 +1416,49 @@ return 'OK'
         )
         if isinstance(result, bytes):
             return result.decode()
+        return str(result)
+
+    async def cas_branch_advance(
+        self,
+        job_id: str,
+        scope: str,
+        completed_step: str,
+        next_step: str = "",
+        follow_up_stream_fields: list[str] | None = None,
+    ) -> str | list[str]:
+        """Atomic replace/remove of a step within ``active_steps``.
+
+        Replaces *completed_step* with *next_step* (or removes it when
+        *next_step* is empty).  Returns the JSON-decoded new
+        ``active_steps`` list on success, ``"ALREADY_HANDLED"`` if
+        *completed_step* was not found, or ``"NOT_FOUND"``.
+        """
+        await self._ensure_scripts()
+        key = self.key_schema.sfc_execution_key(job_id)
+        stream_key = (
+            self.key_schema.sfc_work_stream(scope) if follow_up_stream_fields else ""
+        )
+        import orjson
+
+        stream_fields_json = (
+            orjson.dumps(follow_up_stream_fields).decode()
+            if follow_up_stream_fields
+            else ""
+        )
+        result = await self.redis.evalsha(
+            self._cas_branch_advance_sha,  # type: ignore[arg-type]
+            2,
+            key,
+            stream_key,
+            completed_step,
+            next_step,
+            stream_fields_json,
+        )
+        if isinstance(result, bytes):
+            decoded = result.decode()
+            if decoded in ("ALREADY_HANDLED", "NOT_FOUND"):
+                return decoded
+            return orjson.loads(decoded)
         return str(result)
 
     async def enqueue_work(

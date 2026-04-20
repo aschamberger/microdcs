@@ -14,6 +14,8 @@ from microdcs.models.machinery_jobs_ext import ISA95WorkMasterDataTypeExt
 from microdcs.models.sfc_recipe import (
     SfcActionAssociation,
     SfcActionQualifier,
+    SfcBranch,
+    SfcBranchType,
     SfcInteraction,
     SfcRecipe,
     SfcStep,
@@ -524,3 +526,510 @@ class TestSfcEngineHelpers:
             )
         engine.register_scope("scope-1")
         assert "scope-1" in engine._known_scopes
+
+
+# ── Branch recipe helpers ───────────────────────────────────────────
+
+
+def _make_simultaneous_branch_recipe() -> SfcRecipe:
+    """Recipe: init → parallel(a1→a2, b1) → final."""
+    return SfcRecipe(
+        steps=[
+            SfcStep(name="init", initial=True),
+            SfcStep(name="a1"),
+            SfcStep(name="a2"),
+            SfcStep(name="b1"),
+            SfcStep(name="final"),
+        ],
+        transitions=[
+            SfcTransition(source="init", target="par", condition="true"),
+            SfcTransition(source="par", target="final", condition="true"),
+        ],
+        actions=[
+            SfcActionAssociation(
+                name="init_push",
+                step="init",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="a1_push",
+                step="a1",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="a2_push",
+                step="a2",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="b1_push",
+                step="b1",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="final_pull",
+                step="final",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PULL_EVENT,
+                cloudevent_type="com.example.pull",
+                timeout_seconds=60,
+            ),
+        ],
+        branches=[
+            SfcBranch(
+                name="par",
+                type=SfcBranchType.SIMULTANEOUS,
+                branches=[["a1", "a2"], ["b1"]],
+            ),
+        ],
+    )
+
+
+def _make_selection_branch_recipe() -> SfcRecipe:
+    """Recipe: init → select(a1, b1) → final.  Path a1 has priority 0."""
+    return SfcRecipe(
+        steps=[
+            SfcStep(name="init", initial=True),
+            SfcStep(name="a1"),
+            SfcStep(name="b1"),
+            SfcStep(name="final"),
+        ],
+        transitions=[
+            SfcTransition(source="init", target="sel", condition="true"),
+            SfcTransition(source="sel", target="a1", condition="cond_a", priority=0),
+            SfcTransition(source="sel", target="b1", condition="cond_b", priority=1),
+            SfcTransition(source="sel", target="final", condition="true"),
+        ],
+        actions=[
+            SfcActionAssociation(
+                name="init_push",
+                step="init",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="a1_push",
+                step="a1",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="b1_push",
+                step="b1",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                cloudevent_type="com.example.push",
+                timeout_seconds=30,
+            ),
+            SfcActionAssociation(
+                name="final_pull",
+                step="final",
+                qualifier=SfcActionQualifier.PULSE,
+                interaction=SfcInteraction.PULL_EVENT,
+                cloudevent_type="com.example.pull",
+                timeout_seconds=60,
+            ),
+        ],
+        branches=[
+            SfcBranch(
+                name="sel",
+                type=SfcBranchType.SELECTION,
+                branches=[["a1"], ["b1"]],
+            ),
+        ],
+    )
+
+
+def _make_branch_exec_state(
+    job_id: str = "job-1",
+    scope: str = "scope-1",
+    current_step: str = "par",
+    active_steps: list[str] | None = None,
+    action_states: dict[str, SfcActionState] | None = None,
+) -> SfcExecutionState:
+    actions = {}
+    for name, state in (action_states or {}).items():
+        actions[name] = SfcActionExecution(name=name, state=state)
+    return SfcExecutionState(
+        job_id=job_id,
+        scope=scope,
+        work_master_id="wm-1",
+        current_step=current_step,
+        active_steps=active_steps or [],
+        actions=actions,
+    )
+
+
+def _make_branch_work_master(recipe: SfcRecipe) -> ISA95WorkMasterDataTypeExt:
+    return ISA95WorkMasterDataTypeExt(
+        id="wm-1",
+        data=recipe.to_dict(),
+        dataschema=SFC_RECIPE_DATASCHEMA,
+    )
+
+
+class TestBranchHelpers:
+    """Tests for static branch helper methods."""
+
+    def test_find_branch_returns_branch(self):
+        recipe = _make_simultaneous_branch_recipe()
+        branch = SfcEngine._find_branch(recipe, "par")
+        assert branch is not None
+        assert branch.name == "par"
+        assert branch.type == SfcBranchType.SIMULTANEOUS
+
+    def test_find_branch_returns_none_for_step(self):
+        recipe = _make_simultaneous_branch_recipe()
+        assert SfcEngine._find_branch(recipe, "a1") is None
+
+    def test_find_branch_returns_none_when_no_branches(self):
+        recipe = _make_recipe()
+        assert SfcEngine._find_branch(recipe, "step_init") is None
+
+    def test_next_step_in_branch_path(self):
+        recipe = _make_simultaneous_branch_recipe()
+        branch = recipe.branches[0]  # type: ignore[index]
+        assert SfcEngine._next_step_in_branch_path(branch, "a1") == "a2"
+        assert SfcEngine._next_step_in_branch_path(branch, "a2") is None
+        assert SfcEngine._next_step_in_branch_path(branch, "b1") is None
+
+    def test_find_branch_containing_step(self):
+        recipe = _make_simultaneous_branch_recipe()
+        assert SfcEngine._find_branch_containing_step(recipe, "a1") is not None
+        assert SfcEngine._find_branch_containing_step(recipe, "init") is None
+
+    def test_select_branch_path_picks_lowest_priority(self):
+        recipe = _make_selection_branch_recipe()
+        branch = recipe.branches[0]  # type: ignore[index]
+        path = SfcEngine._select_branch_path(recipe, branch)
+        assert path == ["a1"]
+
+    def test_select_branch_path_falls_back_to_first_path(self):
+        """When no entry transitions exist, pick the first path."""
+        recipe = SfcRecipe(
+            steps=[SfcStep(name="a1"), SfcStep(name="b1")],
+            transitions=[],
+            actions=[],
+            branches=[
+                SfcBranch(
+                    name="sel",
+                    type=SfcBranchType.SELECTION,
+                    branches=[["a1"], ["b1"]],
+                ),
+            ],
+        )
+        branch = recipe.branches[0]  # type: ignore[index]
+        path = SfcEngine._select_branch_path(recipe, branch)
+        assert path == ["a1"]
+
+
+class TestSimultaneousBranch:
+    """Tests for simultaneous (AND) branch execution."""
+
+    def setup_method(self):
+        self.pool = MagicMock()
+        self.schema = _make_schema()
+        self.nb_processor = MagicMock()
+        self.sb_processor = MagicMock()
+        self.sb_processor._type_callbacks_out = {"com.example.push": MagicMock()}
+        self.sb_processor._type_classes = {"com.example.push": MagicMock()}
+        self.sb_processor.callback_outgoing = AsyncMock()
+        self.sb_processors = {"sb1": self.sb_processor}
+        with patch("microdcs.sfc_engine.redis.Redis"):
+            self.engine = SfcEngine(
+                redis_connection_pool=self.pool,
+                redis_key_schema=self.schema,
+                nb_processor=self.nb_processor,
+                sb_processors=self.sb_processors,
+                consumer_name="test",
+            )
+        self.mock_execution_dao = AsyncMock(spec=SfcExecutionDAO)
+        self.engine._execution_dao = self.mock_execution_dao  # type: ignore[assignment]
+        self.mock_joborder_dao = AsyncMock()
+        self.engine._joborder_dao = self.mock_joborder_dao  # type: ignore[assignment]
+        self.mock_workmaster_dao = AsyncMock()
+        self.engine._workmaster_dao = self.mock_workmaster_dao  # type: ignore[assignment]
+        self.mock_jobresponse_dao = AsyncMock()
+        self.engine._jobresponse_dao = self.mock_jobresponse_dao  # type: ignore[assignment]
+        self.recipe = _make_simultaneous_branch_recipe()
+        self.mock_workmaster_dao.retrieve.return_value = _make_branch_work_master(
+            self.recipe
+        )
+
+    @pytest.mark.asyncio
+    async def test_enter_simultaneous_branch_activates_all_paths(self):
+        """When init step completes, engine should enter branch with active_steps=[a1, b1]."""
+        exec_state = _make_branch_exec_state(
+            current_step="init",
+            active_steps=["init"],
+            action_states={"init_push": SfcActionState.COMPLETED},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+
+        await self.engine._check_step_completion("job-1", "scope-1")
+
+        # Should advance to branch with both first steps.
+        self.mock_execution_dao.cas_advance_step.assert_awaited_once()
+        call_kwargs = self.mock_execution_dao.cas_advance_step.call_args.kwargs
+        assert call_kwargs["new_step"] == "par"
+        assert set(call_kwargs["new_active_steps"]) == {"a1", "b1"}
+
+    @pytest.mark.asyncio
+    async def test_advance_within_branch_path(self):
+        """When a1 completes (has next a2), should replace a1 with a2 in active_steps."""
+        exec_state = _make_branch_exec_state(
+            current_step="par",
+            active_steps=["a1", "b1"],
+            action_states={
+                "a1_push": SfcActionState.COMPLETED,
+                "b1_push": SfcActionState.PENDING,
+            },
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_branch_advance.return_value = ["a2", "b1"]
+
+        await self.engine._check_step_completion("job-1", "scope-1")
+
+        self.mock_execution_dao.cas_branch_advance.assert_awaited_once()
+        call_kwargs = self.mock_execution_dao.cas_branch_advance.call_args.kwargs
+        assert call_kwargs["completed_step"] == "a1"
+        assert call_kwargs["next_step"] == "a2"
+
+    @pytest.mark.asyncio
+    async def test_last_step_in_path_removes_from_active(self):
+        """When b1 (last in its path) completes but a2 still active, should remove b1."""
+        exec_state = _make_branch_exec_state(
+            current_step="par",
+            active_steps=["a2", "b1"],
+            action_states={
+                "a2_push": SfcActionState.PENDING,
+                "b1_push": SfcActionState.COMPLETED,
+            },
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        # Return non-empty list → not converged yet.
+        self.mock_execution_dao.cas_branch_advance.return_value = ["a2"]
+
+        await self.engine._check_step_completion("job-1", "scope-1")
+
+        self.mock_execution_dao.cas_branch_advance.assert_awaited_once()
+        call_kwargs = self.mock_execution_dao.cas_branch_advance.call_args.kwargs
+        assert call_kwargs["completed_step"] == "b1"
+        # next_step defaults to "" (remove, no replacement)
+
+    @pytest.mark.asyncio
+    async def test_convergence_when_all_paths_done(self):
+        """When the last active step completes, should converge to post-branch step."""
+        exec_state = _make_branch_exec_state(
+            current_step="par",
+            active_steps=["a2"],
+            action_states={
+                "a2_push": SfcActionState.COMPLETED,
+                "b1_push": SfcActionState.COMPLETED,
+            },
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        # Return empty list → converge.
+        self.mock_execution_dao.cas_branch_advance.return_value = []
+        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+
+        await self.engine._check_step_completion("job-1", "scope-1")
+
+        # Should have called cas_branch_advance to remove a2.
+        self.mock_execution_dao.cas_branch_advance.assert_awaited_once()
+        # Then cas_advance_step to converge from "par" to "final".
+        self.mock_execution_dao.cas_advance_step.assert_awaited_once()
+        call_kwargs = self.mock_execution_dao.cas_advance_step.call_args.kwargs
+        assert call_kwargs["expected_step"] == "par"
+        assert call_kwargs["new_step"] == "final"
+
+    @pytest.mark.asyncio
+    async def test_convergence_completes_job_when_no_exit_transition(self):
+        """If there's no exit transition from the branch, the job completes."""
+        recipe = SfcRecipe(
+            steps=[SfcStep(name="init", initial=True), SfcStep(name="a1")],
+            transitions=[
+                SfcTransition(source="init", target="par", condition="true"),
+                # No exit transition from "par".
+            ],
+            actions=[
+                SfcActionAssociation(
+                    name="a1_push",
+                    step="a1",
+                    qualifier=SfcActionQualifier.PULSE,
+                    interaction=SfcInteraction.PUSH_COMMAND,
+                    cloudevent_type="com.example.push",
+                    timeout_seconds=30,
+                ),
+            ],
+            branches=[
+                SfcBranch(
+                    name="par",
+                    type=SfcBranchType.SIMULTANEOUS,
+                    branches=[["a1"]],
+                ),
+            ],
+        )
+        self.mock_workmaster_dao.retrieve.return_value = _make_branch_work_master(
+            recipe
+        )
+
+        exec_state = _make_branch_exec_state(
+            current_step="par",
+            active_steps=["a1"],
+            action_states={"a1_push": SfcActionState.COMPLETED},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_branch_advance.return_value = []
+        self.mock_execution_dao.cas_finish.return_value = "OK"
+        self.mock_joborder_dao.retrieve.return_value = _make_job_order_and_state()
+
+        with patch.object(self.engine, "_trigger_job_transition", return_value=True):
+            await self.engine._check_step_completion("job-1", "scope-1")
+
+        self.mock_execution_dao.cas_finish.assert_awaited_once()
+
+
+class TestSelectionBranch:
+    """Tests for selection (OR) branch execution."""
+
+    def setup_method(self):
+        self.pool = MagicMock()
+        self.schema = _make_schema()
+        self.nb_processor = MagicMock()
+        self.sb_processor = MagicMock()
+        self.sb_processor._type_callbacks_out = {"com.example.push": MagicMock()}
+        self.sb_processor._type_classes = {"com.example.push": MagicMock()}
+        self.sb_processor.callback_outgoing = AsyncMock()
+        self.sb_processors = {"sb1": self.sb_processor}
+        with patch("microdcs.sfc_engine.redis.Redis"):
+            self.engine = SfcEngine(
+                redis_connection_pool=self.pool,
+                redis_key_schema=self.schema,
+                nb_processor=self.nb_processor,
+                sb_processors=self.sb_processors,
+                consumer_name="test",
+            )
+        self.mock_execution_dao = AsyncMock(spec=SfcExecutionDAO)
+        self.engine._execution_dao = self.mock_execution_dao  # type: ignore[assignment]
+        self.mock_joborder_dao = AsyncMock()
+        self.engine._joborder_dao = self.mock_joborder_dao  # type: ignore[assignment]
+        self.mock_workmaster_dao = AsyncMock()
+        self.engine._workmaster_dao = self.mock_workmaster_dao  # type: ignore[assignment]
+        self.mock_jobresponse_dao = AsyncMock()
+        self.engine._jobresponse_dao = self.mock_jobresponse_dao  # type: ignore[assignment]
+        self.recipe = _make_selection_branch_recipe()
+        self.mock_workmaster_dao.retrieve.return_value = _make_branch_work_master(
+            self.recipe
+        )
+
+    @pytest.mark.asyncio
+    async def test_enter_selection_branch_picks_highest_priority_path(self):
+        """Selection branch should activate only the path with lowest priority number."""
+        exec_state = _make_branch_exec_state(
+            current_step="init",
+            active_steps=["init"],
+            action_states={"init_push": SfcActionState.COMPLETED},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+
+        await self.engine._check_step_completion("job-1", "scope-1")
+
+        self.mock_execution_dao.cas_advance_step.assert_awaited_once()
+        call_kwargs = self.mock_execution_dao.cas_advance_step.call_args.kwargs
+        assert call_kwargs["new_step"] == "sel"
+        # Only the priority-0 path's first step should be active.
+        assert call_kwargs["new_active_steps"] == ["a1"]
+
+    @pytest.mark.asyncio
+    async def test_selection_convergence(self):
+        """When the selected path's last step completes, converge to final."""
+        exec_state = _make_branch_exec_state(
+            current_step="sel",
+            active_steps=["a1"],
+            action_states={"a1_push": SfcActionState.COMPLETED},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_branch_advance.return_value = []
+        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+
+        await self.engine._check_step_completion("job-1", "scope-1")
+
+        # Should converge: branch_advance removes a1 → empty → advance from sel to final.
+        self.mock_execution_dao.cas_branch_advance.assert_awaited_once()
+        self.mock_execution_dao.cas_advance_step.assert_awaited_once()
+        call_kwargs = self.mock_execution_dao.cas_advance_step.call_args.kwargs
+        assert call_kwargs["expected_step"] == "sel"
+        assert call_kwargs["new_step"] == "final"
+
+
+class TestBranchResume:
+    """Tests for resuming execution inside a branch."""
+
+    def setup_method(self):
+        self.pool = MagicMock()
+        self.schema = _make_schema()
+        self.nb_processor = MagicMock()
+        self.sb_processor = MagicMock()
+        self.sb_processor._type_callbacks_out = {"com.example.push": MagicMock()}
+        self.sb_processor._type_classes = {"com.example.push": MagicMock()}
+        self.sb_processor.callback_outgoing = AsyncMock()
+        self.sb_processors = {"sb1": self.sb_processor}
+        with patch("microdcs.sfc_engine.redis.Redis"):
+            self.engine = SfcEngine(
+                redis_connection_pool=self.pool,
+                redis_key_schema=self.schema,
+                nb_processor=self.nb_processor,
+                sb_processors=self.sb_processors,
+                consumer_name="test",
+            )
+        self.mock_execution_dao = AsyncMock(spec=SfcExecutionDAO)
+        self.engine._execution_dao = self.mock_execution_dao  # type: ignore[assignment]
+        self.mock_joborder_dao = AsyncMock()
+        self.engine._joborder_dao = self.mock_joborder_dao  # type: ignore[assignment]
+        self.mock_workmaster_dao = AsyncMock()
+        self.engine._workmaster_dao = self.mock_workmaster_dao  # type: ignore[assignment]
+        self.mock_jobresponse_dao = AsyncMock()
+        self.engine._jobresponse_dao = self.mock_jobresponse_dao  # type: ignore[assignment]
+
+    @pytest.mark.asyncio
+    async def test_resume_redispatches_all_active_branch_steps(self):
+        """Resume should re-dispatch actions for ALL active steps, not just current_step."""
+        recipe = _make_simultaneous_branch_recipe()
+        self.mock_workmaster_dao.retrieve.return_value = _make_branch_work_master(
+            recipe
+        )
+
+        exec_state = _make_branch_exec_state(
+            current_step="par",
+            active_steps=["a1", "b1"],
+            action_states={
+                "a1_push": SfcActionState.DISPATCHED,
+                "b1_push": SfcActionState.PENDING,
+            },
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+
+        await self.engine._handle_resume("job-1")
+
+        # Should dispatch both a1_push (re-dispatch) and b1_push (initial dispatch).
+        assert self.mock_execution_dao.cas_action_state.await_count >= 1

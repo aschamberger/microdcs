@@ -1390,6 +1390,69 @@ class TestSfcExecutionDAO:
         with pytest.raises(redis.ResponseError):
             await self.dao.ensure_consumer_group("scope-1", "sfc-engine")
 
+    @pytest.mark.asyncio
+    async def test_cas_branch_advance_calls_evalsha(self):
+        self.dao._cas_branch_advance_sha = "sha-branch"
+        import orjson
+
+        self.redis.evalsha = AsyncMock(return_value=orjson.dumps(["a2", "b1"]))
+        result = await self.dao.cas_branch_advance(
+            job_id="job-1",
+            scope="scope-1",
+            completed_step="a1",
+            next_step="a2",
+        )
+        assert result == ["a2", "b1"]
+        self.redis.evalsha.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cas_branch_advance_remove_step(self):
+        self.dao._cas_branch_advance_sha = "sha-branch"
+        import orjson
+
+        self.redis.evalsha = AsyncMock(return_value=orjson.dumps([]))
+        result = await self.dao.cas_branch_advance(
+            job_id="job-1",
+            scope="scope-1",
+            completed_step="b1",
+        )
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_cas_branch_advance_already_handled(self):
+        self.dao._cas_branch_advance_sha = "sha-branch"
+        self.redis.evalsha = AsyncMock(return_value=b"ALREADY_HANDLED")
+        result = await self.dao.cas_branch_advance(
+            job_id="job-1",
+            scope="scope-1",
+            completed_step="a1",
+            next_step="a2",
+        )
+        assert result == "ALREADY_HANDLED"
+
+    @pytest.mark.asyncio
+    async def test_cas_branch_advance_with_follow_up(self):
+        self.dao._cas_branch_advance_sha = "sha-branch"
+        import orjson
+
+        self.redis.evalsha = AsyncMock(return_value=orjson.dumps(["a2"]))
+        result = await self.dao.cas_branch_advance(
+            job_id="job-1",
+            scope="scope-1",
+            completed_step="a1",
+            next_step="a2",
+            follow_up_stream_fields=[
+                "job_id",
+                "job-1",
+                "action",
+                "dispatch_action:a2_push",
+            ],
+        )
+        assert result == ["a2"]
+        # Verify stream_key was passed (not empty).
+        call_args = self.redis.evalsha.call_args[0]
+        assert call_args[3] != ""  # stream_key
+
 
 class TestJobAcceptanceConfigDelete:
     def setup_method(self) -> None:

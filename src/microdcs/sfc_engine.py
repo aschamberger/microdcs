@@ -19,8 +19,11 @@ from microdcs.models.machinery_jobs import (
 from microdcs.models.machinery_jobs_ext import JobOrderControlExt
 from microdcs.models.sfc_recipe import (
     SfcActionAssociation,
+    SfcBranch,
+    SfcBranchType,
     SfcInteraction,
     SfcRecipe,
+    SfcTransition,
 )
 from microdcs.models.sfc_recipe_ext import (
     SFC_CONSUMER_GROUP,
@@ -299,6 +302,7 @@ class SfcEngine(AdditionalTask):
             return
 
         # Deserialize recipe
+        assert isinstance(work_master.data, dict)
         recipe = SfcRecipe.from_dict(work_master.data)
         initial_step = self._find_initial_step(recipe)
         if initial_step is None:
@@ -359,6 +363,7 @@ class SfcEngine(AdditionalTask):
             logger.warning("Work master lost for job %s", job_id)
             return
 
+        assert isinstance(work_master.data, dict)
         recipe = SfcRecipe.from_dict(work_master.data)
         assoc = self._find_action(recipe, action_name)
         if assoc is None:
@@ -604,7 +609,7 @@ class SfcEngine(AdditionalTask):
     # ── Step completion and transition evaluation ───────────────────────
 
     async def _check_step_completion(self, job_id: str, scope: str) -> None:
-        """Check if all actions for the current step are done and advance."""
+        """Check if any active step has all actions done and advance."""
         exec_state = await self._execution_dao.retrieve(job_id)
         if exec_state is None or exec_state.completed or exec_state.failed:
             return
@@ -613,29 +618,66 @@ class SfcEngine(AdditionalTask):
         if work_master is None or work_master.data is None:
             return
 
+        assert isinstance(work_master.data, dict)
         recipe = SfcRecipe.from_dict(work_master.data)
-        current_step = exec_state.current_step
 
-        # Check all actions for the current step
-        step_actions = [a for a in recipe.actions if a.step == current_step]
-        all_done = all(
-            exec_state.actions.get(a.name) is not None
-            and exec_state.actions[a.name].state == SfcActionState.COMPLETED
-            for a in step_actions
-        )
+        for step_name in list(exec_state.active_steps):
+            step_actions = [a for a in recipe.actions if a.step == step_name]
+            all_done = all(
+                exec_state.actions.get(a.name) is not None
+                and exec_state.actions[a.name].state == SfcActionState.COMPLETED
+                for a in step_actions
+            )
+            if not all_done:
+                continue
 
-        if not all_done:
-            return
+            # This step is done — determine how to advance.
+            branch = self._find_branch(recipe, exec_state.current_step)
+            if branch is not None:
+                # Inside a branch — advance within or converge.
+                await self._advance_branch_step(
+                    job_id, scope, step_name, branch, recipe
+                )
+            else:
+                # Linear execution — use transitions.
+                await self._advance_linear_step(job_id, scope, step_name, recipe)
 
-        # Evaluate transitions from the current step
-        next_step = self._evaluate_transitions(recipe, current_step)
-        if next_step is None:
-            # No transition found — recipe complete
+            # Re-read state — it may have changed.
+            exec_state = await self._execution_dao.retrieve(job_id)
+            if exec_state is None or exec_state.completed or exec_state.failed:
+                return
+
+    async def _advance_linear_step(
+        self,
+        job_id: str,
+        scope: str,
+        completed_step: str,
+        recipe: SfcRecipe,
+    ) -> None:
+        """Advance from a completed step in linear (non-branch) context."""
+        target = self._evaluate_transitions(recipe, completed_step)
+        if target is None:
             await self._complete_job(job_id, scope)
             return
 
-        # Build follow-up stream fields if next step has push_command actions
-        next_step_actions = [a for a in recipe.actions if a.step == next_step]
+        branch = self._find_branch(recipe, target)
+        if branch is not None:
+            # Entering a branch construct.
+            await self._enter_branch(job_id, scope, completed_step, branch, recipe)
+        else:
+            # Normal step-to-step transition.
+            await self._advance_to_step(job_id, scope, completed_step, target, recipe)
+
+    async def _advance_to_step(
+        self,
+        job_id: str,
+        scope: str,
+        from_step: str,
+        to_step: str,
+        recipe: SfcRecipe,
+    ) -> None:
+        """CAS advance ``current_step`` from *from_step* to *to_step*."""
+        next_step_actions = [a for a in recipe.actions if a.step == to_step]
         push_actions = [
             a for a in next_step_actions if a.interaction == SfcInteraction.PUSH_COMMAND
         ]
@@ -649,24 +691,35 @@ class SfcEngine(AdditionalTask):
                 f"dispatch_action:{push_actions[0].name}",
             ]
 
-        # CAS advance step
         cas_result = await self._execution_dao.cas_advance_step(
             job_id=job_id,
             scope=scope,
-            expected_step=current_step,
-            new_step=next_step,
-            new_active_steps=[next_step],
+            expected_step=from_step,
+            new_step=to_step,
+            new_active_steps=[to_step],
             follow_up_stream_fields=follow_up,
         )
         if cas_result != "OK":
             logger.debug("CAS advance step for job %s returned %s", job_id, cas_result)
             return
 
-        logger.info("Job %s advanced from %s to %s", job_id, current_step, next_step)
+        logger.info("Job %s advanced from %s to %s", job_id, from_step, to_step)
+        await self._dispatch_non_streamed_actions(
+            job_id, scope, to_step, recipe, push_actions
+        )
 
-        # Dispatch pull_event actions for the new step (push is via stream)
+    async def _dispatch_non_streamed_actions(
+        self,
+        job_id: str,
+        scope: str,
+        step_name: str,
+        recipe: SfcRecipe,
+        push_actions: list[SfcActionAssociation],
+    ) -> None:
+        """Dispatch pull_event actions and extra push_command work items."""
+        step_actions = [a for a in recipe.actions if a.step == step_name]
         pull_actions = [
-            a for a in next_step_actions if a.interaction == SfcInteraction.PULL_EVENT
+            a for a in step_actions if a.interaction == SfcInteraction.PULL_EVENT
         ]
         for assoc in pull_actions:
             exec_state_fresh = await self._execution_dao.retrieve(job_id)
@@ -676,7 +729,6 @@ class SfcEngine(AdditionalTask):
             if action_exec is not None:
                 await self._dispatch_pull_event(job_id, scope, assoc, action_exec)
 
-        # If there are additional push actions beyond the first, enqueue them
         for assoc in push_actions[1:]:
             await self._execution_dao.enqueue_work(
                 scope,
@@ -684,21 +736,231 @@ class SfcEngine(AdditionalTask):
                 f"dispatch_action:{assoc.name}",
             )
 
-    def _evaluate_transitions(self, recipe: SfcRecipe, current_step: str) -> str | None:
-        """Find the next step by evaluating outgoing transitions from current_step.
+    # ── Branch entry / advancement / convergence ────────────────────────
 
-        For Phase 4 (linear execution), all conditions are treated as satisfied.
-        Selection/simultaneous branching is Phase 5.
-        """
+    async def _enter_branch(
+        self,
+        job_id: str,
+        scope: str,
+        from_step: str,
+        branch: SfcBranch,
+        recipe: SfcRecipe,
+    ) -> None:
+        """Enter a branch construct (simultaneous or selection)."""
+        if branch.type == SfcBranchType.SIMULTANEOUS:
+            first_steps = [path[0] for path in branch.branches if path]
+        else:
+            # Selection: pick one path using transition priority.
+            selected_path = self._select_branch_path(recipe, branch)
+            first_steps = [selected_path[0]] if selected_path else []
+
+        if not first_steps:
+            logger.warning(
+                "Branch %s has no valid paths for job %s", branch.name, job_id
+            )
+            return
+
+        # Collect follow-up for the first push_command across all activated steps.
+        follow_up: list[str] | None = None
+        first_push: SfcActionAssociation | None = None
+        for step in first_steps:
+            step_push = [
+                a
+                for a in recipe.actions
+                if a.step == step and a.interaction == SfcInteraction.PUSH_COMMAND
+            ]
+            if step_push and first_push is None:
+                first_push = step_push[0]
+                follow_up = [
+                    "job_id",
+                    job_id,
+                    "action",
+                    f"dispatch_action:{first_push.name}",
+                ]
+
+        cas_result = await self._execution_dao.cas_advance_step(
+            job_id=job_id,
+            scope=scope,
+            expected_step=from_step,
+            new_step=branch.name,
+            new_active_steps=first_steps,
+            follow_up_stream_fields=follow_up,
+        )
+        if cas_result != "OK":
+            logger.debug(
+                "CAS enter branch %s for job %s returned %s",
+                branch.name,
+                job_id,
+                cas_result,
+            )
+            return
+
+        logger.info(
+            "Job %s entered branch %s (%s), active steps: %s",
+            job_id,
+            branch.name,
+            branch.type.value,
+            first_steps,
+        )
+
+        # Dispatch remaining push actions and all pull actions for activated steps.
+        first_push_skipped = False
+        for step in first_steps:
+            step_push = [
+                a
+                for a in recipe.actions
+                if a.step == step and a.interaction == SfcInteraction.PUSH_COMMAND
+            ]
+            for assoc in step_push:
+                if not first_push_skipped and assoc is first_push:
+                    first_push_skipped = True
+                    continue
+                await self._execution_dao.enqueue_work(
+                    scope, job_id, f"dispatch_action:{assoc.name}"
+                )
+
+            step_pull = [
+                a
+                for a in recipe.actions
+                if a.step == step and a.interaction == SfcInteraction.PULL_EVENT
+            ]
+            for assoc in step_pull:
+                exec_state = await self._execution_dao.retrieve(job_id)
+                if exec_state is None:
+                    return
+                action_exec = exec_state.actions.get(assoc.name)
+                if action_exec is not None:
+                    await self._dispatch_pull_event(job_id, scope, assoc, action_exec)
+
+    async def _advance_branch_step(
+        self,
+        job_id: str,
+        scope: str,
+        completed_step: str,
+        branch: SfcBranch,
+        recipe: SfcRecipe,
+    ) -> None:
+        """Advance within a branch after *completed_step* finishes."""
+        next_step = self._next_step_in_branch_path(branch, completed_step)
+
+        if next_step is not None:
+            # Intra-branch advancement: replace completed_step with next_step.
+            step_push = [
+                a
+                for a in recipe.actions
+                if a.step == next_step and a.interaction == SfcInteraction.PUSH_COMMAND
+            ]
+            follow_up: list[str] | None = None
+            if step_push:
+                follow_up = [
+                    "job_id",
+                    job_id,
+                    "action",
+                    f"dispatch_action:{step_push[0].name}",
+                ]
+
+            result = await self._execution_dao.cas_branch_advance(
+                job_id=job_id,
+                scope=scope,
+                completed_step=completed_step,
+                next_step=next_step,
+                follow_up_stream_fields=follow_up,
+            )
+            if isinstance(result, str):
+                logger.debug(
+                    "CAS branch advance for job %s returned %s", job_id, result
+                )
+                return
+
+            logger.info(
+                "Job %s branch step %s → %s (active: %s)",
+                job_id,
+                completed_step,
+                next_step,
+                result,
+            )
+            await self._dispatch_non_streamed_actions(
+                job_id, scope, next_step, recipe, step_push
+            )
+        else:
+            # Last step in this branch path — remove from active_steps.
+            result = await self._execution_dao.cas_branch_advance(
+                job_id=job_id,
+                scope=scope,
+                completed_step=completed_step,
+            )
+            if isinstance(result, str):
+                logger.debug("CAS branch remove for job %s returned %s", job_id, result)
+                return
+
+            new_active: list[str] = result
+            if not new_active:
+                # All branch paths done — converge.
+                await self._converge_branch(job_id, scope, branch, recipe)
+            else:
+                logger.debug(
+                    "Job %s branch path finished step %s, waiting for: %s",
+                    job_id,
+                    completed_step,
+                    new_active,
+                )
+
+    async def _converge_branch(
+        self,
+        job_id: str,
+        scope: str,
+        branch: SfcBranch,
+        recipe: SfcRecipe,
+    ) -> None:
+        """All branch paths completed — find exit transition and advance."""
+        exit_target = self._find_branch_exit(recipe, branch)
+        if exit_target is None:
+            await self._complete_job(job_id, scope)
+            return
+
+        logger.info(
+            "Job %s converging branch %s → %s", job_id, branch.name, exit_target
+        )
+
+        # Check if the exit target is itself another branch.
+        next_branch = self._find_branch(recipe, exit_target)
+        if next_branch is not None:
+            await self._enter_branch(job_id, scope, branch.name, next_branch, recipe)
+        else:
+            await self._advance_to_step(job_id, scope, branch.name, exit_target, recipe)
+
+    def _evaluate_transitions(self, recipe: SfcRecipe, source: str) -> str | None:
+        """Find the target of the highest-priority outgoing transition."""
         outgoing: list[SfcTransition] = [
-            t for t in recipe.transitions if t.source == current_step
+            t for t in recipe.transitions if t.source == source
         ]
         if not outgoing:
             return None
 
-        # Sort by priority (lower = higher priority)
         outgoing.sort(key=lambda t: t.priority or 0)
         return outgoing[0].target
+
+    @staticmethod
+    def _select_branch_path(recipe: SfcRecipe, branch: SfcBranch) -> list[str]:
+        """For a selection branch, pick the path whose entry transition has the
+        lowest (= highest) priority.  Falls back to the first path."""
+        best_path: list[str] = branch.branches[0] if branch.branches else []
+
+        first_steps = {path[0] for path in branch.branches if path}
+        candidates = [
+            t
+            for t in recipe.transitions
+            if t.source == branch.name and t.target in first_steps
+        ]
+        if candidates:
+            candidates.sort(key=lambda t: t.priority or 0)
+            selected_first = candidates[0].target
+            for path in branch.branches:
+                if path and path[0] == selected_first:
+                    return path
+
+        # No explicit entry transitions — fall back to first path.
+        return best_path
 
     # ── Job completion / failure ────────────────────────────────────────
 
@@ -768,28 +1030,31 @@ class SfcEngine(AdditionalTask):
             logger.warning("Work master lost for job %s on resume", job_id)
             return
 
+        assert isinstance(work_master.data, dict)
         recipe = SfcRecipe.from_dict(work_master.data)
 
-        # Re-dispatch any actions that are in dispatched or pending state
-        step_actions = [a for a in recipe.actions if a.step == exec_state.current_step]
-        for assoc in step_actions:
-            action_exec = exec_state.actions.get(assoc.name)
-            if action_exec is None:
-                continue
-            if action_exec.state in (SfcActionState.PENDING, SfcActionState.DISPATCHED):
-                if assoc.interaction == SfcInteraction.PUSH_COMMAND:
-                    await self._dispatch_push_command(
-                        job_id, exec_state.scope, assoc, action_exec
-                    )
-                elif assoc.interaction == SfcInteraction.PULL_EVENT:
-                    await self._dispatch_pull_event(
-                        job_id, exec_state.scope, assoc, action_exec
-                    )
-            elif action_exec.state == SfcActionState.WAITING:
-                # Already waiting — nothing to do, event will arrive
-                pass
+        # Re-dispatch actions for all active steps (handles branches).
+        for step_name in list(exec_state.active_steps):
+            step_actions = [a for a in recipe.actions if a.step == step_name]
+            for assoc in step_actions:
+                action_exec = exec_state.actions.get(assoc.name)
+                if action_exec is None:
+                    continue
+                if action_exec.state in (
+                    SfcActionState.PENDING,
+                    SfcActionState.DISPATCHED,
+                ):
+                    if assoc.interaction == SfcInteraction.PUSH_COMMAND:
+                        await self._dispatch_push_command(
+                            job_id, exec_state.scope, assoc, action_exec
+                        )
+                    elif assoc.interaction == SfcInteraction.PULL_EVENT:
+                        await self._dispatch_pull_event(
+                            job_id, exec_state.scope, assoc, action_exec
+                        )
+                elif action_exec.state == SfcActionState.WAITING:
+                    pass
 
-        # Check if step was already complete (all actions done)
         await self._check_step_completion(job_id, exec_state.scope)
 
     async def _recovery_scan(self) -> None:
@@ -902,6 +1167,49 @@ class SfcEngine(AdditionalTask):
         for assoc in recipe.actions:
             if assoc.name == action_name:
                 return assoc
+        return None
+
+    @staticmethod
+    def _find_branch(recipe: SfcRecipe, name: str) -> SfcBranch | None:
+        """Find a branch construct by name, or ``None`` if *name* is a step."""
+        if recipe.branches:
+            for branch in recipe.branches:
+                if branch.name == name:
+                    return branch
+        return None
+
+    @staticmethod
+    def _next_step_in_branch_path(branch: SfcBranch, step_name: str) -> str | None:
+        """Return the step after *step_name* in its branch path, or ``None``."""
+        for path in branch.branches:
+            for i, name in enumerate(path):
+                if name == step_name and i + 1 < len(path):
+                    return path[i + 1]
+        return None
+
+    @staticmethod
+    def _find_branch_containing_step(
+        recipe: SfcRecipe, step_name: str
+    ) -> SfcBranch | None:
+        """Return the branch that contains *step_name*, or ``None``."""
+        if recipe.branches:
+            for branch in recipe.branches:
+                for path in branch.branches:
+                    if step_name in path:
+                        return branch
+        return None
+
+    @staticmethod
+    def _find_branch_exit(recipe: SfcRecipe, branch: SfcBranch) -> str | None:
+        """Find the exit (convergence) transition target for a branch.
+
+        Exit transitions go from the branch name to a target that is **not**
+        one of the branch's path first steps.
+        """
+        first_steps = {path[0] for path in branch.branches if path}
+        for t in recipe.transitions:
+            if t.source == branch.name and t.target not in first_steps:
+                return t.target
         return None
 
     @staticmethod

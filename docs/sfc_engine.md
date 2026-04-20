@@ -355,31 +355,33 @@ Dashed arrows are direct Python method calls within the same process. Solid arro
     - Creates the SFC execution state in Redis
 4. **Triggers Run**: The engine calls `trigger()` on the NB processor's `HierarchicalGraphMachine` to transition the job to `Running`, then persists the state change and `XACK`s the stream entry
 5. **Walks the SFC** — all state mutations use atomic compare-and-swap (CAS) via Lua scripts:
-    - Steps map to states in the `transitions` library
+    - Steps are tracked in Redis via `SfcExecutionState` (`current_step` for linear flow, `active_steps` for branches)
     - For `push_command` actions: atomically sets action state `pending → dispatched`, calls the SB processor's `callback_outgoing()` directly, and writes the next work item to the stream in the same CAS if the response completes the step
     - For `pull_event` actions: sets action state to `waiting` and returns — the step completes when any instance receives the matching incoming CloudEvent via MQTT shared subscription and performs the CAS `waiting → completed`
     - On step completion: the CAS atomically advances the current step and (if the next step has a `push_command` action) writes a `dispatch_action:{name}` entry to the work stream — ensuring another instance can pick it up
-    - Simultaneous branches execute via `asyncio.TaskGroup` — all branches must complete before convergence
-    - Selection branches evaluate transition conditions/priorities to pick one path
+    - Simultaneous branches: `current_step` set to branch name, all path first-steps added to `active_steps`; each path advances independently via `cas_branch_advance`; convergence when `active_steps` is empty
+    - Selection branches: highest-priority entry transition selects one path; convergence when that path completes
 6. **Completes**: On recipe completion, triggers the NB job state to `Ended_Completed` via direct call and writes the `ISA95JobResponseDataType`
 7. **Handles failures**: On timeout, equipment error, or abort — triggers `Ended_Aborted` or `Aborted` on the NB processor as appropriate
 
 ### State Machine Integration
 
-The SFC recipe steps map to the `transitions` library, reusing the same `HierarchicalGraphMachine` pattern as the OPC UA job state machine:
+The SFC engine manages two distinct state machines. The **OPC UA job state machine** uses the `transitions` library (`HierarchicalGraphMachine`) — the same pattern as `MachineryJobsCloudEventProcessor`. The **SFC recipe state machine** does **not** use the `transitions` library; it is tracked entirely in Redis via `SfcExecutionState` with atomic CAS Lua scripts.
 
-| SFC concept | `transitions` mapping |
+| SFC concept | Implementation |
 |---|---|
-| Step | State |
-| Transition | Trigger with guard (condition) |
-| Simultaneous branch | `HierarchicalGraphMachine` parallel states |
-| Selection branch | Multiple transitions from same source, evaluated by priority |
-| Action qualifier | `on_enter` / `on_exit` callbacks on states |
+| Step | Entry in `active_steps` list; `current_step` for linear flow |
+| Transition | `SfcTransition` with `source`, `target`, optional `priority` |
+| Simultaneous branch | `current_step` = branch name; all path first-steps added to `active_steps`; `cas_branch_advance` Lua script atomically replaces/removes steps |
+| Selection branch | Highest-priority entry transition selects one path; only that path's first step added to `active_steps` |
+| Convergence (simultaneous) | `cas_branch_advance` returns empty `active_steps` → exit transition evaluated |
+| Convergence (selection) | Single path completes → `active_steps` empty → exit transition evaluated |
+| Action qualifier | `push_command` dispatched via work stream; `pull_event` waits for incoming CloudEvent |
 
 The SFC state machine is separate from the OPC UA job state machine. The SFC engine manages both:
 
 - The **OPC UA state machine** (job lifecycle: `AllowedToStart` → `Running` → `Ended`) via the existing `HierarchicalGraphMachine` in the NB processor
-- The **SFC state machine** (recipe execution: step → transition → step) as a second machine instance for the recipe
+- The **SFC state machine** (recipe execution: step → transition → step) tracked in Redis via `SfcExecutionState`
 
 ### Persistence
 
@@ -548,12 +550,14 @@ Re-delivery of `push_command` actions is the fundamental recovery mechanism. Aft
 
 **Goal**: Add parallel and selection branching support.
 
-1. Implement simultaneous (AND) branches via `asyncio.TaskGroup`
-2. Implement selection (OR) branches via priority-based transition evaluation
-3. Implement convergence logic (simultaneous: all must complete; selection: first wins)
-4. Add unit tests for branching scenarios
-5. Update this document's "State Machine Integration" section with final branching implementation details
-6. Update `docs/concepts.md`: expand the SFC Engine section with branching semantics (simultaneous/selection divergence and convergence)
+1. ~~Implement simultaneous (AND) branches via `active_steps` tracking in Redis with atomic CAS operations~~
+2. ~~Implement selection (OR) branches via priority-based transition evaluation~~
+3. ~~Implement convergence logic (simultaneous: all must complete; selection: first wins)~~
+4. ~~Add unit tests for branching scenarios~~
+5. ~~Update this document's "State Machine Integration" section with final branching implementation details~~
+6. ~~Update `docs/concepts.md`: expand the SFC Engine section with branching semantics (simultaneous/selection divergence and convergence)~~
+
+> **Status**: Implemented. Branching in `SfcEngine` (`src/microdcs/sfc_engine.py`), `cas_branch_advance` Lua script in `SfcExecutionDAO` (`src/microdcs/redis.py`). Tests in `tests/test_sfc_engine.py` and `tests/test_redis.py`.
 
 ### Phase 6: Application Wiring
 
@@ -574,7 +578,7 @@ Re-delivery of `push_command` actions is the fundamental recovery mechanism. Aft
 - **Opaque `data` + `dataschema` on Work Master**: Follows the CloudEvent envelope pattern. The NB processor and DAO stay ignorant of recipe content. Any future recipe format can be added by defining a new `dataschema` URI without touching existing code.
 - **JSON only for `data`**: The Work Master lives in Redis JSON. Keeping `data` as a JSON-native structure (`dict | list`) avoids base64 encoding and enables Redis JSON path queries into recipe content if needed.
 - **SFC engine as a separate orchestration layer, not a processor**: The engine is an `AdditionalTask`, not a `CloudEventProcessor`. This enforces a clean three-layer separation: NB protocol handling → SFC orchestration → SB protocol handling. The engine interacts with processors via direct Python method calls within the same process, avoiding CloudEvent round-trips for internal orchestration. This keeps the NB processor as a pure OPC UA protocol handler and SB processors as pure equipment protocol handlers — neither needs to know about SFC concepts. The engine can be replaced with a different execution strategy without changing any processor code.
-- **`transitions` library reuse**: The `HierarchicalGraphMachine` is already proven in the codebase for the OPC UA job state machine. SFC steps/transitions map naturally to its states/triggers model.
+- **`transitions` library for OPC UA only**: The `HierarchicalGraphMachine` is used for the OPC UA job lifecycle state machine (`AllowedToStart` → `Running` → `Ended`), reusing the same pattern proven in `MachineryJobsCloudEventProcessor`. SFC recipe execution does **not** use the `transitions` library — step sequencing, branching, and convergence are tracked in Redis via `SfcExecutionState` with atomic CAS Lua scripts. This avoids coupling recipe complexity to an in-memory state machine that would need reconciliation with Redis persistence.
 - **IEC 61131-3 SFC terminology**: Uses standardized names (step, transition, action, qualifier, selection/simultaneous divergence) from IEC 61131-3 without adopting the PLCopen TC6 graphical exchange format.
 - **Two interaction patterns**: `push_command` and `pull_event` cover the two real-world equipment integration scenarios observed in discrete manufacturing (automotive). The pattern is declared per action in the recipe, not globally.
 - **Station configuration delivery before SFC engine**: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, `is_job_acceptable()` rejects every Job Order and no job ever reaches `AllowedToStart`. Configuration delivery is therefore Phase 2 — after the Work Master extension (Phase 1) but before the SFC engine (Phase 4). This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.
