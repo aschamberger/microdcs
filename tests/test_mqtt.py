@@ -796,10 +796,11 @@ class TestMQTTHandler:
             transportmetadata={"mqtt_topic": "out/topic"},
             expiryinterval=30,
         )
-        await handler._publish_message(client, ce, processor=proc)
-        assert ce.id in handler._expiration_timeout_tasks
-        # Await the task (handle_cloudevent_expiration is an AsyncMock so resolves immediately)
-        await handler._expiration_timeout_tasks[ce.id]
+        with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
+            await handler._publish_message(client, ce, processor=proc)
+            assert ce.id in handler._expiration_timeout_tasks
+            # Await the task; sleep is mocked so handler is invoked immediately
+            await handler._expiration_timeout_tasks[ce.id]
         proc.handle_cloudevent_expiration.assert_awaited_once_with(ce, 30)
 
     @pytest.mark.asyncio
@@ -813,10 +814,11 @@ class TestMQTTHandler:
             transportmetadata={"mqtt_topic": "out/topic"},
             expiryinterval=30,
         )
-        await handler._publish_message(client, ce, processor=proc)
-        assert ce.id in handler._expiration_timeout_tasks
-        # Await to let done callback fire
-        await handler._expiration_timeout_tasks[ce.id]
+        with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
+            await handler._publish_message(client, ce, processor=proc)
+            assert ce.id in handler._expiration_timeout_tasks
+            # Await to let done callback fire; sleep is mocked so task completes immediately
+            await handler._expiration_timeout_tasks[ce.id]
         # Allow event loop to process done callbacks
         await asyncio.sleep(0)
         assert ce.id not in handler._expiration_timeout_tasks
@@ -834,12 +836,13 @@ class TestMQTTHandler:
             transportmetadata={"mqtt_topic": "out/topic"},
             expiryinterval=30,
         )
-        await handler._publish_message(client, ce, processor=proc)
-        assert ce.id is not None
-        task = handler._expiration_timeout_tasks[ce.id]
-        # Task should complete with the error logged (not propagated — it's in a done callback)
-        with pytest.raises(RuntimeError, match="handler failed"):
-            await task
+        with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
+            await handler._publish_message(client, ce, processor=proc)
+            assert ce.id is not None
+            task = handler._expiration_timeout_tasks[ce.id]
+            # Task should complete with the error logged (not propagated — it's in a done callback)
+            with pytest.raises(RuntimeError, match="handler failed"):
+                await task
         # Allow event loop to process done callbacks
         await asyncio.sleep(0)
         # Task still cleaned up from dict
@@ -967,14 +970,14 @@ class TestMQTTHandler:
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
-        # Simulate an existing expiration task for this event
-        ce_id = str(uuid.uuid4())
+        # Simulate an existing expiration task keyed by the original request's id
+        request_id = str(uuid.uuid4())
         mock_task = MagicMock()
-        handler._expiration_timeout_tasks[ce_id] = mock_task
+        handler._expiration_timeout_tasks[request_id] = mock_task
 
         msg = _make_mqtt_message()
-        # Override _cloudevent_from_message to return CE with matching id
-        ce = CloudEvent(id=ce_id, data=msg.payload)
+        # The response CE carries the original request id in correlationid
+        ce = CloudEvent(correlationid=request_id, data=msg.payload)
         ce.transportmetadata = {"mqtt_topic": "t", "mqtt_qos": 1, "mqtt_retain": False}
         with patch.object(handler, "_cloudevent_from_message", return_value=ce):
             await handler._process_message(client, msg)
@@ -1904,6 +1907,7 @@ class TestTopicDiscriminator:
         binding = self._make_discriminator_binding(discriminator="v1")
         ce = CloudEvent(transportmetadata={"mqtt_topic": "already/set"})
         binding.enrich_publish_transportmetadata(MessageIntent.EVENT, ce)
+        assert ce.transportmetadata is not None
         assert ce.transportmetadata["mqtt_topic"] == "already/set"
 
     # --- uniqueness warning ---

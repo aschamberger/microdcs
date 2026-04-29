@@ -158,10 +158,16 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             and cloudevent.expiryinterval is not None
             and int(cloudevent.expiryinterval) > 0
         ):
+            _interval = int(cloudevent.expiryinterval)
+
+            async def _expiration_task(
+                _ce=cloudevent, _interval=_interval, _proc=processor
+            ) -> list[CloudEvent] | CloudEvent | None:
+                await asyncio.sleep(_interval)
+                return await _proc.handle_cloudevent_expiration(_ce, _interval)
+
             self._expiration_timeout_tasks[cloudevent.id] = asyncio.create_task(
-                processor.handle_cloudevent_expiration(
-                    cloudevent, int(cloudevent.expiryinterval)
-                )
+                _expiration_task()
             )
             self._expiration_timeout_tasks[cloudevent.id].add_done_callback(
                 lambda _task, _id=cloudevent.id: (
@@ -251,8 +257,9 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             logger.debug("Received message on topic %s", message.topic)
 
         # cancel expiration timeout task if applicable
-        if cloudevent.id in self._expiration_timeout_tasks:
-            self._expiration_timeout_tasks[cloudevent.id].cancel()
+        # responses correlate back to the original request via correlationid
+        if cloudevent.correlationid in self._expiration_timeout_tasks:
+            self._expiration_timeout_tasks[cloudevent.correlationid].cancel()
 
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor
