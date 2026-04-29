@@ -166,11 +166,17 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 await asyncio.sleep(_interval)
                 return await _proc.handle_cloudevent_expiration(_ce, _interval)
 
-            self._expiration_timeout_tasks[cloudevent.id] = asyncio.create_task(
-                _expiration_task()
+            if cloudevent.correlationid is None:
+                logger.warning(
+                    "Cannot track expiration for event %s without correlation ID",
+                    cloudevent.id,
+                )
+                return
+            self._expiration_timeout_tasks[cloudevent.correlationid] = (
+                asyncio.create_task(_expiration_task())
             )
-            self._expiration_timeout_tasks[cloudevent.id].add_done_callback(
-                lambda _task, _id=cloudevent.id: (
+            self._expiration_timeout_tasks[cloudevent.correlationid].add_done_callback(
+                lambda _task, _id=cloudevent.correlationid: (
                     logger.error(
                         "Expiration task for event %s failed: %s",
                         _id,
