@@ -1705,3 +1705,256 @@ class TestCloudEvent:
         props = ce.to_dict(context={"remove_data": True, "make_str_values": True})
         assert props["custom"] == "value"
         assert props["type"] == "type"
+
+
+# ===================================================================
+# Topic discriminator support
+# ===================================================================
+
+
+class TestTopicDiscriminator:
+    """Tests for topic_discriminators in ProcessingConfig and MQTTProtocolBinding."""
+
+    # --- ProcessingConfig helpers ---
+
+    def test_get_discriminator_for_identifier_returns_value(self):
+        cfg = ProcessingConfig(
+            topic_discriminators={"greetings:v1"},
+        )
+        assert cfg.get_discriminator_for_identifier("greetings") == "v1"
+
+    def test_get_discriminator_for_identifier_returns_none_when_not_configured(self):
+        cfg = ProcessingConfig()
+        assert cfg.get_discriminator_for_identifier("greetings") is None
+
+    def test_get_discriminator_for_identifier_returns_none_for_unknown(self):
+        cfg = ProcessingConfig(
+            topic_discriminators={"other:v2"},
+        )
+        assert cfg.get_discriminator_for_identifier("greetings") is None
+
+    def test_get_discriminator_strips_whitespace(self):
+        cfg = ProcessingConfig(
+            topic_discriminators={" greetings : v1 "},
+        )
+        assert cfg.get_discriminator_for_identifier("greetings") == "v1"
+
+    def test_get_discriminator_empty_value_returns_none(self):
+        cfg = ProcessingConfig(
+            topic_discriminators={"greetings:"},
+        )
+        assert cfg.get_discriminator_for_identifier("greetings") is None
+
+    # --- Subscribe topic building ---
+
+    def test_discriminator_included_in_subscribe_topics(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+            topic_discriminators={"greetings:v1"},
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
+        # All subscribe topics must contain the discriminator before the intent
+        for topic in binding.topics:
+            assert "/v1/" in topic, f"Expected '/v1/' in topic '{topic}'"
+        # Confirm structure: prefix/discriminator/intent
+        assert "test/greetings/v1/data" in binding.topics
+        assert "test/greetings/v1/events" in binding.topics
+        assert "test/greetings/v1/metadata" in binding.topics
+
+    def test_discriminator_with_wildcard_levels(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+            topic_wildcard_levels={"greetings:1"},
+            topic_discriminators={"greetings:v1"},
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
+        # Both 0-wildcard and 1-wildcard variants should contain the discriminator
+        assert "test/greetings/v1/data" in binding.topics
+        assert "test/greetings/+/v1/data" in binding.topics
+
+    def test_no_discriminator_does_not_insert_extra_segment(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
+        assert "test/greetings/data" in binding.topics
+        assert binding.topic_discriminator is None
+
+    def test_discriminator_with_shared_subscription(self):
+        handler = _make_handler()
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings"},
+            response_topics={"greetings:test/responses"},
+            topic_discriminators={"greetings:v1"},
+            shared_subscription_name="mygroup",
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier="greetings",
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        handler.register_binding(binding)
+        for topic in binding.topics:
+            assert topic.startswith("$share/mygroup/")
+            assert "/v1/" in topic
+
+    # --- enrich_publish_transportmetadata ---
+
+    def _make_discriminator_binding(
+        self, discriminator: str | None = "v1", prefix: str = "test/greetings"
+    ) -> MQTTProtocolBinding:
+        identifier = "greetings"
+        disc_set: set[str] = (
+            {f"{identifier}:{discriminator}"} if discriminator else set()
+        )
+        cfg = ProcessingConfig(
+            topic_prefixes={f"{identifier}:{prefix}"},
+            response_topics={f"{identifier}:test/responses"},
+            topic_discriminators=disc_set,
+        )
+        proc = ConcreteProcessor(
+            instance_id="test-id",
+            runtime_config=cfg,
+            config_identifier=identifier,
+        )
+        binding = MQTTProtocolBinding(
+            processor=proc,
+            processing_config=cfg,
+            mqtt_config=MQTTConfig(),
+        )
+        # Override publish_intents so EVENT is a valid publish intent for these tests
+        binding.publish_intents = {MessageIntent.EVENT, MessageIntent.DATA}
+        return binding
+
+    def test_enrich_publish_with_discriminator_and_subject(self):
+        binding = self._make_discriminator_binding(discriminator="v1")
+        ce = CloudEvent(subject="line1.station2")
+        binding.enrich_publish_transportmetadata(MessageIntent.EVENT, ce)
+        assert ce.transportmetadata is not None
+        assert (
+            ce.transportmetadata["mqtt_topic"]
+            == "test/greetings/line1/station2/v1/events"
+        )
+
+    def test_enrich_publish_with_discriminator_no_subject(self):
+        binding = self._make_discriminator_binding(discriminator="v1")
+        ce = CloudEvent()
+        binding.enrich_publish_transportmetadata(MessageIntent.EVENT, ce)
+        assert ce.transportmetadata is not None
+        assert ce.transportmetadata["mqtt_topic"] == "test/greetings/v1/events"
+
+    def test_enrich_publish_without_discriminator_and_subject(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        ce = CloudEvent(subject="line1.station2")
+        binding.enrich_publish_transportmetadata(MessageIntent.EVENT, ce)
+        assert ce.transportmetadata is not None
+        assert (
+            ce.transportmetadata["mqtt_topic"] == "test/greetings/line1/station2/events"
+        )
+
+    def test_enrich_publish_without_discriminator_no_subject(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        ce = CloudEvent()
+        binding.enrich_publish_transportmetadata(MessageIntent.EVENT, ce)
+        assert ce.transportmetadata is not None
+        assert ce.transportmetadata["mqtt_topic"] == "test/greetings/events"
+
+    def test_enrich_publish_discriminator_not_applied_if_topic_already_set(self):
+        binding = self._make_discriminator_binding(discriminator="v1")
+        ce = CloudEvent(transportmetadata={"mqtt_topic": "already/set"})
+        binding.enrich_publish_transportmetadata(MessageIntent.EVENT, ce)
+        assert ce.transportmetadata["mqtt_topic"] == "already/set"
+
+    # --- uniqueness warning ---
+
+    def test_uniqueness_warning_on_duplicate_prefix_and_discriminator(self, caplog):
+        import logging
+
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings", "jobs:test/greetings"},
+            topic_discriminators={"greetings:v1", "jobs:v1"},
+        )
+        with caplog.at_level(logging.WARNING, logger="app.main"):
+            cfg.check_topic_discriminator_uniqueness()
+        assert any(
+            "share the same topic routing key" in r.message for r in caplog.records
+        )
+
+    def test_no_warning_when_discriminators_differ(self, caplog):
+        import logging
+
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings", "jobs:test/greetings"},
+            topic_discriminators={"greetings:v1", "jobs:v2"},
+        )
+        with caplog.at_level(logging.WARNING, logger="app.main"):
+            cfg.check_topic_discriminator_uniqueness()
+        assert not any(
+            "share the same topic routing key" in r.message for r in caplog.records
+        )
+
+    def test_no_warning_when_prefixes_differ(self, caplog):
+        import logging
+
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings", "jobs:test/jobs"},
+            topic_discriminators={"greetings:v1", "jobs:v1"},
+        )
+        with caplog.at_level(logging.WARNING, logger="app.main"):
+            cfg.check_topic_discriminator_uniqueness()
+        assert not any(
+            "share the same topic routing key" in r.message for r in caplog.records
+        )
+
+    def test_uniqueness_warning_on_duplicate_prefix_no_discriminator(self, caplog):
+        import logging
+
+        cfg = ProcessingConfig(
+            topic_prefixes={"greetings:test/greetings", "jobs:test/greetings"},
+        )
+        with caplog.at_level(logging.WARNING, logger="app.main"):
+            cfg.check_topic_discriminator_uniqueness()
+        assert any(
+            "share the same topic routing key" in r.message for r in caplog.records
+        )

@@ -614,16 +614,26 @@ class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
                 processor._config_identifier
             )
         )
+        self.topic_discriminator: str | None = (
+            processor._runtime_config.get_discriminator_for_identifier(
+                processor._config_identifier
+            )
+        )
 
         # Build subscribe topics from prefix + subscribe intents
         self.topics: set[str] = set()
         wildcard_string = "/+"
         for intent in processor.subscribe_intents():
             for i in range(0, topic_wildcard_levels + 1):
-                topic = f"{self.topic_prefix}{wildcard_string * i}/{intent.value}"
+                if self.topic_discriminator:
+                    topic = f"{self.topic_prefix}{wildcard_string * i}/{self.topic_discriminator}/{intent.value}"
+                else:
+                    topic = f"{self.topic_prefix}{wildcard_string * i}/{intent.value}"
                 if processor._runtime_config.shared_subscription_name:
                     topic = f"$share/{processor._runtime_config.shared_subscription_name}/{topic}"
                 self.topics.add(topic)
+
+        processing_config.check_topic_discriminator_uniqueness()
 
         # Resolve response topic for this processor
         response_topic_base = (
@@ -659,13 +669,23 @@ class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
                 # no topic prefix raises exception already in __init__, so we can assume topic_prefix is always set here
                 cloudevent.transportmetadata["mqtt_topic"] = self.topic_prefix  # type: ignore
             elif self.mqtt_path_from_subject and cloudevent.subject is not None:
-                cloudevent.transportmetadata["mqtt_topic"] = (
-                    f"{self.topic_prefix}/{cloudevent.subject.replace('.', '/')}/{intent.value}"
-                )
+                if self.topic_discriminator:
+                    cloudevent.transportmetadata["mqtt_topic"] = (
+                        f"{self.topic_prefix}/{cloudevent.subject.replace('.', '/')}/{self.topic_discriminator}/{intent.value}"
+                    )
+                else:
+                    cloudevent.transportmetadata["mqtt_topic"] = (
+                        f"{self.topic_prefix}/{cloudevent.subject.replace('.', '/')}/{intent.value}"
+                    )
             else:
-                cloudevent.transportmetadata["mqtt_topic"] = (
-                    f"{self.topic_prefix}/{intent.value}"
-                )
+                if self.topic_discriminator:
+                    cloudevent.transportmetadata["mqtt_topic"] = (
+                        f"{self.topic_prefix}/{self.topic_discriminator}/{intent.value}"
+                    )
+                else:
+                    cloudevent.transportmetadata["mqtt_topic"] = (
+                        f"{self.topic_prefix}/{intent.value}"
+                    )
 
         # Set our backchannel response topic if not already set
         if (

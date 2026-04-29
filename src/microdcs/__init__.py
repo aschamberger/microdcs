@@ -119,6 +119,7 @@ class ProcessingConfig:
     shared_subscription_name: str | None = None
     topic_prefixes: set[str] = field(default_factory=set)
     topic_wildcard_levels: set[str] = field(default_factory=set)
+    topic_discriminators: set[str] = field(default_factory=set)
     response_topics: set[str] = field(default_factory=set)
     shutdown_grace_period: int = 30
     binding_outgoing_queue_max_size: int = 1000
@@ -137,12 +138,39 @@ class ProcessingConfig:
                 return int(levels_str.strip())
         return 0
 
+    def get_discriminator_for_identifier(self, topic_identifier: str) -> str | None:
+        for entry in self.topic_discriminators:
+            name, _, discriminator = entry.partition(":")
+            if name.strip() == topic_identifier:
+                return discriminator.strip() or None
+        return None
+
     def get_response_topic_for_identifier(self, topic_identifier: str) -> str | None:
         for entry in self.response_topics:
             name, _, topic = entry.partition(":")
             if name.strip() == topic_identifier:
                 return topic.strip()
         return None
+
+    def check_topic_discriminator_uniqueness(self) -> None:
+        """Warn if any prefix+discriminator combination is shared by more than one identifier."""
+        seen: dict[str, str] = {}  # routing_key -> first identifier name
+        for entry in self.topic_prefixes:
+            name, _, prefix = entry.partition(":")
+            name = name.strip()
+            prefix = prefix.strip()
+            discriminator = self.get_discriminator_for_identifier(name)
+            key = f"{prefix}/{discriminator}" if discriminator else prefix
+            if key in seen:
+                logger.warning(
+                    "Processors '%s' and '%s' share the same topic routing key '%s'. "
+                    "Incoming messages matching this key will be delivered to both processors.",
+                    seen[key],
+                    name,
+                    key,
+                )
+            else:
+                seen[key] = name
 
 
 @dataclass

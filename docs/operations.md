@@ -70,9 +70,165 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_PROCESSING_SHARED_SUBSCRIPTION_NAME` | `str` | `None` | MQTT shared subscription group name |
 | `APP_PROCESSING_TOPIC_PREFIXES` | `set[str]` | `∅` | Comma-separated `name:prefix` pairs for topic routing |
 | `APP_PROCESSING_TOPIC_WILDCARD_LEVELS` | `set[str]` | `∅` | Comma-separated `name:levels` pairs for subscription wildcards |
+| `APP_PROCESSING_TOPIC_DISCRIMINATORS` | `set[str]` | `∅` | Comma-separated `name:discriminator` pairs — inserts a fixed path segment before the intent (e.g. a schema version) |
 | `APP_PROCESSING_RESPONSE_TOPICS` | `set[str]` | `∅` | Comma-separated response topic names |
 | `APP_PROCESSING_SHUTDOWN_GRACE_PERIOD` | `int` | `30` | Seconds to wait for in-flight work during shutdown |
 | `APP_PROCESSING_BINDING_OUTGOING_QUEUE_MAX_SIZE` | `int` | `1000` | Global upper cap on any binding's outgoing queue |
+
+---
+
+## MQTT Topic Structure
+
+MicroDCS derives all subscribe and publish topics automatically from the processing
+configuration. Understanding the topic layout helps when integrating with external
+MQTT clients, debugging message routing, or planning namespace partitioning across
+multiple deployed processors.
+
+### Topic Anatomy
+
+Subscribe and publish topics share the same structural pattern, but they differ in
+what fills the wildcard/subject position:
+
+**Subscribe topics** (derived at binding creation, fixed for the lifetime of the connection):
+
+```
+{prefix}[/+...N][/{discriminator}]/{intent}
+```
+
+**Publish topics** (derived per outgoing message when `mqtt_path_from_subject=True`):
+
+```
+{prefix}[/{subject-path}][/{discriminator}]/{intent}
+```
+
+| Segment | Source | Required |
+|---|---|---|
+| `{prefix}` | `APP_PROCESSING_TOPIC_PREFIXES` — the `prefix` part of a `name:prefix` entry | Yes |
+| `/+...N` | Single-level wildcards, one per wildcard level (`APP_PROCESSING_TOPIC_WILDCARD_LEVELS`) — subscribe only | No |
+| `/{subject-path}` | CloudEvent `subject` attribute, dots replaced with `/` — publish only, when `mqtt_path_from_subject=True` | No |
+| `/{discriminator}` | `APP_PROCESSING_TOPIC_DISCRIMINATORS` — the `discriminator` part of a `name:discriminator` entry | No |
+| `/{intent}` | Message intent: `data`, `events`, `commands`, or `metadata` | Yes |
+
+**Examples** with prefix `factory/line1`, discriminator `v2`, wildcard level 1, and subject `station.A`:
+
+| Context | Resulting topic |
+|---|---|
+| Subscribe, no discriminator | `factory/line1/events`, `factory/line1/+/events` |
+| Subscribe, with discriminator | `factory/line1/v2/events`, `factory/line1/+/v2/events` |
+| Publish, no discriminator | `factory/line1/station/A/commands` |
+| Publish, with discriminator | `factory/line1/station/A/v2/commands` |
+
+### Processor Binding Direction
+
+The processor's binding direction (`NORTHBOUND` or `SOUTHBOUND`, set by the
+`@processor_config` decorator) determines which intents are subscribed to and which
+are published on:
+
+| Direction | Subscribes to | Publishes to |
+|---|---|---|
+| `SOUTHBOUND` | `data`, `events`, `metadata` | `commands` |
+| `NORTHBOUND` | `commands` | `data`, `events`, `metadata` |
+
+A southbound processor typically represents DCS-side logic that reacts to equipment
+telemetry and issues commands back. A northbound processor represents MES-side logic
+that issues commands down to the DCS and receives confirmations and telemetry back up.
+
+### Wildcard Subscriptions
+
+`APP_PROCESSING_TOPIC_WILDCARD_LEVELS` controls how many single-level `+` wildcards
+are appended between the prefix and the intent when subscribing. This allows a single
+binding to receive messages from multiple topic subtrees — for example, across several
+stations under a shared line prefix.
+
+With `name:N` where N is the number of wildcard levels, the binding subscribes to:
+
+```
+{prefix}/{intent}               # level 0 (always included)
+{prefix}/+/{intent}             # level 1
+{prefix}/+/+/{intent}           # level 2
+...
+{prefix}/+/...+/{intent}        # level N
+```
+
+If a discriminator is configured, it is inserted before `{intent}` at every level:
+
+```
+{prefix}/{discriminator}/{intent}
+{prefix}/+/{discriminator}/{intent}
+```
+
+### Response Topics
+
+`APP_PROCESSING_RESPONSE_TOPICS` configures the backchannel topic used for
+request-reply patterns (e.g. command acknowledgement). The actual subscribed response
+topic is `{response_topic_base}/{processor_instance_id}`, making it unique per
+processor instance.
+
+When a processor publishes a `COMMAND` intent message, the MQTT binding automatically
+sets the MQTT v5 `ResponseTopic` property to this response topic, so the downstream
+device or service knows where to send its reply.
+
+### Shared Subscriptions
+
+`APP_PROCESSING_SHARED_SUBSCRIPTION_NAME` wraps every subscribe topic in an MQTT v5
+shared subscription group:
+
+```
+$share/{group}/{prefix}/.../{intent}
+```
+
+This distributes incoming messages across all instances in the group (round-robin at
+the broker), enabling horizontal scaling without duplicate delivery. The response topic
+is never wrapped in a shared subscription — replies must arrive at the specific
+instance that issued the command.
+
+### Discriminators and Namespace Partitioning
+
+`APP_PROCESSING_TOPIC_DISCRIMINATORS` inserts a fixed segment immediately before the
+intent in both subscribe and publish topics. Its primary use cases are:
+
+- **Schema versioning** — e.g. discriminator `v2` separates messages with a new
+  payload schema from the existing `v1` traffic on the same prefix without requiring
+  a prefix rename.
+- **Application partitioning** — e.g. discriminator `sfc` vs `qa` on the same line
+  prefix routes different application concerns to different processors.
+
+At binding creation time, MicroDCS checks that no two processors registered against
+the same `ProcessingConfig` share an identical `prefix + discriminator` combination.
+If they do, a **warning** is logged — this is not an error because intentional fan-out
+routing (delivering the same message to multiple processors) is a supported pattern.
+
+```
+WARNING: Processors 'jobs' and 'greetings' share the same topic routing key
+         'factory/line1'. Incoming messages matching this key will be
+         delivered to both processors.
+```
+
+### Configuration Example
+
+The following shows a complete environment variable setup for two processors sharing
+the same line prefix but separated by discriminator:
+
+```bash
+# Two processors, same line prefix, different discriminators
+APP_PROCESSING_TOPIC_PREFIXES=jobs:factory/line1,greetings:factory/line1
+APP_PROCESSING_TOPIC_WILDCARD_LEVELS=jobs:1,greetings:1
+APP_PROCESSING_TOPIC_DISCRIMINATORS=jobs:machinery-jobs,greetings:greetings
+APP_PROCESSING_RESPONSE_TOPICS=jobs:factory/responses,greetings:factory/responses
+```
+
+Results for the `jobs` processor (SOUTHBOUND, subscribes to data/events/metadata):
+
+```
+Subscribe: factory/line1/machinery-jobs/data
+           factory/line1/machinery-jobs/events
+           factory/line1/machinery-jobs/metadata
+           factory/line1/+/machinery-jobs/data
+           factory/line1/+/machinery-jobs/events
+           factory/line1/+/machinery-jobs/metadata
+Publish:   factory/line1/{subject-path}/machinery-jobs/commands
+Response:  factory/responses/{instance-id}
+```
 
 ---
 
