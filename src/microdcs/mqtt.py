@@ -157,6 +157,8 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             and cloudevent.id is not None
             and cloudevent.expiryinterval is not None
             and int(cloudevent.expiryinterval) > 0
+            and cloudevent.transportmetadata is not None
+            and cloudevent.transportmetadata.get("mqtt_response_topic") is not None
         ):
             _interval = int(cloudevent.expiryinterval)
 

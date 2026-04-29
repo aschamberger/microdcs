@@ -735,7 +735,7 @@ class TestMQTTHandler:
         proc = _make_processor()
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic"},
+            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
             expiryinterval=30,
         )
         await handler._publish_message(client, ce, processor=proc)
@@ -748,6 +748,19 @@ class TestMQTTHandler:
             pass
 
     @pytest.mark.asyncio
+    async def test_publish_message_no_expiry_task_without_response_topic(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+
+        ce = CloudEvent(
+            transportmetadata={"mqtt_topic": "out/topic"},
+            expiryinterval=30,
+        )
+        await handler._publish_message(client, ce, processor=proc)
+        assert len(handler._expiration_timeout_tasks) == 0
+
+    @pytest.mark.asyncio
     async def test_publish_message_no_expiry_task_without_correlationid(self, caplog):
         import logging
 
@@ -756,7 +769,7 @@ class TestMQTTHandler:
         proc = _make_processor()
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic"},
+            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
             expiryinterval=30,
             correlationid=None,
         )
@@ -811,7 +824,7 @@ class TestMQTTHandler:
         proc.handle_cloudevent_expiration = AsyncMock(return_value=None)
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic"},
+            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
             expiryinterval=30,
         )
         with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
@@ -829,7 +842,7 @@ class TestMQTTHandler:
         proc.handle_cloudevent_expiration = AsyncMock(return_value=None)
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic"},
+            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
             expiryinterval=30,
         )
         with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
@@ -851,7 +864,7 @@ class TestMQTTHandler:
         )
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic"},
+            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
             expiryinterval=30,
         )
         with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
