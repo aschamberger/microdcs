@@ -10,7 +10,11 @@ from microdcs.msgpack import (
     OTELInstrumentedMessagePackHandler,
 )
 from microdcs.processors.greetings import GreetingsCloudEventProcessor
-from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
+from microdcs.processors.machinery_jobs import (
+    JobAcceptanceConfig,
+    MachineryJobsCloudEventProcessor,
+)
+from microdcs.publishers import JobOrderPublisher
 
 logger = logging.getLogger("app.main")
 
@@ -65,21 +69,25 @@ microdcs.register_protocol_binding(
 )
 
 # Register with MessagePack handler
+msgpack_type_filters: set[str] = set()
 microdcs.register_protocol_binding(
     MessagePackProtocolBinding(
         greetings_processor,
         microdcs.runtime_config.processing,
         microdcs.runtime_config.msgpack,
+        msgpack_type_filters,
     )
 )
 
 # Create a single protocol-agnostic machinery-jobs processor
+job_acceptance_config = JobAcceptanceConfig()
 machinery_jobs_processor = MachineryJobsCloudEventProcessor(
     microdcs.runtime_config.instance_id,
     microdcs.runtime_config.processing,
     "machinery-jobs",
     microdcs.redis_connection_pool,
     microdcs.redis_key_schema,
+    job_acceptance_config,
 )
 
 # Register with MQTT handler
@@ -100,9 +108,16 @@ microdcs.register_protocol_binding(
     )
 )
 
-# Add additional task to MicroDCS main task group
-# additional_task = MyAdditionalTask()
-# microdcs.add_additional_task(additional_task)
+# Add job order publisher as additional task
+job_order_publisher = JobOrderPublisher(
+    microdcs.runtime_config.mqtt,
+    microdcs.runtime_config.publisher,
+    microdcs.runtime_config.processing,
+    "machinery-jobs",
+    microdcs.redis_connection_pool,
+    microdcs.redis_key_schema,
+)
+microdcs.add_additional_task(job_order_publisher)
 
 # Run MicroDCS main application logic
 loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None

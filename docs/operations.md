@@ -29,6 +29,18 @@ and what happens when they fill is the foundation for operating the system relia
 All settings are read from environment variables with the prefix `APP_` and nested
 structure `APP_{SECTION}_{FIELD}`.
 
+### Redis (`APP_REDIS_*`)
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `APP_REDIS_HOSTNAME` | `str` | `localhost` | Redis server hostname |
+| `APP_REDIS_PORT` | `int` | `6379` | Redis server port |
+| `APP_REDIS_KEY_PREFIX` | `str` | `microdcs` | Prefix applied to all Redis keys |
+| `APP_REDIS_USERNAME` | `str` | `None` | Redis ACL username (optional) |
+| `APP_REDIS_PASSWORD` | `str` | `None` | Redis password (optional) |
+| `APP_REDIS_SSL` | `bool` | `false` | Enable TLS for Redis connection |
+| `APP_REDIS_SSL_CA_CERTS` | `Path` | `None` | CA certificate for Redis TLS (optional) |
+
 ### MQTT (`APP_MQTT_*`)
 
 | Variable | Type | Default | Description |
@@ -74,6 +86,7 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_PROCESSING_RESPONSE_TOPICS` | `set[str]` | `∅` | Comma-separated response topic names |
 | `APP_PROCESSING_SHUTDOWN_GRACE_PERIOD` | `int` | `30` | Seconds to wait for in-flight work during shutdown |
 | `APP_PROCESSING_BINDING_OUTGOING_QUEUE_MAX_SIZE` | `int` | `1000` | Global upper cap on any binding's outgoing queue |
+| `APP_PROCESSING_POST_START_LOCK_TTL` | `int` | `30` | TTL (seconds) for the distributed `post_start` Redis lock; controls how long a crashed instance blocks other replicas |
 
 ---
 
