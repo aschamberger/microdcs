@@ -10,7 +10,7 @@ from microdcs.common import (
     ProtocolHandler,
 )
 from microdcs.mqtt import MQTTPublisher
-from microdcs.redis import RedisKeySchema
+from microdcs.redis import PostStartLockDAO, RedisKeySchema
 
 logger = logging.getLogger("app.main")
 
@@ -75,6 +75,14 @@ class MicroDCS:
     async def main(self):
         logger.info("Starting main application logic")
         await self.runtime_config.validate()
+
+        redis_client = redis.Redis(connection_pool=self.redis_connection_pool)
+        post_start_lock_dao = PostStartLockDAO(
+            redis_client,
+            self.redis_key_schema,
+            ttl=self.runtime_config.processing.post_start_lock_ttl,
+        )
+
         # Initialise every registered processor (only when acting as processor)
         if self.runtime_config.is_processor_instance:
             for processor in self._processors:
@@ -119,7 +127,23 @@ class MicroDCS:
             # Post start every registered processor
             if self.runtime_config.is_processor_instance:
                 for processor in self._processors:
-                    await processor.post_start()
+                    if processor.post_start_singleton:
+                        acquired = await post_start_lock_dao.acquire(
+                            processor._config_identifier
+                        )
+                        if acquired:
+                            logger.info(
+                                "Acquired post_start lock for %s; executing post_start",
+                                processor._config_identifier,
+                            )
+                            await processor.post_start()
+                        else:
+                            logger.info(
+                                "Another instance holds post_start lock for %s; skipping",
+                                processor._config_identifier,
+                            )
+                    else:
+                        await processor.post_start()
 
         logger.info("Main application logic has completed")
 

@@ -95,6 +95,14 @@ class RedisKeySchema:
         return f"counter:{name}"
 
     @prefixed_key
+    def post_start_lock_key(self, config_identifier: str) -> str:
+        """
+        poststartlock:[config_identifier]
+        Redis type: string (lock holder instance_id)
+        """
+        return f"poststartlock:{config_identifier}"
+
+    @prefixed_key
     def joborder_key(self, job_order_id: str) -> str:
         """
         joborder:[job_order_id]
@@ -363,6 +371,43 @@ class TransactionDedupeDAO:
             )
             else True
         )
+
+
+class PostStartLockDAO:
+    """Distributed lock for post_start singleton execution.
+
+    Uses Redis SET NX EX to ensure only one instance across replicas
+    executes ``post_start()`` for a given processor config_identifier.
+
+    The lock auto-expires after ``ttl`` seconds so that a crashed instance
+    does not permanently block other replicas from executing post_start on
+    restart.
+    """
+
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        key_schema: RedisKeySchema,
+        ttl: int = 30,
+    ):
+        self.redis = redis_client
+        self.key_schema = key_schema
+        self.ttl = ttl
+
+    async def acquire(self, config_identifier: str) -> bool:
+        """Try to acquire the post_start lock.
+
+        Returns True if the lock was acquired (this instance should run
+        post_start), False if another instance already holds it.
+        """
+        key = self.key_schema.post_start_lock_key(config_identifier)
+        result = await self.redis.set(
+            key,
+            "1",
+            nx=True,
+            ex=self.ttl,
+        )
+        return result is not None
 
 
 class CounterDAO:

@@ -568,6 +568,14 @@ class CloudEventProcessor(ABC):
     _processor_binding: ProcessorBinding
     _subscribe_intents: set[MessageIntent] = set()
     _publish_intents: set[MessageIntent] = set()
+    post_start_singleton: bool = False
+    """When True, post_start() is guarded by a Redis distributed lock so that
+    only one instance in the replica set executes it. Other instances skip
+    post_start() silently.
+
+    The lock TTL is controlled by ``ProcessingConfig.post_start_lock_ttl``
+    (default 30 seconds).
+    """
 
     def __init__(
         self,

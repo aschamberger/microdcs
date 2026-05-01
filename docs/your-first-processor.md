@@ -148,6 +148,15 @@ class PingPongProcessor(CloudEventProcessor):
     async def produce_pong(self, **kwargs) -> Pong | None:
         return Pong(reply=kwargs.get("reply", "unsolicited pong"))
 
+    async def initialize(self) -> None:
+        logger.info("PingPongProcessor initialized")
+
+    async def post_start(self) -> None:
+        logger.info("PingPongProcessor started")
+
+    async def shutdown(self) -> None:
+        logger.info("PingPongProcessor shutdown")
+
     async def process_response_cloudevent(
         self, cloudevent: CloudEvent
     ) -> list[CloudEvent] | CloudEvent | None:
@@ -185,6 +194,12 @@ You can override the defaults with explicit `subscribe_intents` and `publish_int
 - `process_response_cloudevent` — handles transport-level response messages (e.g. MQTT response topic replies)
 - `handle_cloudevent_expiration` — called when a published event's expiry interval elapses
 - `trigger_outgoing_event` — entry point for application-driven outbound events (timers, API calls, etc.)
+
+**Three optional lifecycle hooks** can be overridden (all default to no-ops):
+
+- `initialize()` — async setup before handlers start (Redis index creation, dependency checks)
+- `post_start()` — actions after handlers are live (send startup messages, publish metadata)
+- `shutdown()` — async cleanup after the task group exits (release resources, flush buffers)
 
 ## Step 4: Wire It Up
 
@@ -477,6 +492,65 @@ async def __post_outgoing_callback__(self, responses, cloudevent, **kwargs):
     return responses
 ```
 
+## Processor Lifecycle Hooks
+
+`CloudEventProcessor` provides three optional async hooks called by `MicroDCS.main()` at well-defined points. All three have default no-op implementations so you only override what you need.
+
+| Hook | When called | Typical use |
+|---|---|---|
+| `initialize()` | Before the task group starts (before protocol handlers are running) | Create Redis indices, validate external dependencies |
+| `post_start()` | After all protocol handlers are running and accepting messages | Publish initial metadata/state, send startup messages |
+| `shutdown()` | After the task group exits (graceful shutdown) | Release resources acquired in `initialize()`, flush buffers |
+
+```python
+@processor_config(binding=ProcessorBinding.NORTHBOUND)
+class PingPongProcessor(CloudEventProcessor):
+    async def initialize(self) -> None:
+        # Runs before message handlers are started.
+        # Safe to call async setup code here (e.g. database index creation).
+        logger.info("Initializing PingPongProcessor")
+
+    async def post_start(self) -> None:
+        # Runs after all handlers are registered and the transport is live.
+        # Use this to publish initial state or metadata events.
+        self.publish_event(self.create_event(), intent=MessageIntent.META)
+
+    async def shutdown(self) -> None:
+        # Runs during graceful shutdown after the task group has exited.
+        logger.info("Shutting down PingPongProcessor")
+```
+
+### Execution order
+
+```
+initialize()            ← before task group / before handlers accept messages
+  task_group start
+    handler tasks start
+  post_start()          ← handlers are live; messages can be sent and received
+  [application runs]
+  task group exits
+shutdown()              ← after task group; no more messages
+Redis pool closed
+```
+
+### `post_start_singleton` — run once across replicas
+
+When running multiple replicas, every instance calls `post_start()` on startup. If `post_start()` sends a message (e.g. an init command), this results in N identical messages — one per replica.
+
+Set `post_start_singleton = True` on the processor class to ensure only one replica executes `post_start()`:
+
+```python
+@processor_config(binding=ProcessorBinding.NORTHBOUND)
+class PingPongProcessor(CloudEventProcessor):
+    post_start_singleton = True  # only one replica across the set runs post_start()
+
+    async def post_start(self) -> None:
+        # This runs on exactly one replica. Other replicas skip it silently.
+        self.publish_event(self.create_event(), intent=MessageIntent.META)
+```
+
+Under the hood `MicroDCS` uses a Redis `SET NX EX` lock keyed to `poststartlock:{config_identifier}`. The lock expires after `ProcessingConfig.post_start_lock_ttl` seconds (default 30 s) so that a crashed replica does not permanently block `post_start()` from running after a restart. See [Persistence — Distributed post_start Lock](persistence.md#distributed-post_start-lock) for details.
+
 ## Testing Your Processor
 
 Use `pytest` and `unittest.mock` to test processors without external dependencies:
@@ -509,5 +583,5 @@ class TestPingPongProcessor:
 ## Next Steps
 
 - Study the built-in `GreetingsCloudEventProcessor` in `src/microdcs/processors/greetings.py` for a complete working example
-- Study `MachineryJobsCloudEventProcessor` in `src/microdcs/processors/machinery_jobs.py` for a production-grade processor with Redis persistence and state machines
-- See [Persistence](persistence.md) for Redis-backed state management patterns
+- Study `MachineryJobsCloudEventProcessor` in `src/microdcs/processors/machinery_jobs.py` for a production-grade processor with Redis persistence, state machines, and `post_start()` metadata publishing
+- See [Persistence](persistence.md) for Redis-backed state management patterns and the distributed `post_start` lock

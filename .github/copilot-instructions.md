@@ -87,6 +87,8 @@ docker build -t aschamberger/microdcs .
 - Subclass `CloudEventProcessor` and decorate the class with `@processor_config(binding=ProcessorBinding.NORTHBOUND|SOUTHBOUND)`.
 - Package exports are static: whenever adding a new processor class, update `src/microdcs/processors/__init__.py` (including `__all__`) so users can import from `microdcs.processors`.
 - **Must implement** three abstract methods: `process_response_cloudevent(self, cloudevent)`, `handle_cloudevent_expiration(self, cloudevent, timeout)`, and `trigger_outgoing_event(self, **kwargs)`. All return `list[CloudEvent] | CloudEvent | None`.
+- **Optional lifecycle hooks** (default no-ops, override as needed): `initialize()` — async setup before handlers start; `post_start()` — actions after handlers are live; `shutdown()` — async cleanup after task group exits.
+- Set `post_start_singleton = True` on a processor class to ensure only one replica executes `post_start()` across the deployment; guarded by a Redis `SET NX EX` lock keyed to `poststartlock:{config_identifier}` with TTL from `ProcessingConfig.post_start_lock_ttl`.
 - Use `@incoming(MyDataClass)` to register a handler for incoming CloudEvents of that type.
 - Use `@outgoing(MyDataClass)` to register a handler for producing outgoing CloudEvents.
 - Incoming handlers receive the deserialized dataclass plus keyword args for CloudEvent attributes listed in `_event_attributes`. Return `list[T] | T | None`.
@@ -97,6 +99,7 @@ docker build -t aschamberger/microdcs .
 
 - `RuntimeConfig` reads all settings from environment variables with prefix `APP_` and nested structure: `APP_{SECTION}_{FIELD}` (e.g. `APP_MQTT_HOSTNAME`, `APP_REDIS_PORT`, `APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED`).
 - In Kubernetes, `POD_ID` env var is set from the pod UID; locally it falls back to a random UUID.
+- **Keeping `docs/operations.md` in sync**: whenever a field is added to or removed from `RedisConfig`, `MQTTConfig`, `MessagePackConfig`, or `ProcessingConfig` in `src/microdcs/__init__.py`, update the corresponding `APP_*` table in `docs/operations.md` — including the variable name, type, default value, and description. The four config sections map directly to the four table subsections: `APP_REDIS_*`, `APP_MQTT_*`, `APP_MSGPACK_*`, `APP_PROCESSING_*`.
 
 ### Testing
 

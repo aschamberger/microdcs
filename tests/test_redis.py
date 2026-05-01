@@ -29,6 +29,7 @@ from microdcs.redis import (
     MaterialDefinitionListDAO,
     PersonnelListDAO,
     PhysicalAssetListDAO,
+    PostStartLockDAO,
     RedisKeySchema,
     SfcExecutionDAO,
     TransactionDedupeDAO,
@@ -222,6 +223,17 @@ class TestRedisKeySchema:
     def test_active_scopes(self):
         assert self.schema.active_scopes() == "test:active-scopes"
 
+    def test_post_start_lock_key(self):
+        assert (
+            self.schema.post_start_lock_key("my-processor")
+            == "test:poststartlock:my-processor"
+        )
+
+    def test_post_start_lock_key_different_identifiers(self):
+        k1 = self.schema.post_start_lock_key("proc-a")
+        k2 = self.schema.post_start_lock_key("proc-b")
+        assert k1 != k2
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -337,6 +349,57 @@ class TestTransactionDedupeDAO:
         await dao.is_duplicate("scope1", "tx-1")
         call_kwargs = self.redis.set.call_args.kwargs
         assert call_kwargs["ex"] == 60
+
+
+# ---------------------------------------------------------------------------
+# PostStartLockDAO
+# ---------------------------------------------------------------------------
+
+
+class TestPostStartLockDAO:
+    def setup_method(self) -> None:
+        self.redis = _make_redis_mock()
+        self.schema = _make_schema()
+        self.dao = PostStartLockDAO(self.redis, self.schema, ttl=30)
+
+    @pytest.mark.asyncio
+    async def test_acquire_returns_true_when_lock_set(self):
+        # SET NX returns a non-None value → lock acquired
+        self.redis.set.return_value = True
+        result = await self.dao.acquire("my-processor")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_acquire_returns_false_when_lock_held(self):
+        # SET NX returns None → lock already held by another instance
+        self.redis.set.return_value = None
+        result = await self.dao.acquire("my-processor")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_acquire_calls_set_with_correct_args(self):
+        self.redis.set.return_value = True
+        await self.dao.acquire("my-processor")
+        key = self.schema.post_start_lock_key("my-processor")
+        self.redis.set.assert_awaited_once_with(key, "1", nx=True, ex=30)
+
+    @pytest.mark.asyncio
+    async def test_acquire_uses_custom_ttl(self):
+        dao = PostStartLockDAO(self.redis, self.schema, ttl=60)
+        self.redis.set.return_value = True
+        await dao.acquire("my-processor")
+        call_kwargs = self.redis.set.call_args.kwargs
+        assert call_kwargs["ex"] == 60
+
+    @pytest.mark.asyncio
+    async def test_acquire_different_identifiers_use_different_keys(self):
+        self.redis.set.return_value = True
+        await self.dao.acquire("proc-a")
+        key_a = self.redis.set.call_args.args[0]
+        self.redis.set.reset_mock()
+        await self.dao.acquire("proc-b")
+        key_b = self.redis.set.call_args.args[0]
+        assert key_a != key_b
 
 
 # ---------------------------------------------------------------------------

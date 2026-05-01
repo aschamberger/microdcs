@@ -123,6 +123,7 @@ class ProcessingConfig:
     response_topics: set[str] = field(default_factory=set)
     shutdown_grace_period: int = 30
     binding_outgoing_queue_max_size: int = 1000
+    post_start_lock_ttl: int = 30
 
     def get_topic_prefix_for_identifier(self, topic_identifier: str) -> str | None:
         for entry in self.topic_prefixes:

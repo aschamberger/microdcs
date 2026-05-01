@@ -61,6 +61,7 @@ def _register_mock_handler_and_binding(dcs: MicroDCS):
     mock_proc.initialize = AsyncMock()
     mock_proc.post_start = AsyncMock()
     mock_proc.shutdown = AsyncMock()
+    mock_proc.post_start_singleton = False
 
     mock_binding = MagicMock()
     mock_binding.processor = mock_proc
@@ -416,6 +417,7 @@ class TestHandlerCrashPropagation:
         proc = MagicMock()
         proc.initialize = AsyncMock()
         proc.post_start = AsyncMock()
+        proc.post_start_singleton = False
 
         binding1 = MagicMock()
         binding1.processor = proc
@@ -558,3 +560,87 @@ class TestInstanceRoleFlags:
         mock_task.register_shutdown_event.assert_called_once()
         # handler task + additional task
         assert mock_tg.create_task.call_count >= 2
+
+
+class TestPostStartSingleton:
+    """Tests for post_start_singleton distributed lock behaviour."""
+
+    @pytest.mark.asyncio
+    async def test_singleton_true_acquires_lock_and_runs_post_start(self):
+        """When post_start_singleton=True and lock acquired, post_start() is called."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+        mock_proc.post_start_singleton = True
+        mock_proc._config_identifier = "my-processor"
+
+        mock_lock_dao = AsyncMock()
+        mock_lock_dao.acquire = AsyncMock(return_value=True)
+
+        with (
+            patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls,
+            patch("microdcs.core.PostStartLockDAO", return_value=mock_lock_dao),
+        ):
+            _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        mock_lock_dao.acquire.assert_awaited_once_with("my-processor")
+        mock_proc.post_start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_singleton_true_skips_post_start_when_lock_not_acquired(self):
+        """When post_start_singleton=True and lock not acquired, post_start() is skipped."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+        mock_proc.post_start_singleton = True
+        mock_proc._config_identifier = "my-processor"
+
+        mock_lock_dao = AsyncMock()
+        mock_lock_dao.acquire = AsyncMock(return_value=False)
+
+        with (
+            patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls,
+            patch("microdcs.core.PostStartLockDAO", return_value=mock_lock_dao),
+        ):
+            _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        mock_lock_dao.acquire.assert_awaited_once_with("my-processor")
+        mock_proc.post_start.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_singleton_false_skips_lock_and_runs_post_start(self):
+        """When post_start_singleton=False, lock is not consulted and post_start() runs."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _, _, _, mock_proc = _register_mock_handler_and_binding(dcs)
+        mock_proc.post_start_singleton = False
+
+        mock_lock_dao = AsyncMock()
+        mock_lock_dao.acquire = AsyncMock()
+
+        with (
+            patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls,
+            patch("microdcs.core.PostStartLockDAO", return_value=mock_lock_dao),
+        ):
+            _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        mock_lock_dao.acquire.assert_not_awaited()
+        mock_proc.post_start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lock_dao_constructed_with_correct_ttl(self):
+        """PostStartLockDAO is constructed with ttl from ProcessingConfig."""
+        dcs = _create_microdcs(otel_enabled=False)
+        _register_mock_handler_and_binding(dcs)
+        dcs.runtime_config.processing.post_start_lock_ttl = 42
+
+        with (
+            patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls,
+            patch("microdcs.core.PostStartLockDAO") as mock_dao_cls,
+        ):
+            mock_dao_cls.return_value = AsyncMock()
+            _setup_task_group_mock(mock_tg_cls)
+            await dcs.main()
+
+        _, kwargs = mock_dao_cls.call_args
+        assert kwargs.get("ttl") == 42 or mock_dao_cls.call_args.args[2] == 42
