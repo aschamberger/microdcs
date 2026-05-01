@@ -75,17 +75,17 @@ from microdcs.redis import RedisKeySchema
 SCOPE = "woodworking"
 RESPONSE_TOPIC = "app/jobs/woodworking/response"
 
-STORE_CE_TYPE = StoreCall.Config.cloudevent_type
-STORE_AND_START_CE_TYPE = StoreAndStartCall.Config.cloudevent_type
-START_CE_TYPE = StartCall.Config.cloudevent_type
-STOP_CE_TYPE = StopCall.Config.cloudevent_type
-PAUSE_CE_TYPE = PauseCall.Config.cloudevent_type
-RESUME_CE_TYPE = ResumeCall.Config.cloudevent_type
-ABORT_CE_TYPE = AbortCall.Config.cloudevent_type
-CANCEL_CE_TYPE = CancelCall.Config.cloudevent_type
-CLEAR_CE_TYPE = ClearCall.Config.cloudevent_type
-REVOKE_START_CE_TYPE = RevokeStartCall.Config.cloudevent_type
-UPDATE_CE_TYPE = UpdateCall.Config.cloudevent_type
+STORE_CE_TYPE = StoreCall.Config.type_id
+STORE_AND_START_CE_TYPE = StoreAndStartCall.Config.type_id
+START_CE_TYPE = StartCall.Config.type_id
+STOP_CE_TYPE = StopCall.Config.type_id
+PAUSE_CE_TYPE = PauseCall.Config.type_id
+RESUME_CE_TYPE = ResumeCall.Config.type_id
+ABORT_CE_TYPE = AbortCall.Config.type_id
+CANCEL_CE_TYPE = CancelCall.Config.type_id
+CLEAR_CE_TYPE = ClearCall.Config.type_id
+REVOKE_START_CE_TYPE = RevokeStartCall.Config.type_id
+UPDATE_CE_TYPE = UpdateCall.Config.type_id
 
 
 # ===================================================================
@@ -207,8 +207,8 @@ class TestISA95JobOrderDataType:
 
 
 class TestStoreCall:
-    def test_config_cloudevent_type(self):
-        assert StoreCall.Config.cloudevent_type == STORE_CE_TYPE
+    def test_config_type_id(self):
+        assert StoreCall.Config.type_id == STORE_CE_TYPE
 
     def test_store_call_response_type(self):
         call = StoreCall(job_order=make_woodworking_job_order())
@@ -218,8 +218,8 @@ class TestStoreCall:
 
 
 class TestStoreAndStartCall:
-    def test_config_cloudevent_type(self):
-        assert StoreAndStartCall.Config.cloudevent_type == STORE_AND_START_CE_TYPE
+    def test_config_type_id(self):
+        assert StoreAndStartCall.Config.type_id == STORE_AND_START_CE_TYPE
 
     def test_store_and_start_call_response_type(self):
         call = StoreAndStartCall(job_order=make_woodworking_job_order())
@@ -264,15 +264,15 @@ class TestMachineryJobsProcessorRegistration:
             CLEAR_CE_TYPE,
             REVOKE_START_CE_TYPE,
             UPDATE_CE_TYPE,
-            RequestJobResponseByJobOrderIDCall.Config.cloudevent_type,
-            RequestJobResponseByJobOrderStateCall.Config.cloudevent_type,
-            ConfigEquipment.Config.cloudevent_type,
-            ConfigMaterialClass.Config.cloudevent_type,
-            ConfigMaterialDefinition.Config.cloudevent_type,
-            ConfigPersonnel.Config.cloudevent_type,
-            ConfigPhysicalAsset.Config.cloudevent_type,
-            ConfigWorkMaster.Config.cloudevent_type,
-            ConfigJobAcceptance.Config.cloudevent_type,
+            RequestJobResponseByJobOrderIDCall.Config.type_id,
+            RequestJobResponseByJobOrderStateCall.Config.type_id,
+            ConfigEquipment.Config.type_id,
+            ConfigMaterialClass.Config.type_id,
+            ConfigMaterialDefinition.Config.type_id,
+            ConfigPersonnel.Config.type_id,
+            ConfigPhysicalAsset.Config.type_id,
+            ConfigWorkMaster.Config.type_id,
+            ConfigJobAcceptance.Config.type_id,
         }
         assert expected.issubset(registered_types)
 

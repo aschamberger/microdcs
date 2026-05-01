@@ -115,11 +115,11 @@ class {{ class_name }}:
     {%- if extensions is defined and extensions.get('x-response-type') %}
         response_type: str = "{{ extensions['x-response-type']['$ref'].split('/')[-1] }}"
     {%- endif %}
-    {%- if extensions is defined and extensions.get('x-cloudevent-type') %}
-        cloudevent_type: str = "{{ extensions['x-cloudevent-type'] }}"
+    {%- if extensions is defined and extensions.get('x-type-id') %}
+        type_id: str = "{{ extensions['x-type-id'] }}"
     {%- endif %}
-    {%- if extensions is defined and extensions.get('x-cloudevent-dataschema') %}
-        cloudevent_dataschema: str = "{{ extensions['x-cloudevent-dataschema'] }}"
+    {%- if extensions is defined and extensions.get('x-type-schema') %}
+        type_schema: str = "{{ extensions['x-type-schema'] }}"
     {%- endif %}
     {%- if extensions is defined and extensions.get('x-opc-ua-type') %}
         opcua_type: str = "{{ extensions['x-opc-ua-type'] }}"
@@ -175,7 +175,7 @@ class {{ class_name }}:
     {%- endfor %}
         }
     {%- endif %}
-    {%- set _has_config_body = (extensions is defined and (extensions.get('x-response-type') or extensions.get('x-cloudevent-type') or extensions.get('x-cloudevent-dataschema') or extensions.get('x-opc-ua-type') or extensions.get('x-opc-ua-state-machine'))) or _has_aliases %}
+    {%- set _has_config_body = (extensions is defined and (extensions.get('x-response-type') or extensions.get('x-type-id') or extensions.get('x-type-schema') or extensions.get('x-opc-ua-type') or extensions.get('x-opc-ua-state-machine'))) or _has_aliases %}
     {%- if not _has_config_body %}
         pass
     {%- endif %}

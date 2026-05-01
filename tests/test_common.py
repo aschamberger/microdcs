@@ -29,8 +29,8 @@ class SamplePayload(DataClassMixin):
     value: str = "hello"
 
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.test.sample.v1"
-        cloudevent_dataschema: str = "https://example.com/schemas/sample-v1"
+        type_id: str = "com.test.sample.v1"
+        type_schema: str = "https://example.com/schemas/sample-v1"
 
 
 @dataclass
@@ -38,8 +38,8 @@ class AnotherPayload(DataClassMixin):
     count: int = 0
 
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.test.another.v1"
-        cloudevent_dataschema: str = "https://example.com/schemas/another-v1"
+        type_id: str = "com.test.another.v1"
+        type_schema: str = "https://example.com/schemas/another-v1"
 
 
 type PayloadAlias = SamplePayload | AnotherPayload

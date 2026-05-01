@@ -34,8 +34,8 @@ class SamplePayload(DataClassMixin):
     value: str = "hello"
 
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.test.sample.v1"
-        cloudevent_dataschema: str = "https://example.com/sample-v1"
+        type_id: str = "com.test.sample.v1"
+        type_schema: str = "https://example.com/sample-v1"
 
 
 @dataclass

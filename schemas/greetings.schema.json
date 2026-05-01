@@ -41,8 +41,8 @@
       "x-response-type": {
         "$ref": "#/$defs/Hello"
       },
-      "x-cloudevent-type": "com.github.aschamberger.microdcs.greetings.hello.v1",
-      "x-cloudevent-dataschema": "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello"
+      "x-type-id": "com.github.aschamberger.microdcs.greetings.hello.v1",
+      "x-type-schema": "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello"
     },
     "Bye": {
       "type": "object",
@@ -56,8 +56,8 @@
       "required": [
         "name"
       ],
-      "x-cloudevent-type": "com.github.aschamberger.microdcs.greetings.bye.v1",
-      "x-cloudevent-dataschema": "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/bye"
+      "x-type-id": "com.github.aschamberger.microdcs.greetings.bye.v1",
+      "x-type-schema": "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/bye"
     }
   }
 }

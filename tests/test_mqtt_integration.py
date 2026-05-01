@@ -135,7 +135,7 @@ async def _publish_and_collect_responses(
     return collected
 
 
-def _assert_cloudevent_type(message: aiomqtt.Message, expected_type: str) -> None:
+def _assert_type_id(message: aiomqtt.Message, expected_type: str) -> None:
     """Assert that an MQTT v5 message carries the expected CloudEvent ``type``
     in its UserProperty list."""
     user_props = {}
@@ -283,7 +283,7 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
     assert len(responses) == 1, f"Expected 1 StoreResponse, got {len(responses)}"
     response_data = orjson.loads(responses[0].payload)
     assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
-    _assert_cloudevent_type(responses[0], StoreResponse.Config.cloudevent_type)
+    _assert_type_id(responses[0], StoreResponse.Config.type_id)
 
 
 @pytest.mark.asyncio
@@ -292,7 +292,6 @@ async def test_publish_store_job_order_message(mqtt_handler: MQTTHandler):
 @redis_available
 @app_available
 async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandler):
-    """Send a StoreAndStartCall and verify a successful StoreAndStartResponse."""
     job_order = make_woodworking_job_order(job_order_id="store-and-start-1")
     store_and_start_call = StoreAndStartCall(
         job_order=job_order,
@@ -320,7 +319,7 @@ async def test_publish_store_and_start_job_order_message(mqtt_handler: MQTTHandl
     )
     response_data = orjson.loads(responses[0].payload)
     assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
-    _assert_cloudevent_type(responses[0], StoreAndStartResponse.Config.cloudevent_type)
+    _assert_type_id(responses[0], StoreAndStartResponse.Config.type_id)
 
 
 @pytest.mark.asyncio
@@ -443,8 +442,8 @@ async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
     ce = CloudEvent(
         source=CE_SOURCE,
         data=orjson.dumps(payload),
-        type=StoreCall.Config.cloudevent_type,
-        dataschema=StoreCall.Config.cloudevent_dataschema,
+        type=StoreCall.Config.type_id,
+        dataschema=StoreCall.Config.type_schema,
         datacontenttype="application/json; charset=utf-8",
         subject=SCOPE,
         transportmetadata={
@@ -460,7 +459,7 @@ async def test_publish_store_job_order_raw_json(mqtt_handler: MQTTHandler):
     assert len(responses) == 1, f"Expected 1 StoreResponse, got {len(responses)}"
     response_data = orjson.loads(responses[0].payload)
     assert response_data["ReturnStatus"] == MethodReturnStatus.NO_ERROR
-    _assert_cloudevent_type(responses[0], StoreResponse.Config.cloudevent_type)
+    _assert_type_id(responses[0], StoreResponse.Config.type_id)
 
 
 # ---------------------------------------------------------------------------

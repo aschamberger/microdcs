@@ -444,25 +444,25 @@ class SfcEngine(AdditionalTask):
             return
 
         # Find the SB processor that handles this CloudEvent type
-        sb_processor = self._find_sb_processor(assoc.cloudevent_type)
+        sb_processor = self._find_sb_processor(assoc.type_id)
         if sb_processor is None:
             logger.error(
                 "No SB processor for CloudEvent type %s (action %s, job %s)",
-                assoc.cloudevent_type,
+                assoc.type_id,
                 assoc.name,
                 job_id,
             )
-            await self._fail_job(job_id, f"No SB processor for {assoc.cloudevent_type}")
+            await self._fail_job(job_id, f"No SB processor for {assoc.type_id}")
             return
 
         # Resolve the payload type class from the processor's type registry
-        payload_type = sb_processor._type_classes.get(assoc.cloudevent_type)
+        payload_type = sb_processor._type_classes.get(assoc.type_id)
         if payload_type is None:
             logger.error(
                 "No payload type registered for %s on SB processor",
-                assoc.cloudevent_type,
+                assoc.type_id,
             )
-            await self._fail_job(job_id, f"No payload type for {assoc.cloudevent_type}")
+            await self._fail_job(job_id, f"No payload type for {assoc.type_id}")
             return
 
         # Build kwargs for the outgoing callback
@@ -516,7 +516,7 @@ class SfcEngine(AdditionalTask):
                 "Action %s on job %s now waiting for pull_event (%s)",
                 assoc.name,
                 job_id,
-                assoc.cloudevent_type,
+                assoc.type_id,
             )
 
     # ── Event completion (called by SB processors) ──────────────────────
@@ -1234,10 +1234,10 @@ class SfcEngine(AdditionalTask):
                     return eq.id
         return None
 
-    def _find_sb_processor(self, cloudevent_type: str) -> CloudEventProcessor | None:
-        """Find the SB processor that handles the given CloudEvent type."""
+    def _find_sb_processor(self, type_id: str) -> CloudEventProcessor | None:
+        """Find the SB processor that handles the given type ID."""
         for processor in self._sb_processors.values():
-            if cloudevent_type in processor._type_callbacks_out:
+            if type_id in processor._type_callbacks_out:
                 return processor
         return None
 

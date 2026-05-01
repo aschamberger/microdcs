@@ -37,8 +37,8 @@ Create a schema file in `schemas/`. Here is a minimal example with a `Ping` requ
       "required": ["message"],
       "x-request-type": { "$ref": "#/$defs/Ping" },
       "x-response-type": { "$ref": "#/$defs/Pong" },
-      "x-cloudevent-type": "com.example.ping.v1",
-      "x-cloudevent-dataschema": "https://example.com/schemas/ping-pong/v1.0.0/ping"
+      "x-type-id": "com.example.ping.v1",
+      "x-type-schema": "https://example.com/schemas/ping-pong/v1.0.0/ping"
     },
     "Pong": {
       "type": "object",
@@ -46,8 +46,8 @@ Create a schema file in `schemas/`. Here is a minimal example with a `Ping` requ
         "reply": { "type": "string" }
       },
       "required": ["reply"],
-      "x-cloudevent-type": "com.example.pong.v1",
-      "x-cloudevent-dataschema": "https://example.com/schemas/ping-pong/v1.0.0/pong"
+      "x-type-id": "com.example.pong.v1",
+      "x-type-schema": "https://example.com/schemas/ping-pong/v1.0.0/pong"
     }
   }
 }
@@ -57,8 +57,8 @@ Key schema extensions:
 
 | Extension | Purpose |
 |---|---|
-| `x-cloudevent-type` | Sets the `type` field on the CloudEvent envelope |
-| `x-cloudevent-dataschema` | Sets the `dataschema` field on the CloudEvent envelope |
+| `x-type-id` | Sets the `type` field on the CloudEvent envelope |
+| `x-type-schema` | Sets the `dataschema` field on the CloudEvent envelope |
 | `x-request-type` | Declares the request dataclass (self-referencing for echo patterns) |
 | `x-response-type` | Declares the response dataclass — this drives the response chain |
 
@@ -93,8 +93,8 @@ class Ping(
 
     class Config(DataClassConfig):
         response_type: str = "Pong"
-        cloudevent_type: str = "com.example.ping.v1"
-        cloudevent_dataschema: str = "https://example.com/schemas/ping-pong/v1.0.0/ping"
+        type_id: str = "com.example.ping.v1"
+        type_schema: str = "https://example.com/schemas/ping-pong/v1.0.0/ping"
 
 
 @dataclass(kw_only=True)
@@ -102,8 +102,8 @@ class Pong(DataClassValidationMixin, PingPongDataClassMixin):
     reply: str
 
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.example.pong.v1"
-        cloudevent_dataschema: str = "https://example.com/schemas/ping-pong/v1.0.0/pong"
+        type_id: str = "com.example.pong.v1"
+        type_schema: str = "https://example.com/schemas/ping-pong/v1.0.0/pong"
 ```
 
 ## Step 3: Write the Processor
@@ -185,7 +185,7 @@ The names come from the OT/ISA-95 automation pyramid. **Northbound** means the p
 
 You can override the defaults with explicit `subscribe_intents` and `publish_intents` sets.
 
-**`@incoming(Ping)`** — Registers `handle_ping` as the callback for incoming CloudEvents whose `type` matches `Ping.Config.cloudevent_type`. The framework deserializes the CloudEvent payload into a `Ping` instance and passes it as the first argument.
+**`@incoming(Ping)`** — Registers `handle_ping` as the callback for incoming CloudEvents whose `type` matches `Ping.Config.type_id`. The framework deserializes the CloudEvent payload into a `Ping` instance and passes it as the first argument.
 
 **`@outgoing(Pong)`** — Registers `produce_pong` as a callback for programmatically generating outgoing events. Invoke it via `self.callback_outgoing(Pong, intent=MessageIntent.EVENT)`.
 

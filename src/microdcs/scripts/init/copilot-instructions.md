@@ -52,7 +52,7 @@ docker build -t myapp .
 ### Dataclasses & Models
 
 - All model dataclasses use `@dataclass(kw_only=True)` and extend `DataClassMixin` (provides `orjson` + `msgpack` serialization via mashumaro).
-- Each CloudEvent-capable model has an inner `class Config(DataClassConfig)` with `cloudevent_type` and `cloudevent_dataschema` string attributes.
+- Each CloudEvent-capable model has an inner `class Config(DataClassConfig)` with `type_id` and `type_schema` string attributes.
 - Files matching a JSON schema name (e.g. `greetings.py`) are **auto-generated** by `dataclassgen` – never edit them directly. Hand-written companion files use `*_mixin.py` and `*_ext.py` suffixes.
 - Hidden fields (prefixed `_`) are excluded from serialization by `DataClassMixin.__post_serialize__`.
 - Validation constraints use `field(metadata={"min_length": N, "max_length": N})` with `DataClassValidationMixin`.

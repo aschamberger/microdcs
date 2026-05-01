@@ -61,10 +61,40 @@ uv run pytest --cov=microdcs --cov-report=term-missing tests/ --ignore=tests/tes
 uv run python -m app
 
 # List available JSON schemas
-uv run dataclassgen index
+uv run microdcs dataclassgen index
 
 # Generate dataclasses from a JSON schema (output goes to src/microdcs/models/)
-uv run dataclassgen dataclasses <schema_file.schema.json> [options]
+uv run microdcs dataclassgen dataclasses <schema_file.schema.json> [options]
+
+# Regenerate greetings models
+uv run microdcs dataclassgen dataclasses \
+  --imports microdcs.dataclass.DataClassConfig \
+  --imports microdcs.dataclass.DataClassResponseMixin \
+  --imports microdcs.models.greetings_mixin.GreetingsDataClassMixin \
+  --imports dataclasses.field \
+  --base-class microdcs.models.greetings_mixin.GreetingsDataClassMixin \
+  --config-base-class microdcs.dataclass.DataClassConfig \
+  --hidden-fields '_hidden_str->str' \
+  --hidden-fields '_hidden_obj->HiddenObject' \
+  --validation \
+  --request-object \
+  --custom-metadata \
+  greetings.schema.json
+
+# Regenerate machinery_jobs models
+uv run microdcs dataclassgen dataclasses \
+  --imports microdcs.dataclass.DataClassConfig \
+  --imports microdcs.dataclass.DataClassResponseMixin \
+  --imports microdcs.dataclass.DataClassMixin \
+  --imports microdcs.models.machinery_jobs_mixin.JobStateMixin \
+  --imports dataclasses.field \
+  --base-class microdcs.dataclass.DataClassMixin \
+  --config-base-class microdcs.dataclass.DataClassConfig \
+  --add-mixin 'ISA95JobOrderDataType->JobStateMixin' \
+  machinery_jobs.schema.json
+
+# Regenerate sfc_recipe models
+uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
 
 # Docker build
 docker build -t aschamberger/microdcs .
@@ -75,7 +105,7 @@ docker build -t aschamberger/microdcs .
 ### Dataclasses & Models
 
 - All model dataclasses use `@dataclass(kw_only=True)` and extend `DataClassMixin` (which provides `orjson` + `msgpack` serialization via mashumaro).
-- Each CloudEvent-capable model has an inner `class Config(DataClassConfig)` with `cloudevent_type` and `cloudevent_dataschema` string attributes.
+- Each CloudEvent-capable model has an inner `class Config(DataClassConfig)` with `type_id` and `type_schema` string attributes.
 - Files in `models/` named `*_mixin.py` and `*_ext.py` are hand-written. Files matching a JSON schema name (e.g. `greetings.py`, `machinery_jobs.py`) are **auto-generated** – never edit them directly. Regenerate with `uv run dataclassgen dataclasses`.
 - Package exports are static: whenever adding a new model module or public model class, update `src/microdcs/models/__init__.py` so users can import from `microdcs.models`.
 - Hidden fields (prefixed `_`) are excluded from serialization by `DataClassMixin.__post_serialize__`.

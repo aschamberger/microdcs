@@ -32,8 +32,8 @@ class Hello(
     # mashumaro config class
     class Config(DataClassConfig):
         response_type: str = "Hello"
-        cloudevent_type: str = "com.github.aschamberger.microdcs.greetings.hello.v1"
-        cloudevent_dataschema: str = (
+        type_id: str = "com.github.aschamberger.microdcs.greetings.hello.v1"
+        type_schema: str = (
             "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello"
         )
         aliases: dict[str, str] = {
@@ -50,10 +50,11 @@ class Bye(DataClassValidationMixin, GreetingsDataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.github.aschamberger.microdcs.greetings.bye.v1"
-        cloudevent_dataschema: str = (
+        type_id: str = "com.github.aschamberger.microdcs.greetings.bye.v1"
+        type_schema: str = (
             "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/bye"
         )
+        pass
 
 
 type Greetings = Hello | Bye

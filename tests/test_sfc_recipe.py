@@ -85,7 +85,7 @@ class TestSfcActionAssociation:
             step="TightenBolts",
             qualifier=SfcActionQualifier.NON_STORED,
             interaction=SfcInteraction.PUSH_COMMAND,
-            cloudevent_type="com.example.station.tighten.v1",
+            type_id="com.example.station.tighten.v1",
             timeout_seconds=60,
             parameters={"torque_spec": "85Nm"},
         )
@@ -106,7 +106,7 @@ class TestSfcActionAssociation:
             step="QaCheck",
             qualifier=SfcActionQualifier.NON_STORED,
             interaction=SfcInteraction.PULL_EVENT,
-            cloudevent_type="com.example.station.qa_result.v1",
+            type_id="com.example.station.qa_result.v1",
             timeout_seconds=45,
         )
         data = action.to_dict()
@@ -145,11 +145,10 @@ class TestSfcBranch:
 class TestSfcRecipe:
     def test_config_attributes(self):
         assert (
-            SfcRecipe.Config.cloudevent_type
-            == "com.github.aschamberger.microdcs.sfc-recipe.v1"
+            SfcRecipe.Config.type_id == "com.github.aschamberger.microdcs.sfc-recipe.v1"
         )
         assert (
-            SfcRecipe.Config.cloudevent_dataschema
+            SfcRecipe.Config.type_schema
             == "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/"
         )
 
@@ -168,7 +167,7 @@ class TestSfcRecipe:
                     step="Init",
                     qualifier=SfcActionQualifier.NON_STORED,
                     interaction=SfcInteraction.PUSH_COMMAND,
-                    cloudevent_type="com.example.work.v1",
+                    type_id="com.example.work.v1",
                     timeout_seconds=30,
                 ),
             ],
@@ -221,7 +220,7 @@ class TestSfcRecipe:
                     "Step": "Positioning",
                     "Qualifier": "N",
                     "Interaction": "push_command",
-                    "CloudeventType": "com.example.station.position.v1",
+                    "TypeId": "com.example.station.position.v1",
                     "TimeoutSeconds": 30,
                 },
                 {
@@ -229,7 +228,7 @@ class TestSfcRecipe:
                     "Step": "TightenBolts",
                     "Qualifier": "N",
                     "Interaction": "push_command",
-                    "CloudeventType": "com.example.station.tighten.v1",
+                    "TypeId": "com.example.station.tighten.v1",
                     "TimeoutSeconds": 60,
                     "Parameters": {"torque_spec": "85Nm"},
                 },
@@ -238,7 +237,7 @@ class TestSfcRecipe:
                     "Step": "QaCheck",
                     "Qualifier": "N",
                     "Interaction": "pull_event",
-                    "CloudeventType": "com.example.station.qa_result.v1",
+                    "TypeId": "com.example.station.qa_result.v1",
                     "TimeoutSeconds": 45,
                 },
                 {
@@ -246,7 +245,7 @@ class TestSfcRecipe:
                     "Step": "VerifyTorque",
                     "Qualifier": "N",
                     "Interaction": "pull_event",
-                    "CloudeventType": "com.example.station.torque_result.v1",
+                    "TypeId": "com.example.station.torque_result.v1",
                     "TimeoutSeconds": 15,
                 },
             ],
@@ -299,7 +298,7 @@ class TestSfcRecipe:
                     step="S1",
                     qualifier=SfcActionQualifier.PULSE,
                     interaction=SfcInteraction.PULL_EVENT,
-                    cloudevent_type="com.example.evt.v1",
+                    type_id="com.example.evt.v1",
                     timeout_seconds=10,
                 )
             ],
@@ -323,7 +322,7 @@ class TestSfcRecipe:
                     step="A",
                     qualifier=SfcActionQualifier.NON_STORED,
                     interaction=SfcInteraction.PUSH_COMMAND,
-                    cloudevent_type="com.example.do.v1",
+                    type_id="com.example.do.v1",
                     timeout_seconds=5,
                 )
             ],

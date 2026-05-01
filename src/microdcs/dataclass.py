@@ -33,15 +33,15 @@ def type_has_config_class(cls: type) -> bool:
     return hasattr(cls, "Config") and issubclass(cls.Config, DataClassConfig)
 
 
-def get_cloudevent_type(cls: type) -> str | None:
-    if type_has_config_class(cls) and hasattr(cls.Config, "cloudevent_type"):
-        return cls.Config.cloudevent_type
+def get_type_id(cls: type) -> str | None:
+    if type_has_config_class(cls) and hasattr(cls.Config, "type_id"):
+        return cls.Config.type_id
     return None
 
 
-def get_cloudevent_dataschema(cls: type) -> str | None:
-    if type_has_config_class(cls) and hasattr(cls.Config, "cloudevent_dataschema"):
-        return cls.Config.cloudevent_dataschema
+def get_type_schema(cls: type) -> str | None:
+    if type_has_config_class(cls) and hasattr(cls.Config, "type_schema"):
+        return cls.Config.type_schema
     return None
 
 
@@ -84,7 +84,7 @@ class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
 
     # remove hidden fields starting with "_" from serialization
     # context keys for persisting metadata alongside the document in Redis:
-    #   add_cloudevent_dataschema: bool – inject _dataschema from Config
+    #   add_type_schema: bool – inject _dataschema from Config
     #   add_scope: str | None       – inject _scope with the given value
     #   add_normalized_state: str | None – inject _normalized_state with the given value
     def __post_serialize__(
@@ -94,10 +94,10 @@ class DataClassMixin(DataClassORJSONMixin, DataClassMessagePackMixin):
             if key.startswith("_"):
                 d.pop(key)
         if context:
-            if context.get("add_cloudevent_dataschema", False):
-                cloudevent_dataschema = get_cloudevent_dataschema(self.__class__)
-                if cloudevent_dataschema:
-                    d["_dataschema"] = cloudevent_dataschema
+            if context.get("add_type_schema", False):
+                type_schema = get_type_schema(self.__class__)
+                if type_schema:
+                    d["_dataschema"] = type_schema
             scope = context.get("add_scope")
             if scope:
                 d["_scope"] = scope
@@ -228,10 +228,10 @@ class DataClassConfig(BaseConfig):
     allow_deserialization_not_by_alias = True
     serialize_by_alias = True
     omit_none = True
-    cloudevent_type: str
-    cloudevent_dataschema: str
+    type_id: str
+    type_schema: str
 
     @classmethod
-    def matches_cloudevent_type_pattern(cls, pattern: str) -> bool:
+    def matches_type_id_pattern(cls, pattern: str) -> bool:
         """Checks if the type matches a shell-style pattern (e.g., 'com.app.*')."""
-        return fnmatch.fnmatch(cls.cloudevent_type, pattern)
+        return fnmatch.fnmatch(cls.type_id, pattern)

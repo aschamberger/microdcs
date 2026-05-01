@@ -169,7 +169,7 @@ class ISA95WorkMasterDataTypeExt(ISA95WorkMasterDataType):
 
 # ── Station configuration delivery models ────────────────────────────
 #
-# Thin subclasses that override ``Config.cloudevent_type`` so the NB
+# Thin subclasses that override ``Config.type_id`` so the NB
 # processor can register separate ``@incoming`` handlers for each
 # configuration CloudEvent type while reusing the ISA-95 data types
 # for (de)serialization.
@@ -178,55 +178,51 @@ class ISA95WorkMasterDataTypeExt(ISA95WorkMasterDataType):
 @dataclass(kw_only=True)
 class ConfigEquipment(ISA95EquipmentDataType):
     class Config(ISA95EquipmentDataType.Config):
-        cloudevent_type: str = (
-            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.equipment.v1"
-        )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigEquipment/"
+        type_id: str = "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.equipment.v1"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigEquipment/"
 
 
 @dataclass(kw_only=True)
 class ConfigMaterialClass(ISA95MaterialDataType):
     class Config(ISA95MaterialDataType.Config):
-        cloudevent_type: str = (
+        type_id: str = (
             "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialclass.v1"
         )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigMaterialClass/"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigMaterialClass/"
 
 
 @dataclass(kw_only=True)
 class ConfigMaterialDefinition(ISA95MaterialDataType):
     class Config(ISA95MaterialDataType.Config):
-        cloudevent_type: str = (
+        type_id: str = (
             "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.materialdefinition.v1"
         )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigMaterialDefinition/"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigMaterialDefinition/"
 
 
 @dataclass(kw_only=True)
 class ConfigPersonnel(ISA95PersonnelDataType):
     class Config(ISA95PersonnelDataType.Config):
-        cloudevent_type: str = (
-            "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.personnel.v1"
-        )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigPersonnel/"
+        type_id: str = "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.personnel.v1"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigPersonnel/"
 
 
 @dataclass(kw_only=True)
 class ConfigPhysicalAsset(ISA95PhysicalAssetDataType):
     class Config(ISA95PhysicalAssetDataType.Config):
-        cloudevent_type: str = (
+        type_id: str = (
             "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.physicalasset.v1"
         )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigPhysicalAsset/"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigPhysicalAsset/"
 
 
 @dataclass(kw_only=True)
 class ConfigWorkMaster(ISA95WorkMasterDataTypeExt):
     class Config(ISA95WorkMasterDataTypeExt.Config):
-        cloudevent_type: str = (
+        type_id: str = (
             "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1"
         )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigWorkMaster/"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigWorkMaster/"
 
 
 @dataclass(kw_only=True)
@@ -234,7 +230,7 @@ class ConfigJobAcceptance(DataClassMixin):
     max_downloadable_job_orders: int
 
     class Config(DataClassConfig):
-        cloudevent_type: str = (
+        type_id: str = (
             "com.github.aschamberger.ISA95-JOBCONTROL_V2.config.jobacceptance.v1"
         )
-        cloudevent_dataschema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigJobAcceptance/"
+        type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/ConfigJobAcceptance/"

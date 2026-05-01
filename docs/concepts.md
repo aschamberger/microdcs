@@ -255,7 +255,7 @@ All model dataclasses inherit from `DataClassMixin`, which provides:
 - **Hidden field stripping** in `__post_serialize__`
 - **Serialization context** for Redis persistence metadata (`_dataschema`, `_scope`, `_normalized_state`)
 
-Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclasses`. Each generated class has an inner `Config(DataClassConfig)` with `cloudevent_type` and `cloudevent_dataschema` attributes that the framework uses for routing and envelope construction.
+Dataclasses are generated from JSON Schema using `microdcs dataclassgen dataclasses`. Each generated class has an inner `Config(DataClassConfig)` with `type_id` and `type_schema` attributes that the framework uses for routing and envelope construction.
 
 ### SFC Engine
 
@@ -304,7 +304,7 @@ See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the ful
 | **Binding direction** | Whether a processor faces northbound (executes work) or southbound (orchestrates). Determines subscribe/publish intents. |
 | **CloudEvent** | A CNCF standard envelope for event data. All MicroDCS messages use this format. |
 | **CloudEventProcessor** | Base class for application logic. Handles a single domain's incoming and outgoing events. |
-| **Config (inner class)** | `DataClassConfig` subclass inside every model dataclass. Holds `cloudevent_type` and `cloudevent_dataschema`. |
+| **Config (inner class)** | `DataClassConfig` subclass inside every model dataclass. Holds `type_id` and `type_schema`. |
 | **Custom metadata** | Key-value pairs carried in the CloudEvent envelope alongside the payload. Used for hidden field transport. |
 | **DataClassMixin** | Base mixin providing JSON and MessagePack serialization for all model dataclasses. |
 | **DataClassResponseMixin** | Generic mixin that adds `.response()` to request dataclasses, enabling typed response creation. |

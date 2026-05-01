@@ -10,8 +10,8 @@ from microdcs.dataclass import (
     DataClassConfig,
     DataClassMixin,
     DataClassValidationMixin,
-    get_cloudevent_dataschema,
-    get_cloudevent_type,
+    get_type_id,
+    get_type_schema,
     type_has_config_class,
 )
 
@@ -32,8 +32,8 @@ class ModelForTest(DataClassValidationMixin, DataClassMixin):
 @dataclass
 class EventModel(DataClassMixin):
     class Config(DataClassConfig):
-        cloudevent_type = "com.example.event.v1"
-        cloudevent_dataschema = "https://example.com/schemas/event-v1"
+        type_id = "com.example.event.v1"
+        type_schema = "https://example.com/schemas/event-v1"
 
 
 @dataclass
@@ -107,33 +107,30 @@ class TestTypeHasConfigClass:
 
 
 # ---------------------------------------------------------------------------
-# get_cloudevent_type / get_cloudevent_dataschema
+# get_type_id / get_type_schema
 # ---------------------------------------------------------------------------
 
 
-class TestGetCloudeventType:
+class TestGetTypeId:
     def test_returns_type_when_present(self):
-        assert get_cloudevent_type(EventModel) == "com.example.event.v1"
+        assert get_type_id(EventModel) == "com.example.event.v1"
 
     def test_returns_none_when_no_config(self):
-        assert get_cloudevent_type(PlainModel) is None
+        assert get_type_id(PlainModel) is None
 
     def test_returns_none_for_builtin(self):
-        assert get_cloudevent_type(str) is None
+        assert get_type_id(str) is None
 
 
-class TestGetCloudeventDataschema:
+class TestGetTypeSchema:
     def test_returns_dataschema_when_present(self):
-        assert (
-            get_cloudevent_dataschema(EventModel)
-            == "https://example.com/schemas/event-v1"
-        )
+        assert get_type_schema(EventModel) == "https://example.com/schemas/event-v1"
 
     def test_returns_none_when_no_config(self):
-        assert get_cloudevent_dataschema(PlainModel) is None
+        assert get_type_schema(PlainModel) is None
 
     def test_returns_none_for_builtin(self):
-        assert get_cloudevent_dataschema(str) is None
+        assert get_type_schema(str) is None
 
 
 # ---------------------------------------------------------------------------
@@ -178,18 +175,18 @@ class TestDataClassMixinSerialization:
         assert "_hidden" not in data
         assert data["name"] == "valid"
 
-    def test_add_cloudevent_dataschema_context(self):
+    def test_add_type_schema_context(self):
         model = EventModel()
-        data = model.to_dict(context={"add_cloudevent_dataschema": True})
+        data = model.to_dict(context={"add_type_schema": True})
         assert data["_dataschema"] == "https://example.com/schemas/event-v1"
 
-    def test_add_cloudevent_dataschema_not_added_when_absent(self):
-        """Class without cloudevent_dataschema in Config shouldn't get _dataschema."""
+    def test_add_type_schema_not_added_when_absent(self):
+        """Class without type_schema in Config shouldn't get _dataschema."""
         model = PlainModel(value="x")
-        data = model.to_dict(context={"add_cloudevent_dataschema": True})
+        data = model.to_dict(context={"add_type_schema": True})
         assert "_dataschema" not in data
 
-    def test_add_cloudevent_dataschema_not_added_by_default(self):
+    def test_add_type_schema_not_added_by_default(self):
         model = EventModel()
         data = model.to_dict()
         assert "_dataschema" not in data
@@ -218,7 +215,7 @@ class TestDataClassMixinSerialization:
         model = EventModel()
         data = model.to_dict(
             context={
-                "add_cloudevent_dataschema": True,
+                "add_type_schema": True,
                 "add_scope": "s1",
                 "add_normalized_state": "Running",
             }
@@ -245,19 +242,19 @@ class TestDataClassMixinSerialization:
 
 class TestWildcardMatch:
     def test_exact_match(self):
-        assert EventModel.Config.matches_cloudevent_type_pattern("com.example.event.v1")
+        assert EventModel.Config.matches_type_id_pattern("com.example.event.v1")
 
     def test_prefix_wildcard(self):
-        assert EventModel.Config.matches_cloudevent_type_pattern("com.example.event.*")
+        assert EventModel.Config.matches_type_id_pattern("com.example.event.*")
 
     def test_suffix_wildcard(self):
-        assert EventModel.Config.matches_cloudevent_type_pattern("*.event.v1")
+        assert EventModel.Config.matches_type_id_pattern("*.event.v1")
 
     def test_middle_wildcard(self):
-        assert EventModel.Config.matches_cloudevent_type_pattern("com.*.v1")
+        assert EventModel.Config.matches_type_id_pattern("com.*.v1")
 
     def test_no_match(self):
-        assert not EventModel.Config.matches_cloudevent_type_pattern("com.other.event")
+        assert not EventModel.Config.matches_type_id_pattern("com.other.event")
 
 
 # ---------------------------------------------------------------------------

@@ -275,15 +275,13 @@ def dataclasses(
                 f"[bold cyan]Adding mixin(s) {', '.join(mixins)} to class: {class_name}[/bold cyan]"
             )
 
-    # Parse schema to find $defs with x-cloudevent-type
+    # Parse schema to find $defs with x-type-id
     schema_data = json.loads(schema_file_path.read_text())
     defs = schema_data.get("$defs", {})
-    cloudevent_defs = {
-        name for name, defn in defs.items() if "x-cloudevent-type" in defn
-    }
+    cloudevent_defs = {name for name, defn in defs.items() if "x-type-id" in defn}
     if cloudevent_defs:
         print(
-            f"[bold cyan]Cloud event types found: {', '.join(sorted(cloudevent_defs))}[/bold cyan]"
+            f"[bold cyan]Type-identified defs found: {', '.join(sorted(cloudevent_defs))}[/bold cyan]"
         )
 
     # Find child classes that inherit from another class via allOf+$ref.
@@ -296,7 +294,7 @@ def dataclasses(
 
     # Apply config_base_class and validation_mixin_class to all models.
     # Apply hidden_fields, init_fields, request_object, custom_metadata
-    # only to models that have x-cloudevent-type.
+    # only to models that have x-type-id.
     extra_template_data: dict[str, dict[str, Any]] = {
         ALL_MODEL: {
             "config_base_class": config_base_class.split(".")[-1]
@@ -315,9 +313,7 @@ def dataclasses(
     for name in child_defs:
         extra_template_data[name] = {"skip_validation_mixin": True}
         for suffix_num in range(1, 10):
-            extra_template_data[f"{name}{suffix_num}"] = {
-                "skip_validation_mixin": True
-            }
+            extra_template_data[f"{name}{suffix_num}"] = {"skip_validation_mixin": True}
         extra_template_data[f"Field{name}"] = {"skip_validation_mixin": True}
         for suffix_num in range(1, 10):
             extra_template_data[f"Field{name}{suffix_num}"] = {

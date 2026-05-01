@@ -133,9 +133,9 @@
         "Interaction": {
           "$ref": "#/$defs/SfcInteraction"
         },
-        "CloudeventType": {
+        "TypeId": {
           "type": "string",
-          "description": "CloudEvent type for the outgoing command or expected incoming event."
+          "description": "Type identifier for the outgoing command or expected incoming event."
         },
         "TimeoutSeconds": {
           "type": "integer",
@@ -152,7 +152,7 @@
         "Step",
         "Qualifier",
         "Interaction",
-        "CloudeventType",
+        "TypeId",
         "TimeoutSeconds"
       ],
       "description": "Associates an action with a step, including the interaction pattern and IEC 61131-3 action qualifier."
@@ -222,8 +222,8 @@
         "Transitions",
         "Actions"
       ],
-      "x-cloudevent-type": "com.github.aschamberger.microdcs.sfc-recipe.v1",
-      "x-cloudevent-dataschema": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/",
+      "x-type-id": "com.github.aschamberger.microdcs.sfc-recipe.v1",
+      "x-type-schema": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/",
       "description": "An IEC 61131-3 SFC recipe definition. Contains steps, transitions, action associations, and optional branching constructs."
     }
   }

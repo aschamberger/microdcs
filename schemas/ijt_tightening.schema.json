@@ -1,0 +1,3508 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.com/schemas/UA/IJT/Tightening/v2.00.1/",
+  "title": "OPC 40451-1: Tightening Systems General for MQTT",
+  "description": "A JSON Schema to represent the OPC 40451-1: Tightening Systems General information model for a MQTT environment.",
+  "$defs": {
+    "LocalizedText": {
+      "type": "object",
+      "properties": {
+        "Locale": {
+          "type": "string"
+        },
+        "Text": {
+          "type": "string"
+        }
+      }
+    },
+    "AbortJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method AbortJoiningProcess is used to abort the input joining process if it is under execution.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.16",
+      "x-request-type": {
+        "$ref": "#/$defs/AbortJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.AbortJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/AbortJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "TrimmedString": {
+      "type": "string",
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part5/12.43",
+      "x-type-id": "org.opcfoundation.BaseModel.TrimmedString.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/TrimmedString"
+    },
+    "JoiningProcessIdentificationDataType": {
+      "type": "object",
+      "properties": {
+        "JoiningProcessId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the joining process."
+        },
+        "JoiningProcessOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is an identifier to track the changes made to the original instance in the system.\n\nExample: It can point to the identifier of the object when it was created for the first time. It should be an existing ID in the system if it is available else it can be NULL if it is not tracked in the system."
+        },
+        "SelectionName": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the configured selection name of the joining process in the system."
+        }
+      },
+      "description": "This structure contains the identification information of a Joining Process. It is used in set of methods defined in JoiningProcessManagementType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.21",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningProcessIdentificationDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningProcessIdentificationDataType"
+    },
+    "AbortJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        },
+        "AbortMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is an optional message sent from the Client to the joining system to indicate the reason for aborting the joining operation."
+        }
+      },
+      "description": "The Method AbortJoiningProcess is used to abort the input joining process if it is under execution.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.16",
+      "x-response-type": {
+        "$ref": "#/$defs/AbortJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.AbortJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/AbortJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "AcknowledgeResultsResponse": {
+      "type": "object",
+      "properties": {
+        "ErrorPerResultId": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "Shall be null or empty if error equals 0. Shall have the same length as resultIds if error is not equal 0. Indicates for each resultId in resultIds, if the acknowledge was successful.\nPer entry:\n0 \u2013 OK\nValues > 0 are reserved for errors defined by this and future standards.\nValues < 0 shall be used for application-specific errors."
+        },
+        "Error": {
+          "type": "integer",
+          "description": "0 \u2013 OK\nValues > 0 are reserved for errors defined by this and future standards.\nValues < 0 shall be used for application-specific errors.\nShall be not equal 0 if any resultId of resultIds was not successfully acknowledged. Shall be 0 if all resultIds where acknowledged successful."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.6",
+      "x-request-type": {
+        "$ref": "#/$defs/AcknowledgeResultsCall"
+      },
+      "x-type-id": "org.opcfoundation.Machinery.Result.AcknowledgeResults.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/Machinery/Result/v1.01.0/#/$defs/AcknowledgeResultsResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "AcknowledgeResultsCall": {
+      "type": "object",
+      "properties": {
+        "ResultIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrimmedString"
+          },
+          "description": "List of result identifiers to be acknowledged."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.6",
+      "x-response-type": {
+        "$ref": "#/$defs/AcknowledgeResultsResponse"
+      },
+      "x-type-id": "org.opcfoundation.Machinery.Result.AcknowledgeResults.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/Machinery/Result/v1.01.0/#/$defs/AcknowledgeResultsCall",
+      "x-opc-ua-type": "Method"
+    },
+    "AssetManagement": {
+      "type": "object",
+      "properties": {
+        "UIElement": {
+          "$ref": "#/$defs/None"
+        }
+      },
+      "description": "The AssetManagement Object is an instance of FunctionalGroupType to group assets and related objects in the joining system.",
+      "x-type-id": "org.opcfoundation.IJT.Base.AssetManagement.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/AssetManagement",
+      "x-opc-ua-type": "DataSet"
+    },
+    "EUInformation": {
+      "type": "object",
+      "properties": {
+        "NamespaceUri": {
+          "type": "string"
+        },
+        "UnitId": {
+          "type": "integer"
+        },
+        "DisplayName": {
+          "$ref": "#/$defs/LocalizedText"
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText"
+        }
+      },
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part8/5.6.3/#5.6.3.3",
+      "x-type-id": "org.opcfoundation.BaseModel.EUInformation.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/EUInformation"
+    },
+    "UriString": {
+      "type": "string",
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part5/12.39",
+      "x-type-id": "org.opcfoundation.BaseModel.UriString.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/UriString"
+    },
+    "CalibrationDataType": {
+      "type": "object",
+      "properties": {
+        "LastCalibration": {
+          "type": "string",
+          "format": "date-time",
+          "description": "It is the date when the last calibration took place.\nNote: It can have the initial operation date for a new asset if it is not available."
+        },
+        "CalibrationPlace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the location where the last calibration took place."
+        },
+        "NextCalibration": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "It is the date of the next planned calibration."
+        },
+        "CalibrationValue": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the actual measured value of the calibration."
+        },
+        "SensorScale": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the nominal scale of the sensor. It corresponds also with the measurement range of the sensor."
+        },
+        "CertificateUri": {
+          "$ref": "#/$defs/UriString",
+          "description": "It contains the URI of a certificate of the calibration target in case the calibration target is certified and the information available. Otherwise, the Variable should be omitted. The String shall be a URI as defined by RFC 3986. \nExample: MCE test document."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "It defines the engineering unit of the value."
+        }
+      },
+      "description": "This structure contains the Calibration information. It is used as an input argument in SetCalibration method.\nNote: The input data sent in SetCalibration shall be updated in the respective parameters of the asset under Maintenance/Calibration.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.13",
+      "x-type-id": "org.opcfoundation.IJT.Base.CalibrationDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/CalibrationDataType"
+    },
+    "DecrementJoiningProcessCounterResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method DecrementJoiningProcessCounter used to decrement the counter of the sequential joining processes such as Job, etc.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.13",
+      "x-request-type": {
+        "$ref": "#/$defs/DecrementJoiningProcessCounterCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DecrementJoiningProcessCounter.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DecrementJoiningProcessCounterResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "DecrementJoiningProcessCounterCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        },
+        "DecrementCount": {
+          "type": "integer",
+          "description": "It is the number of decrements to be done for the joining process counter.\nThe default value is 1 if it is not provided."
+        }
+      },
+      "description": "The Method DecrementJoiningProcessCounter used to decrement the counter of the sequential joining processes such as Job, etc.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.13",
+      "x-response-type": {
+        "$ref": "#/$defs/DecrementJoiningProcessCounterResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DecrementJoiningProcessCounter.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DecrementJoiningProcessCounterCall",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method DeleteJoiningProcess is used to delete the input joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.17",
+      "x-request-type": {
+        "$ref": "#/$defs/DeleteJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        }
+      },
+      "description": "The Method DeleteJoiningProcess is used to delete the input joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.17",
+      "x-response-type": {
+        "$ref": "#/$defs/DeleteJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJointResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method DeleteJoint is used to delete the joint based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.13",
+      "x-request-type": {
+        "$ref": "#/$defs/DeleteJointCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJointResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJointCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint."
+        },
+        "JointOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "With this argument the Client can provide the common identifier of the joint which should be selected for performing the next joining operation.\n\nIt is optional and can be empty if the underlying system does not manage revisions of a joint. If jointId is provided, then this argument shall be ignored."
+        }
+      },
+      "description": "The Method DeleteJoint is used to delete the joint based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.13",
+      "x-response-type": {
+        "$ref": "#/$defs/DeleteJointResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJointCall",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJointComponentResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method DeleteJointComponent is used to delete the joint component based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.15",
+      "x-request-type": {
+        "$ref": "#/$defs/DeleteJointComponentCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJointComponent.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJointComponentResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJointComponentCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointComponentId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint component."
+        }
+      },
+      "description": "The Method DeleteJointComponent is used to delete the joint component based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.15",
+      "x-response-type": {
+        "$ref": "#/$defs/DeleteJointComponentResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJointComponent.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJointComponentCall",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJointDesignResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method DeleteJointDesign is used to delete the joint design based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.14",
+      "x-request-type": {
+        "$ref": "#/$defs/DeleteJointDesignCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJointDesign.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJointDesignResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "DeleteJointDesignCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointDesignId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint design."
+        }
+      },
+      "description": "The Method DeleteJointDesign is used to delete the joint design based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.14",
+      "x-response-type": {
+        "$ref": "#/$defs/DeleteJointDesignResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeleteJointDesign.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeleteJointDesignCall",
+      "x-opc-ua-type": "Method"
+    },
+    "DeselectJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method DeselectJoiningProcess is used to deselect any selected joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.8",
+      "x-request-type": {
+        "$ref": "#/$defs/DeselectJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeselectJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeselectJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "DeselectJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        }
+      },
+      "description": "The Method DeselectJoiningProcess is used to deselect any selected joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.8",
+      "x-response-type": {
+        "$ref": "#/$defs/DeselectJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.DeselectJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DeselectJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "DesignValueDataType": {
+      "type": "object",
+      "properties": {
+        "PhysicalQuantity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is the physical quantity of the value. Example: Force, Angle, etc."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the given value."
+        },
+        "DesignValue": {
+          "description": "It is the design value. The data type can be any simple data type such as Integer, String, Double, DateTime, etc. If the value is corresponding to the physical quantity, then the data type should be Double."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "It is the engineering unit of the design value."
+        }
+      },
+      "description": "This structure provides the design value for a given physical quantity. It is used in JointDesignDataType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.18",
+      "x-type-id": "org.opcfoundation.IJT.Base.DesignValueDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/DesignValueDataType"
+    },
+    "EntityDataType": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the entity identifier.\nExamples: VIN, Program Id, etc.\nNote: Application can send custom names which could be a combination of different terms in the system."
+        },
+        "Description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the description of the entity. Any additional information for the entity can be sent using this property. \nExamples: Name of the program in the given system."
+        },
+        "EntityId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the given entity. \nExamples: JoiningProcessId, JointId, etc."
+        },
+        "EntityOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the origin identifier of the given entity. It is provided only when it is applicable and available for a given entity.\nExamples: JoiningProcessOriginId, JointOriginId, etc."
+        },
+        "IsExternal": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "It indicates if the EntityId is provided by the external system or not. \nExample: VIN is provided by an external system."
+        },
+        "EntityType": {
+          "type": "integer",
+          "description": "It provides the type of the Entity. It has the following pre-defined values which shall be used for each instance of this type.\nImportant Note: EntityType >=0 is defined as part of this specification.\nFor application specific extensions, EntityType < 0 can be used."
+        }
+      },
+      "description": "This structure provides the identification data for a given entity in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.10",
+      "x-type-id": "org.opcfoundation.IJT.Base.EntityDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/EntityDataType"
+    },
+    "ErrorInformationDataType": {
+      "type": "object",
+      "properties": {
+        "ErrorType": {
+          "type": "integer",
+          "description": "It is the classification of type of errors due to external factors. Examples: Tool Trigger Lost is Operator error. Temperature overheat is hardware error, etc."
+        },
+        "ErrorId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the error in the system. This will be useful if system wants to provide an identifier where user can query the system and get more information for troubleshooting. It can also point to the respective EventId reported if available."
+        },
+        "LegacyError": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the application or system specific error code."
+        },
+        "ErrorMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is user readable text message to describe the error."
+        }
+      },
+      "description": "This structure represents the errors occurred in the system which are outside the boundaries of the given program.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.5",
+      "x-type-id": "org.opcfoundation.IJT.Base.ErrorInformationDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ErrorInformationDataType"
+    },
+    "JoiningProcessMetaDataType": {
+      "type": "object",
+      "properties": {
+        "JoiningProcessId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the joining process."
+        },
+        "JoiningProcessOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is an identifier to track the changes made to the original instance in the system.\nExample: It can point to the identifier of the object when it was created for the first time. It should be an existing ID in the system if it is available else it can be NULL if it is not tracked in a joining system."
+        },
+        "CreationTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "It is the time when the joining process was created."
+        },
+        "LastUpdatedTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "It is the time when the joining process was updated last time. If it is not available, it can be same as CreationTime."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the joining process."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the description of the joining process."
+        },
+        "JoiningTechnology": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is a human readable text to identify the joining technology."
+        },
+        "Classification": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is the classification of the joining process."
+        },
+        "AssociatedEntities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityDataType"
+          },
+          "description": "It is the list of entities associated to the joining process.\nExamples: ProductInstanceUri of the Controller."
+        }
+      },
+      "description": "This structure provides the meta data which describes the joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.20",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningProcessMetaDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningProcessMetaDataType"
+    },
+    "JoiningProcessDataType": {
+      "type": "object",
+      "properties": {
+        "JoiningProcessMetaData": {
+          "$ref": "#/$defs/JoiningProcessMetaDataType",
+          "description": "It is the meta data of the joining process."
+        },
+        "JoiningProcessContent": {
+          "type": "array",
+          "items": {},
+          "description": "It is the actual content of the joining process which is defined by JoiningProcessMetaData.Classification property.\nExamples: Joining Program, Joining Job, etc.\nNote: The content is application-specific and is not defined in this version of the specification."
+        }
+      },
+      "description": "This structure provides the base container for any joining process in a joining system. \nNote: This specification defines the meta data of a JoiningProcess, and the actual content of the Joining Process is application specific.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.19",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningProcessDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningProcessDataType"
+    },
+    "GetJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "JoiningProcess": {
+          "$ref": "#/$defs/JoiningProcessDataType",
+          "description": "It is the joining process available in the system."
+        },
+        "SelectionName": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the selection name of the joining process configured in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJoiningProcess is used to get the joining process based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.5",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joining process."
+        }
+      },
+      "description": "The Method GetJoiningProcess is used to get the joining process based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.5",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJoiningProcessListResponse": {
+      "type": "object",
+      "properties": {
+        "JoiningProcessList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JoiningProcessMetaDataType"
+          },
+          "description": "It is the list of joining process meta data available in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJoiningProcessList is used to get the list of joining process meta data available in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.3",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJoiningProcessListCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoiningProcessList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJoiningProcessListResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJoiningProcessListCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        }
+      },
+      "description": "The Method GetJoiningProcessList is used to get the list of joining process meta data available in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.3",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJoiningProcessListResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoiningProcessList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJoiningProcessListCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJoiningProcessRevisionListResponse": {
+      "type": "object",
+      "properties": {
+        "JoiningProcessList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JoiningProcessMetaDataType"
+          },
+          "description": "It is the list of joining process meta data available in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJoiningProcessRevisionList is used to get the list available revisions of a specific joining process based on the joiningProcessOriginId.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.4",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJoiningProcessRevisionListCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoiningProcessRevisionList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJoiningProcessRevisionListResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJoiningProcessRevisionListCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the origin identifier of the joining process which is used to manage the revisions of a given joining process."
+        }
+      },
+      "description": "The Method GetJoiningProcessRevisionList is used to get the list available revisions of a specific joining process based on the joiningProcessOriginId.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.4",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJoiningProcessRevisionListResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoiningProcessRevisionList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJoiningProcessRevisionListCall",
+      "x-opc-ua-type": "Method"
+    },
+    "JointDataType": {
+      "type": "object",
+      "properties": {
+        "JointId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint."
+        },
+        "JointOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is an identifier to track the changes made to the original instance in the system.\n\nExample: It can point to the identifier of the object when it was created for the first time. It should be an existing ID in the system if it is available else it can be NULL if it is not tracked in a joining system."
+        },
+        "JointDesignId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the associated joint design."
+        },
+        "CreationTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "It is the time when the joint was created."
+        },
+        "LastUpdatedTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "It is the time when the joint was updated last time. If it is not available, it can be same as CreationTime."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the joint."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the description of the joint."
+        },
+        "Classification": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is the classification of the joint."
+        },
+        "ClassificationDetails": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the details of the classification. It can also be used to provide any other type of classification.\n\nExamples: Safety Critical, etc."
+        },
+        "JointStatus": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the status of the joint.\nExamples: Ok, InUse, NotInUse, NotYetDone, etc."
+        },
+        "AssociatedEntities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityDataType"
+          },
+          "description": "It is the list of entities associated to the joint.\nExamples: JoiningProcessId, JobId, QualityProcessId, SimulationProcessId, etc."
+        },
+        "JoiningTechnology": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is a human readable text to identify the joining technology."
+        }
+      },
+      "description": "This structure provides the joint information. Joint is the physical outcome of the joining operation which determines the properties of the point where multiple parts are assembled.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.15",
+      "x-type-id": "org.opcfoundation.IJT.Base.JointDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JointDataType"
+    },
+    "GetJointResponse": {
+      "type": "object",
+      "properties": {
+        "Joint": {
+          "$ref": "#/$defs/JointDataType",
+          "description": "It is the joint based on the input identifier."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJoint is used to get the joint based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.10",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint."
+        }
+      },
+      "description": "The Method GetJoint is used to get the joint based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.10",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointCall",
+      "x-opc-ua-type": "Method"
+    },
+    "JointComponentDataType": {
+      "type": "object",
+      "properties": {
+        "JointComponentId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint component.\nExamples: BoltId, RivetId, GasketId, etc."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the joint component."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the description of the joint component."
+        },
+        "Manufacturer": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the manufacturer of the joint component."
+        },
+        "ManufacturerUri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the identifier of the manufacturer."
+        },
+        "JointComponentContent": {
+          "description": "It is the content of the joint component.\nExamples: Bolt, Rivet, Gasket, etc.\n"
+        }
+      },
+      "description": "This structure is the base container for any joint component such as Bolt, Rivet, Gasket, Glue string, etc. \nNote: The concrete definition of joint component is not defined in this version of the specification.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.17",
+      "x-type-id": "org.opcfoundation.IJT.Base.JointComponentDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JointComponentDataType"
+    },
+    "GetJointComponentResponse": {
+      "type": "object",
+      "properties": {
+        "JointComponent": {
+          "$ref": "#/$defs/JointComponentDataType",
+          "description": "It is the joint component based on the input identifier."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJointComponent is used to get the joint component based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.12",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointComponentCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointComponent.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointComponentResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointComponentCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointComponentId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint component."
+        }
+      },
+      "description": "The Method GetJointComponent is used to get the joint component based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.12",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointComponentResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointComponent.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointComponentCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointComponentListResponse": {
+      "type": "object",
+      "properties": {
+        "JointComponentList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JointComponentDataType"
+          },
+          "description": "It is the list of joint components available in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJointComponentList is used to get the list of available joint components in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.9",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointComponentListCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointComponentList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointComponentListResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointComponentListCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        }
+      },
+      "description": "The Method GetJointComponentList is used to get the list of available joint components in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.9",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointComponentListResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointComponentList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointComponentListCall",
+      "x-opc-ua-type": "Method"
+    },
+    "JointDesignDataType": {
+      "type": "object",
+      "properties": {
+        "JointDesignId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the joint design."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the joint design."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the description of the joint design."
+        },
+        "JointDesignContent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DesignValueDataType"
+          },
+          "description": "It is the list of design values."
+        },
+        "JointComponentIdList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrimmedString"
+          },
+          "description": "It is the list of joint components associated to the joint design.\nExamples: BoltId, RivetId, GasketId, etc."
+        }
+      },
+      "description": "This structure provides the design information of a given joint.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.16",
+      "x-type-id": "org.opcfoundation.IJT.Base.JointDesignDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JointDesignDataType"
+    },
+    "GetJointDesignResponse": {
+      "type": "object",
+      "properties": {
+        "JointDesign": {
+          "$ref": "#/$defs/JointDesignDataType",
+          "description": "It is the joint design based on the input identifier."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJointDesign is used to get the joint design based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.11",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointDesignCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointDesign.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointDesignResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointDesignCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointDesignId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the joint design based on the input identifier."
+        }
+      },
+      "description": "The Method GetJointDesign is used to get the joint design based on the input identifier.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.11",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointDesignResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointDesign.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointDesignCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointDesignListResponse": {
+      "type": "object",
+      "properties": {
+        "JointDesignList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JointDesignDataType"
+          },
+          "description": "It is the list of joint designs available in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJointDesignList is used to get the list of available joint designs in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.8",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointDesignListCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointDesignList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointDesignListResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointDesignListCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        }
+      },
+      "description": "The Method GetJointDesignList is used to get the list of available joint designs in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.8",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointDesignListResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointDesignList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointDesignListCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointListResponse": {
+      "type": "object",
+      "properties": {
+        "JointList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JointDataType"
+          },
+          "description": "It is the list of joints available in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJointList is used to get the list of available joints in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.6",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointListCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointListResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointListCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        }
+      },
+      "description": "The Method GetJointList is used to get the list of available joints in the system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.6",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointListResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointListCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointRevisionListResponse": {
+      "type": "object",
+      "properties": {
+        "JointList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JointDataType"
+          },
+          "description": "It is the list of joints available in the system."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetJointRevisionList is used to get the list available revisions of a specific joint based on the JointOriginId.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.7",
+      "x-request-type": {
+        "$ref": "#/$defs/GetJointRevisionListCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointRevisionList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointRevisionListResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetJointRevisionListCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the origin identifier of the joint which is used to manage the revisions of a given joint."
+        }
+      },
+      "description": "The Method GetJointRevisionList is used to get the list available revisions of a specific joint based on the JointOriginId.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.7",
+      "x-response-type": {
+        "$ref": "#/$defs/GetJointRevisionListResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetJointRevisionList.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetJointRevisionListCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetLatestResultResponse": {
+      "type": "object",
+      "properties": {
+        "ResultHandle": {
+          "$ref": "#/$defs/Handle",
+          "description": "The server shall return to each client requesting result data a system-wide unique handle identifying the result set / client combination. This handle should be used by the client to indicate to the server that the result data is no longer needed, allowing the server to optimize its resource handling.\nIf the instance of ResultManagementType does not support the ReleaseResultHandle Method, the resultHandle should always be set to 0.\nIf the error is set to a value other than 0, the resultHandle may be set to 0."
+        },
+        "Result": {
+          "$ref": "#/$defs/ResultDataType",
+          "description": "The result including metadata."
+        },
+        "Error": {
+          "type": "integer",
+          "description": "0 \u2013 OK\nValues > 0 are reserved for errors defined by this and future standards.\nValues < 0 shall be used for application-specific errors."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.5",
+      "x-request-type": {
+        "$ref": "#/$defs/GetLatestResultCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetLatestResult.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetLatestResultResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetLatestResultCall": {
+      "type": "object",
+      "properties": {
+        "Timeout": {
+          "type": "integer",
+          "description": "With this argument the client can give a hint to the server how long it will need access to the result data.\nA value > 0 indicates an estimated maximum time for processing the data in milliseconds. \nA value = 0 indicates that the client will not need anything besides the data returned by the method call.\nA value < 0 indicates that the client cannot give an estimate.\nThe client cannot rely on the data being available during the indicated time period. The argument is merely a hint allowing the server to optimize its resource management."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.5",
+      "x-response-type": {
+        "$ref": "#/$defs/GetLatestResultResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetLatestResult.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetLatestResultCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetResultByIdResponse": {
+      "type": "object",
+      "properties": {
+        "ResultHandle": {
+          "$ref": "#/$defs/Handle",
+          "description": "The server shall return to each client requesting result data a system-wide unique handle identifying the result set / client combination. This handle should be used by the client to indicate to the server that the result data is no longer needed, allowing the server to optimize its resource handling.\nIf the instance of ResultManagementType does not support the ReleaseResultHandle Method, the resultHandle should always be set to 0.\nIf the error is set to a value other than 0, the resultHandle may be set to 0."
+        },
+        "Result": {
+          "$ref": "#/$defs/ResultDataType",
+          "description": "The result including metadata. May be set to Null, if error is set to a value other than 0."
+        },
+        "Error": {
+          "type": "integer",
+          "description": "0 \u2013 OK\nValues > 0 are reserved for errors defined by this and future standards.\nValues < 0 shall be used for application-specific errors."
+        }
+      },
+      "description": "The server shall return to each client requesting result data a system-wide unique handle identifying the result set / client combination. This handle should be used by the client to indicate to the server that the result data is no longer needed, allowing the server to optimize its resource handling.\nIf the instance of ResultManagementType does not support the ReleaseResultHandle Method, the resultHandle should always be set to 0.\nIf the error is set to a value other than 0, the resultHandle may be set to 0.\n",
+      "x-request-type": {
+        "$ref": "#/$defs/GetResultByIdCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetResultById.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetResultByIdResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetResultByIdCall": {
+      "type": "object",
+      "properties": {
+        "ResultId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "System-wide unique identifier for the result."
+        },
+        "Timeout": {
+          "type": "integer",
+          "description": "With this argument the client can give a hint to the server how long it will need access to the result data.\nA value > 0 indicates an estimated maximum time for processing the data in milliseconds. \nA value = 0 indicates that the client will not need anything besides the data returned by the method call.\nA value < 0 indicates that the client cannot give an estimate.\nThe client cannot rely on the data being available during the indicated time period. The argument is merely a hint allowing the server to optimize its resource management."
+        }
+      },
+      "description": "The server shall return to each client requesting result data a system-wide unique handle identifying the result set / client combination. This handle should be used by the client to indicate to the server that the result data is no longer needed, allowing the server to optimize its resource handling.\nIf the instance of ResultManagementType does not support the ReleaseResultHandle Method, the resultHandle should always be set to 0.\nIf the error is set to a value other than 0, the resultHandle may be set to 0.\n",
+      "x-response-type": {
+        "$ref": "#/$defs/GetResultByIdResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetResultById.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetResultByIdCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetResultIdListFilteredResponse": {
+      "type": "object",
+      "properties": {
+        "ResultHandle": {
+          "$ref": "#/$defs/Handle",
+          "description": "The server shall return to each client requesting result data a system-wide unique handle identifying the result set / client combination. This handle has to be used by the client to release the result set.\nIf the instance of ResultManagementType does not support the ReleaseResultHandle Method, the resultHandle should always be set to 0.\nIf the error is set to a value other than 0, the resultHandle may be set to 0."
+        },
+        "ResultIdList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrimmedString"
+          },
+          "description": "List of resultIds of results matching the Filter."
+        },
+        "Error": {
+          "type": "integer",
+          "description": "0 \u2013 OK\nValues > 0 are reserved for errors defined by this and future standards.\nValues < 0 shall be used for application-specific errors."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.3",
+      "x-request-type": {
+        "$ref": "#/$defs/GetResultIdListFilteredCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetResultIdListFiltered.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetResultIdListFilteredResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetResultIdListFilteredCall": {
+      "type": "object",
+      "properties": {
+        "Filter": {
+          "$ref": "#/$defs/ContentFilter",
+          "description": "Filter used to filter for specific results based on the meta data of the results. Valid BrowsePaths used in the filter can be built from the fields of the ResultReadyEventType, the ResultType VariableType or the ResultDataType or corresponding subtypes."
+        },
+        "OrderedBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelativePath"
+          },
+          "description": "An array of BrowsePaths (as array of QualifiedName) identifying the ordering criteria for the results. If the array is null or empty, no ordering is executed.\nIf several BrowsePaths are provided, the first entry in the array is used as first ordering criteria, etc."
+        },
+        "MaxResults": {
+          "type": "integer",
+          "description": "Defines how many resultIds the Client wants to receive at most. If no maximum should be provided, it is set to 0."
+        },
+        "Timeout": {
+          "type": "integer",
+          "description": "With this argument the client can give a hint to the server how long it will need access to the result data.\nA value > 0 indicates an estimated maximum time for processing the data in milliseconds. \nA value = 0 indicates that the client will not need anything besides the data returned by the method call.\nA value < 0 indicates that the client cannot give an estimate.\nThe client cannot rely on the data being available during the indicated time period. The argument is merely a hint allowing the server to optimize its resource management."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.3",
+      "x-response-type": {
+        "$ref": "#/$defs/GetResultIdListFilteredResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetResultIdListFiltered.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetResultIdListFilteredCall",
+      "x-opc-ua-type": "Method"
+    },
+    "GetSelectedJoiningProgramResponse": {
+      "type": "object",
+      "properties": {
+        "SelectedJoiningProgram": {
+          "$ref": "#/$defs/JoiningProcessMetaDataType",
+          "description": "It is the selected joining program for the input asset."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method GetSelectedJoiningProgram is used to get the selected joining program for a given asset.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.18",
+      "x-request-type": {
+        "$ref": "#/$defs/GetSelectedJoiningProgramCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetSelectedJoiningProgram.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetSelectedJoiningProgramResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "GetSelectedJoiningProgramCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        }
+      },
+      "description": "The Method GetSelectedJoiningProgram is used to get the selected joining program for a given asset.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.18",
+      "x-response-type": {
+        "$ref": "#/$defs/GetSelectedJoiningProgramResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.GetSelectedJoiningProgram.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/GetSelectedJoiningProgramCall",
+      "x-opc-ua-type": "Method"
+    },
+    "Health": {
+      "type": "object",
+      "properties": {
+        "UIElement": {
+          "$ref": "#/$defs/None"
+        },
+        "DeviceHealth": {
+          "$ref": "#/$defs/DeviceHealthEnumeration",
+          "description": "DeviceHealth indicates the status as defined by NAMUR Recommendation NE107. Clients can read or monitor this Variable to determine the device condition."
+        },
+        "ErrorCode": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "ErrorCode is the system specific code for the error occurred."
+        },
+        "ErrorMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "ErrorMessage is the user readable text of the error reported by the given asset."
+        },
+        "ErrorTimestamp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "ErrorTimestamp is the timestamp when the error occurred in the given asset."
+        },
+        "Temperature": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Temperature is the measured temperature of the asset."
+        }
+      },
+      "description": "The Health Object is an instance of FunctionalGroupType to group health related parameters for all the assets in a Joining System.",
+      "x-type-id": "org.opcfoundation.IJT.Base.Health.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Health",
+      "x-opc-ua-type": "DataSet"
+    },
+    "Identification": {
+      "type": "object",
+      "properties": {
+        "UIElement": {
+          "$ref": "#/$defs/None"
+        },
+        "AssetId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "To be used by end users to store a unique identification in the context of their overall application. Servers shall support at least 40 Unicode characters for the clients writing this value, this means clients can expect to be able to write strings with a length of 40 Unicode characters into that field."
+        },
+        "ComponentName": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "To be used by end users to store a human-readable localized text for the MachineryItem. The minimum number of locales supported for this property shall be two. Servers shall support at least 40 Unicode characters for the clients writing the text part of each locale, this means clients can expect to be able to write texts with a length of 40 Unicode characters into that field."
+        },
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type."
+        },
+        "DeviceClass": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Indicates in which domain or for what purpose the MachineryItem is used."
+        },
+        "HardwareRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A string representation of the revision level of the hardware of a MachineryItem. Hardware is physical equipment, as opposed to programs, procedures, rules and associated documentation. Many machines will not provide such information due to the modular and configurable nature of the machine."
+        },
+        "InitialOperationDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "The date, when the MachineryItem was switched on the first time after it has left the manufacturer plant."
+        },
+        "Manufacturer": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "Manufacturer provides a human-readable, localized name of the joining system manufacturer."
+        },
+        "ManufacturerUri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ManufacturerUri provides a unique identifier for this company. This identifier should be a fully qualified domain name; however, it may be a GUID or similar construct that ensures global uniqueness."
+        },
+        "Model": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "Model provides the type of the joining system. Examples: Fixtured System, Handheld System, etc."
+        },
+        "MonthOfConstruction": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The month in which the manufacturing process of the MachineryItem has been completed. It shall be a number between 1 and 12, representing the month from January to December."
+        },
+        "ProductCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A machine-readable string of the model of the MachineryItem, that might include options like the hardware configuration of the model. This information might be provided by the ERP system of the vendor. For example, it can be used as order information."
+        },
+        "ProductInstanceUri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ProductInstanceUri is a globally unique resource identifier provided by the manufacturer."
+        },
+        "SerialNumber": {
+          "type": "string",
+          "description": "A string containing a unique production number of the manufacturer of the MachineryItem. The global uniqueness of the serial number is only given in the context of the manufacturer, and potentially the model. The value shall not change during the life-cycle of the MachineryItem."
+        },
+        "SoftwareRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A string representation of the revision level of a MachineryItem. In most cases, MachineryItems consist of several software components. In that case, information about the software components might be provided as additional information in the address space, including individual revision information. In that case, this property is either not provided or provides an overall software revision level. The value might change during the life-cycle of a MachineryItem."
+        },
+        "YearOfConstruction": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The year (Gregorian calendar) in which the manufacturing process of the MachineryItem has been completed. It shall be a four-digit number and never change during the life-cycle of a MachineryItem."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the description of the system which could be written by the customer to identify the system. It could be the purpose of the system in the assembly line."
+        },
+        "JoiningTechnology": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "JoiningTechnology is a human readable text to identify the joining technology of the joining system."
+        },
+        "SupplierCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SupplierCode is the SAP or ERP Supplier Code of the asset."
+        },
+        "IntegratorName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "IntegratorName is the name of the system integrator."
+        },
+        "Location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Location is the location of the given system in the given plant or factory in text format."
+        },
+        "Name": {
+          "type": "string",
+          "description": "Name is the name of the joining system. It can also be the standard browse name of the instance of JoiningSystemType."
+        },
+        "SystemId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SystemId is the system integrator specific identifier for the system. It represents a reference to the manufacturer ERP system."
+        }
+      },
+      "description": "The Identification Object provides identification parameters of the joining system.",
+      "x-type-id": "org.opcfoundation.IJT.Base.Identification.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Identification",
+      "x-opc-ua-type": "DataSet"
+    },
+    "IncrementJoiningProcessCounterResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method IncrementJoiningProcessCounter is used to increment the counter of the sequential joining processes such as Job, etc.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.12",
+      "x-request-type": {
+        "$ref": "#/$defs/IncrementJoiningProcessCounterCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.IncrementJoiningProcessCounter.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/IncrementJoiningProcessCounterResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "IncrementJoiningProcessCounterCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        },
+        "IncrementCount": {
+          "type": "integer",
+          "description": "It is the number of increments to be done for the joining process counter.\nThe default value is 1 if it is not provided."
+        }
+      },
+      "description": "The Method IncrementJoiningProcessCounter is used to increment the counter of the sequential joining processes such as Job, etc.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.12",
+      "x-response-type": {
+        "$ref": "#/$defs/IncrementJoiningProcessCounterResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.IncrementJoiningProcessCounter.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/IncrementJoiningProcessCounterCall",
+      "x-opc-ua-type": "Method"
+    },
+    "JoiningProcessManagement": {
+      "type": "object",
+      "properties": {
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type."
+        }
+      },
+      "description": "The JoiningProcessManagement Object is an instance of JoiningProcessManagementType which provides mechanisms to manage joining processes in the joining system.",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningProcessManagement.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningProcessManagement",
+      "x-opc-ua-type": "DataSet"
+    },
+    "TraceContentDataType": {
+      "type": "object",
+      "properties": {
+        "Values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "It is an array of trace samples. The values correspond to the PhysicalQuantity attribute."
+        },
+        "SensorId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the sensor which has reported the values. This will be useful for identifying the sensor when the same set of samples are reported by multiple sensors."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the user-friendly name for the given trace."
+        },
+        "Description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is an additional text to describe the trace samples."
+        },
+        "PhysicalQuantity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is to determine the type of the physical quantity associated to a given value(s)."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "It is the engineering unit of the values."
+        }
+      },
+      "description": "It is to describe the trace samples for a given program step. It is used in StepTraceDataType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.9",
+      "x-type-id": "org.opcfoundation.IJT.Base.TraceContentDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/TraceContentDataType"
+    },
+    "StepTraceDataType": {
+      "type": "object",
+      "properties": {
+        "StepTraceId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the step trace."
+        },
+        "StepResultId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the associated step result."
+        },
+        "NumberOfTracePoints": {
+          "type": "integer",
+          "description": "It is the total number of trace points to be sent for each quantity."
+        },
+        "SamplingInterval": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the time between each sample in the given Trace array. This is required if applications want to reduce the amount of data by omitting the StepTraceContent array which represents TIME."
+        },
+        "StartTimeOffset": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the offset to the ProcessingTimes.StartTime in the Result instance. This value can be used to order the steps in execution order if same step is run multiple times."
+        },
+        "StepTraceContent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TraceContentDataType"
+          },
+          "description": "It is an array of trace data which contains the samples of different quantities like torque, angle, time, etc. The array size of TraceContent array should be same for each quantity and that is determined by the NumberOfTracePoints value."
+        }
+      },
+      "description": "It is to describe of the trace for a given program step. It is used in JoiningTraceDataType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.8",
+      "x-type-id": "org.opcfoundation.IJT.Base.StepTraceDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/StepTraceDataType"
+    },
+    "JoiningTraceDataType": {
+      "type": "object",
+      "properties": {
+        "StepTraces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepTraceDataType"
+          },
+          "description": "It is an array of StepTraceDataType which provides trace content for each step in the given result."
+        }
+      },
+      "description": "This structure is to describe the content of traces for all the steps in the given program. It is used in JoiningResultDataType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.7",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningTraceDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningTraceDataType"
+    },
+    "ResultEvaluationEnum": {
+      "anyOf": [
+        {
+          "const": 0,
+          "title": "Undefined",
+          "description": "The evaluation of the result is unknown, for example because it failed"
+        },
+        {
+          "const": 1,
+          "title": "OK",
+          "description": "The result is in tolerance"
+        },
+        {
+          "const": 2,
+          "title": "NotOK",
+          "description": "The result is out of tolerance"
+        },
+        {
+          "const": 3,
+          "title": "NotDecidable",
+          "description": "The decision is not possible due to measurement uncertainty."
+        }
+      ],
+      "description": "Indicates whether a result was in tolerance\nhttps://reference.opcfoundation.org/Machinery/Result/v101/docs/10.3",
+      "x-type-id": "org.opcfoundation.Machinery.Result.ResultEvaluationEnum.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/Machinery/Result/v1.01.0/#/$defs/ResultEvaluationEnum"
+    },
+    "ResultValueDataType": {
+      "type": "object",
+      "properties": {
+        "MeasuredValue": {
+          "type": "number",
+          "description": "It is the measured value of the given result. The value corresponds to the PhysicalQuantity attribute of JoiningDataVariableType."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is a user readable name of the given measurement value."
+        },
+        "ResultEvaluation": {
+          "$ref": "#/$defs/ResultEvaluationEnum",
+          "description": "It indicates whether the measured value is as per the configured limits and corresponds to a successful result or not."
+        },
+        "ValueId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the given value if it is available in the system."
+        },
+        "ValueTag": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is an associated tag to the given measurement value to classify it based on the joining domain. Examples: FINAL, YIELD, SNUG, etc."
+        },
+        "TracePointIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is the index to the trace sample array from which corresponds to this specific result."
+        },
+        "TracePointTimeOffset": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the time offset to point out the absolute time point in the array of trace samples. This may or may not match with an element in the TraceContent array. If it is not available in the TraceContent array, the value can be visualized in the trace graph via interpolation or some other plotting mechanisms."
+        },
+        "ParameterIdList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrimmedString"
+          },
+          "description": "It is an array of parameter identifiers configured in the Program which is being monitored or sampled.\nNote: In most common cases, it can be a single identifier."
+        },
+        "ViolationType": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Indicates whether the measured value is above or below  the configured limit. It is only relevant if program or step configuration is violated."
+        },
+        "ViolationConsequence": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It provides information on the consequence occurred due to the violation of the configurable limits. Examples: Step Transition, Abort Joining Operation. Is the consequence repairable or not, etc."
+        },
+        "SensorId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the sensor which has reported the value."
+        },
+        "LowLimit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It provides the lower limit of the measured value as per the program."
+        },
+        "HighLimit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It provides the upper limit of the measured value as per the program."
+        },
+        "TargetValue": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It provides the target value of the specific measurement in the program step."
+        },
+        "ResultStep": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It provides the step number or name of the program step which has generated the result. \nNote: This is not applicable for StepResultValues in StepResultDataType. This is added for OverallResultValues in JoiningResultDataType to get the information of the step which has reported the specific value."
+        },
+        "PhysicalQuantity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is to determine the type of the physical quantity associated to a given value(s)."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "It is the engineering unit of the measured value."
+        }
+      },
+      "description": "It is used to report measurement values of the joining operation. Those are meant to characterize the quality of the process. It is used in JoiningResultDataType and StepResultDataType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.3",
+      "x-type-id": "org.opcfoundation.IJT.Base.ResultValueDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ResultValueDataType"
+    },
+    "StepResultDataType": {
+      "type": "object",
+      "properties": {
+        "StepResultId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the step result."
+        },
+        "ProgramStepId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the Program Step."
+        },
+        "ProgramStep": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the step number or name of the program step. Sometimes the step id is like 2A, 3B based on number of branches. Hence a string place holder is needed instead of number."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the user-friendly name of the given step. This can be the name of the step in the configuration for ease of use and troubleshooting."
+        },
+        "ResultEvaluation": {
+          "$ref": "#/$defs/ResultEvaluationEnum",
+          "description": "It indicates if the StepResult is successful or not."
+        },
+        "StartTimeOffset": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the offset to the ProcessingTimes.StartTime in Result, this value can be used to order the steps in execution order if same step is run multiple times."
+        },
+        "StepTraceId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the StepTrace associated to the StepResult."
+        },
+        "StepResultValues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResultValueDataType"
+          },
+          "description": "It is the set of values which needs to be measured as per the program step."
+        }
+      },
+      "description": "This structure represents the measurement values corresponding to a given step in the program. It is used in JoiningResultDataType.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.4",
+      "x-type-id": "org.opcfoundation.IJT.Base.StepResultDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/StepResultDataType"
+    },
+    "JoiningResultDataType": {
+      "type": "object",
+      "properties": {
+        "FailureReason": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It provides the primary reason for failure. If a violation is handled by a rework step resulting in a successful operation, then it is not reported as failure."
+        },
+        "OverallResultValues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResultValueDataType"
+          },
+          "description": "It is an array of overall result values which contains the measurement values of different quantities like torque, angle, time, etc. based on the program. \n\nNote: If the operation is terminated in the first step and no values are available to report, then this list may be empty."
+        },
+        "StepResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepResultDataType"
+          },
+          "description": "It is an array of step results corresponding to each step in the program. This parameter is used if the system provides one or more step results."
+        },
+        "Errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ErrorInformationDataType"
+          },
+          "description": "It is an array of external errors which captures the failures outside the boundary of the program are captured as part of the Errors. It is up to the application to fill in the critical/primary error in the Errors list as top entry."
+        },
+        "FailingStepResultId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the step result which is the primary cause of failure."
+        },
+        "Trace": {
+          "$ref": "#/$defs/JoiningTraceDataType",
+          "description": "It is a structure to include the Joining Trace content. This can be NULL or empty and it is up to the application to send this as part of the Joining Result."
+        }
+      },
+      "description": "This structure represents the data associated with Joining Result and the corresponding measurement values.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.2",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningResultDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningResultDataType"
+    },
+    "KeyValueDataType": {
+      "type": "object",
+      "properties": {
+        "Key": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the unique key of the value."
+        },
+        "Value": {
+          "description": "It is the value associated with the key."
+        }
+      },
+      "description": "This structure is similar to 0:KeyValuePair which uses 0:TrimmedString instead of 0:QualifiedName.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.22",
+      "x-type-id": "org.opcfoundation.IJT.Base.KeyValueDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/KeyValueDataType"
+    },
+    "ResultCounterDataType": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the counter."
+        },
+        "CounterValue": {
+          "type": "integer",
+          "description": "It is the value of the counter."
+        },
+        "CounterType": {
+          "type": "integer",
+          "description": "It is the type of the counter."
+        }
+      },
+      "description": "This structure is used to provide various types of counters associated to a Result. These counters are related to a joining process with sub-processes.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.11",
+      "x-type-id": "org.opcfoundation.IJT.Base.ResultCounterDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ResultCounterDataType"
+    },
+    "JoiningResultMetaDataType": {
+      "type": "object",
+      "properties": {
+        "JoiningTechnology": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is a human readable text to identify the joining technology."
+        },
+        "SequenceNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is the cyclic counter which is incremented for each result generated."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the user-friendly name of the result.\nExamples: Job Result, Batch Result, etc."
+        },
+        "Description": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It is the additional information associated with the result. It can contain information on the ResultContent."
+        },
+        "Classification": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It provides information on the classification of the result in the joining system."
+        },
+        "OperationMode": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It provides information on how the joining operation was performed."
+        },
+        "AssemblyType": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It provides the type of joining operation."
+        },
+        "AssociatedEntities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityDataType"
+          },
+          "description": "It is a list of identifiers associated to the given result. \nExamples: ProductId, VIN, SocketId, JointId, JoiningProcessId, etc."
+        },
+        "ResultCounters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResultCounterDataType"
+          },
+          "description": "It is a list of counters associated to the given result. \nExamples: Batch Counter, Retry Counter, Channel Counter, etc."
+        },
+        "InterventionType": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It provides information on type of intervention which has occurred during the joining operation."
+        },
+        "IsGeneratedOffline": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "It indicates that the result is generated when the asset was offline. The default value is false.\nNote: The definition of offline status is application specific.\nExample: Wireless tool performing joining in radio shadow."
+        },
+        "ExtendedMetaData": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyValueDataType"
+          },
+          "description": "It is used to send any additional meta data which cannot be sent using the existing properties. It shall be used only for sending meta data but not any content."
+        }
+      },
+      "description": "This structure is a subtype of ResultMetaDataType. It is used to define additional meta data of a Result in a joining system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.1",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningResultMetaDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningResultMetaDataType"
+    },
+    "JoiningSystemResultReadyEventType": {
+      "type": "object",
+      "properties": {},
+      "description": "This EventType provides information of a complete or partial result from a joining system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/8.1",
+      "x-type-id": "org.opcfoundation.IJT.Base.JoiningSystemResultReadyEventType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JoiningSystemResultReadyEventType",
+      "x-opc-ua-type": "Event"
+    },
+    "JointManagement": {
+      "type": "object",
+      "properties": {
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type."
+        }
+      },
+      "description": "The JointManagement Object is an instance of JointManagementType which provides mechanisms to manage joint and associated information.",
+      "x-type-id": "org.opcfoundation.IJT.Base.JointManagement.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/JointManagement",
+      "x-opc-ua-type": "DataSet"
+    },
+    "LifetimeCounters": {
+      "type": "object",
+      "properties": {
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type"
+        }
+      },
+      "description": "It provides an entry point to various lifetime variables.",
+      "x-type-id": "org.opcfoundation.IJT.Base.LifetimeCounters.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/LifetimeCounters",
+      "x-opc-ua-type": "DataSet"
+    },
+    "MachineryBuildingBlocks": {
+      "type": "object",
+      "properties": {},
+      "description": "The MachineryBuildingBlocks contains building blocks from OPC UA for Machinery.",
+      "x-type-id": "org.opcfoundation.IJT.Base.MachineryBuildingBlocks.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/MachineryBuildingBlocks",
+      "x-opc-ua-type": "DataSet"
+    },
+    "Maintenance": {
+      "type": "object",
+      "properties": {
+        "UIElement": {
+          "$ref": "#/$defs/None"
+        }
+      },
+      "description": "The Maintenance Object is an instance of FunctionalGroupType to group maintenance related parameters for the given asset in a Joining System.",
+      "x-type-id": "org.opcfoundation.IJT.Base.Maintenance.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Maintenance",
+      "x-opc-ua-type": "DataSet"
+    },
+    "Monitoring": {
+      "type": "object",
+      "properties": {
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type."
+        }
+      },
+      "description": "Entry point for monitoring information of a MachineryItem.",
+      "x-type-id": "org.opcfoundation.IJT.Base.Monitoring.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Monitoring",
+      "x-opc-ua-type": "DataSet"
+    },
+    "Notifications": {
+      "type": "object",
+      "properties": {
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type."
+        }
+      },
+      "description": "Provides notifications as events or objects.",
+      "x-type-id": "org.opcfoundation.IJT.Base.Notifications.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Notifications",
+      "x-opc-ua-type": "DataSet"
+    },
+    "Number": {
+      "type": "object",
+      "properties": {},
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part5/12.2.9",
+      "x-type-id": "org.opcfoundation.BaseModel.Number.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/Number"
+    },
+    "OperationCounters": {
+      "type": "object",
+      "properties": {
+        "UIElement": {
+          "$ref": "#/$defs/None"
+        },
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type"
+        },
+        "OperationCycleCounter": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "OperationCycleCounter is counting the times the component switches from not performing an activity to performing an activity. For example, each time a valve starts moving, is counted. This value shall only increase during the lifetime of the component and shall not be reset when the component is restarted."
+        },
+        "OperationDuration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "OperationDuration is the duration the MachineryItem has been powered and performing an activity. This counter is intended for machines and components where a distinction is made between switched on and in operation. For example, a drive might be powered on but not operating. It is not intended for machines or components always performing an activity like sensors always measuring data. This value shall only increase during the lifetime of the MachineryItem and shall not be reset when it is restarted. The OperationDuration is provided as Duration, i.e., in milliseconds or even fractions of a millisecond. However, the Server is not expected to update the value in such a high frequency, but maybe once a minute or once an hour, depending on the application."
+        },
+        "PowerOnDuration": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "PowerOnDuration is the duration the MachineryItem has been powered. The main purpose is to determine the time in which degradation of the MachineryItem occurred. The details, when the time is counted, is implementation-specific. Companion specifications might define specific rules. Typically, when the MachineryItem has supply voltage and the main CPU is running, the time is counted. This may include any kind of sleep mode, but may not include pure Wake on LAN. This value shall only increase during the lifetime of the MachineryItem and shall not be reset when it is restarted. The PowerOnDuration is provided as Duration, i.e., in milliseconds or even fractions of a millisecond. However, the Server is not expected to update the value in such a high frequency, but maybe once a minute or once an hour, depending on the application."
+        }
+      },
+      "description": "It provides information about the duration something is turned on and how long it performs an activity.",
+      "x-type-id": "org.opcfoundation.IJT.Base.OperationCounters.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/OperationCounters",
+      "x-opc-ua-type": "DataSet"
+    },
+    "SignalDataType": {
+      "type": "object",
+      "properties": {
+        "SignalId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the identifier of the signal."
+        },
+        "SignalValue": {
+          "$ref": "#/$defs/Number",
+          "description": "It is the value of the signal."
+        },
+        "SignalDescription": {
+          "type": "string",
+          "description": "It is the description of the signal."
+        },
+        "SignalType": {
+          "type": "integer",
+          "description": "It is the type of the signal."
+        }
+      },
+      "description": "This structure contains the signal information which is used in SetIOSignals and GetIOSignals methods.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.14",
+      "x-type-id": "org.opcfoundation.IJT.Base.SignalDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SignalDataType"
+    },
+    "Parameters": {
+      "type": "object",
+      "properties": {
+        "Connected": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Connected indicates if a given asset is connected or disconnected. It can change by DisconnectAsset method or by some other external interface."
+        },
+        "Enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Enabled indicates if a given asset is enabled or disabled. It can change by EnableAsset method or by some other external interface."
+        },
+        "IOSignals": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/SignalDataType"
+          },
+          "description": "IOSignals is an array of signals available for the asset."
+        },
+        "Type": {
+          "type": "integer",
+          "description": "Type is the classification of a Tool."
+        },
+        "Capacity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Capacity is the nominal capacity of the battery."
+        },
+        "ChargeCycleCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "ChargeCycleCount is the number of times the battery has been charged since the initial operation date."
+        },
+        "NominalVoltage": {
+          "type": "number",
+          "description": "NominalVoltage is the nominal DC voltage of the battery."
+        },
+        "StateOfCharge": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "StateOfCharge is the state of charge (SOC) indicator functions as a sort of fuel gauge that displays the usable amount of energy. This helps determine optimal charging and discharging. It is given in percentage."
+        },
+        "StateOfHealth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "StateOfHealth is the State of Health is a measurement that reflects the general condition of a battery and its ability to deliver the specified performance compared with a fresh battery. It considers such factors as charge acceptance, internal resistance, voltage, and self-discharge. It is given in percentage."
+        },
+        "CableLength": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "CableLength is the length of the cable."
+        },
+        "FeedingSpeed": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "FeedingSpeed indicates the output in parts per time. Example: fasteners / second."
+        },
+        "FillLevel": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "FillLevel is the fill level in the feeder in percentage [%]. (0%=empty, 100% = full)."
+        },
+        "Material": {
+          "type": "string",
+          "description": "Material is the type or name of the part which is supplied by the feeder."
+        },
+        "StorageCapacity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "StorageCapacity is the static information on size of the storage in Bytes."
+        },
+        "UsedSpace": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "UsedSpace is the static information on size of the used space in Bytes."
+        },
+        "ActualPower": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "ActualPower is the actual load consumption of the power supply."
+        },
+        "InputSpecification": {
+          "type": "string",
+          "description": "InputSpecification is the input specification of the power supply. Example: 230 V, 50/60 Hz, 10 A."
+        },
+        "NominalPower": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "NominalPower is the maximum output power of the power supply."
+        },
+        "OutputSpecification": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "OutputSpecification is the output specification of the power supply."
+        },
+        "MeasuredValue": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "MeasuredValue is the actual measured value reported from a sensor."
+        },
+        "OverloadCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "OverloadCount is the number of overloads of the sensor, where the permissible load of the sensor was exceeded."
+        },
+        "NodeNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "NodeNumber is the node identifier in multiple configurations. Examples: Cabinet with one controller and multiple servo/modules."
+        },
+        "DesignType": {
+          "type": "integer",
+          "description": "DesignType provides information on the design of the Tool."
+        },
+        "DriveMethod": {
+          "type": "integer",
+          "description": "DriveMethod provides information on the drive method of the motor of the Tool."
+        },
+        "DriveType": {
+          "type": "integer",
+          "description": "DriveType provides information on the drive type of the Tool."
+        },
+        "MaxSpeed": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "MaxSpeed is the maximum rotation speed of the driving shaft."
+        },
+        "MaxTorque": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "MaxTorque is the maximum allowed torque for which the tool may be used for tightening processes. For Click Wrenches, it may not be available."
+        },
+        "MinTorque": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "MinTorque is the minimum allowed torque for which the tool may be used for tightening processes."
+        },
+        "MotorType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "MotorType is the type of motor in the tool."
+        },
+        "ShutOffMethod": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "ShutOffMethod provides information on the shutoff method of the tool."
+        }
+      },
+      "description": "The Parameters Object is an instance of 0:FolderType to group set of common parameters of an asset in a joining system.",
+      "x-type-id": "org.opcfoundation.IJT.Base.Parameters.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Parameters",
+      "x-opc-ua-type": "DataSet"
+    },
+    "ReleaseResultHandleResponse": {
+      "type": "object",
+      "properties": {
+        "Error": {
+          "type": "integer",
+          "description": "0 \u2013 OK\nValues > 0 are reserved for errors defined by this and future standards.\nValues < 0 shall be used for application-specific errors."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.4",
+      "x-request-type": {
+        "$ref": "#/$defs/ReleaseResultHandleCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.ReleaseResultHandle.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ReleaseResultHandleResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "ReleaseResultHandleCall": {
+      "type": "object",
+      "properties": {
+        "ResultHandle": {
+          "$ref": "#/$defs/Handle",
+          "description": "Handle returned by GetResultById or GetResultIdListFiltered, identifying the result set/client combination."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/Machinery/Result/v101/docs/7.1.4",
+      "x-response-type": {
+        "$ref": "#/$defs/ReleaseResultHandleResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.ReleaseResultHandle.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ReleaseResultHandleCall",
+      "x-opc-ua-type": "Method"
+    },
+    "ReportedValueDataType": {
+      "type": "object",
+      "properties": {
+        "PhysicalQuantity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "It is the physical quantity of the value. Example: Torque, Angle, etc. \nNote: It may not be applicable for few reported values such as Software Version, etc."
+        },
+        "Name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "It is the name of the given value."
+        },
+        "CurrentValue": {
+          "description": "It is the current value. The data type can be any simple data type such as Integer, String, Double, DateTime, etc. If the value is corresponding to the physical quantity, then the recommended data type is Double."
+        },
+        "PreviousValue": {
+          "description": "It is the previous value (if available). The data type can be any simple data type such as Integer, String, Double, DateTime, etc. If the value is corresponding to the physical quantity, then the data type should be Double."
+        },
+        "LowLimit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the low limit of the given value. It is not applicable for values which do not have PhysicalQuantity."
+        },
+        "HighLimit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "It is the high limit of the given value. It is not applicable for values which do not have PhysicalQuantity."
+        },
+        "EngineeringUnits": {
+          "$ref": "#/$defs/EUInformation",
+          "description": "It is the engineering unit of the CurrentValue, PreviousValue, LowLimit, HighLimit.\nIt is not applicable for values which does not have PhysicalQuantity."
+        }
+      },
+      "description": "This structure provides the given value and corresponding limits for a given physical quantity (if applicable).\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.12",
+      "x-type-id": "org.opcfoundation.IJT.Base.ReportedValueDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ReportedValueDataType"
+    },
+    "RequestResultsResponse": {
+      "type": "object",
+      "properties": {
+        "RevisedMinimumDurationBetweenResults": {
+          "type": "number",
+          "description": "It is the minimum revised interval supported by the server."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/IJT/Base/v100/docs/7.5.3",
+      "x-request-type": {
+        "$ref": "#/$defs/RequestResultsCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.RequestResults.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/RequestResultsResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestResultsCall": {
+      "type": "object",
+      "properties": {
+        "FromSequenceNumber": {
+          "type": "integer",
+          "description": "The starting sequence number for the Requested Results.\n\nIt is a required argument if results are requested based on the input sequence number range.\n\nIt shall be a valid value > 0.\nIf 0, then fromTime and toTime are used."
+        },
+        "ToSequenceNumber": {
+          "type": "integer",
+          "description": "The ending sequence number of the Requested Results.\n\nIt is a required argument if results are requested based on the input sequence number range.\n\nIt shall be a valid value > 0 and shall be >= fromSequenceNumber.\nIf 0, then fromTime and toTime are used."
+        },
+        "FromTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "It is the start time for the Requested Results.\n\nThis argument is considered only when fromSequenceNumber and toSequenceNumber are set as 0."
+        },
+        "ToTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "It is the end time for the Requested Results.\n\nThis argument is considered only when fromSequenceNumber and toSequenceNumber are set as 0."
+        },
+        "RequestedMinimumDurationBetweenResults": {
+          "type": "number",
+          "description": "The client can use this argument to configure a time interval between each Result to optimize the number of Results sent from the Server.\n\nThe Server can return the revised interval if the requested interval is not supported.\n\nNote: It is only a requested minimum time interval by the client and the server could take additional time for processing."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/IJT/Base/v100/docs/7.5.3",
+      "x-response-type": {
+        "$ref": "#/$defs/RequestResultsResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.RequestResults.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/RequestResultsCall",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestUnacknowledgedResultsResponse": {
+      "type": "object",
+      "properties": {
+        "RevisedMinimumDurationBetweenResults": {
+          "type": "number",
+          "description": "It is the minimum revised interval supported by the server."
+        },
+        "UnacknowledgedResultCount": {
+          "type": "integer",
+          "description": "It is the total count of unacknowledged results in the server."
+        },
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/IJT/Base/v100/docs/7.5.4",
+      "x-request-type": {
+        "$ref": "#/$defs/RequestUnacknowledgedResultsCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.RequestUnacknowledgedResults.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/RequestUnacknowledgedResultsResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestUnacknowledgedResultsCall": {
+      "type": "object",
+      "properties": {
+        "MaxResults": {
+          "type": "integer",
+          "description": "It is the maximum results requested by the Client.\n\nIf 0, then the Server shall send all the unacknowledged results."
+        },
+        "RequestedMinimumDurationBetweenResults": {
+          "type": "number",
+          "description": "The client can use this argument to configure a time interval between each Result to optimize the number of Results sent from the Server.\n\nThe Server can return the revised interval if the requested interval is not supported.\n\nNote: It is only a requested minimum time interval by the client and the server could take additional time for processing."
+        }
+      },
+      "description": "https://reference.opcfoundation.org/IJT/Base/v100/docs/7.5.4",
+      "x-response-type": {
+        "$ref": "#/$defs/RequestUnacknowledgedResultsResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.RequestUnacknowledgedResults.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/RequestUnacknowledgedResultsCall",
+      "x-opc-ua-type": "Method"
+    },
+    "RequestedResultEventType": {
+      "type": "object",
+      "properties": {},
+      "description": "This EventType provides the requested results from the Server using RequestResults method or RequestUnacknowledgedResults method.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/8.4",
+      "x-type-id": "org.opcfoundation.IJT.Base.RequestedResultEventType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/RequestedResultEventType",
+      "x-opc-ua-type": "Event"
+    },
+    "ResetJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method ResetJoiningProcess is used to reset/restart the sequential joining processes such as Job, etc.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.15",
+      "x-request-type": {
+        "$ref": "#/$defs/ResetJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.ResetJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ResetJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "ResetJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        }
+      },
+      "description": "The Method ResetJoiningProcess is used to reset/restart the sequential joining processes such as Job, etc.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.15",
+      "x-response-type": {
+        "$ref": "#/$defs/ResetJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.ResetJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ResetJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "ResultManagement": {
+      "type": "object",
+      "properties": {
+        "DefaultInstanceBrowseName": {
+          "type": "string",
+          "description": "The default BrowseName for instances of the type."
+        }
+      },
+      "description": "The ResultManagement Object is an instance of JoiningSystemResultManagementType which provides mechanisms to access results generated by the joining system.",
+      "x-type-id": "org.opcfoundation.IJT.Base.ResultManagement.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/ResultManagement",
+      "x-opc-ua-type": "DataSet"
+    },
+    "ResultReadyEventType": {
+      "type": "object",
+      "properties": {},
+      "description": "Provides information of a complete or partial result.\nhttps://reference.opcfoundation.org/Machinery/Result/v101/docs/8.1",
+      "x-type-id": "org.opcfoundation.Machinery.Result.ResultReadyEventType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/Machinery/Result/v1.01.0/#/$defs/ResultReadyEventType",
+      "x-opc-ua-type": "Event"
+    },
+    "Results": {
+      "type": "object",
+      "properties": {},
+      "description": "https://reference.opcfoundation.org/v105/Core/docs/Part5/6.6",
+      "x-type-id": "org.opcfoundation.IJT.Base.Results.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/Results",
+      "x-opc-ua-type": "DataSet"
+    },
+    "SelectJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SelectJoiningProcess is used to select the joining process based on the input arguments.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.7",
+      "x-request-type": {
+        "$ref": "#/$defs/SelectJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SelectJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SelectJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SelectJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        }
+      },
+      "description": "The Method SelectJoiningProcess is used to select the joining process based on the input arguments.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.7",
+      "x-response-type": {
+        "$ref": "#/$defs/SelectJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SelectJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SelectJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SelectJointResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SelectJoint is used to select the joint and the associated joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.5",
+      "x-request-type": {
+        "$ref": "#/$defs/SelectJointCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SelectJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SelectJointResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SelectJointCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "With this argument the Client can provide the identifier of the joint which should be selected for performing the next joining operation."
+        },
+        "JointOriginId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "With this argument the Client can provide the common identifier of the joint which should be selected for performing the next joining operation.\n\nIt is optional and can be empty if the underlying system does not manage revisions of a joint. If JointId is provided, then this argument shall be ignored."
+        }
+      },
+      "description": "The Method SelectJoint is used to select the joint and the associated joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.5",
+      "x-response-type": {
+        "$ref": "#/$defs/SelectJointResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SelectJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SelectJointCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SendJoiningProcess is used to send a joining process to the joining system. It can be used to insert a joining program or joining batch or joining job or any other process applicable to a joining system. It shall overwrite the joining process if it already exists in the joining system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.2",
+      "x-request-type": {
+        "$ref": "#/$defs/SendJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcess": {
+          "$ref": "#/$defs/JoiningProcessDataType",
+          "description": "With this argument the Client can provide the content of the joining process."
+        },
+        "SelectionName": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "With this argument the Client can provide the required selection name for the given joining process. It is optional and can be empty."
+        }
+      },
+      "description": "The Method SendJoiningProcess is used to send a joining process to the joining system. It can be used to insert a joining program or joining batch or joining job or any other process applicable to a joining system. It shall overwrite the joining process if it already exists in the joining system.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.2",
+      "x-response-type": {
+        "$ref": "#/$defs/SendJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJointResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SendJoint is used to send a joint to a joining system. If the input joint already exists in the system, it shall be overwritten.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.2",
+      "x-request-type": {
+        "$ref": "#/$defs/SendJointCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJointResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJointCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "Joint": {
+          "$ref": "#/$defs/JointDataType",
+          "description": "With this argument the Client can provide the content of the joint."
+        }
+      },
+      "description": "The Method SendJoint is used to send a joint to a joining system. If the input joint already exists in the system, it shall be overwritten.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.2",
+      "x-response-type": {
+        "$ref": "#/$defs/SendJointResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJoint.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJointCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJointComponentResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SendJointComponent is used to send a joint component to a joining system. If the input joint component already exists in the system, it shall be overwritten.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.4",
+      "x-request-type": {
+        "$ref": "#/$defs/SendJointComponentCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJointComponent.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJointComponentResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJointComponentCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointComponent": {
+          "$ref": "#/$defs/JointComponentDataType",
+          "description": "With this argument the Client can provide the joint component."
+        }
+      },
+      "description": "The Method SendJointComponent is used to send a joint component to a joining system. If the input joint component already exists in the system, it shall be overwritten.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.4",
+      "x-response-type": {
+        "$ref": "#/$defs/SendJointComponentResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJointComponent.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJointComponentCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJointDesignResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SendJointDesign is used to send a joint design to a joining system. If the input joint design already exists in the system, it shall be overwritten.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.3",
+      "x-request-type": {
+        "$ref": "#/$defs/SendJointDesignCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJointDesign.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJointDesignResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SendJointDesignCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JointDesign": {
+          "$ref": "#/$defs/JointDesignDataType",
+          "description": "With this argument the Client can provide the content of the joint design."
+        }
+      },
+      "description": "The Method SendJointDesign is used to send a joint design to a joining system. If the input joint design already exists in the system, it shall be overwritten.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.8.3",
+      "x-response-type": {
+        "$ref": "#/$defs/SendJointDesignResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SendJointDesign.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SendJointDesignCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SetJoiningProcessCounterResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SetJoiningProcessCounter is used to set the counter of a sequential joining processes (such as Job, etc.) to the given input value.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.14",
+      "x-request-type": {
+        "$ref": "#/$defs/SetJoiningProcessCounterCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SetJoiningProcessCounter.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SetJoiningProcessCounterResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SetJoiningProcessCounterCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        },
+        "CounterValue": {
+          "type": "integer",
+          "description": "It is the new counter value for the joining process."
+        }
+      },
+      "description": "The Method SetJoiningProcessCounter is used to set the counter of a sequential joining processes (such as Job, etc.) to the given input value.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.14",
+      "x-response-type": {
+        "$ref": "#/$defs/SetJoiningProcessCounterResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SetJoiningProcessCounter.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SetJoiningProcessCounterCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SetJoiningProcessMappingResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SetJoiningProcessMapping is used to set the mapping of the joining process in a joining system. It can be used to map a joining process to a selection name.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.6",
+      "x-request-type": {
+        "$ref": "#/$defs/SetJoiningProcessMappingCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SetJoiningProcessMapping.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SetJoiningProcessMappingResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SetJoiningProcessMappingCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to map the respective joiningProcessId with selectionName and joiningProcessOriginId.\n\nIt shall at least contain the joiningProcessId and selectionName."
+        }
+      },
+      "description": "The Method SetJoiningProcessMapping is used to set the mapping of the joining process in a joining system. It can be used to map a joining process to a selection name.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.6",
+      "x-response-type": {
+        "$ref": "#/$defs/SetJoiningProcessMappingResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SetJoiningProcessMapping.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SetJoiningProcessMappingCall",
+      "x-opc-ua-type": "Method"
+    },
+    "SetJoiningProcessSizeResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method SetJoiningProcessSize is used to set the size of the batch joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.11",
+      "x-request-type": {
+        "$ref": "#/$defs/SetJoiningProcessSizeCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SetJoiningProcessSize.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SetJoiningProcessSizeResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "SetJoiningProcessSizeCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        },
+        "MaxCounterSize": {
+          "type": "integer",
+          "description": "It is the maximum counter size for the joining process."
+        }
+      },
+      "description": "The Method SetJoiningProcessSize is used to set the size of the batch joining process.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.11",
+      "x-response-type": {
+        "$ref": "#/$defs/SetJoiningProcessSizeResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.SetJoiningProcessSize.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/SetJoiningProcessSizeCall",
+      "x-opc-ua-type": "Method"
+    },
+    "StartJoiningProcessResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method StartJoiningProcess is used to start the input joining process. \nNote: It is not intended to be used in a hard real-time use case.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.9",
+      "x-request-type": {
+        "$ref": "#/$defs/StartJoiningProcessCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.StartJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/StartJoiningProcessResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "StartJoiningProcessCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "JoiningProcessIdentification": {
+          "$ref": "#/$defs/JoiningProcessIdentificationDataType",
+          "description": "It is the identification information of the joining process which can be used to select the joiningProcess. \n\nIf it includes joiningProcessId then it is used for the selection and other arguments are ignored.\n\nIf it does not include joiningProcessId, then the system checks for joiningProcessOriginId which will be used for the selection.\n\nIf joiningProcessId and joiningProcessOriginId are not available, then the system uses the selectionName for the selection of the joining process."
+        },
+        "AssociatedEntities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityDataType"
+          },
+          "description": "It is the list of identifiers used for performing the joining operation. It is optional and can be empty."
+        }
+      },
+      "description": "The Method StartJoiningProcess is used to start the input joining process. \nNote: It is not intended to be used in a hard real-time use case.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.9",
+      "x-response-type": {
+        "$ref": "#/$defs/StartJoiningProcessResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.StartJoiningProcess.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/StartJoiningProcessCall",
+      "x-opc-ua-type": "Method"
+    },
+    "StartSelectedJoiningResponse": {
+      "type": "object",
+      "properties": {
+        "Status": {
+          "type": "integer",
+          "description": "It provides the status of the Method execution."
+        },
+        "StatusMessage": {
+          "$ref": "#/$defs/LocalizedText",
+          "description": "It provides the high-level status information in a user-friendly text."
+        }
+      },
+      "description": "The Method StartSelectedJoining is used to start the selected joining. The joining operation can be selected using SelectJoiningProcess or SelectJoint. \nNote: It is not intended to be used in a hard real-time use case.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.10",
+      "x-request-type": {
+        "$ref": "#/$defs/StartSelectedJoiningCall"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.StartSelectedJoining.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/StartSelectedJoiningResponse",
+      "x-opc-ua-type": "Method"
+    },
+    "StartSelectedJoiningCall": {
+      "type": "object",
+      "properties": {
+        "ProductInstanceUri": {
+          "type": "string",
+          "description": "With this argument the Client can provide the identifier of the asset on which this method is applicable.\nIt can be empty if the method is modelled directly under the required asset. If it is empty, the system can consider the identifier of the asset where the Server is running."
+        },
+        "DeselectAfterJoining": {
+          "type": "boolean",
+          "description": "If True, it will deselect the existing joining process after the joining operation is completed. The default value is False."
+        }
+      },
+      "description": "The Method StartSelectedJoining is used to start the selected joining. The joining operation can be selected using SelectJoiningProcess or SelectJoint. \nNote: It is not intended to be used in a hard real-time use case.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/7.7.10",
+      "x-response-type": {
+        "$ref": "#/$defs/StartSelectedJoiningResponse"
+      },
+      "x-type-id": "org.opcfoundation.IJT.Base.StartSelectedJoining.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/StartSelectedJoiningCall",
+      "x-opc-ua-type": "Method"
+    },
+    "TraceDataType": {
+      "type": "object",
+      "properties": {
+        "TraceId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the Trace."
+        },
+        "ResultId": {
+          "$ref": "#/$defs/TrimmedString",
+          "description": "It is the system-wide unique identifier of the associated result. This is useful to link Result and Trace instances when the Result and Trace are sent separately."
+        }
+      },
+      "description": "It is a base type to encapsulate common data for a Trace.\nhttps://reference.opcfoundation.org/IJT/Base/v100/docs/10.6",
+      "x-type-id": "org.opcfoundation.IJT.Base.TraceDataType.v1",
+      "x-type-schema": "https://aschamberger.github.com/schemas/UA/IJT/Base/v1.01.0/#/$defs/TraceDataType"
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "modelUri": {
+          "type": "string",
+          "default": "http://opcfoundation.org/UA/IJT/Tightening/"
+        },
+        "modelVersion": {
+          "type": "string",
+          "default": "2.00.1"
+        },
+        "modelDate": {
+          "format": "date-time",
+          "default": "2025-10-06T00:00:00"
+        },
+        "additionalAttributes": {
+          "type": "array",
+          "items": {}
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/meta"
+    },
+    {
+      "$ref": "#/$defs/Health"
+    },
+    {
+      "$ref": "#/$defs/MachineryBuildingBlocks"
+    },
+    {
+      "$ref": "#/$defs/Maintenance"
+    },
+    {
+      "$ref": "#/$defs/Parameters"
+    },
+    {
+      "$ref": "#/$defs/Identification"
+    },
+    {
+      "$ref": "#/$defs/LifetimeCounters"
+    },
+    {
+      "$ref": "#/$defs/Monitoring"
+    },
+    {
+      "$ref": "#/$defs/Notifications"
+    },
+    {
+      "$ref": "#/$defs/OperationCounters"
+    },
+    {
+      "$ref": "#/$defs/AssetManagement"
+    },
+    {
+      "$ref": "#/$defs/JoiningProcessManagement"
+    },
+    {
+      "$ref": "#/$defs/AbortJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/AbortJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/DecrementJoiningProcessCounterCall"
+    },
+    {
+      "$ref": "#/$defs/DecrementJoiningProcessCounterResponse"
+    },
+    {
+      "$ref": "#/$defs/DeleteJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/DeleteJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/DeselectJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/DeselectJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/GetJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJoiningProcessListCall"
+    },
+    {
+      "$ref": "#/$defs/GetJoiningProcessListResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJoiningProcessRevisionListCall"
+    },
+    {
+      "$ref": "#/$defs/GetJoiningProcessRevisionListResponse"
+    },
+    {
+      "$ref": "#/$defs/GetSelectedJoiningProgramCall"
+    },
+    {
+      "$ref": "#/$defs/GetSelectedJoiningProgramResponse"
+    },
+    {
+      "$ref": "#/$defs/IncrementJoiningProcessCounterCall"
+    },
+    {
+      "$ref": "#/$defs/IncrementJoiningProcessCounterResponse"
+    },
+    {
+      "$ref": "#/$defs/ResetJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/ResetJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/SelectJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/SelectJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/SendJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/SendJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/SetJoiningProcessCounterCall"
+    },
+    {
+      "$ref": "#/$defs/SetJoiningProcessCounterResponse"
+    },
+    {
+      "$ref": "#/$defs/SetJoiningProcessMappingCall"
+    },
+    {
+      "$ref": "#/$defs/SetJoiningProcessMappingResponse"
+    },
+    {
+      "$ref": "#/$defs/SetJoiningProcessSizeCall"
+    },
+    {
+      "$ref": "#/$defs/SetJoiningProcessSizeResponse"
+    },
+    {
+      "$ref": "#/$defs/StartJoiningProcessCall"
+    },
+    {
+      "$ref": "#/$defs/StartJoiningProcessResponse"
+    },
+    {
+      "$ref": "#/$defs/StartSelectedJoiningCall"
+    },
+    {
+      "$ref": "#/$defs/StartSelectedJoiningResponse"
+    },
+    {
+      "$ref": "#/$defs/JointManagement"
+    },
+    {
+      "$ref": "#/$defs/DeleteJointCall"
+    },
+    {
+      "$ref": "#/$defs/DeleteJointResponse"
+    },
+    {
+      "$ref": "#/$defs/DeleteJointComponentCall"
+    },
+    {
+      "$ref": "#/$defs/DeleteJointComponentResponse"
+    },
+    {
+      "$ref": "#/$defs/DeleteJointDesignCall"
+    },
+    {
+      "$ref": "#/$defs/DeleteJointDesignResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointComponentCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointComponentResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointComponentListCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointComponentListResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointDesignCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointDesignResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointDesignListCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointDesignListResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointListCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointListResponse"
+    },
+    {
+      "$ref": "#/$defs/GetJointRevisionListCall"
+    },
+    {
+      "$ref": "#/$defs/GetJointRevisionListResponse"
+    },
+    {
+      "$ref": "#/$defs/SelectJointCall"
+    },
+    {
+      "$ref": "#/$defs/SelectJointResponse"
+    },
+    {
+      "$ref": "#/$defs/SendJointCall"
+    },
+    {
+      "$ref": "#/$defs/SendJointResponse"
+    },
+    {
+      "$ref": "#/$defs/SendJointComponentCall"
+    },
+    {
+      "$ref": "#/$defs/SendJointComponentResponse"
+    },
+    {
+      "$ref": "#/$defs/SendJointDesignCall"
+    },
+    {
+      "$ref": "#/$defs/SendJointDesignResponse"
+    },
+    {
+      "$ref": "#/$defs/ResultManagement"
+    },
+    {
+      "$ref": "#/$defs/AcknowledgeResultsCall"
+    },
+    {
+      "$ref": "#/$defs/AcknowledgeResultsResponse"
+    },
+    {
+      "$ref": "#/$defs/GetLatestResultCall"
+    },
+    {
+      "$ref": "#/$defs/GetLatestResultResponse"
+    },
+    {
+      "$ref": "#/$defs/GetResultByIdCall"
+    },
+    {
+      "$ref": "#/$defs/GetResultByIdResponse"
+    },
+    {
+      "$ref": "#/$defs/GetResultIdListFilteredCall"
+    },
+    {
+      "$ref": "#/$defs/GetResultIdListFilteredResponse"
+    },
+    {
+      "$ref": "#/$defs/ReleaseResultHandleCall"
+    },
+    {
+      "$ref": "#/$defs/ReleaseResultHandleResponse"
+    },
+    {
+      "$ref": "#/$defs/RequestResultsCall"
+    },
+    {
+      "$ref": "#/$defs/RequestResultsResponse"
+    },
+    {
+      "$ref": "#/$defs/RequestUnacknowledgedResultsCall"
+    },
+    {
+      "$ref": "#/$defs/RequestUnacknowledgedResultsResponse"
+    },
+    {
+      "$ref": "#/$defs/ResultReadyEventType"
+    },
+    {
+      "$ref": "#/$defs/JoiningSystemResultReadyEventType"
+    },
+    {
+      "$ref": "#/$defs/RequestedResultEventType"
+    },
+    {
+      "$ref": "#/$defs/Results"
+    }
+  ]
+}

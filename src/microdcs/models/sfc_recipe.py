@@ -110,9 +110,9 @@ class SfcActionAssociation(DataClassMixin):
     """
     qualifier: SfcActionQualifier
     interaction: SfcInteraction
-    cloudevent_type: str
+    type_id: str
     """
-    CloudEvent type for the outgoing command or expected incoming event.
+    Type identifier for the outgoing command or expected incoming event.
     """
     timeout_seconds: int
     """
@@ -130,7 +130,7 @@ class SfcActionAssociation(DataClassMixin):
             "step": "Step",
             "qualifier": "Qualifier",
             "interaction": "Interaction",
-            "cloudevent_type": "CloudeventType",
+            "type_id": "TypeId",
             "timeout_seconds": "TimeoutSeconds",
             "parameters": "Parameters",
         }
@@ -186,8 +186,8 @@ class SfcRecipe(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        cloudevent_type: str = "com.github.aschamberger.microdcs.sfc-recipe.v1"
-        cloudevent_dataschema: str = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/"
+        type_id: str = "com.github.aschamberger.microdcs.sfc-recipe.v1"
+        type_schema: str = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/"
         aliases: dict[str, str] = {
             "steps": "Steps",
             "transitions": "Transitions",

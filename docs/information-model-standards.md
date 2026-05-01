@@ -84,7 +84,7 @@ The `dataschema` URI discriminates the semantic type of the `data` payload. For 
 
 Station configuration is delivered from MES to MicroDCS via CloudEvents on the NB processor. Each configuration type has a dedicated CloudEvent type under `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.*` and reuses existing ISA-95 data types as payloads. The `method` CloudEvent extension attribute (`PUT` / `DELETE`) controls upsert vs. removal.
 
-Thin data model subclasses (in `machinery_jobs_ext.py`) override `Config.cloudevent_type` so the NB processor registers separate `@incoming` handlers while reusing the ISA-95 data types for serialization:
+Thin data model subclasses (in `machinery_jobs_ext.py`) override `Config.type_id` so the NB processor registers separate `@incoming` handlers while reusing the ISA-95 data types for serialization:
 
 | CloudEvent type | Data model | Payload type | DAO | Validated field(s) |
 |---|---|---|---|---|

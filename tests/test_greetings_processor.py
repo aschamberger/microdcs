@@ -51,8 +51,8 @@ class TestHello:
         with pytest.raises(ValueError):
             Hello(name="A" * 21)
 
-    def test_config_cloudevent_type(self):
-        assert Hello.Config.cloudevent_type == HELLO_CE_TYPE
+    def test_config_type_id(self):
+        assert Hello.Config.type_id == HELLO_CE_TYPE
 
     def test_config_aliases(self):
         assert Hello.Config.aliases == {"name": "Name"}
@@ -67,8 +67,8 @@ class TestBye:
         with pytest.raises(ValueError):
             Bye(name="AB")
 
-    def test_config_cloudevent_type(self):
-        assert Bye.Config.cloudevent_type == BYE_CE_TYPE
+    def test_config_type_id(self):
+        assert Bye.Config.type_id == BYE_CE_TYPE
 
 
 class TestHiddenObject:

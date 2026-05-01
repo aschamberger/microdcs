@@ -165,7 +165,7 @@ Associates an action with a step, including the interaction pattern and IEC 6113
 | `name` | string | Action identifier |
 | `qualifier` | enum | IEC 61131-3 action qualifier: `N` (non-stored), `P` (pulse), `P0`/`P1` (falling/rising edge), `S` (set/stored), `R` (reset), `L` (time limited), `D` (time delayed) |
 | `interaction` | enum | `push_command` or `pull_event` — see [Equipment Interaction Patterns](#equipment-interaction-patterns) |
-| `cloudevent_type` | string | CloudEvent type for the outgoing command or expected incoming event |
+| `type_id` | string | Type identifier for the outgoing command or expected incoming event |
 | `timeout_seconds` | integer | Maximum wait time before expiration handling |
 | `parameters` | object | Step-specific parameters passed to the action |
 
@@ -195,7 +195,7 @@ Each SFC action declares its interaction pattern, reflecting the two real-world 
 
 | Pattern | `interaction` value | MicroDCS mechanism | Example |
 |---|---|---|---|
-| Equipment pulls work | `pull_event` | SFC engine activates the step, waits for a southbound CloudEventProcessor call matching CloudEvent `cloudevent_type` | Device asks for new task, processor responds with task and corresponding details  |
+| Equipment pulls work | `pull_event` | SFC engine activates the step, waits for a southbound CloudEventProcessor call matching CloudEvent `type_id` | Device asks for new task, processor responds with task and corresponding details  |
 | Station pushes commands | `push_command` | SFC engine calls southbound CloudEventProcessor | Processor sends tighten command to tightening controller |
 
 ### Example Recipe
@@ -233,7 +233,7 @@ Rear axle fitting station with parallel QA check:
       "step": "Positioning",
       "qualifier": "N",
       "interaction": "push_command",
-      "cloudevent_type": "com.example.station.position.v1",
+      "type_id": "com.example.station.position.v1",
       "timeout_seconds": 30
     },
     {
@@ -241,7 +241,7 @@ Rear axle fitting station with parallel QA check:
       "step": "TightenBolts",
       "qualifier": "N",
       "interaction": "push_command",
-      "cloudevent_type": "com.example.station.tighten.v1",
+      "type_id": "com.example.station.tighten.v1",
       "timeout_seconds": 60,
       "parameters": { "torque_spec": "85Nm" }
     },
@@ -250,7 +250,7 @@ Rear axle fitting station with parallel QA check:
       "step": "QaCheck",
       "qualifier": "N",
       "interaction": "pull_event",
-      "cloudevent_type": "com.example.station.qa_result.v1",
+      "type_id": "com.example.station.qa_result.v1",
       "timeout_seconds": 45
     },
     {
@@ -258,7 +258,7 @@ Rear axle fitting station with parallel QA check:
       "step": "VerifyTorque",
       "qualifier": "N",
       "interaction": "pull_event",
-      "cloudevent_type": "com.example.station.torque_result.v1",
+      "type_id": "com.example.station.torque_result.v1",
       "timeout_seconds": 15
     }
   ]
@@ -294,14 +294,14 @@ This generates `src/microdcs/models/sfc_recipe.py` with:
 | `SfcBranchType` | `StrEnum` | Branch types (`selection`, `simultaneous`) |
 | `SfcStep` | `@dataclass` | Step with `name` and `initial` flag |
 | `SfcTransition` | `@dataclass` | Transition with `source`, `target`, `condition`, `priority` |
-| `SfcActionAssociation` | `@dataclass` | Action binding with `step`, `qualifier`, `interaction`, `cloudevent_type`, `timeout_seconds`, `parameters` |
+| `SfcActionAssociation` | `@dataclass` | Action binding with `step`, `qualifier`, `interaction`, `type_id`, `timeout_seconds`, `parameters` |
 | `SfcBranch` | `@dataclass` | Branch construct with `name`, `type`, `branches` |
 | `SfcRecipe` | `@dataclass` | Top-level recipe containing `steps`, `transitions`, `actions`, `branches` |
 
 The `SfcRecipe.Config` class carries:
 
-- `cloudevent_type`: `com.github.aschamberger.microdcs.sfc-recipe.v1`
-- `cloudevent_dataschema`: `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/`
+- `type_id`: `com.github.aschamberger.microdcs.sfc-recipe.v1`
+- `type_schema`: `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/`
 
 A hand-written `sfc_recipe_ext.py` provides the `SFC_RECIPE_DATASCHEMA` constant — the schema `$id` URI (`https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/`) used as the `dataschema` value on `ISA95WorkMasterDataTypeExt` to identify SFC recipe payloads. The SFC engine dispatches on this URI to select the recipe interpreter.
 

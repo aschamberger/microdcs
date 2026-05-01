@@ -34,7 +34,7 @@ from microdcs import ProcessingConfig
 from microdcs.dataclass import (
     DataClassConfig,
     DataClassMixin,
-    get_cloudevent_type,
+    get_type_id,
     type_has_config_class,
 )
 
@@ -408,10 +408,10 @@ class CloudEvent(DataClassMixin):
         if isinstance(payload, DataClassMixin):
             config_class = getattr(type(payload), "Config", None)
             if config_class is not None and issubclass(config_class, DataClassConfig):
-                if hasattr(config_class, "cloudevent_type"):
-                    self.type = getattr(config_class, "cloudevent_type")
-                if hasattr(config_class, "cloudevent_dataschema"):
-                    self.dataschema = getattr(config_class, "cloudevent_dataschema")
+                if hasattr(config_class, "type_id"):
+                    self.type = getattr(config_class, "type_id")
+                if hasattr(config_class, "type_schema"):
+                    self.dataschema = getattr(config_class, "type_schema")
         # extract hidden fields from object
         hidden_fields = None
         if hasattr(payload, "__get_custom_metadata__") and callable(
@@ -640,16 +640,16 @@ class CloudEventProcessor(ABC):
             raise TypeError(
                 "message_dataclass must have a Config subclass of DataClassConfig"
             )
-        if not hasattr(config_class, "cloudevent_type"):
+        if not hasattr(config_class, "type_id"):
             raise TypeError(
-                "message_dataclass must have a Config subclass with cloudevent_type attribute"
+                "message_dataclass must have a Config subclass with type_id attribute"
             )
-        cloudevent_type = getattr(config_class, "cloudevent_type")
-        self._type_classes[cloudevent_type] = cloudevent_dataclass
+        type_id = getattr(config_class, "type_id")
+        self._type_classes[type_id] = cloudevent_dataclass
         getattr(
             self,
             f"_type_callbacks_{direction.value}",
-        )[cloudevent_type] = callback
+        )[type_id] = callback
 
     def has_incoming_callback(self, cloudevent: CloudEvent) -> bool:
         return cloudevent.type in self._type_callbacks_in
@@ -896,15 +896,13 @@ class CloudEventProcessor(ABC):
         topic: str | None = None,
         **kwargs,
     ) -> list[CloudEvent] | CloudEvent | None:
-        cloudevent_type = get_cloudevent_type(payload_type)
-        if cloudevent_type is None or cloudevent_type not in self._type_callbacks_out:
-            logger.error(
-                "No callback registered for cloud event type: %s", cloudevent_type
-            )
+        type_id = get_type_id(payload_type)
+        if type_id is None or type_id not in self._type_callbacks_out:
+            logger.error("No callback registered for cloud event type: %s", type_id)
             return None
 
-        payload_type = self._type_classes[cloudevent_type]
-        callback: Callable[..., Any] = self._type_callbacks_out[cloudevent_type]
+        payload_type = self._type_classes[type_id]
+        callback: Callable[..., Any] = self._type_callbacks_out[type_id]
         responses: list[DataClassMixin] | DataClassMixin | None = await callback(
             **kwargs
         )

@@ -500,9 +500,7 @@ class JobOrderAndStateDAO:
             pipe.json().set(
                 key,
                 "$",
-                job_order_and_state.to_dict(
-                    context={"add_cloudevent_dataschema": True}
-                ),
+                job_order_and_state.to_dict(context={"add_type_schema": True}),
             )
             pipe.zadd(list_key, {job_order_id: priority})
             pipe.xadd(stream_key, change_fields, maxlen=5000, approximate=True)  # type: ignore[reportGeneralTypeIssues]
@@ -633,7 +631,7 @@ class JobResponseDAO:
         key = self.key_schema.jobresponse_key(job_response_id)
         # Build serialization context with all metadata for the RediSearch index
         ctx: dict[str, object] = {
-            "add_cloudevent_dataschema": True,
+            "add_type_schema": True,
             "add_scope": scope,
         }
         if job_response.job_state:
@@ -822,7 +820,7 @@ class WorkMasterDAO:
         await self.redis.json().set(
             key,
             "$",
-            work_master.to_dict(context={"add_cloudevent_dataschema": True}),
+            work_master.to_dict(context={"add_type_schema": True}),
         )  # type: ignore[reportGeneralTypeIssues]
         # Add to the set
         list_key = self.key_schema.workmaster_list_key(scope)
