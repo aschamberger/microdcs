@@ -15,7 +15,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.62b0",
     "redis[hiredis]>=7.4.0",
     "transitions>=0.9.3",
-    "typer>=0.24.0",
+    "typer>=0.25.1",
 ]
 
 [project.urls]
