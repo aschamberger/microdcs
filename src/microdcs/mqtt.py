@@ -37,7 +37,11 @@ class QoS(enum.IntEnum):
     EXACTLY_ONCE = 2
 
 
-def create_mqtt_client(config: MQTTConfig, **kwargs: Any) -> aiomqtt.Client:
+def create_mqtt_client(
+    config: MQTTConfig,
+    client_identifier: str | None = None,
+    **kwargs: Any,
+) -> aiomqtt.Client:
     """Create an ``aiomqtt.Client`` from a :class:`MQTTConfig`.
 
     Shared between :class:`MQTTHandler` (subscriber) and
@@ -45,6 +49,10 @@ def create_mqtt_client(config: MQTTConfig, **kwargs: Any) -> aiomqtt.Client:
     connection setup.  Extra *kwargs* are forwarded to the
     ``aiomqtt.Client`` constructor (e.g. ``clean_start``,
     ``max_queued_incoming_messages``).
+
+    *client_identifier* overrides ``config.identifier`` when provided, which
+    allows callers (e.g. :class:`MQTTPublisher`) to use a different MQTT
+    client ID than the handler without changing the shared config object.
     """
     properties = None
     if config.sat_token_path.exists():
@@ -60,7 +68,9 @@ def create_mqtt_client(config: MQTTConfig, **kwargs: Any) -> aiomqtt.Client:
         protocol=aiomqtt.ProtocolVersion.V5,
         hostname=config.hostname,
         port=config.port,
-        identifier=config.identifier,
+        identifier=client_identifier
+        if client_identifier is not None
+        else config.identifier,
         timeout=config.connect_timeout,
         properties=properties,
         tls_params=tls_params,
@@ -91,6 +101,7 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
     def _client(self) -> aiomqtt.Client:
         client = create_mqtt_client(
             self._runtime_config,
+            client_identifier=self._runtime_config.identifier + "-proc",
             clean_start=paho.mqtt.client.MQTT_CLEAN_START_FIRST_ONLY,
             max_queued_incoming_messages=self._runtime_config.incoming_queue_size,
             max_queued_outgoing_messages=self._runtime_config.outgoing_queue_size,
@@ -356,10 +367,10 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             self._runtime_config.hostname,
             self._runtime_config.port,
         )
-        client: aiomqtt.Client = self._client()
         backoff = 1  # seconds
         max_backoff = 60  # seconds
         while True:
+            client: aiomqtt.Client = self._client()
             try:
                 # redis is required for message deduplication and expiration handling,
                 # so we check the connection before starting the MQTT client
@@ -811,10 +822,13 @@ class MQTTPublisher(AdditionalTask):
             self._config.hostname,
             self._config.port,
         )
-        client = create_mqtt_client(self._config)
         backoff = 1  # seconds
         max_backoff = 60  # seconds
         while True:
+            client = create_mqtt_client(
+                self._config,
+                client_identifier=self._config.identifier + "-pub",
+            )
             try:
                 async with client:
                     self._client = client
