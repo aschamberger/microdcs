@@ -144,8 +144,9 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 "mqtt_response_topic"
             )
             qos = QoS.AT_LEAST_ONCE
-        if cloudevent.correlationid is not None:
-            properties.CorrelationData = uuid.UUID(cloudevent.correlationid).bytes  # type: ignore
+        _correlation_data_id = cloudevent.causationid if cloudevent.causationid is not None else cloudevent.id
+        if _correlation_data_id is not None:
+            properties.CorrelationData = uuid.UUID(_correlation_data_id).bytes  # type: ignore
         # Convert dictionary to list of tuples
         properties.UserProperty = list(
             cloudevent.to_dict(
@@ -179,17 +180,12 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 await asyncio.sleep(_interval)
                 return await _proc.handle_cloudevent_expiration(_ce, _interval)
 
-            if cloudevent.correlationid is None:
-                logger.warning(
-                    "Cannot track expiration for event %s without correlation ID",
-                    cloudevent.id,
-                )
-                return
-            self._expiration_timeout_tasks[cloudevent.correlationid] = (
+            _expiration_key = cloudevent.causationid if cloudevent.causationid is not None else cloudevent.id
+            self._expiration_timeout_tasks[_expiration_key] = (
                 asyncio.create_task(_expiration_task())
             )
-            self._expiration_timeout_tasks[cloudevent.correlationid].add_done_callback(
-                lambda _task, _id=cloudevent.correlationid: (
+            self._expiration_timeout_tasks[_expiration_key].add_done_callback(
+                lambda _task, _id=_expiration_key: (
                     logger.error(
                         "Expiration task for event %s failed: %s",
                         _id,
@@ -233,7 +229,7 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 message.properties.ResponseTopic  # type: ignore
             )
         if message.properties and hasattr(message.properties, "CorrelationData"):
-            cloudevent.correlationid = str(
+            cloudevent.transportmetadata["mqtt_correlation_data"] = str(
                 uuid.UUID(bytes=message.properties.CorrelationData)  # type: ignore
             )
         if message.properties and hasattr(message.properties, "UserProperty"):
@@ -276,9 +272,9 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             logger.debug("Received message on topic %s", message.topic)
 
         # cancel expiration timeout task if applicable
-        # responses correlate back to the original request via correlationid
-        if cloudevent.correlationid in self._expiration_timeout_tasks:
-            self._expiration_timeout_tasks[cloudevent.correlationid].cancel()
+        # responses carry causationid = original request id, matching the expiration task key
+        if cloudevent.causationid is not None and cloudevent.causationid in self._expiration_timeout_tasks:
+            self._expiration_timeout_tasks[cloudevent.causationid].cancel()
 
         # Dispatch message to registered processors
         # It is assumed that each message is processed by only one processor

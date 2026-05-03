@@ -12,6 +12,8 @@ Standard: [MQTT Version 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.
 
 MQTT v5 supports request-response interaction through `Response Topic` and `Correlation Data`. The `Request Response Information` and `Response Information` fields standardize the communication channel, but not the full response-handling behavior. In practice, brokers such as Mosquitto transport these attributes without managing the response flow for the application. MicroDCS therefore creates an instance-specific response channel and subscribes to it at startup to handle error and correlation backchannels. Published request-response messages are also expected to target topics with active subscribers, which corresponds to successful delivery with `PUBACK=0x00`.
 
+> The MQTT `Correlation Data` field in request/response flows carries the CE `id` of the originating request event. Because a request is a root event it has no `causationid`, so the mapper falls back to `id` (see [CloudEvents MQTT mapping](#mqtt-and-messagepack) below). The responder echoes `Correlation Data` back unchanged, allowing the requester to match the response to its original request.
+
 ```mermaid
   sequenceDiagram
   autonumber
@@ -121,7 +123,16 @@ CloudEvents provides the common event envelope used across transports. It allows
 
 CloudEvents defines an [MQTT binding](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md), which MicroDCS uses as the basis for transport mapping.
 
-Because MicroDCS targets MQTT v5, it implements the binding in `Binary Content Mode`. `correlationid`, `expiryinterval`, and `datacontenttype` are mapped to the MQTT v5 properties `CorrelationData`, `MessageExpiryInterval`, and `ContentType`. Other MQTT-specific properties are read from and written to `transportmetadata`. CloudEvent attributes such as `id`, `source`, `subject`, `type`, and `dataschema`, along with entries in `custommetadata`, are transported through `UserProperty`.
+Because MicroDCS targets MQTT v5, it implements the binding in `Binary Content Mode`:
+
+* `datacontenttype` is mapped to the MQTT v5 `ContentType` property.
+* `expiryinterval` is mapped to `MessageExpiryInterval`.
+* All other CloudEvent attributes — including `id`, `source`, `subject`, `type`, `dataschema`, `correlationid`, `causationid`, and entries in `custommetadata` — are transported as MQTT `UserProperty` fields using the **attribute name unchanged**, as required by the CloudEvents MQTT binding spec.
+* Other MQTT-specific properties are read from and written to `transportmetadata`.
+
+As a secondary mapping for request/response flows, the MQTT `Correlation Data` property is populated with `causationid` if present, falling back to `id` for root/initiating events (`causationid ?? id`). This lets MQTT-native consumers match a response to its originating request without parsing `UserProperty` fields, while the primary CE attributes remain intact in `UserProperty`. The responder echoes `Correlation Data` back unchanged, as required by the MQTT v5 spec.
+
+> Note: despite the name similarity, the MQTT `Correlation Data` field does **not** correspond to the CE `correlationid` attribute. `correlationid` is a group-level transaction tag shared by all events in a flow and is carried exclusively as a `UserProperty`. `Correlation Data` is a per-request/response matching token that corresponds semantically to `causationid`.
 
 For MessagePack transport, the CloudEvent is sent as a structured object, with `custommetadata` serialized into individual attributes. Transport-specific metadata is carried separately alongside the CloudEvent.
 

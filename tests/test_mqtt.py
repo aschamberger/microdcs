@@ -735,15 +735,19 @@ class TestMQTTHandler:
         proc = _make_processor()
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
+            transportmetadata={
+                "mqtt_topic": "out/topic",
+                "mqtt_response_topic": "resp/topic",
+            },
             expiryinterval=30,
         )
         await handler._publish_message(client, ce, processor=proc)
-        assert ce.correlationid in handler._expiration_timeout_tasks
+        # Root event (no causationid) → expiration key is ce.id
+        assert ce.id in handler._expiration_timeout_tasks
         # Clean up task
-        handler._expiration_timeout_tasks[ce.correlationid].cancel()
+        handler._expiration_timeout_tasks[ce.id].cancel()
         try:
-            await handler._expiration_timeout_tasks[ce.correlationid]
+            await handler._expiration_timeout_tasks[ce.id]
         except asyncio.CancelledError:
             pass
 
@@ -761,22 +765,29 @@ class TestMQTTHandler:
         assert len(handler._expiration_timeout_tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_publish_message_no_expiry_task_without_correlationid(self, caplog):
-        import logging
-
+    async def test_publish_message_expiry_uses_causationid_when_set(self):
         handler = _make_handler()
         client = AsyncMock()
         proc = _make_processor()
+        causation_id = str(uuid.uuid4())
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
+            transportmetadata={
+                "mqtt_topic": "out/topic",
+                "mqtt_response_topic": "resp/topic",
+            },
             expiryinterval=30,
-            correlationid=None,
+            causationid=causation_id,
         )
-        with caplog.at_level(logging.WARNING):
-            await handler._publish_message(client, ce, processor=proc)
-        assert len(handler._expiration_timeout_tasks) == 0
-        assert any("without correlation ID" in r.message for r in caplog.records)
+        await handler._publish_message(client, ce, processor=proc)
+        # Response event has causationid → expiration key is causationid
+        assert causation_id in handler._expiration_timeout_tasks
+        assert ce.id not in handler._expiration_timeout_tasks
+        handler._expiration_timeout_tasks[causation_id].cancel()
+        try:
+            await handler._expiration_timeout_tasks[causation_id]
+        except asyncio.CancelledError:
+            pass
 
     @pytest.mark.asyncio
     async def test_publish_message_no_expiry_task_when_interval_zero(self):
@@ -824,14 +835,17 @@ class TestMQTTHandler:
         proc.handle_cloudevent_expiration = AsyncMock(return_value=None)
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
+            transportmetadata={
+                "mqtt_topic": "out/topic",
+                "mqtt_response_topic": "resp/topic",
+            },
             expiryinterval=30,
         )
         with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
             await handler._publish_message(client, ce, processor=proc)
-            assert ce.correlationid in handler._expiration_timeout_tasks
+            assert ce.id in handler._expiration_timeout_tasks
             # Await the task; sleep is mocked so handler is invoked immediately
-            await handler._expiration_timeout_tasks[ce.correlationid]
+            await handler._expiration_timeout_tasks[ce.id]
         proc.handle_cloudevent_expiration.assert_awaited_once_with(ce, 30)
 
     @pytest.mark.asyncio
@@ -842,17 +856,20 @@ class TestMQTTHandler:
         proc.handle_cloudevent_expiration = AsyncMock(return_value=None)
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
+            transportmetadata={
+                "mqtt_topic": "out/topic",
+                "mqtt_response_topic": "resp/topic",
+            },
             expiryinterval=30,
         )
         with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
             await handler._publish_message(client, ce, processor=proc)
-            assert ce.correlationid in handler._expiration_timeout_tasks
+            assert ce.id in handler._expiration_timeout_tasks
             # Await to let done callback fire; sleep is mocked so task completes immediately
-            await handler._expiration_timeout_tasks[ce.correlationid]
+            await handler._expiration_timeout_tasks[ce.id]
         # Allow event loop to process done callbacks
         await asyncio.sleep(0)
-        assert ce.correlationid not in handler._expiration_timeout_tasks
+        assert ce.id not in handler._expiration_timeout_tasks
 
     @pytest.mark.asyncio
     async def test_expiry_task_done_callback_logs_error(self):
@@ -864,20 +881,23 @@ class TestMQTTHandler:
         )
 
         ce = CloudEvent(
-            transportmetadata={"mqtt_topic": "out/topic", "mqtt_response_topic": "resp/topic"},
+            transportmetadata={
+                "mqtt_topic": "out/topic",
+                "mqtt_response_topic": "resp/topic",
+            },
             expiryinterval=30,
         )
         with patch("microdcs.mqtt.asyncio.sleep", new_callable=AsyncMock):
             await handler._publish_message(client, ce, processor=proc)
-            assert ce.correlationid is not None
-            task = handler._expiration_timeout_tasks[ce.correlationid]
+            assert ce.id is not None
+            task = handler._expiration_timeout_tasks[ce.id]
             # Task should complete with the error logged (not propagated — it's in a done callback)
             with pytest.raises(RuntimeError, match="handler failed"):
                 await task
         # Allow event loop to process done callbacks
         await asyncio.sleep(0)
         # Task still cleaned up from dict
-        assert ce.correlationid not in handler._expiration_timeout_tasks
+        assert ce.id not in handler._expiration_timeout_tasks
 
     @pytest.mark.asyncio
     async def test_publish_message_with_retain(self):
@@ -934,7 +954,7 @@ class TestMQTTHandler:
         assert ce.datacontenttype == "application/json"
         assert ce.transportmetadata is not None
         assert ce.transportmetadata["mqtt_response_topic"] == "resp/topic"
-        assert ce.correlationid == str(corr_uuid)
+        assert ce.transportmetadata["mqtt_correlation_data"] == str(corr_uuid)
         assert ce.type == "com.test.sample.v1"
         assert ce.source == "test-source"
 
@@ -947,6 +967,7 @@ class TestMQTTHandler:
         del props.ResponseTopic
         props.UserProperty = []
         msg = _make_mqtt_message(properties=props)
+        # Invalid UUID bytes still raise ValueError (stored in transportmetadata)
         with pytest.raises(ValueError):
             handler._cloudevent_from_message(msg)
 
@@ -1007,8 +1028,8 @@ class TestMQTTHandler:
         handler._expiration_timeout_tasks[request_id] = mock_task
 
         msg = _make_mqtt_message()
-        # The response CE carries the original request id in correlationid
-        ce = CloudEvent(correlationid=request_id, data=msg.payload)
+        # The response CE carries the original request id in causationid
+        ce = CloudEvent(causationid=request_id, data=msg.payload)
         ce.transportmetadata = {"mqtt_topic": "t", "mqtt_qos": 1, "mqtt_retain": False}
         with patch.object(handler, "_cloudevent_from_message", return_value=ce):
             await handler._process_message(client, msg)
