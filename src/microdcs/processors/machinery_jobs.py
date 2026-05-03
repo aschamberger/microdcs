@@ -118,7 +118,6 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         redis_connection_pool: redis.ConnectionPool,
         redis_key_schema: RedisKeySchema,
         job_acceptance_config: JobAcceptanceConfig | None = None,
-        sfc_enabled: bool = False,
     ):
         super().__init__(instance_id, runtime_config, config_identifier)
         topic_prefix = runtime_config.get_topic_prefix_for_identifier(config_identifier)
@@ -173,11 +172,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             model_attribute="_state",
             model_override=True,
         )
-        self._sfc_execution_dao: SfcExecutionDAO | None = (
-            SfcExecutionDAO(self._redis_client, redis_key_schema)
-            if sfc_enabled
-            else None
-        )
+        self._sfc_execution_dao = SfcExecutionDAO(self._redis_client, redis_key_schema)
 
     async def initialize(self) -> None:
         await self._jobresponse_dao.initialize()
@@ -421,8 +416,10 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
                 return_status=MethodReturnStatus.UNABLE_TO_ACCEPT_JOB_ORDER
             )
 
+        self._notify_scope_handlers(scope)
+
         # Enqueue SFC work item when a job reaches AllowedToStart
-        if transition == "StoreAndStart" and self._sfc_execution_dao is not None:
+        if transition == "StoreAndStart" and method.job_order.job_order_id is not None:
             try:
                 await self._sfc_execution_dao.enqueue_work(
                     scope,
@@ -511,6 +508,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
                 return_status=MethodReturnStatus.INVALID_JOB_ORDER_STATUS
             )
 
+        self._notify_scope_handlers(scope)
         self.send_event(
             transition, job_order_and_state, scope, correlationid, causationid
         )
@@ -597,6 +595,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
                 return_status=MethodReturnStatus.INVALID_JOB_ORDER_STATUS
             )
 
+        self._notify_scope_handlers(scope)
         self.send_event(
             transition, job_order_and_state, scope, correlationid, causationid
         )

@@ -297,8 +297,9 @@ Each `sfc:execution:{job_id}` document maps to an `SfcExecutionState` dataclass:
 | `job_id` | string | Job Order ID |
 | `scope` | string | Station/equipment scope |
 | `work_master_id` | string | Work Master that provided the recipe |
-| `current_step` | string | Name of the currently active SFC step |
-| `active_steps` | list[string] | All currently active step names (for future branching) |
+| `current_step` | string | Name of the currently active SFC step (branch name during branching) |
+| `correlation_id` | string | Job-level CloudEvent `correlationid` (surrogate UUID); constant for the job lifetime, carried on every CE emitted for this job |
+| `active_steps` | list[string] | All currently active step names; populated during branch execution |
 | `actions` | dict[string, SfcActionExecution] | Per-action execution state |
 | `completed` | bool | Whether the recipe has completed successfully |
 | `failed` | bool | Whether the recipe has failed |
@@ -310,20 +311,20 @@ Each `SfcActionExecution` entry tracks:
 |---|---|---|
 | `name` | string | Action name (matches `SfcActionAssociation.name` in recipe) |
 | `state` | SfcActionState | `pending`, `dispatched`, `waiting`, `completed`, or `failed` |
-| `correlation_id` | string or null | Idempotency key for `push_command` re-delivery |
+| `command_ce_id` | string or null | CloudEvent `id` of the dispatched command CE; routing key for matching incoming responses back to this action |
 | `attempt` | int | Dispatch attempt counter |
 | `result` | any or null | Action result data |
 | `error` | string or null | Error message if action failed |
 
 ### CAS Lua Scripts
 
-Every SFC state mutation uses one of three Lua scripts. Each script runs atomically on the Redis server:
+Every SFC state mutation uses one of four Lua scripts. Each script runs atomically on the Redis server:
 
 **`cas_action_state`** — Compare-and-swap on a single action's state:
 
 1. Reads `$.actions.{name}.state` from the JSON document
 2. If current state ≠ expected state → returns `ALREADY_HANDLED`
-3. Sets new state, optionally updates `correlation_id` and `attempt`
+3. Sets new state, optionally updates `command_ce_id` and `attempt`
 4. Optionally `XADD`s a follow-up work item to the SFC work stream
 5. Returns `OK`
 
@@ -344,6 +345,16 @@ Used for: step transitions after all actions in a step are completed.
 1. Sets `$.completed = true` or `$.failed = true` (with optional error message)
 2. Removes the `job_id` from the `sfc:active-jobs` set
 3. Returns `OK`
+
+**`cas_branch_advance`** — Atomic replace/remove of a completed step within `active_steps`:
+
+1. Reads `$.active_steps` from the JSON document
+2. If *completed_step* is not in `active_steps` → returns `ALREADY_HANDLED` (idempotent for races)
+3. Replaces *completed_step* with *next_step* (or removes it when *next_step* is empty, i.e. the path end)
+4. Optionally `XADD`s a follow-up work item (e.g., `dispatch_action:{name}` for the next branch step)
+5. Returns JSON-encoded new `active_steps` list on success
+
+Used for: advancing individual branch paths during simultaneous (AND) execution; removing the final step of a selection (OR) path on completion. The caller checks whether the returned list is empty to detect branch convergence.
 
 ### Active Jobs Set
 
@@ -381,7 +392,7 @@ Group name: `sfc-engine` (constant `SFC_CONSUMER_GROUP`).
 
 | Writer | Action | Trigger |
 |---|---|---|
-| NB processor | `start_recipe` | Job reaches `AllowedToStart` via `StoreAndStart` (when `sfc_enabled=True`) |
+| NB processor | `start_recipe` | Job reaches `AllowedToStart` via `StoreAndStart` |
 | SFC engine CAS | `dispatch_action:{name}` | Written atomically inside `cas_action_state` or `cas_advance_step` when the next step has a `push_command` action |
 | SFC engine recovery | `resume` | On startup, for each active incomplete job found in `sfc:active-jobs` |
 

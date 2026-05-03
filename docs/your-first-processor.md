@@ -243,6 +243,52 @@ asyncio.run(microdcs.main())
 
 The `config_identifier` string (`"ping-pong"`) determines the MQTT topic namespace for this processor's bindings.
 
+### SFC Engine Integration
+
+If your processor is used as a southbound action target in an SFC recipe, keep the normal protocol bindings and wire the engine alongside them. The engine is an `AdditionalTask` that calls processors directly; it does not replace MQTT or MessagePack transport wiring.
+
+```python
+from microdcs.sfc_engine import SfcEngine
+
+microdcs = MicroDCS()
+
+# Register handlers and bindings as usual.
+ping_pong_processor = PingPongProcessor(
+    microdcs.runtime_config.instance_id,
+    microdcs.runtime_config.processing,
+    "ping-pong",
+)
+
+machinery_jobs_processor = MachineryJobsCloudEventProcessor(
+    microdcs.runtime_config.instance_id,
+    microdcs.runtime_config.processing,
+    "machinery-jobs",
+    microdcs.redis_connection_pool,
+    microdcs.redis_key_schema,
+)
+
+sfc_engine = SfcEngine(
+    microdcs.redis_connection_pool,
+    microdcs.redis_key_schema,
+    nb_processor=machinery_jobs_processor,
+    sb_processors={"ping-pong": ping_pong_processor},
+    consumer_name=microdcs.runtime_config.instance_id,
+)
+
+machinery_jobs_processor.register_scope_handler(sfc_engine.register_scope)
+microdcs.add_additional_task(sfc_engine)
+```
+
+For `push_command` actions, the southbound processor also needs callbacks that map correlated responses and expirations back to `sfc_engine.complete_action()` and `sfc_engine.fail_action()`. The example app does this in `app/__main__.py` for the greetings processor.
+
+For `pull_event` actions — where equipment sends an event unprompted and the SFC engine simply waits for it — the southbound processor must additionally register a pull completion handler:
+
+```python
+ping_pong_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)
+```
+
+Without this wiring the `_pull_completion_handler` is `None` and incoming events never signal the SFC engine to advance `waiting` pull actions. `push_command`-only recipes do not require this wiring.
+
 ### Adding a MessagePack-RPC Binding
 
 To also expose the processor over MessagePack-RPC (e.g. for a sidecar container), register a `MessagePackHandler` and a `MessagePackProtocolBinding` for the same processor:

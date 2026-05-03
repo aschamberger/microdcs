@@ -645,6 +645,148 @@ class TestCloudEventProcessorDecorators:
 
 
 # ---------------------------------------------------------------------------
+# CloudEventProcessor – SFC hook methods
+# ---------------------------------------------------------------------------
+
+
+class TestCloudEventProcessorSfcHooks:
+    def test_register_scope_handler_appends(self):
+        proc = ConcreteProcessor()
+        handler = lambda scope: None  # noqa: E731
+        proc.register_scope_handler(handler)
+        assert handler in proc._scope_handlers
+
+    def test_register_multiple_scope_handlers(self):
+        proc = ConcreteProcessor()
+        h1 = lambda scope: None  # noqa: E731
+        h2 = lambda scope: None  # noqa: E731
+        proc.register_scope_handler(h1)
+        proc.register_scope_handler(h2)
+        assert len(proc._scope_handlers) == 2
+
+    def test_notify_scope_handlers_calls_all(self):
+        proc = ConcreteProcessor()
+        calls: list[str] = []
+        proc.register_scope_handler(lambda s: calls.append(s))
+        proc.register_scope_handler(lambda s: calls.append(s + "2"))
+        proc._notify_scope_handlers("line1")
+        assert calls == ["line1", "line12"]
+
+    def test_notify_scope_handlers_no_handlers(self):
+        proc = ConcreteProcessor()
+        proc._notify_scope_handlers("line1")  # must not raise
+
+    def test_register_action_completion_handler(self):
+        proc = ConcreteProcessor()
+        handler = AsyncMock()
+        proc.register_action_completion_handler(handler)
+        assert proc._action_completion_handler is handler
+
+    def test_register_action_completion_handler_replaces(self):
+        proc = ConcreteProcessor()
+        h1 = AsyncMock()
+        h2 = AsyncMock()
+        proc.register_action_completion_handler(h1)
+        proc.register_action_completion_handler(h2)
+        assert proc._action_completion_handler is h2
+
+    def test_register_action_failure_handler(self):
+        proc = ConcreteProcessor()
+        handler = AsyncMock()
+        proc.register_action_failure_handler(handler)
+        assert proc._action_failure_handler is handler
+
+    def test_register_action_failure_handler_replaces(self):
+        proc = ConcreteProcessor()
+        h1 = AsyncMock()
+        h2 = AsyncMock()
+        proc.register_action_failure_handler(h1)
+        proc.register_action_failure_handler(h2)
+        assert proc._action_failure_handler is h2
+
+    def test_action_handlers_initially_none(self):
+        proc = ConcreteProcessor()
+        assert proc._action_completion_handler is None
+        assert proc._action_failure_handler is None
+
+    def test_pull_completion_handler_initially_none(self):
+        proc = ConcreteProcessor()
+        assert proc._pull_completion_handler is None
+
+    def test_register_pull_completion_handler(self):
+        proc = ConcreteProcessor()
+        handler = AsyncMock()
+        proc.register_pull_completion_handler(handler)
+        assert proc._pull_completion_handler is handler
+
+    def test_register_pull_completion_handler_replaces(self):
+        proc = ConcreteProcessor()
+        h1 = AsyncMock()
+        h2 = AsyncMock()
+        proc.register_pull_completion_handler(h1)
+        proc.register_pull_completion_handler(h2)
+        assert proc._pull_completion_handler is h2
+
+    @pytest.mark.asyncio
+    async def test_callback_incoming_calls_pull_completion_handler(self):
+        proc = ConcreteProcessor()
+        pull_handler = AsyncMock()
+        proc.register_pull_completion_handler(pull_handler)
+
+        async def incoming_handler(payload):
+            return None
+
+        proc.register_callback(SamplePayload, incoming_handler, Direction.INCOMING)
+        ce = CloudEvent(
+            type="com.test.sample.v1",
+            subject="scope-1/asset-1",
+            data=SamplePayload(value="hi").to_jsonb(),
+            datacontenttype="application/json",
+        )
+        await proc.callback_incoming(ce)
+
+        pull_handler.assert_awaited_once_with("scope-1", "com.test.sample.v1")
+
+    @pytest.mark.asyncio
+    async def test_callback_incoming_pull_handler_not_called_without_subject(self):
+        proc = ConcreteProcessor()
+        pull_handler = AsyncMock()
+        proc.register_pull_completion_handler(pull_handler)
+
+        async def incoming_handler(payload):
+            return None
+
+        proc.register_callback(SamplePayload, incoming_handler, Direction.INCOMING)
+        ce = CloudEvent(
+            type="com.test.sample.v1",
+            data=SamplePayload(value="hi").to_jsonb(),
+            datacontenttype="application/json",
+        )
+        await proc.callback_incoming(ce)
+
+        pull_handler.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_callback_incoming_pull_handler_not_called_if_no_handler_registered(
+        self,
+    ):
+        proc = ConcreteProcessor()
+
+        async def incoming_handler(payload):
+            return None
+
+        proc.register_callback(SamplePayload, incoming_handler, Direction.INCOMING)
+        ce = CloudEvent(
+            type="com.test.sample.v1",
+            subject="scope-1/asset-1",
+            data=SamplePayload(value="hi").to_jsonb(),
+            datacontenttype="application/json",
+        )
+        # Must not raise — no pull_completion_handler registered
+        await proc.callback_incoming(ce)
+
+
+# ---------------------------------------------------------------------------
 # ProtocolHandler
 # ---------------------------------------------------------------------------
 

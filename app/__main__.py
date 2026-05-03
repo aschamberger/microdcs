@@ -19,6 +19,7 @@ from microdcs.processors.machinery_jobs import (
     MachineryJobsCloudEventProcessor,
 )
 from microdcs.publishers import JobOrderPublisher
+from microdcs.sfc_engine import SfcEngine
 
 logger = logging.getLogger("app.main")
 
@@ -122,6 +123,20 @@ job_order_publisher = JobOrderPublisher(
     microdcs.redis_key_schema,
 )
 microdcs.add_additional_task(job_order_publisher)
+
+# Wire SFC engine if this instance is responsible for processing
+if microdcs.runtime_config.is_processor_instance:
+    sfc_engine = SfcEngine(
+        microdcs.redis_connection_pool,
+        microdcs.redis_key_schema,
+        nb_processor=machinery_jobs_processor,
+        sb_processors={"greetings": greetings_processor},
+        consumer_name=microdcs.runtime_config.instance_id,
+    )
+    greetings_processor.register_action_completion_handler(sfc_engine.complete_action)
+    greetings_processor.register_action_failure_handler(sfc_engine.fail_action)
+    machinery_jobs_processor.register_scope_handler(sfc_engine.register_scope)
+    microdcs.add_additional_task(sfc_engine)
 
 # Run MicroDCS main application logic
 loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None

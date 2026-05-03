@@ -16,6 +16,7 @@ from enum import StrEnum
 from types import UnionType
 from typing import (
     Any,
+    Awaitable,
     Callable,
     Dict,
     Generic,
@@ -591,6 +592,12 @@ class CloudEventProcessor(ABC):
         self._type_callbacks_out: dict[str, Callable[..., Any]] = {}
         self._event_attributes: list[CloudeventAttributeTuple] = []
         self._publish_handlers: list[Callable[[CloudEvent, MessageIntent], None]] = []
+        self._scope_handlers: list[Callable[[str], None]] = []
+        self._action_completion_handler: Callable[[str], Awaitable[None]] | None = None
+        self._action_failure_handler: Callable[[str], Awaitable[None]] | None = None
+        self._pull_completion_handler: Callable[[str, str], Awaitable[None]] | None = (
+            None
+        )
         self._register_decorated_callbacks()
 
     @property
@@ -605,6 +612,39 @@ class CloudEventProcessor(ABC):
     def publish_intents(self) -> set[MessageIntent]:
         """Return the set of intents this processor publishes to."""
         return type(self)._publish_intents
+
+    def register_scope_handler(self, handler: Callable[[str], None]) -> None:
+        """Register a callback invoked whenever a scope is discovered."""
+        self._scope_handlers.append(handler)
+
+    def _notify_scope_handlers(self, scope: str) -> None:
+        for handler in self._scope_handlers:
+            handler(scope)
+
+    def register_action_completion_handler(
+        self, handler: Callable[[str], Awaitable[None]]
+    ) -> None:
+        """Register a callback invoked when an SFC action response is received."""
+        self._action_completion_handler = handler
+
+    def register_action_failure_handler(
+        self, handler: Callable[[str], Awaitable[None]]
+    ) -> None:
+        """Register a callback invoked when an SFC action times out."""
+        self._action_failure_handler = handler
+
+    def register_pull_completion_handler(
+        self, handler: Callable[[str, str], Awaitable[None]]
+    ) -> None:
+        """Register a callback invoked when an incoming event may complete a PULL_EVENT action.
+
+        The handler receives ``(scope, type_id)`` where *scope* is the first
+        segment of the incoming CloudEvent's subject and *type_id* is the
+        CloudEvent type.  The handler is called after every successful incoming
+        callback; the SFC engine ignores scope/type combinations it is not
+        tracking.
+        """
+        self._pull_completion_handler = handler
 
     def _register_decorated_callbacks(self) -> None:
         """Scan for methods decorated with @incoming / @outgoing and register them."""
@@ -858,6 +898,14 @@ class CloudEventProcessor(ABC):
                 responses, request_cloudevent, **kwargs
             )
 
+        if (
+            self._pull_completion_handler is not None
+            and request_cloudevent.subject is not None
+            and request_cloudevent.type is not None
+        ):
+            scope = request_cloudevent.subject.split("/")[0]
+            await self._pull_completion_handler(scope, request_cloudevent.type)
+
         if responses is None:
             return None
 
@@ -925,6 +973,12 @@ class CloudEventProcessor(ABC):
                 if response_cloudevent.transportmetadata is None:
                     response_cloudevent.transportmetadata = {}
                 response_cloudevent.transportmetadata["mqtt_topic"] = topic
+            if "cloudevent_id" in kwargs:
+                response_cloudevent.id = kwargs["cloudevent_id"]
+            if "correlation_id" in kwargs:
+                response_cloudevent.correlationid = kwargs["correlation_id"]
+            if "subject" in kwargs:
+                response_cloudevent.subject = kwargs["subject"]
             try:
                 response_cloudevent.serialize_payload(response)
             except ValueError as e:

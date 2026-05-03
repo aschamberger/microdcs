@@ -64,4 +64,13 @@ The SFC engine is **not** a processor. It is an `AdditionalTask` that runs on ev
 
 ### Multi-Instance Model
 
-Unlike the publisher (single-instance to avoid duplicate retained writes), the SFC engine runs on **every** instance. Multiple instances coordinate through a Redis Stream consumer group (`XREADGROUP` + `XAUTOCLAIM`) and atomic compare-and-swap Lua scripts. This eliminates single points of failure and lets Kubernetes horizontal scaling naturally increase throughput. See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for details.
+Unlike the publisher (single-instance to avoid duplicate retained writes), the SFC engine runs on **every** instance. Multiple instances coordinate through a Redis Stream consumer group (`XREADGROUP` + `XAUTOCLAIM`) and atomic compare-and-swap Lua scripts. This eliminates single points of failure and lets Kubernetes horizontal scaling naturally increase throughput.
+
+Action completion routing (`push_command` responses and `pull_event` signals) is instance-affine: the in-memory routing tables (`_pending_commands`, `_pull_event_keys`) are populated on the instance that dispatched the action. If MQTT delivers the message to a different live instance, the lookup misses and the MQTT message is consumed and lost.
+
+The two interaction patterns have different recovery characteristics:
+
+- **`push_command`**: the response message is lost, but the action stays `dispatched` in Redis. On restart, `_recovery_scan` → `resume` → `_handle_resume` re-dispatches the command. The equipment receives the command again and produces a new response. This is a **delay until restart** — no step is permanently missed, provided equipment handles idempotent re-delivery on the `correlation_id`.
+- **`pull_event`**: the action stays `waiting` in Redis and routing is re-registered on restart, but the original event is already consumed. Recovery depends entirely on whether the equipment will send the event again. If equipment only fires the event once, the action is **permanently stuck** until the equipment resends it.
+
+See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the full multi-instance safety matrix.

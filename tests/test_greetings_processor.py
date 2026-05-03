@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -214,6 +215,19 @@ class TestGreetingsCloudEventProcessor:
         result = await proc.process_response_cloudevent(ce)
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_process_response_event_completes_sfc_action(self):
+        proc = _make_processor()
+        completion_handler = AsyncMock()
+        proc.register_action_completion_handler(completion_handler)
+        command_id = str(uuid.uuid4())
+        ce = CloudEvent(causationid=command_id)
+
+        result = await proc.process_response_cloudevent(ce)
+
+        assert result is None
+        completion_handler.assert_awaited_once_with(command_id)
+
     # --- send_event ---
 
     @pytest.mark.asyncio
@@ -233,6 +247,19 @@ class TestGreetingsCloudEventProcessor:
         ce = CloudEvent()
         result = await proc.handle_cloudevent_expiration(ce, 10)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_handle_expiration_fails_sfc_action(self):
+        proc = _make_processor()
+        failure_handler = AsyncMock()
+        proc.register_action_failure_handler(failure_handler)
+        command_id = str(uuid.uuid4())
+        ce = CloudEvent(id=command_id)
+
+        result = await proc.handle_cloudevent_expiration(ce, 10)
+
+        assert result is None
+        failure_handler.assert_awaited_once_with(command_id)
 
     # --- trigger_outgoing_event ---
 

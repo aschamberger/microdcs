@@ -30,6 +30,10 @@ from microdcs.models.sfc_recipe_ext import (
 from microdcs.redis import RedisKeySchema, SfcExecutionDAO
 from microdcs.sfc_engine import SfcEngine
 
+# Fixed UUIDs used as command_id values in tests (matches production uuid.uuid4() format)
+_CMD_UUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+_CMD_UUID_OTHER = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
 
 def _make_schema(prefix: str = "test") -> RedisKeySchema:
     return RedisKeySchema(prefix=prefix)
@@ -105,10 +109,14 @@ def _make_exec_state(
     scope: str = "scope-1",
     current_step: str = "step_init",
     action_states: dict[str, SfcActionState] | None = None,
+    action_command_ce_ids: dict[str, str] | None = None,
 ) -> SfcExecutionState:
     actions = {}
     for name, state in (action_states or {}).items():
-        actions[name] = SfcActionExecution(name=name, state=state)
+        cmd_ce_id = (action_command_ce_ids or {}).get(name)
+        actions[name] = SfcActionExecution(
+            name=name, state=state, command_ce_id=cmd_ce_id
+        )
     return SfcExecutionState(
         job_id=job_id,
         scope=scope,
@@ -266,6 +274,64 @@ class TestSfcEngineDispatchAction:
         await self.engine._handle_dispatch_action("job-1", "action_push")
         self.sb_processor.callback_outgoing.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_dispatch_push_command_registers_pending_command(self):
+        exec_state = _make_exec_state(
+            action_states={"action_push": SfcActionState.PENDING}
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+
+        await self.engine._handle_dispatch_action("job-1", "action_push")
+
+        assert len(self.engine._pending_commands) == 1
+        assert "job-1" in self.engine._pending_commands.values()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_push_command_clears_old_command_id_on_redispatch(self):
+        """Re-dispatch removes the stale command_id from the previous attempt."""
+        exec_state = _make_exec_state(
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        # Pre-populate the stale entry from the previous dispatch attempt.
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+
+        await self.engine._handle_dispatch_action("job-1", "action_push")
+
+        # Old command_id removed; exactly one new entry registered.
+        assert _CMD_UUID not in self.engine._pending_commands
+        assert len(self.engine._pending_commands) == 1
+        assert "job-1" in self.engine._pending_commands.values()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_push_command_registers_command_even_if_callback_raises(
+        self,
+    ):
+        """Routing entry is registered before callback_outgoing is called so that
+        if the call raises the command_id is still tracked (and the stale entry
+        removed).  Recovery will re-dispatch on the next pod restart."""
+        exec_state = _make_exec_state(
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        self.sb_processor.callback_outgoing.side_effect = RuntimeError("transport down")
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+
+        await self.engine._handle_dispatch_action("job-1", "action_push")
+
+        # Old entry removed; new command_id registered despite the exception.
+        assert _CMD_UUID not in self.engine._pending_commands
+        assert len(self.engine._pending_commands) == 1
+        assert "job-1" in self.engine._pending_commands.values()
+
 
 class TestSfcEngineActionCompletion:
     def setup_method(self):
@@ -293,14 +359,16 @@ class TestSfcEngineActionCompletion:
     @pytest.mark.asyncio
     async def test_complete_action_cas_dispatched_to_completed(self):
         exec_state = _make_exec_state(
-            action_states={"action_push": SfcActionState.DISPATCHED}
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
         )
         self.mock_execution_dao.retrieve.return_value = exec_state
         self.mock_execution_dao.cas_action_state.return_value = "OK"
         self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
         self.mock_execution_dao.cas_advance_step.return_value = "OK"
 
-        await self.engine.complete_action("job-1", "action_push")
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+        await self.engine.complete_action(_CMD_UUID)
 
         self.mock_execution_dao.cas_action_state.assert_awaited_once()
         cas_call = self.mock_execution_dao.cas_action_state.call_args
@@ -310,44 +378,150 @@ class TestSfcEngineActionCompletion:
     @pytest.mark.asyncio
     async def test_complete_action_skips_if_already_completed(self):
         exec_state = _make_exec_state(
-            action_states={"action_push": SfcActionState.COMPLETED}
+            action_states={"action_push": SfcActionState.COMPLETED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
         )
         self.mock_execution_dao.retrieve.return_value = exec_state
-        await self.engine.complete_action("job-1", "action_push")
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+        await self.engine.complete_action(_CMD_UUID)
         self.mock_execution_dao.cas_action_state.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_complete_action_skips_if_no_sfc_state(self):
         self.mock_execution_dao.retrieve.return_value = None
-        await self.engine.complete_action("job-1", "action_push")
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+        await self.engine.complete_action(_CMD_UUID)
         self.mock_execution_dao.cas_action_state.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_complete_action_skips_unknown_command_id(self):
+        exec_state = _make_exec_state(
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        await self.engine.complete_action(_CMD_UUID_OTHER)
+        self.mock_execution_dao.cas_action_state.assert_not_awaited()
 
-class TestSfcEngineFailAction:
-    def setup_method(self):
-        self.pool = MagicMock()
-        self.schema = _make_schema()
-        with patch("microdcs.sfc_engine.redis.Redis"):
-            self.engine = SfcEngine(
-                redis_connection_pool=self.pool,
-                redis_key_schema=self.schema,
-                nb_processor=MagicMock(),
-                sb_processors={},
-                consumer_name="test",
-            )
-        self.mock_execution_dao = AsyncMock(spec=SfcExecutionDAO)
-        self.engine._execution_dao = self.mock_execution_dao  # type: ignore[assignment]
-        self.mock_joborder_dao = AsyncMock()
-        self.engine._joborder_dao = self.mock_joborder_dao  # type: ignore[assignment]
-        self.mock_workmaster_dao = AsyncMock()
-        self.engine._workmaster_dao = self.mock_workmaster_dao  # type: ignore[assignment]
-        self.mock_jobresponse_dao = AsyncMock()
-        self.engine._jobresponse_dao = self.mock_jobresponse_dao  # type: ignore[assignment]
+    @pytest.mark.asyncio
+    async def test_complete_action_ignores_stale_command_ce_id_not_in_exec_state(
+        self,
+    ):
+        """After re-dispatch, the stale command_id is in _pending_commands but no
+        action's command_ce_id matches it.  complete_action should return without
+        calling cas_action_state.
+        """
+        exec_state = _make_exec_state(
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={
+                "action_push": _CMD_UUID
+            },  # new cmd after re-dispatch
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        # _CMD_UUID_OTHER is stale — replaced by _CMD_UUID on re-dispatch
+        self.engine._pending_commands[_CMD_UUID_OTHER] = "job-1"
+
+        await self.engine.complete_action(_CMD_UUID_OTHER)
+
+        self.mock_execution_dao.cas_action_state.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_check_step_completion_cascades_to_action_free_step(self):
+        """When completing step_2 activates step_3 (no actions), the while loop in
+        _check_step_completion also advances step_3 in the same pass."""
+        recipe_3step = SfcRecipe(
+            steps=[
+                SfcStep(name="step_init", initial=True),
+                SfcStep(name="step_2"),
+                SfcStep(name="step_3"),
+            ],
+            transitions=[
+                SfcTransition(
+                    source="step_init", target="step_2", condition="true", priority=0
+                ),
+                SfcTransition(
+                    source="step_2", target="step_3", condition="true", priority=0
+                ),
+                # No transition out of step_3 → engine calls _complete_job (terminal step)
+            ],
+            actions=[
+                SfcActionAssociation(
+                    name="action_pull",
+                    step="step_2",
+                    qualifier=SfcActionQualifier.NON_STORED,
+                    interaction=SfcInteraction.PULL_EVENT,
+                    type_id="com.example.pull",
+                    timeout_seconds=60,
+                ),
+                # step_3 intentionally has no actions
+            ],
+        )
+        from microdcs.models.machinery_jobs_ext import ISA95WorkMasterDataTypeExt
+
+        work_master = ISA95WorkMasterDataTypeExt(
+            id="wm-1",
+            data=recipe_3step.to_dict(),
+            dataschema=SFC_RECIPE_DATASCHEMA,
+        )
+
+        state_step2_done = _make_exec_state(
+            job_id="job-1",
+            current_step="step_2",
+            action_states={"action_pull": SfcActionState.COMPLETED},
+        )
+        state_step2_done.active_steps = ["step_2"]
+
+        # After advancing step_2, step_3 becomes the active step
+        state_step3_active = SfcExecutionState(
+            job_id="job-1",
+            scope="scope-1",
+            work_master_id="wm-1",
+            current_step="step_3",
+            active_steps=["step_3"],
+            actions={
+                "action_pull": SfcActionExecution(
+                    name="action_pull",
+                    state=SfcActionState.COMPLETED,
+                )
+            },
+        )
+
+        # After advancing step_3 the loop re-reads state; return completed so it stops.
+        state_done = SfcExecutionState(
+            job_id="job-1",
+            scope="scope-1",
+            work_master_id="wm-1",
+            current_step="step_3",
+            active_steps=[],
+            actions={},
+            completed=True,
+        )
+
+        self.mock_execution_dao.retrieve.side_effect = [
+            state_step2_done,  # initial read
+            state_step3_active,  # re-read after advancing step_2
+            state_done,  # re-read after advancing step_3
+        ]
+        self.mock_workmaster_dao.retrieve.return_value = work_master
+
+        advanced: list[str] = []
+
+        async def mock_advance(job_id, scope, step_name, recipe):
+            advanced.append(step_name)
+
+        with patch.object(
+            self.engine, "_advance_linear_step", side_effect=mock_advance
+        ):
+            await self.engine._check_step_completion("job-1", "scope-1")
+
+        assert "step_2" in advanced
+        assert "step_3" in advanced
 
     @pytest.mark.asyncio
     async def test_fail_action_marks_action_failed_and_fails_job(self):
         exec_state = _make_exec_state(
-            action_states={"action_push": SfcActionState.DISPATCHED}
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
         )
         self.mock_execution_dao.retrieve.return_value = exec_state
         self.mock_execution_dao.cas_action_state.return_value = "OK"
@@ -355,7 +529,8 @@ class TestSfcEngineFailAction:
         self.mock_joborder_dao.retrieve.return_value = _make_job_order_and_state()
 
         with patch.object(self.engine, "_trigger_job_transition", return_value=True):
-            await self.engine.fail_action("job-1", "action_push", "timeout")
+            self.engine._pending_commands[_CMD_UUID] = "job-1"
+            await self.engine.fail_action(_CMD_UUID, "timeout")
 
         self.mock_execution_dao.cas_action_state.assert_awaited_once()
         self.mock_execution_dao.cas_finish.assert_awaited_once()
@@ -428,16 +603,22 @@ class TestSfcEngineRecovery:
     def setup_method(self):
         self.pool = MagicMock()
         self.schema = _make_schema()
+        self.sb_processor = MagicMock()
+        self.sb_processor._type_callbacks_out = {"com.example.push": MagicMock()}
+        self.sb_processor._type_classes = {"com.example.push": MagicMock()}
+        self.sb_processor.callback_outgoing = AsyncMock()
         with patch("microdcs.sfc_engine.redis.Redis"):
             self.engine = SfcEngine(
                 redis_connection_pool=self.pool,
                 redis_key_schema=self.schema,
                 nb_processor=MagicMock(),
-                sb_processors={},
+                sb_processors={"sb1": self.sb_processor},
                 consumer_name="test",
             )
         self.mock_execution_dao = AsyncMock(spec=SfcExecutionDAO)
         self.engine._execution_dao = self.mock_execution_dao  # type: ignore[assignment]
+        self.mock_workmaster_dao = AsyncMock()
+        self.engine._workmaster_dao = self.mock_workmaster_dao  # type: ignore[assignment]
 
     @pytest.mark.asyncio
     async def test_recovery_scan_enqueues_resume_for_active_jobs(self):
@@ -461,6 +642,172 @@ class TestSfcEngineRecovery:
 
         await self.engine._recovery_scan()
         self.mock_execution_dao.enqueue_work.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_resume_redispatches_dispatched_push_command(self):
+        """_handle_resume re-dispatches an action that is in DISPATCHED state
+        (not just PENDING), because autoclaim may have orphaned it mid-flight."""
+        exec_state = _make_exec_state(
+            job_id="job-1",
+            scope="scope-1",
+            current_step="step_init",
+            action_states={"action_push": SfcActionState.DISPATCHED},
+            action_command_ce_ids={"action_push": _CMD_UUID},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        self.mock_execution_dao.cas_advance_step = AsyncMock(return_value="OK")
+
+        await self.engine._handle_resume("job-1")
+
+        # A new command_id was dispatched (callback_outgoing was called)
+        self.sb_processor.callback_outgoing.assert_awaited_once()
+
+
+class TestSfcEnginePullCompletion:
+    def setup_method(self):
+        self.pool = MagicMock()
+        self.schema = _make_schema()
+        self.sb_processor = MagicMock()
+        self.sb_processor._type_callbacks_out = {}
+        self.sb_processor._type_classes = {}
+        self.sb_processor.callback_outgoing = AsyncMock()
+        with patch("microdcs.sfc_engine.redis.Redis"):
+            self.engine = SfcEngine(
+                redis_connection_pool=self.pool,
+                redis_key_schema=self.schema,
+                nb_processor=MagicMock(),
+                sb_processors={},
+                consumer_name="test",
+            )
+        self.mock_execution_dao = AsyncMock(spec=SfcExecutionDAO)
+        self.engine._execution_dao = self.mock_execution_dao  # type: ignore[assignment]
+        self.mock_joborder_dao = AsyncMock()
+        self.engine._joborder_dao = self.mock_joborder_dao  # type: ignore[assignment]
+        self.mock_workmaster_dao = AsyncMock()
+        self.engine._workmaster_dao = self.mock_workmaster_dao  # type: ignore[assignment]
+        self.mock_jobresponse_dao = AsyncMock()
+        self.engine._jobresponse_dao = self.mock_jobresponse_dao  # type: ignore[assignment]
+
+    def _make_pull_assoc(self) -> SfcActionAssociation:
+        return SfcActionAssociation(
+            name="action_pull",
+            step="step_2",
+            qualifier=SfcActionQualifier.NON_STORED,
+            interaction=SfcInteraction.PULL_EVENT,
+            type_id="com.example.pull",
+            timeout_seconds=60,
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_pull_event_registers_command_id(self):
+        exec_state = _make_exec_state(
+            action_states={"action_pull": SfcActionState.PENDING}
+        )
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        action_exec = exec_state.actions["action_pull"]
+        assoc = self._make_pull_assoc()
+
+        await self.engine._dispatch_pull_event("job-1", "scope-1", assoc, action_exec)
+
+        assert len(self.engine._pending_commands) == 1
+        assert ("scope-1", "com.example.pull") in self.engine._pull_event_keys
+
+    @pytest.mark.asyncio
+    async def test_dispatch_pull_event_passes_command_ce_id_to_cas(self):
+        exec_state = _make_exec_state(
+            action_states={"action_pull": SfcActionState.PENDING}
+        )
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        action_exec = exec_state.actions["action_pull"]
+        assoc = self._make_pull_assoc()
+
+        await self.engine._dispatch_pull_event("job-1", "scope-1", assoc, action_exec)
+
+        cas_call = self.mock_execution_dao.cas_action_state.call_args
+        assert cas_call.kwargs["new_state"] == SfcActionState.WAITING
+        cmd_ce_id = cas_call.kwargs["command_ce_id"]
+        assert cmd_ce_id  # non-empty UUID
+        assert self.engine._pending_commands[cmd_ce_id] == "job-1"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_pull_event_skips_if_cas_fails(self):
+        exec_state = _make_exec_state(
+            action_states={"action_pull": SfcActionState.PENDING}
+        )
+        self.mock_execution_dao.cas_action_state.return_value = "ALREADY_HANDLED"
+        action_exec = exec_state.actions["action_pull"]
+        assoc = self._make_pull_assoc()
+
+        await self.engine._dispatch_pull_event("job-1", "scope-1", assoc, action_exec)
+
+        assert len(self.engine._pending_commands) == 0
+        assert ("scope-1", "com.example.pull") not in self.engine._pull_event_keys
+
+    @pytest.mark.asyncio
+    async def test_complete_pull_action_routes_to_complete_action(self):
+        exec_state = _make_exec_state(
+            action_states={"action_pull": SfcActionState.WAITING},
+            action_command_ce_ids={"action_pull": _CMD_UUID},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+        self.engine._pull_event_keys[("scope-1", "com.example.pull")] = _CMD_UUID
+
+        await self.engine.complete_pull_action("scope-1", "com.example.pull")
+
+        self.mock_execution_dao.cas_action_state.assert_awaited_once()
+        cas_call = self.mock_execution_dao.cas_action_state.call_args
+        assert cas_call.kwargs["new_state"] == SfcActionState.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_complete_pull_action_ignores_unknown_scope_type(self):
+        await self.engine.complete_pull_action("unknown-scope", "unknown.type")
+        self.mock_execution_dao.cas_action_state.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_complete_pull_action_removes_from_pull_event_keys(self):
+        exec_state = _make_exec_state(
+            action_states={"action_pull": SfcActionState.WAITING},
+            action_command_ce_ids={"action_pull": _CMD_UUID},
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+
+        self.engine._pending_commands[_CMD_UUID] = "job-1"
+        self.engine._pull_event_keys[("scope-1", "com.example.pull")] = _CMD_UUID
+
+        await self.engine.complete_pull_action("scope-1", "com.example.pull")
+
+        assert ("scope-1", "com.example.pull") not in self.engine._pull_event_keys
+
+    @pytest.mark.asyncio
+    async def test_resume_reregisters_waiting_pull_action(self):
+        exec_state = _make_exec_state(
+            job_id="job-1",
+            scope="scope-1",
+            current_step="step_2",
+            action_states={"action_pull": SfcActionState.WAITING},
+            action_command_ce_ids={"action_pull": _CMD_UUID},
+        )
+        exec_state.active_steps = ["step_2"]
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+
+        await self.engine._handle_resume("job-1")
+
+        assert self.engine._pending_commands.get(_CMD_UUID) == "job-1"
+        assert (
+            self.engine._pull_event_keys.get(("scope-1", "com.example.pull"))
+            == _CMD_UUID
+        )
 
 
 class TestSfcEngineHelpers:
@@ -498,6 +845,17 @@ class TestSfcEngineHelpers:
     def test_scope_from_job(self):
         job = _make_job_order_and_state(scope="my-scope")
         assert SfcEngine._scope_from_job(job) == "my-scope"
+
+    def test_scope_from_job_returns_none_without_equipment(self):
+        job = ISA95JobOrderAndStateDataType(
+            job_order=ISA95JobOrderDataType(
+                job_order_id="job-1",
+                work_master_id=[],
+                equipment_requirements=[],
+            ),
+            state=[],
+        )
+        assert SfcEngine._scope_from_job(job) is None
 
     def test_find_sb_processor_found(self):
         pool = MagicMock()

@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -38,7 +39,9 @@ class SfcActionExecution:
 
     name: str
     state: SfcActionState = SfcActionState.PENDING
-    correlation_id: str | None = None
+    command_ce_id: str | None = None
+    """The CloudEvent ``id`` of the dispatched command CE; used as the routing key
+    to match incoming responses and map them back to this action."""
     attempt: int = 0
     result: dict[str, Any] | None = None
     error: str | None = None
@@ -55,6 +58,10 @@ class SfcExecutionState:
     scope: str
     work_master_id: str
     current_step: str
+    correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    """Job-level CloudEvent ``correlationid`` (surrogate UUID).  Constant for
+    the entire lifetime of the job and carried on every CE emitted by the SFC
+    engine for this job, grouping all events into the same logical transaction."""
     active_steps: list[str] = field(default_factory=list)
     actions: dict[str, SfcActionExecution] = field(default_factory=dict)
     completed: bool = False

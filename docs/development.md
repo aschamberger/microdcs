@@ -135,10 +135,46 @@ The topic prefix identifier (e.g. `"machinery-jobs"`) is a constructor parameter
 
 The `deploy/k8s.yaml` manifest defines two Deployments:
 
-- **`microdcs-processor`** (`replicas: 2`) — processors only (`APP_IS_PUBLISHER_INSTANCE=false`)
+- **`microdcs-processor`** (`replicas: 2`) — processors plus SFC engine (`APP_IS_PUBLISHER_INSTANCE=false`)
 - **`microdcs-publisher`** (`replicas: 1`) — publisher only (`APP_IS_PROCESSOR_INSTANCE=false`)
 
-The publisher must be a single replica to avoid conflicting retained writes. The app handles MQTT and Redis reconnection internally with backoff, so health probes on external dependencies are not included — Kubernetes restart-on-crash is sufficient.
+The publisher must be a single replica to avoid conflicting retained writes. The SFC engine is different: it runs on every processor replica and relies on Redis consumer groups plus CAS Lua scripts for work distribution and recovery. Equipment integrations must treat `push_command` deliveries as idempotent by deduplicating on the `correlation_id` attached by the engine. The app handles MQTT and Redis reconnection internally with backoff, so health probes on external dependencies are not included — Kubernetes restart-on-crash is sufficient.
+
+### SFC Engine Wiring
+
+The relevant SFC wiring in `app/__main__.py` is:
+
+```python
+from microdcs.sfc_engine import SfcEngine
+
+machinery_jobs_processor = MachineryJobsCloudEventProcessor(
+    microdcs.runtime_config.instance_id,
+    microdcs.runtime_config.processing,
+    "machinery-jobs",
+    microdcs.redis_connection_pool,
+    microdcs.redis_key_schema,
+    job_acceptance_config,
+)
+
+sfc_engine = SfcEngine(
+    microdcs.redis_connection_pool,
+    microdcs.redis_key_schema,
+    nb_processor=machinery_jobs_processor,
+    sb_processors={"greetings": greetings_processor},
+    consumer_name=microdcs.runtime_config.instance_id,
+)
+
+greetings_processor.register_action_completion_handler(sfc_engine.complete_action)
+greetings_processor.register_action_failure_handler(sfc_engine.fail_action)
+# For pull_event actions also add:
+# greetings_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)
+machinery_jobs_processor.register_scope_handler(sfc_engine.register_scope)
+microdcs.add_additional_task(sfc_engine)
+```
+
+The `register_pull_completion_handler` line is required when the recipe uses `pull_event` actions — it bridges incoming CloudEvents from the SB processor to the SFC engine's pull-action completion logic. The example recipe uses only `push_command`, so this wiring is omitted in `app/__main__.py`.
+
+`tests/example_sfc.py` provides a reusable `build_example_work_master()` helper containing an SFC recipe payload so you can seed Redis or publish a `ConfigWorkMaster` event during manual testing.
 
 ### Local Development
 
@@ -151,6 +187,8 @@ uv run python -m app
 ```
 
 Or use the VS Code task **Run App (plain)** which starts both services automatically.
+
+For manual SFC testing, use the example Work Master from `tests/example_sfc.py` and publish a `StoreAndStartCall` that references it.
 
 Generate typed models from a JSON Schema file:
 

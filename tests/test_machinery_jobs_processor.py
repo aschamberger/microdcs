@@ -126,6 +126,7 @@ def processor(mock_redis_pool, redis_key_schema):
 
 def _mock_dao_save(proc: MachineryJobsCloudEventProcessor):
     proc._joborder_and_state_dao.save = AsyncMock()
+    proc._sfc_execution_dao.enqueue_work = AsyncMock()
 
 
 def _mock_dao_retrieve(
@@ -402,6 +403,19 @@ class TestProcessStoreAndStart:
         assert isinstance(result, StoreAndStartResponse)
         assert result.return_status == MethodReturnStatus.INVALID_REQUEST
 
+    @pytest.mark.asyncio
+    async def test_store_and_start_notifies_scope_handler(self, processor):
+        """process_store_and_start calls _notify_scope_handlers so the SFC engine
+        learns about the scope when a new job arrives."""
+        _mock_dao_save(processor)
+        scope_calls: list[str] = []
+        processor.register_scope_handler(lambda s: scope_calls.append(s))
+        method = StoreAndStartCall(job_order=make_woodworking_job_order())
+
+        await processor.process_store_and_start(method, subject=SCOPE)
+
+        assert SCOPE in scope_calls
+
 
 # ===================================================================
 # Processor — Existing-job transitions
@@ -602,6 +616,20 @@ class TestProcessPauseResume:
 
         assert isinstance(result, PauseResponse)
         assert result.return_status == MethodReturnStatus.INVALID_JOB_ORDER_STATUS
+
+    @pytest.mark.asyncio
+    async def test_pause_notifies_scope_handler(self, processor):
+        """process_pause calls _notify_scope_handlers so the SFC engine stays
+        in sync with the scope when a job is paused."""
+        _mock_dao_save(processor)
+        stored = _stored_job_order_and_state("Running")
+        _mock_dao_retrieve(processor, stored)
+        scope_calls: list[str] = []
+        processor.register_scope_handler(lambda s: scope_calls.append(s))
+
+        await processor.process_pause(PauseCall(job_order_id="12345"), subject=SCOPE)
+
+        assert SCOPE in scope_calls
 
 
 class TestProcessStop:
@@ -853,6 +881,22 @@ class TestProcessUpdate:
         assert saved_obj.state is not None
         state_texts = [s.state_text.text for s in saved_obj.state if s.state_text]
         assert "NotAllowedToStart" in state_texts
+
+    @pytest.mark.asyncio
+    async def test_update_notifies_scope_handler(self, processor):
+        """process_update calls _notify_scope_handlers so the SFC engine is aware
+        of the scope when an existing job order is modified."""
+        _mock_dao_save(processor)
+        stored = _stored_job_order_and_state("NotAllowedToStart_Ready")
+        _mock_dao_retrieve(processor, stored)
+        scope_calls: list[str] = []
+        processor.register_scope_handler(lambda s: scope_calls.append(s))
+
+        await processor.process_update(
+            UpdateCall(job_order=make_woodworking_job_order()), subject=SCOPE
+        )
+
+        assert SCOPE in scope_calls
 
 
 # ===================================================================

@@ -8,12 +8,13 @@ If you are new to the project, use this reading path:
 
 1. [Concepts at a Glance](concepts.md) for the key terms, standards, and framework abstractions
 2. [Overall Design](overall-design.md) for the architectural model and project assumptions
-3. [Technical Standards](technical-standards.md) for the protocol and specification choices
-4. [Information Model Standards](information-model-standards.md) for the data-model background
-5. [Your First Processor](your-first-processor.md) for a hands-on tutorial building a CloudEvent processor
-6. [Machinery Jobs – MES Publishing](machinery-jobs-mes-publishing.md) for retained-topic-based MES integration and reconnect resync
-7. [Development](development.md) for local development workflow and implementation details
-8. [Persistence](persistence.md) for the Redis-backed persistence model
+3. [SFC Engine](sfc_engine.md) for recipe-driven station orchestration and distributed execution
+4. [Technical Standards](technical-standards.md) for the protocol and specification choices
+5. [Information Model Standards](information-model-standards.md) for the data-model background
+6. [Your First Processor](your-first-processor.md) for a hands-on tutorial building a CloudEvent processor
+7. [Machinery Jobs – MES Publishing](machinery-jobs-mes-publishing.md) for retained-topic-based MES integration and reconnect resync
+8. [Development](development.md) for local development workflow and implementation details
+9. [Persistence](persistence.md) for the Redis-backed persistence model
 
 ## What MicroDCS Provides
 
@@ -23,6 +24,7 @@ If you are new to the project, use this reading path:
 * Processor abstractions for handling commands, data, events, and metadata
 * Redis-backed persistence for delivery coordination and job state
 * OPC UA Machinery Job Management support, including hierarchical state-machine execution
+* Recipe-driven station orchestration via the SFC engine, including distributed work recovery
 * Retained MQTT topics for MES northbound integration with sequence-based reconnect resync
 * OpenTelemetry support for tracing and metrics
 

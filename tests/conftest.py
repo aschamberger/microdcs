@@ -10,6 +10,7 @@ from microdcs.common import (
     processor_config,
 )
 from microdcs.dataclass import DataClassConfig, DataClassMixin
+from microdcs.models.greetings import Bye
 from microdcs.models.machinery_jobs import (
     EUInformation,
     ISA95JobOrderDataType,
@@ -18,6 +19,16 @@ from microdcs.models.machinery_jobs import (
     LocalizedText,
     OutputInformationDataType,
 )
+from microdcs.models.machinery_jobs_ext import ConfigWorkMaster
+from microdcs.models.sfc_recipe import (
+    SfcActionAssociation,
+    SfcActionQualifier,
+    SfcInteraction,
+    SfcRecipe,
+    SfcStep,
+    SfcTransition,
+)
+from microdcs.models.sfc_recipe_ext import SFC_RECIPE_DATASCHEMA
 
 MQTT_CONFIG = MQTTConfig()
 REDIS_CONFIG = RedisConfig()
@@ -223,3 +234,48 @@ app_available = pytest.mark.skipif(
 )
 
 integration = pytest.mark.integration
+
+
+# ---------------------------------------------------------------------------
+# SFC example recipe / work master
+# ---------------------------------------------------------------------------
+
+
+def build_example_sfc_recipe() -> SfcRecipe:
+    return SfcRecipe(
+        steps=[
+            SfcStep(name="send_greeting", initial=True),
+            SfcStep(name="done"),
+        ],
+        transitions=[
+            SfcTransition(
+                source="send_greeting",
+                target="done",
+                condition="true",
+                priority=0,
+            )
+        ],
+        actions=[
+            SfcActionAssociation(
+                name="send_bye",
+                step="send_greeting",
+                qualifier=SfcActionQualifier.NON_STORED,
+                interaction=SfcInteraction.PUSH_COMMAND,
+                type_id=Bye.Config.type_id,
+                timeout_seconds=30,
+                parameters={"name": "MicroDCS"},
+            )
+        ],
+    )
+
+
+def build_example_work_master() -> ConfigWorkMaster:
+    recipe = build_example_sfc_recipe()
+    return ConfigWorkMaster(
+        id="wm-example-sfc-greetings",
+        description=LocalizedText(
+            text="Example SFC work master for the greetings demo processor", locale="en"
+        ),
+        data=recipe.to_dict(),
+        dataschema=SFC_RECIPE_DATASCHEMA,
+    )

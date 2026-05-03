@@ -3,11 +3,16 @@
 # MicroDCS Kubernetes Deployment
 #
 # Two Deployments:
-#   1. Processor – scales horizontally with shared MQTT subscriptions
+#   1. Processor – scales horizontally with shared MQTT subscriptions and runs the SFC engine on every replica
 #   2. Publisher – single replica maintaining retained MQTT topics
 #
 # Both share the same container image, differentiated by APP_IS_PROCESSOR_INSTANCE
 # and APP_IS_PUBLISHER_INSTANCE environment variables.
+#
+# The SFC engine is not single-instance gated. It relies on Redis Streams consumer
+# groups and CAS Lua scripts for distributed execution and recovery. Equipment-side
+# command handling must be idempotent on the correlation_id attached to each
+# outgoing push_command.
 
 ---
 apiVersion: apps/v1

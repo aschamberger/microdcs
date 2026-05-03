@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -96,6 +97,10 @@ class SfcEngine(AdditionalTask):
         )
 
         self._known_scopes: set[str] = set()
+        self._pending_commands: dict[str, str] = {}  # command_id → job_id
+        self._pull_event_keys: dict[
+            tuple[str, str], str
+        ] = {}  # (scope, type_id) → command_id
 
     # ── AdditionalTask entry point ──────────────────────────────────────
 
@@ -164,7 +169,16 @@ class SfcEngine(AdditionalTask):
         if not results:
             return
 
-        for stream_key_raw, entries in results:
+        # Handle both RESP2 (list of [key, entries]) and RESP3 (dict of key →
+        # [[entries]]) response formats.  With protocol=3 the redis client
+        # returns a dict and each value is wrapped in an extra list level.
+        stream_items: list[tuple] = (
+            [(k, v[0]) for k, v in results.items()]
+            if isinstance(results, dict)
+            else results
+        )
+
+        for stream_key_raw, entries in stream_items:
             stream_key = (
                 stream_key_raw.decode()
                 if isinstance(stream_key_raw, bytes)
@@ -372,7 +386,7 @@ class SfcEngine(AdditionalTask):
 
         if assoc.interaction == SfcInteraction.PUSH_COMMAND:
             await self._dispatch_push_command(
-                job_id, exec_state.scope, assoc, action_exec
+                job_id, exec_state.scope, assoc, action_exec, exec_state.correlation_id
             )
         elif assoc.interaction == SfcInteraction.PULL_EVENT:
             await self._dispatch_pull_event(
@@ -396,7 +410,9 @@ class SfcEngine(AdditionalTask):
                 action_exec = exec_state.actions.get(assoc.name)
                 if action_exec is None:
                     return
-                await self._dispatch_push_command(job_id, scope, assoc, action_exec)
+                await self._dispatch_push_command(
+                    job_id, scope, assoc, action_exec, exec_state.correlation_id
+                )
             elif assoc.interaction == SfcInteraction.PULL_EVENT:
                 exec_state = await self._execution_dao.retrieve(job_id)
                 if exec_state is None:
@@ -412,10 +428,11 @@ class SfcEngine(AdditionalTask):
         scope: str,
         assoc: SfcActionAssociation,
         action_exec: SfcActionExecution,
+        job_correlation_id: str,
     ) -> None:
         """Send a push_command via the SB processor."""
         new_attempt = action_exec.attempt + 1
-        correlation_id = f"{job_id}:{assoc.name}:{new_attempt}"
+        command_id = str(uuid.uuid4())
 
         # CAS: pending → dispatched (or re-dispatch if already dispatched via autoclaim)
         expected = action_exec.state
@@ -434,7 +451,7 @@ class SfcEngine(AdditionalTask):
             action_name=assoc.name,
             expected_state=expected,
             new_state=SfcActionState.DISPATCHED,
-            correlation_id=correlation_id,
+            command_ce_id=command_id,
             attempt=new_attempt,
         )
         if result != "OK":
@@ -474,18 +491,27 @@ class SfcEngine(AdditionalTask):
             kwargs["parameters"] = assoc.parameters
 
         logger.info(
-            "Dispatching push_command %s for job %s (correlation_id=%s)",
+            "Dispatching push_command %s for job %s (command_id=%s)",
             assoc.name,
             job_id,
-            correlation_id,
+            command_id,
         )
+
+        # Register routing before calling callback_outgoing so that if the call
+        # raises, the new command_id is still tracked and the stale entry is
+        # removed.  Recovery via restart re-dispatches in any case, so having an
+        # entry for a command that was never actually sent is harmless.
+        if action_exec.command_ce_id:
+            self._pending_commands.pop(action_exec.command_ce_id, None)
+        self._pending_commands[command_id] = job_id
 
         try:
             await sb_processor.callback_outgoing(
                 payload_type=payload_type,
                 intent=MessageIntent.COMMAND,
                 subject=scope,
-                correlation_id=correlation_id,
+                cloudevent_id=command_id,
+                correlation_id=job_correlation_id,
                 **kwargs,
             )
         except Exception:
@@ -500,31 +526,47 @@ class SfcEngine(AdditionalTask):
         assoc: SfcActionAssociation,
         action_exec: SfcActionExecution,
     ) -> None:
-        """Mark a pull_event action as waiting."""
+        """Mark a pull_event action as waiting and register for incoming event routing."""
         if action_exec.state not in (SfcActionState.PENDING,):
             return
 
+        command_id = str(uuid.uuid4())
         result = await self._execution_dao.cas_action_state(
             job_id=job_id,
             scope=scope,
             action_name=assoc.name,
             expected_state=SfcActionState.PENDING,
             new_state=SfcActionState.WAITING,
+            command_ce_id=command_id,
         )
         if result == "OK":
+            self._pending_commands[command_id] = job_id
+            self._pull_event_keys[(scope, assoc.type_id)] = command_id
             logger.info(
-                "Action %s on job %s now waiting for pull_event (%s)",
+                "Action %s on job %s now waiting for pull_event (%s, command_id=%s)",
                 assoc.name,
                 job_id,
                 assoc.type_id,
+                command_id,
             )
+
+    async def complete_pull_action(self, scope: str, type_id: str) -> None:
+        """Called when an incoming event arrives that matches a PULL_EVENT action.
+
+        Routes to ``complete_action`` using the command_id registered when the
+        pull action was activated.  Silently ignores events that are not tracked
+        (i.e. the scope/type combination has no active WAITING pull action).
+        """
+        command_id = self._pull_event_keys.pop((scope, type_id), None)
+        if command_id is None:
+            return
+        await self.complete_action(command_id)
 
     # ── Event completion (called by SB processors) ──────────────────────
 
     async def complete_action(
         self,
-        job_id: str,
-        action_name: str,
+        command_id: str,
         result_data: dict[str, Any] | None = None,
     ) -> None:
         """Called when an action completes (push response or pull event received).
@@ -533,6 +575,12 @@ class SfcEngine(AdditionalTask):
         step is done, evaluates transitions, and dispatches the next step's
         actions (or finishes the job).
         """
+        job_id = self._pending_commands.pop(command_id, None)
+        if job_id is None:
+            logger.debug(
+                "No pending command %s (stale or already completed)", command_id
+            )
+            return
         exec_state = await self._execution_dao.retrieve(job_id)
         if exec_state is None:
             logger.warning("No SFC state for job %s on action completion", job_id)
@@ -541,11 +589,21 @@ class SfcEngine(AdditionalTask):
         if exec_state.completed or exec_state.failed:
             return
 
-        action_exec = exec_state.actions.get(action_name)
-        if action_exec is None:
-            logger.warning("Action %s not in job %s state", action_name, job_id)
+        action_name: str | None = None
+        for name, ae in exec_state.actions.items():
+            if ae.command_ce_id == command_id:
+                action_name = name
+                break
+
+        if action_name is None:
+            logger.debug(
+                "No action matches command_ce_id %s in job %s (stale response?)",
+                command_id,
+                job_id,
+            )
             return
 
+        action_exec = exec_state.actions[action_name]
         # CAS the action to completed
         expected = action_exec.state
         if expected not in (SfcActionState.DISPATCHED, SfcActionState.WAITING):
@@ -580,19 +638,33 @@ class SfcEngine(AdditionalTask):
 
     async def fail_action(
         self,
-        job_id: str,
-        action_name: str,
+        command_id: str,
         error: str = "",
     ) -> None:
         """Called when an action fails (timeout or equipment error)."""
+        job_id = self._pending_commands.pop(command_id, None)
+        if job_id is None:
+            logger.debug("No pending command %s (stale or already failed)", command_id)
+            return
         exec_state = await self._execution_dao.retrieve(job_id)
         if exec_state is None:
             return
 
-        action_exec = exec_state.actions.get(action_name)
-        if action_exec is None:
+        action_name: str | None = None
+        for name, ae in exec_state.actions.items():
+            if ae.command_ce_id == command_id:
+                action_name = name
+                break
+
+        if action_name is None:
+            logger.debug(
+                "No action matches command_ce_id %s in job %s (stale?)",
+                command_id,
+                job_id,
+            )
             return
 
+        action_exec = exec_state.actions[action_name]
         expected = action_exec.state
         if expected in (SfcActionState.COMPLETED, SfcActionState.FAILED):
             return
@@ -621,7 +693,10 @@ class SfcEngine(AdditionalTask):
         assert isinstance(work_master.data, dict)
         recipe = SfcRecipe.from_dict(work_master.data)
 
-        for step_name in list(exec_state.active_steps):
+        advanced_steps: set[str] = set()
+        pending_steps = list(exec_state.active_steps)
+        while pending_steps:
+            step_name = pending_steps.pop(0)
             step_actions = [a for a in recipe.actions if a.step == step_name]
             all_done = all(
                 exec_state.actions.get(a.name) is not None
@@ -642,10 +717,17 @@ class SfcEngine(AdditionalTask):
                 # Linear execution — use transitions.
                 await self._advance_linear_step(job_id, scope, step_name, recipe)
 
+            advanced_steps.add(step_name)
+
             # Re-read state — it may have changed.
             exec_state = await self._execution_dao.retrieve(job_id)
             if exec_state is None or exec_state.completed or exec_state.failed:
                 return
+
+            # Queue newly activated steps so they are also checked.
+            for new_step in exec_state.active_steps:
+                if new_step not in pending_steps and new_step not in advanced_steps:
+                    pending_steps.append(new_step)
 
     async def _advance_linear_step(
         self,
@@ -1046,14 +1128,27 @@ class SfcEngine(AdditionalTask):
                 ):
                     if assoc.interaction == SfcInteraction.PUSH_COMMAND:
                         await self._dispatch_push_command(
-                            job_id, exec_state.scope, assoc, action_exec
+                            job_id,
+                            exec_state.scope,
+                            assoc,
+                            action_exec,
+                            exec_state.correlation_id,
                         )
                     elif assoc.interaction == SfcInteraction.PULL_EVENT:
                         await self._dispatch_pull_event(
                             job_id, exec_state.scope, assoc, action_exec
                         )
                 elif action_exec.state == SfcActionState.WAITING:
-                    pass
+                    if (
+                        assoc.interaction == SfcInteraction.PULL_EVENT
+                        and action_exec.command_ce_id
+                    ):
+                        # Re-register routing so complete_pull_action can route the
+                        # incoming event after recovery.
+                        self._pending_commands[action_exec.command_ce_id] = job_id
+                        self._pull_event_keys[(exec_state.scope, assoc.type_id)] = (
+                            action_exec.command_ce_id
+                        )
 
         await self._check_step_completion(job_id, exec_state.scope)
 

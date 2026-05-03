@@ -1,6 +1,5 @@
 import logging
 
-from microdcs import ProcessingConfig
 from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
@@ -17,14 +16,6 @@ logger = logging.getLogger("processor.greetings")
 
 @processor_config(binding=ProcessorBinding.SOUTHBOUND)
 class GreetingsCloudEventProcessor(CloudEventProcessor):
-    def __init__(
-        self,
-        instance_id: str,
-        runtime_config: ProcessingConfig,
-        config_identifier: str,
-    ):
-        super().__init__(instance_id, runtime_config, config_identifier)
-
     @incoming(Hello)
     async def handle_hello(self, hello: Hello) -> list[Hello] | Hello | None:
         logger.info("Received hello from: %s", hello.name)
@@ -78,6 +69,12 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
     ) -> list[CloudEvent] | CloudEvent | None:
         logger.debug("Response message: %s", cloudevent)
 
+        if (
+            cloudevent.causationid is not None
+            and self._action_completion_handler is not None
+        ):
+            await self._action_completion_handler(cloudevent.causationid)
+
         # For error messages, we do not send any response here
         # however we could retry in some cases or log to an external system
         return None
@@ -86,6 +83,8 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
         self, cloudevent: CloudEvent, timeout: int
     ) -> list[CloudEvent] | CloudEvent | None:
         logger.info("Message expired: %s", cloudevent.id)
+        if cloudevent.id is not None and self._action_failure_handler is not None:
+            await self._action_failure_handler(cloudevent.id)
         return None
 
     async def trigger_outgoing_event(

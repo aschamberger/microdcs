@@ -2,6 +2,7 @@ import functools
 import hashlib
 import logging
 import re
+import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -1097,7 +1098,7 @@ class SfcExecutionDAO:
     # ARGV[1] = action name
     # ARGV[2] = expected current state
     # ARGV[3] = new state
-    # ARGV[4] = correlation_id (or empty string)
+    # ARGV[4] = command_ce_id (or empty string)
     # ARGV[5] = attempt number (or empty string)
     # ARGV[6] = JSON-encoded follow-up stream fields (or empty string)
     # Returns: "OK", "ALREADY_HANDLED", or "NOT_FOUND"
@@ -1107,7 +1108,7 @@ local stream_key = KEYS[2]
 local action_name = ARGV[1]
 local expected_state = ARGV[2]
 local new_state = ARGV[3]
-local correlation_id = ARGV[4]
+local command_ce_id = ARGV[4]
 local attempt = ARGV[5]
 local stream_fields = ARGV[6]
 
@@ -1124,8 +1125,8 @@ if current_state ~= expected_state then
 end
 
 redis.call('JSON.SET', key, path, '"' .. new_state .. '"')
-if correlation_id ~= '' then
-    redis.call('JSON.SET', key, '$.actions.' .. action_name .. '.correlation_id', '"' .. correlation_id .. '"')
+if command_ce_id ~= '' then
+    redis.call('JSON.SET', key, '$.actions.' .. action_name .. '.command_ce_id', '"' .. command_ce_id .. '"')
 end
 if attempt ~= '' then
     redis.call('JSON.SET', key, '$.actions.' .. action_name .. '.attempt', tonumber(attempt))
@@ -1321,7 +1322,7 @@ return cjson.encode(new_active)
             actions[name] = SfcActionExecution(
                 name=action_data["name"],
                 state=SfcActionState(action_data["state"]),
-                correlation_id=action_data.get("correlation_id"),
+                command_ce_id=action_data.get("command_ce_id"),
                 attempt=action_data.get("attempt", 0),
                 result=action_data.get("result"),
                 error=action_data.get("error"),
@@ -1331,6 +1332,7 @@ return cjson.encode(new_active)
             scope=data["scope"],
             work_master_id=data["work_master_id"],
             current_step=data["current_step"],
+            correlation_id=data.get("correlation_id") or str(uuid.uuid4()),
             active_steps=data.get("active_steps", []),
             actions=actions,
             completed=data.get("completed", False),
@@ -1360,7 +1362,7 @@ return cjson.encode(new_active)
         action_name: str,
         expected_state: SfcActionState,
         new_state: SfcActionState,
-        correlation_id: str = "",
+        command_ce_id: str = "",
         attempt: int | None = None,
         follow_up_stream_fields: list[str] | None = None,
     ) -> str:
@@ -1388,7 +1390,7 @@ return cjson.encode(new_active)
             action_name,
             expected_state.value,
             new_state.value,
-            correlation_id,
+            command_ce_id,
             str(attempt) if attempt is not None else "",
             stream_fields_json,
         )

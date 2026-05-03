@@ -1258,7 +1258,7 @@ class TestSfcExecutionDAO:
                 "action_b": SfcActionExecution(
                     name="action_b",
                     state=SfcActionState.DISPATCHED,
-                    correlation_id="job-1:action_b:1",
+                    command_ce_id="job-1:action_b:1",
                     attempt=1,
                 ),
             },
@@ -1303,7 +1303,7 @@ class TestSfcExecutionDAO:
                 "action_a": {
                     "name": "action_a",
                     "state": "pending",
-                    "correlation_id": None,
+                    "command_ce_id": None,
                     "attempt": 0,
                     "result": None,
                     "error": None,
@@ -1354,7 +1354,7 @@ class TestSfcExecutionDAO:
             action_name="action_a",
             expected_state=SfcActionState.PENDING,
             new_state=SfcActionState.DISPATCHED,
-            correlation_id="job-1:action_a:1",
+            command_ce_id="job-1:action_a:1",
             attempt=1,
         )
         assert result == "OK"
