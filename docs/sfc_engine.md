@@ -613,6 +613,44 @@ For `pull_event` actions there is no stream entry to reclaim. Recovery relies en
 >
 > **Note:** The example app wires `register_action_completion_handler` and `register_action_failure_handler` but **not** `register_pull_completion_handler`. This is intentional: the example recipe uses only `push_command` actions. Any application that uses `pull_event` actions must additionally call `greetings_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)` (or the equivalent for its own SB processor) during wiring.
 
+### Phase 7: Distributed Pull-Event Routing
+
+**Goal**: Remove instance-affine pull-event completion so that any live replica can complete a waiting `pull_event` action, and so that delivery survives pod restarts. The current design stores `(scope, type_id) → command_id` in `_pull_event_keys`, a local in-memory map populated only on the dispatching instance. If MQTT delivers the pull event to any other live instance, the lookup misses, the event is consumed and gone, and the action stays stuck in `waiting` state indefinitely.
+
+The fix routes incoming pull events through the existing `sfc:work:{scope}` Redis stream. Once a `pull_event` work item is in the stream, `XAUTOCLAIM` provides the same restart-survival guarantee that already covers `push_command` work items. No new Redis key families are needed. No recipe schema changes are required.
+
+1. Add `type_id: str | None = None` to `SfcActionExecution` in `sfc_recipe_ext.py`. Set this field when a `pull_event` action transitions to `WAITING` so the engine can match incoming events at stream-processing time without re-loading the recipe.
+
+2. Add `sfc_active_jobs_key(scope: str)` to `RedisKeySchema`, returning `sfc:activejobs:{scope}` (a Redis set). Update `SfcExecutionDAO.save()` to add `job_id` to this set and `cas_finish` to remove it. This allows `_handle_pull_event` to find active jobs in a scope without scanning the global active-jobs list.
+
+3. Change the `_pull_completion_handler` contract in `common.py` from `Callable[[str, str], Awaitable[None]]` (receiving `scope, type_id`) to `Callable[[CloudEvent], Awaitable[None]]` (receiving the full incoming `CloudEvent`). Update `callback_incoming` to pass `request_cloudevent` directly to the handler. Update `register_pull_completion_handler` docstring accordingly.
+
+4. Update `_dispatch_pull_event` in `sfc_engine.py`: after the CAS to `WAITING` succeeds, write `assoc.type_id` into the `SfcActionExecution` record (via a second `cas_action_state` call or by extending the existing CAS script). Remove `self._pull_event_keys[(scope, assoc.type_id)] = command_id` and the `self._pending_commands[command_id] = job_id` line that applies to pull paths.
+
+5. Add `_handle_pull_event(self, scope: str, type_id: str, ce_subject: str, ce_correlation_id: str | None)` to `sfc_engine.py`:
+    - Query `sfc_active_jobs_key(scope)` to get the set of active job IDs for the scope.
+    - For each job, load `SfcExecutionState` and scan `actions` for `state == WAITING` and `action_exec.type_id == type_id`.
+    - On first match, CAS `waiting → completed` via `cas_action_state`. If CAS returns `OK`, call `_check_step_completion`. If CAS misses (another instance raced to the same action), continue to the next candidate.
+    - If no match is found (event arrived before any job registered a wait, or the wait was already claimed), log at debug level and return — `XAUTOCLAIM` will retry the work item if it was not yet ACKed.
+
+6. Extend `_process_work_item` in `sfc_engine.py` with a new branch: `elif action.startswith("pull_event:")`. Extract `type_id`, `ce_subject`, `ce_correlation_id` from the work item fields and call `_handle_pull_event`.
+
+7. Remove `complete_pull_action` from `sfc_engine.py`. The stream-based handler in `_process_work_item` replaces it entirely.
+
+8. Remove the `_pull_event_keys` field declaration and all read/write sites from `sfc_engine.py`.
+
+9. Remove the block in `_handle_resume` that re-registers `_pull_event_keys` and the corresponding `_pending_commands` entry for WAITING pull actions. WAITING pull actions are now self-contained in `SfcExecutionState`; they are matched when a `pull_event` work item is processed.
+
+10. Update `__main__.py` wiring: replace `register_pull_completion_handler(sfc_engine.complete_pull_action)` with an async handler that extracts `scope` from the first CloudEvent subject segment and calls `await redis_client.xadd(key_schema.sfc_work_stream(scope), {"action": f"pull_event:{scope}:{cloudevent.type}", "type_id": cloudevent.type, "ce_subject": cloudevent.subject or "", "ce_correlation_id": cloudevent.correlationid or ""})`. Update the Phase 6 note in this document to reflect the new wiring contract.
+
+11. Update tests:
+    - `test_common.py`: update `test_register_pull_completion_handler`, `test_callback_incoming_calls_pull_completion_handler`, and `test_callback_incoming_pull_handler_not_called_without_subject` to assert the handler receives a full `CloudEvent` rather than `(scope, type_id)`.
+    - `test_sfc_engine.py`: replace tests built around `_pull_event_keys` and `complete_pull_action` with DAO-based expectations. Add tests for: pull wait written to execution state, `_handle_pull_event` matches and CAS-completes a WAITING action, unknown `type_id` leaves state unchanged, two races on the same action leave one completed and one unchanged, resume does not re-register any local routing.
+
+12. Update this document: replace the instance-local pull-event description in [Execution Flow](#execution-flow), remove `_pull_event_keys` re-registration from [Recovery Flow](#recovery-flow), replace the ⚠️ pull-event rows in [Multi-Instance Safety Summary](#multi-instance-safety-summary) with the corrected guarantees, and update the "Action completion routing is instance-affine" design decision to reflect that pull-event routing is no longer instance-local.
+
+13. Update `docs/overall-design.md`: replace the pull-event paragraph that states wrong-instance delivery is permanently stuck. The new guarantee is: once a live instance receives the pull event and `XADD` succeeds, delivery survives pod restarts via `XAUTOCLAIM`. The remaining gap (all instances simultaneously down in the window between MQTT receive and `XADD`) is a single async write — substantially narrower than the previous instance-affine failure mode.
+
 ## Design Decisions
 
 - **Opaque `data` + `dataschema` on Work Master**: Follows the CloudEvent envelope pattern. The NB processor and DAO stay ignorant of recipe content. Any future recipe format can be added by defining a new `dataschema` URI without touching existing code.
