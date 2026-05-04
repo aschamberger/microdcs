@@ -543,9 +543,12 @@ class TestMessagePackHandler:
         writer.drain = AsyncMock()
 
         # First read returns a request, second read returns empty (disconnect)
-        request = msgpack.packb(
-            [RpcMessageType.REQUEST, 1, "heartbeat", ["2025-01-01"]]
-        )
+        request = msgpack.packb([
+            RpcMessageType.REQUEST,
+            1,
+            "heartbeat",
+            ["2025-01-01"],
+        ])
         reader.read = AsyncMock(side_effect=[request, b""])
         await server._handle_client(reader, writer)
 
@@ -948,6 +951,42 @@ class TestOTELInstrumentedMessagePackHandler:
         counter_call_attrs = handler._metrics["call_counter"].add.call_args[0][1]
         assert counter_call_attrs["status"] == "error"
 
+    @pytest.mark.asyncio
+    async def test_dispatch_method_returns_result(self):
+        """Return value from the base handler must be propagated to the caller."""
+        handler = self._make_otel_handler()
+        handler._metrics["call_counter"] = MagicMock()
+        handler._metrics["call_duration"] = MagicMock()
+        expected = [{"type": "com.example.response"}]
+        handler._methods["publish"] = AsyncMock(return_value=expected)
+
+        result = await handler._dispatch_method(
+            "publish", [{}], RpcMessageType.REQUEST, 1
+        )
+
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_dispatch_method_passes_msg_type_and_id(self):
+        """msg_type and msg_id must be forwarded to the base, not hardcoded."""
+        handler = self._make_otel_handler()
+        handler._metrics["call_counter"] = MagicMock()
+        handler._metrics["call_duration"] = MagicMock()
+        captured: list = []
+        original = MessagePackHandler._dispatch_method
+
+        async def spy(self, method_name, params, msg_type, msg_id):
+            captured.extend([msg_type, msg_id])
+            return await original(self, method_name, params, msg_type, msg_id)
+
+        with patch.object(MessagePackHandler, "_dispatch_method", spy):
+            await handler._dispatch_method(
+                "heartbeat", ["ts"], RpcMessageType.NOTIFICATION, 99
+            )
+
+        assert captured[0] == RpcMessageType.NOTIFICATION
+        assert captured[1] == 99
+
 
 # ===================================================================
 # MessagePackRpcClient
@@ -1068,9 +1107,12 @@ class TestMessagePackRpcClient:
         mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
 
-        response_bytes = msgpack.packb(
-            [RpcMessageType.RESPONSE, 1, "something broke", None]
-        )
+        response_bytes = msgpack.packb([
+            RpcMessageType.RESPONSE,
+            1,
+            "something broke",
+            None,
+        ])
         mock_reader.read = AsyncMock(side_effect=[response_bytes, b""])
 
         with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):

@@ -144,7 +144,11 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 "mqtt_response_topic"
             )
             qos = QoS.AT_LEAST_ONCE
-        _correlation_data_id = cloudevent.causationid if cloudevent.causationid is not None else cloudevent.id
+        _correlation_data_id = (
+            cloudevent.causationid
+            if cloudevent.causationid is not None
+            else cloudevent.id
+        )
         if _correlation_data_id is not None:
             properties.CorrelationData = uuid.UUID(_correlation_data_id).bytes  # type: ignore
         # Convert dictionary to list of tuples
@@ -180,9 +184,13 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 await asyncio.sleep(_interval)
                 return await _proc.handle_cloudevent_expiration(_ce, _interval)
 
-            _expiration_key = cloudevent.causationid if cloudevent.causationid is not None else cloudevent.id
-            self._expiration_timeout_tasks[_expiration_key] = (
-                asyncio.create_task(_expiration_task())
+            _expiration_key = (
+                cloudevent.causationid
+                if cloudevent.causationid is not None
+                else cloudevent.id
+            )
+            self._expiration_timeout_tasks[_expiration_key] = asyncio.create_task(
+                _expiration_task()
             )
             self._expiration_timeout_tasks[_expiration_key].add_done_callback(
                 lambda _task, _id=_expiration_key: (
@@ -273,7 +281,10 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
 
         # cancel expiration timeout task if applicable
         # responses carry causationid = original request id, matching the expiration task key
-        if cloudevent.causationid is not None and cloudevent.causationid in self._expiration_timeout_tasks:
+        if (
+            cloudevent.causationid is not None
+            and cloudevent.causationid in self._expiration_timeout_tasks
+        ):
             self._expiration_timeout_tasks[cloudevent.causationid].cancel()
 
         # Dispatch message to registered processors
@@ -585,13 +596,13 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
                 messaging_attributes.MESSAGING_MESSAGE_ID, str(message.mid)
             )
 
-            error, subscription = await super()._process_message(client, message)
+            ok, subscription = await super()._process_message(client, message)
 
             span.set_attribute(
                 messaging_attributes.MESSAGING_DESTINATION_SUBSCRIPTION_NAME,
                 subscription,
             )
-            if error:
+            if not ok:
                 span.set_status(
                     trace.Status(
                         trace.StatusCode.ERROR,
@@ -599,9 +610,9 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
                     )
                 )
             processing_duration = time.time() - processing_start_time
-            self.record_metrics(processing_duration, error, base_attributes)
+            self.record_metrics(processing_duration, not ok, base_attributes)
 
-            return error, subscription
+            return ok, subscription
 
 
 class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):

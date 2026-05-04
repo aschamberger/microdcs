@@ -290,28 +290,29 @@ class OTELInstrumentedMessagePackHandler(MessagePackHandler):
             server_attributes.SERVER_PORT: self._runtime_config.port,
         }
         # start trace span and call parent method
+        ok = True
+        result = None
         with self._tracer.start_as_current_span(
             "{rpc.method}",
             kind=trace.SpanKind.CONSUMER,
             context=context,
         ) as span:
             span.set_attributes(base_attributes)
-
-        error = False
-        try:
-            await super()._dispatch_method(
-                method_name, params, RpcMessageType.REQUEST, 0
-            )
-        except Exception:
-            span.set_status(
-                trace.Status(
-                    trace.StatusCode.ERROR,
-                    "Error processing MessagePack message",
+            try:
+                result = await super()._dispatch_method(
+                    method_name, params, msg_type, msg_id
                 )
-            )
-            error = True
-        processing_duration = time.time() - processing_start_time
-        self.record_metrics(processing_duration, error, base_attributes)
+            except Exception:
+                span.set_status(
+                    trace.Status(
+                        trace.StatusCode.ERROR,
+                        "Error processing MessagePack message",
+                    )
+                )
+                ok = False
+            processing_duration = time.time() - processing_start_time
+            self.record_metrics(processing_duration, not ok, base_attributes)
+        return result
 
 
 class MessagePackProtocolBinding(ProtocolBinding["MessagePackHandler"]):

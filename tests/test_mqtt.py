@@ -1733,6 +1733,46 @@ class TestOTELInstrumentedMQTTHandler:
         error, sub = await handler._process_message(client, msg)
         handler._metrics["process_counter"].add.assert_called()
 
+    @pytest.mark.asyncio
+    async def test_process_message_success_classified_as_success(self):
+        """A normally processed message must be recorded as success, not error."""
+        handler = self._make_otel_handler()
+        client = AsyncMock()
+        client._client = MagicMock()
+        client._client.ack = MagicMock()
+
+        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._metrics["process_counter"] = MagicMock()
+        handler._metrics["process_duration"] = MagicMock()
+
+        msg = _make_mqtt_message(properties=None)
+        ok, _sub = await handler._process_message(client, msg)
+
+        assert ok is True, (
+            "base handler should have returned True for a processed message"
+        )
+        attrs = handler._metrics["process_counter"].add.call_args[0][1]
+        assert attrs["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_process_message_duplicate_classified_as_error(self):
+        """A duplicate (skipped) message must be recorded as error in metrics."""
+        handler = self._make_otel_handler()
+        client = AsyncMock()
+        client._client = MagicMock()
+        client._client.ack = MagicMock()
+
+        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
+        handler._metrics["process_counter"] = MagicMock()
+        handler._metrics["process_duration"] = MagicMock()
+
+        msg = _make_mqtt_message(properties=None)
+        ok, _sub = await handler._process_message(client, msg)
+
+        assert ok is False, "base handler should have returned False for a duplicate"
+        attrs = handler._metrics["process_counter"].add.call_args[0][1]
+        assert attrs["status"] == "error"
+
 
 # ===================================================================
 # CloudEvent tests (originally in test_mqtt.py)
