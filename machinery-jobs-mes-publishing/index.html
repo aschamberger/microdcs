@@ -1,0 +1,2287 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="An Open-Standards-Based Framework for Distributed Sequence Control Applications">
+      
+      
+      
+        <link rel="canonical" href="https://aschamberger.github.io/microdcs/machinery-jobs-mes-publishing/">
+      
+      
+        <link rel="prev" href="../sfc_engine/">
+      
+      
+        <link rel="next" href="../development/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Machinery Jobs – MES Publishing - MicroDCS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#machinery-jobs-mes-northbound-publishing" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MicroDCS" class="md-header__button md-logo" aria-label="MicroDCS" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M24 .357c-.938.217-3.086.22-3.631 1.15l-.55.922c-1.376 2.348-4.833 11.069-8.183 11.181-3.35.113 1.762-10.712 2.27-11.797-2.08.489-4.078.193-4.826 2.326-.775 2.212-1.54 4.425-2.363 6.62-1.71 4.532-3.795 8.89-6.634 12.767.064-.086.127-.171-.083.117 2.111-.422 4.03-.352 5.295-2.253 1.17-1.759 1.92-3.73 2.712-5.68l.377-.927.303.286c3.017 2.844 5.334 0 7.697-2.219l.349-.327 1.322 4.977 2.932-3.144a34 34 0 0 1-.713-1.342l-.037-.08C18.302 8.742 21.6 3.935 23.861.566Z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MicroDCS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Machinery Jobs – MES Publishing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="deep-orange"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/aschamberger/microdcs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  </div>
+  <div class="md-source__repository">
+    aschamberger/microdcs
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../concepts/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Concepts at a Glance
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../your-first-processor/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Your First Processor
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../overall-design/" class="md-tabs__link">
+          
+  
+  
+  Overall Design
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../development/" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../operations/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MicroDCS" class="md-nav__button md-logo" aria-label="MicroDCS" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M24 .357c-.938.217-3.086.22-3.631 1.15l-.55.922c-1.376 2.348-4.833 11.069-8.183 11.181-3.35.113 1.762-10.712 2.27-11.797-2.08.489-4.078.193-4.826 2.326-.775 2.212-1.54 4.425-2.363 6.62-1.71 4.532-3.795 8.89-6.634 12.767.064-.086.127-.171-.083.117 2.111-.422 4.03-.352 5.295-2.253 1.17-1.759 1.92-3.73 2.712-5.68l.377-.927.303.286c3.017 2.844 5.334 0 7.697-2.219l.349-.327 1.322 4.977 2.932-3.144a34 34 0 0 1-.713-1.342l-.037-.08C18.302 8.742 21.6 3.935 23.861.566Z"/></svg>
+
+    </a>
+    MicroDCS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/aschamberger/microdcs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  </div>
+  <div class="md-source__repository">
+    aschamberger/microdcs
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts at a Glance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../your-first-processor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Processor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overall Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Overall Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overall-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical-standards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Technical Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../information-model-standards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Information Model Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sfc_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFC Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Machinery Jobs – MES Publishing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Machinery Jobs – MES Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-the-event-based-mode-alone-is-insufficient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the event-based mode alone is insufficient
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-a-single-full-list-retained-publish-does-not-fit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a single full-list retained publish does not fit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#component-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-a-separate-container-is-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a separate container is recommended
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High availability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#topic-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topic design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-index-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State index payload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconnect-and-resync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconnect and resync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clear-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clear semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#changes-to-existing-daos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes to existing DAOs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#job-order-publisher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job Order Publisher
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Job Order Publisher">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#class-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Class hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#main-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dispatch-handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dispatch handlers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Implementation plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-redis-key-schema-and-dao-stream-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 – Redis key schema and DAO stream writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-publisher-models-mqtt-publisher-and-instance-role-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 – Publisher models, MQTT publisher, and instance-role flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-publisher-core-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 – Publisher core logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-kubernetes-deployment-and-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 – Kubernetes deployment and documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-mes-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 – MES integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mes-integration-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MES Integration Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MES Integration Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#topic-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topic layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-index-payload_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State-index payload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconnect-resync-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconnect resync protocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-the-event-based-mode-alone-is-insufficient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the event-based mode alone is insufficient
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-a-single-full-list-retained-publish-does-not-fit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a single full-list retained publish does not fit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#component-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-a-separate-container-is-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a separate container is recommended
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High availability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#topic-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topic design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-index-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State index payload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconnect-and-resync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconnect and resync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clear-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clear semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#changes-to-existing-daos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes to existing DAOs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#job-order-publisher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job Order Publisher
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Job Order Publisher">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#class-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Class hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#main-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Main loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dispatch-handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dispatch handlers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Implementation plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-redis-key-schema-and-dao-stream-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 – Redis key schema and DAO stream writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-publisher-models-mqtt-publisher-and-instance-role-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 – Publisher models, MQTT publisher, and instance-role flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-publisher-core-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 – Publisher core logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-kubernetes-deployment-and-documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 – Kubernetes deployment and documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-mes-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 – MES integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mes-integration-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MES Integration Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MES Integration Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#topic-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topic layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-index-payload_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State-index payload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconnect-resync-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconnect resync protocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="machinery-jobs-mes-northbound-publishing">Machinery Jobs – MES Northbound Publishing</h1>
+<p>This page describes the design of the northbound MQTT publishing interface that makes job order state and job response data reliably available to a Manufacturing Execution System (MES) across connectivity outages. It extends the existing <code>MachineryJobsCloudEventProcessor</code> without modifying its command handling logic and adds a dedicated publisher component that maintains retained MQTT topics per job.</p>
+<h2 id="background">Background</h2>
+<p>The <a href="https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/">OPC 40001-3: Machinery Job Management</a> specification defines two integration approaches for exposing job state to clients:</p>
+<ul>
+<li><strong>Event-based</strong> – Clients subscribe to <code>ISA95JobOrderStatusEventType</code> events fired on each state transition. The existing <code>MachineryJobsCloudEventProcessor</code> fully implements this mode. Events are low-latency and efficient but provide no recovery path for clients that miss messages during a connectivity outage.</li>
+<li><strong>List/variable-based</strong> – The <code>ISA95JobOrderReceiverObjectType</code> exposes a <code>JobOrderList</code> variable and the <code>ISA95JobResponseProviderObjectType</code> exposes a <code>JobOrderResponseList</code> variable. These always reflect current state and can be published as retained MQTT messages so that reconnecting clients receive the full picture immediately.</li>
+</ul>
+<p>The existing implementation covers the event-based mode. The list/variable-based mode is absent.</p>
+<h3 id="why-the-event-based-mode-alone-is-insufficient">Why the event-based mode alone is insufficient</h3>
+<p>Job lifecycle in MicroDCS involves two distinct actors:</p>
+<ul>
+<li>The <strong>MES</strong> creates and controls job order definitions (Store, StoreAndStart, Start, Abort, etc.)</li>
+<li>The <strong>DCS</strong> drives physical state transitions and produces all job response data (process actuals, serial numbers, torque values, temperatures, machine IDs)</li>
+</ul>
+<p>The MES is therefore the originator of job definitions but a <em>consumer</em> of state changes and job response data that it cannot reconstruct from its own records. If the MES misses a DCS-originated status event or a job response update during a connectivity outage, it has no way to detect the gap from the event stream alone.</p>
+<p>The system must tolerate MES connectivity outages of up to 30 minutes. In high-cadence scenarios (in-house parts production, job iterations in the order of seconds), dozens of jobs can complete and accumulate response data during such an outage. The existing <code>Clear</code> method — already implemented — acts as the MES acknowledgment: the MES calls <code>Clear</code> after successfully processing a job response, which transitions the job to <code>EndState</code>. Jobs in clearable states (<code>Ended</code>, <code>Aborted</code>) therefore remain available in Redis until the MES explicitly clears them, but nothing currently exposes this durably over MQTT.</p>
+<h3 id="why-a-single-full-list-retained-publish-does-not-fit">Why a single full-list retained publish does not fit</h3>
+<p>Publishing the complete <code>JobOrderList</code> or <code>JobOrderResponseList</code> on every state transition is traffic-inefficient for this application:</p>
+<ul>
+<li>Job order objects carry all input parameters: equipment, material, personnel, physical asset, and work master references. These are large and do not change after a job is stored.</li>
+<li>Job response objects accumulate all process data over the job's lifetime. In a traceability-oriented production context (serial numbers, set-point vs. actual torques, temperatures) a single response entry can reach several kilobytes.</li>
+</ul>
+<p>Publishing complete lists on every transition would retransmit unchanged large payloads repeatedly. The split design below avoids this.</p>
+<h2 id="design">Design</h2>
+<h3 id="component-overview">Component overview</h3>
+<p>The extension adds one new component — the <strong>Job Order Publisher</strong> — alongside the existing command processors. The publisher can run as a separate Kubernetes Deployment or co-located in the same container, controlled by <code>RuntimeConfig.is_processor_instance</code> and <code>RuntimeConfig.is_publisher_instance</code> (env vars <code>APP_IS_PROCESSOR_INSTANCE</code>, <code>APP_IS_PUBLISHER_INSTANCE</code>, both default <code>True</code>). The stream write that feeds the publisher is encapsulated in the existing DAOs, so no processor — northbound or southbound — needs to be aware of the publishing infrastructure.</p>
+<p>The <code>MQTTPublisher</code> class in <code>src/microdcs/mqtt.py</code> is registered via <code>MicroDCS.add_additional_task()</code> and runs alongside protocol handlers in the main task group. It shares the <code>create_mqtt_client()</code> connection factory with <code>MQTTHandler</code> for consistent TLS/SAT-token authentication and reconnect behaviour.</p>
+<pre class="mermaid"><code>flowchart TB
+  MES["MES\n(MQTT client)"]
+
+  subgraph Broker["MQTT broker"]
+    cmd["commands topics\n(existing)"]
+    retained["retained topics\n(new)"]
+    events["events topics\n(existing)"]
+  end
+
+  subgraph K8s["Kubernetes"]
+    subgraph NB["Processors Deployment (×N pods)"]
+      proc["Northbound MachineryJobsCloudEventProcessor"]
+      south["Southbound CloudEventProcessors"]
+    end
+    subgraph Publisher["Job Order Publisher Deployment (×1 pod)"]
+      pub["JobOrderPublisher"]
+    end
+  end
+
+  Redis[("Redis\nJobOrderAndStateDAO\nJobResponseDAO\njoborder:changes:{scope} Stream\npubseq:{scope}")]
+
+  MES -- "method call CloudEvents" --&gt; cmd
+  cmd --&gt; proc
+  proc -- "status events" --&gt; events
+  events --&gt; MES
+  proc -- "via DAO" --&gt; Redis
+  south -- "via DAO" --&gt; Redis
+  pub -- "XREAD BLOCK" --&gt; Redis
+  pub -- "retained publishes" --&gt; retained
+  retained --&gt; MES</code></pre>
+<h3 id="why-a-separate-container-is-recommended">Why a separate container is recommended</h3>
+<p>The command processor scales horizontally and is latency-sensitive — it handles real-time commands from the MES and the DCS. The publisher is a singleton, throughput-oriented, and not latency-sensitive (MQTT retained delivery is inherently best-effort). Keeping them separate gives independent restart policies, resource limits, logging, and alerting. A bug or resource leak in the publisher does not affect command processing.</p>
+<p>For development and simple deployments, both roles can co-exist in a single container by leaving both <code>APP_IS_PROCESSOR_INSTANCE</code> and <code>APP_IS_PUBLISHER_INSTANCE</code> at their default value of <code>true</code>. For production, set one flag per deployment to separate concerns.</p>
+<h3 id="high-availability">High availability</h3>
+<p>Leader election for the publisher is not needed. Pod restart time is 10–30 seconds. The system is already designed to tolerate 30-minute MES outages through the retained topic and sequence number scheme described below. A pod restart is two orders of magnitude smaller than the gap the recovery mechanism already handles. The retained topics are the availability story for the publisher. <code>replicas: 1</code> with no locking is the correct configuration.</p>
+<h3 id="topic-design">Topic design</h3>
+<p>All topics are scoped per machine using the same scope identifier used as the CloudEvent <code>subject</code> in the existing processor. All retained topics carry an MQTT v5 Message Expiry Interval configured via <code>retained_ttl_seconds</code> (default: 48 hours). This removes stale topics automatically if a scope goes inactive — for example after a machine is decommissioned or a scope is renamed — without requiring explicit cleanup logic in the publisher.</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Retained</th>
+<th>Payload</th>
+<th>Published when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{prefix}/{scope}/state-index</code></td>
+<td>Yes</td>
+<td>State index (see below)</td>
+<td>Every state transition</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/order/{job_order_id}</code></td>
+<td>Yes</td>
+<td>Full <code>ISA95JobOrderDataType</code></td>
+<td>On Store / StoreAndStart / Update; deleted on Clear</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/result/{job_order_id}</code></td>
+<td>Yes</td>
+<td>Full <code>ISA95JobResponseDataType</code></td>
+<td>On job reaching a clearable state (<code>Ended</code> / <code>Aborted</code>); deleted on Clear</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/events</code></td>
+<td>No</td>
+<td><code>ISA95JobOrderStatusEventType</code> CloudEvent</td>
+<td>Every state transition (existing, unchanged)</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/commands</code></td>
+<td>No</td>
+<td>Method call CloudEvent</td>
+<td>From MES (existing, unchanged)</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/metadata</code></td>
+<td>Yes</td>
+<td>Metadata/capabilities CloudEvent</td>
+<td>On publisher startup (existing, unchanged)</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>{prefix}</code> is the existing configurable MQTT topic prefix for the machinery-jobs processor (e.g. <code>app/jobs</code>, configured via <code>APP_PROCESSING_TOPIC_PREFIXES</code>). The <code>{scope}</code> is the machine scope identifier used as the CloudEvent <code>subject</code>. The retained topics for the publisher (<code>state-index</code>, <code>order/{id}</code>, <code>result/{id}</code>) are new siblings alongside the existing <code>events</code>, <code>commands</code>, and <code>metadata</code> intent topics.</p>
+<p>Deletion of retained topics on <code>Clear</code> is performed by publishing a zero-byte retained message to the same topic, which is the standard MQTT mechanism for clearing retained state.</p>
+<p>The <code>order/{job_order_id}</code> and <code>result/{job_order_id}</code> topics carry large payloads but are written rarely — once on creation, once on update, once on reaching a clearable state, and deleted on <code>Clear</code>. The <code>state-index</code> topic changes on every transition but carries a small payload (state identifiers only, not full objects).</p>
+<p>Job response data is published only when a job transitions to a clearable state (<code>Ended</code> or <code>Aborted</code>), not incrementally during execution. The publisher checks the current job state before publishing a <code>result/{job_order_id}</code> topic — <code>ResultUpdate</code> stream entries for jobs still in progress are ignored to prevent premature publication of partial results. The <code>result/{job_order_id}</code> topic therefore reflects the completed response and is not updated further before <code>Clear</code>.</p>
+<blockquote>
+<p><strong>Note</strong>: <code>Interrupted</code> (substates <code>Held</code>, <code>Suspended</code>) is <strong>not</strong> a clearable state — it is a resumable pause state. Jobs in <code>Interrupted</code> can resume execution via <code>Resume</code>. Only <code>Ended</code> and <code>Aborted</code> allow the <code>Clear</code> transition to <code>EndState</code>.</p>
+</blockquote>
+<h3 id="state-index-payload">State index payload</h3>
+<p>The state index is the high-frequency retained topic. It contains only the fields that change on transitions and the minimum needed for the MES to understand which per-job topics to fetch.</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;seq&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">103</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">&quot;scope&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;machine-42&quot;</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">&quot;published_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-11T14:23:01Z&quot;</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">&quot;jobs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">&quot;job_order_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;JO-2026-0441&quot;</span><span class="p">,</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;state_text&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Running&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;locale&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;en&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;state_number&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">}</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="p">],</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="nt">&quot;has_result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="nt">&quot;job_order_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;JO-2026-0442&quot;</span><span class="p">,</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;state_text&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Ended&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;locale&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;en&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;state_number&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">}</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="p">],</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">      </span><span class="nt">&quot;has_result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="nt">&quot;job_order_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;JO-2026-0443&quot;</span><span class="p">,</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">      </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;state_text&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;NotAllowedToStart&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;locale&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;en&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;state_number&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;state_text&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Ready&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;locale&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;en&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;state_number&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">11</span><span class="p">}</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">      </span><span class="p">],</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">      </span><span class="nt">&quot;has_result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>The <code>seq</code> field is a monotonically increasing integer per scope, stored in Redis and incremented atomically on each state-index publish. It survives publisher restarts. The <code>has_result</code> flag tells the MES whether a <code>result/{job_order_id}</code> topic exists before subscribing to it.</p>
+<h3 id="reconnect-and-resync">Reconnect and resync</h3>
+<p>On MES reconnect the sequence number provides gap detection without requiring stream replay or delta reconstruction:</p>
+<pre class="mermaid"><code>sequenceDiagram
+  participant MES
+  participant Broker as MQTT broker
+  participant Redis
+
+  MES-&gt;&gt;Broker: CONNECT + SUBSCRIBE {prefix}/{scope}/state-index
+  Broker--&gt;&gt;MES: RETAINED state-index (seq=103, jobs=[...])
+  note over MES: last seen seq was 87 — gap detected
+
+  loop for each clearable job with has_result=true not yet cleared
+    MES-&gt;&gt;Broker: SUBSCRIBE {prefix}/{scope}/result/{id}
+    Broker--&gt;&gt;MES: RETAINED result/{id} (full response data)
+    note over MES: process response internally
+    MES-&gt;&gt;Broker: PUBLISH Clear command CloudEvent
+    Broker-&gt;&gt;Redis: routed to command processor
+    note over Redis: Clear executed, job transitions to EndState
+    Broker--&gt;&gt;MES: UPDATED state-index (seq=104)
+  end
+
+  note over MES: reconcile remaining queued jobs against internal state</code></pre>
+<p>If the sequence number matches the MES's last-seen value, no transitions were missed and no further action is needed. If it is ahead, the MES reads the retained <code>order/{id}</code> and <code>result/{id}</code> topics for jobs listed in the state index and reconciles against its internal records.</p>
+<h3 id="clear-semantics">Clear semantics</h3>
+<p>The <code>Clear</code> method (already implemented in <code>MachineryJobsCloudEventProcessor</code>) is the MES acknowledgment that a job response has been received and processed. The MES workflow:</p>
+<ol>
+<li>Job reaches a clearable state (<code>Ended</code> or <code>Aborted</code>)</li>
+<li>MES reads the retained <code>result/{job_order_id}</code> topic</li>
+<li>MES records response data internally</li>
+<li>MES calls <code>Clear</code> → command processor transitions job to <code>EndState</code> in Redis → publisher deletes the retained <code>order/{id}</code> and <code>result/{id}</code> topics → job is removed from the state-index</li>
+</ol>
+<p>Note: <code>Clear</code> transitions the job state machine to <code>EndState</code> but does not delete the job from Redis. Jobs in <code>EndState</code> are excluded from the state-index (they have reached their final state). The publisher treats <code>Clear</code> stream entries as a signal to remove retained topics. Redis cleanup of <code>EndState</code> jobs is a separate TTL-based or scheduled concern — the publisher and the state-index do not list them.</p>
+<p>During an outage, steps 1–4 are deferred. Jobs accumulate in clearable states with their response data preserved in retained topics until the MES reconnects and works through the backlog. The 48-hour TTL (default for <code>retained_ttl_seconds</code>) on retained topics acts as a safety net for the case where <code>Clear</code> is never called — for example if a job is abandoned after a machine fault.</p>
+<h2 id="changes-to-existing-daos">Changes to existing DAOs</h2>
+<blockquote>
+<p><strong>Status</strong>: Implemented. Key schema methods in <code>RedisKeySchema</code>, stream writes in <code>JobOrderAndStateDAO.save()</code> and <code>JobResponseDAO.save()</code>, <code>active-scopes</code> set update, all in <code>src/microdcs/redis.py</code>.</p>
+</blockquote>
+<p>The stream write is encapsulated in <code>JobOrderAndStateDAO</code> and <code>JobResponseDAO</code> so that no processor needs to be aware of the publishing infrastructure. Any call to <code>save()</code> on either DAO automatically appends a change record to the scope stream. This makes it structurally impossible for a new processor — northbound or southbound — to write job state without the publisher being notified.</p>
+<p><code>JobOrderAndStateDAO.save()</code> appends a record with the transition name as <code>change_type</code>:</p>
+<p>The <code>xadd</code> is added to the same <code>pipeline(transaction=True)</code> block that already performs the JSON write and sorted-set update, so the stream entry is written atomically with the state change. If the pipeline fails, neither the state nor the stream entry is written.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Inside the existing pipeline(transaction=True) block:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">xadd</span><span class="p">(</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_key_schema</span><span class="o">.</span><span class="n">job_change_stream</span><span class="p">(</span><span class="n">scope</span><span class="p">),</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="p">{</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        <span class="s2">&quot;change_type&quot;</span><span class="p">:</span> <span class="n">change_type</span><span class="p">,</span>  <span class="c1"># transition name, e.g. &quot;Store&quot;, &quot;Start&quot;, &quot;Clear&quot;</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        <span class="s2">&quot;job_order_id&quot;</span><span class="p">:</span> <span class="n">job_order_and_state</span><span class="o">.</span><span class="n">job_order</span><span class="o">.</span><span class="n">job_order_id</span><span class="p">,</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="s2">&quot;scope&quot;</span><span class="p">:</span> <span class="n">scope</span><span class="p">,</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">UTC</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="p">},</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">maxlen</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">approximate</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><code>JobResponseDAO.save()</code> appends a record with <code>change_type</code> of <code>ResultUpdate</code>, also inside its existing pipeline:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Inside the existing pipeline(transaction=True) block:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">xadd</span><span class="p">(</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_key_schema</span><span class="o">.</span><span class="n">job_change_stream</span><span class="p">(</span><span class="n">scope</span><span class="p">),</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="p">{</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="s2">&quot;change_type&quot;</span><span class="p">:</span> <span class="s2">&quot;ResultUpdate&quot;</span><span class="p">,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        <span class="s2">&quot;job_order_id&quot;</span><span class="p">:</span> <span class="n">job_response</span><span class="o">.</span><span class="n">job_order_id</span><span class="p">,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        <span class="s2">&quot;scope&quot;</span><span class="p">:</span> <span class="n">scope</span><span class="p">,</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>        <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">UTC</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="p">},</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">maxlen</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">approximate</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
+</span></code></pre></div>
+<p>The stream is bounded with <code>maxlen=5000</code> and <code>approximate=True</code>. At a job cadence of one job every few seconds, this covers well over 30 minutes of publisher downtime with negligible Redis memory overhead.</p>
+<p>The following Redis key schema additions are required:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>joborder:changes:{scope}</code></td>
+<td>Stream</td>
+<td>Change log consumed by the publisher</td>
+</tr>
+<tr>
+<td><code>pubseq:{scope}</code></td>
+<td>String (integer)</td>
+<td>Monotonic sequence counter per scope</td>
+</tr>
+<tr>
+<td><code>publisher:stream-cursors</code></td>
+<td>Hash</td>
+<td>Last-processed stream ID per scope, for publisher restart recovery</td>
+</tr>
+<tr>
+<td><code>active-scopes</code></td>
+<td>Set</td>
+<td>All scopes that have had at least one job stored</td>
+</tr>
+<tr>
+<td><code>joborder:changes:_global</code></td>
+<td>Stream</td>
+<td>Sentinel stream — every DAO save appends here for new-scope discovery</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>active-scopes</code> set is updated with <code>SADD active-scopes {scope}</code> inside <code>JobOrderAndStateDAO.save()</code> on the first <code>Store</code> for a new scope.</p>
+<p>In addition to <code>active-scopes</code>, a <strong>sentinel stream</strong> <code>joborder:changes:_global</code> receives an entry on every DAO save alongside the per-scope stream. The publisher's main XREAD loop always includes this global stream. When a message arrives on the global stream for a scope not yet tracked, the publisher adds the scope's per-scope stream to its XREAD set. This eliminates the need for periodic polling of <code>active-scopes</code> and ensures new scopes are discovered immediately.</p>
+<h2 id="job-order-publisher">Job Order Publisher</h2>
+<blockquote>
+<p><strong>Status</strong>: Implemented. <code>MQTTPublisher</code> and <code>create_mqtt_client()</code> in <code>src/microdcs/mqtt.py</code>, <code>StateIndexEntry</code> and <code>StateIndex</code> in <code>src/microdcs/models/machinery_jobs_ext.py</code>, <code>PublisherConfig</code> and instance-role flags in <code>src/microdcs/__init__.py</code>, <code>JobOrderPublisher</code> in <code>src/microdcs/publishers/machinery_jobs.py</code>, wiring in <code>app/__main__.py</code>.</p>
+</blockquote>
+<p>The publisher is implemented as <code>JobOrderPublisher(MQTTPublisher)</code> in <code>src/microdcs/publishers/machinery_jobs.py</code>. It inherits MQTT connection lifecycle and reconnect/backoff from <code>MQTTPublisher</code> and overrides the <code>_run()</code> hook with its business logic. It has no command routing logic — it only reads from Redis and writes to MQTT.</p>
+<h3 id="class-hierarchy">Class hierarchy</h3>
+<p><code>MQTTPublisher</code> (in <code>src/microdcs/mqtt.py</code>) manages the MQTT connection with automatic reconnect and exposes <code>publish_retained()</code> / <code>delete_retained()</code>. Its <code>task()</code> method calls an overridable <code>_run()</code> hook inside the <code>async with client:</code> block. If <code>_run()</code> raises <code>MqttError</code>, <code>task()</code> reconnects and calls <code>_run()</code> again. A <code>_connected: asyncio.Event</code> is set while connected and cleared on disconnect.</p>
+<p><code>JobOrderPublisher</code> extends <code>MQTTPublisher</code> — it inherits all of the above and overrides <code>_run()</code> with the XREAD loop. Because it IS a <code>MQTTPublisher</code>, the <code>isinstance(task, MQTTPublisher)</code> check in <code>MicroDCS.main()</code> naturally skips it when <code>is_publisher_instance=False</code>.</p>
+<h3 id="startup">Startup</h3>
+<ol>
+<li>MQTT connection established by inherited <code>MQTTPublisher.task()</code> (with reconnect/backoff)</li>
+<li><code>_run()</code> begins: load last-processed stream IDs from <code>publisher:stream-cursors</code> via <code>HGETALL</code></li>
+<li>Load <code>active-scopes</code> via <code>SMEMBERS</code></li>
+<li>For each scope, publish the current state-index retained message to cover the gap during pod restart</li>
+<li>Enter the main XREAD loop</li>
+</ol>
+<h3 id="main-loop">Main loop</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Build stream set: per-scope streams + global sentinel stream</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">streams</span> <span class="o">=</span> <span class="p">{</span><span class="sa">f</span><span class="s2">&quot;joborder:changes:</span><span class="si">{</span><span class="n">scope</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">last_id</span><span class="p">[</span><span class="n">scope</span><span class="p">]</span> <span class="k">for</span> <span class="n">scope</span> <span class="ow">in</span> <span class="n">active_scopes</span><span class="p">}</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">streams</span><span class="p">[</span><span class="s2">&quot;joborder:changes:_global&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">last_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_global&quot;</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span><span class="p">)</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">redis</span><span class="o">.</span><span class="n">xread</span><span class="p">(</span><span class="n">streams</span><span class="o">=</span><span class="n">streams</span><span class="p">,</span> <span class="n">block</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">count</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">for</span> <span class="n">stream</span><span class="p">,</span> <span class="n">messages</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="k">for</span> <span class="n">message_id</span><span class="p">,</span> <span class="n">fields</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="n">scope</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="s2">&quot;scope&quot;</span><span class="p">]</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="k">if</span> <span class="n">stream</span> <span class="o">==</span> <span class="s2">&quot;joborder:changes:_global&quot;</span><span class="p">:</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>            <span class="c1"># Discover new scope — add its per-scope stream to the XREAD set</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>            <span class="k">if</span> <span class="n">scope</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">active_scopes</span><span class="p">:</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>                <span class="n">active_scopes</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">scope</span><span class="p">)</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>                <span class="n">last_id</span><span class="p">[</span><span class="n">scope</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;0&quot;</span>  <span class="c1"># read from beginning of new scope stream</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>            <span class="n">last_id</span><span class="p">[</span><span class="s2">&quot;_global&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_id</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>            <span class="k">await</span> <span class="n">dispatch</span><span class="p">(</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;change_type&quot;</span><span class="p">],</span> <span class="n">scope</span><span class="p">,</span> <span class="n">fields</span><span class="p">[</span><span class="s2">&quot;job_order_id&quot;</span><span class="p">])</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>            <span class="n">last_id</span><span class="p">[</span><span class="n">scope</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_id</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="k">await</span> <span class="n">save_cursors</span><span class="p">()</span>
+</span></code></pre></div>
+<h3 id="dispatch-handlers">Dispatch handlers</h3>
+<table>
+<thead>
+<tr>
+<th><code>change_type</code></th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Store</code> / <code>StoreAndStart</code></td>
+<td>Publish retained <code>order/{id}</code> with configured TTL, update state-index</td>
+</tr>
+<tr>
+<td><code>Update</code></td>
+<td>Re-publish retained <code>order/{id}</code> with configured TTL, update state-index</td>
+</tr>
+<tr>
+<td><code>ResultUpdate</code></td>
+<td>Check job state — if clearable (<code>Ended</code> / <code>Aborted</code>), publish retained <code>result/{id}</code> with configured TTL and update state-index; otherwise ignore</td>
+</tr>
+<tr>
+<td>Any other transition</td>
+<td>Update state-index only</td>
+</tr>
+<tr>
+<td><code>Clear</code></td>
+<td>Zero-byte retained publish to <code>order/{id}</code> and <code>result/{id}</code>, update state-index</td>
+</tr>
+</tbody>
+</table>
+<p>The state-index update always reads the full job list for the scope from <code>JobOrderAndStateDAO.list(scope)</code>, checks <code>JobResponseDAO</code> for each job to populate <code>has_result</code>, atomically increments <code>pubseq:{scope}</code> with <code>INCR</code>, and publishes the assembled payload as a retained message with a 48-hour TTL. Jobs in <code>EndState</code> are excluded from the state-index.</p>
+<blockquote>
+<p><strong>Known limitation — state-index rebuild cost</strong>: Each state-index update performs N+1 Redis reads (list + one has_result check per job). In high-cadence scenarios with many concurrent jobs this may become a bottleneck. A future optimization could cache the state index in-process and apply stream deltas incrementally instead of rebuilding from Redis on every transition.</p>
+</blockquote>
+<h3 id="configuration">Configuration</h3>
+<p><code>PublisherConfig</code> is a <code>@dataclass</code> on <code>RuntimeConfig</code>, parsed from environment variables with prefix <code>APP_PUBLISHER_</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@dataclass</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">PublisherConfig</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">retained_ttl_seconds</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">172800</span>  <span class="c1"># 48 hours</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">stream_read_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">stream_block_ms</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">500</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Environment variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APP_PUBLISHER_RETAINED_TTL_SECONDS</code></td>
+<td><code>172800</code></td>
+<td>MQTT v5 Message Expiry Interval for retained topics (seconds)</td>
+</tr>
+<tr>
+<td><code>APP_PUBLISHER_STREAM_READ_COUNT</code></td>
+<td><code>50</code></td>
+<td>Max entries per XREAD batch</td>
+</tr>
+<tr>
+<td><code>APP_PUBLISHER_STREAM_BLOCK_MS</code></td>
+<td><code>500</code></td>
+<td>XREAD BLOCK timeout (milliseconds)</td>
+</tr>
+</tbody>
+</table>
+<p>The topic prefix identifier (e.g. <code>"machinery-jobs"</code>) is passed as a constructor parameter to <code>JobOrderPublisher</code>, matching the processor pattern where <code>config_identifier</code> is provided at wiring time in <code>app/__main__.py</code>. It is resolved via <code>ProcessingConfig.get_topic_prefix_for_identifier()</code>.</p>
+<p>The publisher reuses the existing <code>RedisConfig</code> and <code>MQTTConfig</code> from <code>RuntimeConfig</code> for Redis and MQTT connections — these are not duplicated. Topic prefixes are resolved from <code>ProcessingConfig.topic_prefixes</code> using the same <code>get_topic_prefix_for_identifier()</code> mechanism as the MQTT binding. QoS 1 is hardcoded (matching the MQTT processor) and not exposed as configuration.</p>
+<h2 id="implementation-plan">Implementation plan</h2>
+<h3 id="phase-1-redis-key-schema-and-dao-stream-writes">Phase 1 – Redis key schema and DAO stream writes</h3>
+<p>Scope: changes to the existing codebase only. No new containers.</p>
+<ol>
+<li><del>Add <code>job_change_stream</code>, <code>job_change_stream_global</code>, <code>pub_seq</code>, <code>publisher_cursors</code>, <code>active_scopes</code> methods to <code>RedisKeySchema</code></del> — Done: all five methods in <code>RedisKeySchema</code> in <code>src/microdcs/redis.py</code></li>
+<li><del>Add <code>xadd</code> (per-scope stream + global sentinel stream) and <code>SADD active-scopes</code> to <code>JobOrderAndStateDAO.save()</code> inside the existing <code>pipeline(transaction=True)</code> block</del> — Done: atomic stream writes + <code>SADD</code> in <code>JobOrderAndStateDAO.save()</code></li>
+<li><del>Add <code>xadd</code> (per-scope stream + global sentinel stream) to <code>JobResponseDAO.save()</code> inside the existing <code>pipeline(transaction=True)</code> block</del> — Done: <code>ResultUpdate</code> stream entries in <code>JobResponseDAO.save()</code></li>
+<li><del>Unit tests: verify stream entries written atomically with DAO save; verify no entry written when pipeline fails</del> — Done: <code>test_save_appends_to_scope_stream</code>, <code>test_save_appends_to_global_sentinel_stream</code>, <code>test_save_adds_scope_to_active_scopes</code>, <code>test_save_xadd_not_called_on_pipeline_failure</code> in <code>test_redis.py</code></li>
+<li><del>Update <code>docs/persistence.md</code>: expand key schema table with <code>joborder:changes:{scope}</code> stream, <code>pubseq:{scope}</code>, <code>publisher:stream-cursors</code>, and <code>active-scopes</code> keys; add "Job Change Stream" section documenting the stream write pattern in <code>JobOrderAndStateDAO.save()</code> and <code>JobResponseDAO.save()</code></del> — Done</li>
+<li><del>Update <code>docs/concepts.md</code>: add glossary entries for <strong>Job Change Stream</strong>, <strong>State Index</strong>, <strong>Retained Topic</strong></del> — Done</li>
+</ol>
+<p>Acceptance: <code>joborder:changes:{scope}</code> contains one entry per successful DAO save. Stream is bounded by <code>maxlen=5000</code>.</p>
+<h3 id="phase-2-publisher-models-mqtt-publisher-and-instance-role-flags">Phase 2 – Publisher models, MQTT publisher, and instance-role flags</h3>
+<p>Scope: models, MQTT infrastructure, runtime configuration for multi-node deployment.</p>
+<ol>
+<li><del>Add <code>StateIndexEntry</code> and <code>StateIndex</code> as <code>@dataclass(kw_only=True)</code> classes extending <code>DataClassMixin</code> in <code>src/microdcs/models/machinery_jobs_ext.py</code> (consistent with all other MicroDCS models — the project does not use Pydantic)</del> — Done: <code>StateIndexEntry</code> and <code>StateIndex</code> in <code>machinery_jobs_ext.py</code></li>
+<li><del>Extract <code>create_mqtt_client(config, **kwargs)</code> standalone function in <code>src/microdcs/mqtt.py</code> — shared between <code>MQTTHandler</code> (subscriber) and <code>MQTTPublisher</code> (retained-publish writer) to avoid duplicating connection setup (hostname, port, TLS, SAT-token authentication, protocol version). <code>MQTTHandler._client()</code> refactored to call it with handler-specific kwargs (<code>clean_start</code>, <code>max_queued_*</code>)</del> — Done: <code>create_mqtt_client()</code> standalone function in <code>mqtt.py</code>, used by both <code>MQTTHandler</code> and <code>MQTTPublisher</code></li>
+<li><del>Implement <code>MQTTPublisher</code> as an <code>AdditionalTask</code> subclass in <code>src/microdcs/mqtt.py</code> — manages an <code>aiomqtt.Client</code> connection with automatic reconnect/backoff. Exposes <code>publish_retained(topic, payload, ttl)</code> (QoS 1, retained, MQTT v5 Message Expiry Interval) and <code>delete_retained(topic)</code> (zero-byte retained publish). Registered via <code>MicroDCS.add_additional_task()</code></del> — Done: <code>MQTTPublisher</code> with <code>publish_retained()</code>, <code>delete_retained()</code>, <code>_run()</code> hook, <code>_connected</code> event, and reconnect/backoff in <code>mqtt.py</code></li>
+<li><del>Add <code>is_processor_instance: bool</code> and <code>is_publisher_instance: bool</code> to <code>RuntimeConfig</code> (env vars <code>APP_IS_PROCESSOR_INSTANCE</code>, <code>APP_IS_PUBLISHER_INSTANCE</code>, both default <code>True</code>). <code>MicroDCS.main()</code> conditionally creates protocol handler tasks (when <code>is_processor_instance</code>) and additional tasks (when <code>is_publisher_instance</code>). This supports three deployment modes: single-container (both True), multi-node processor + single publisher (one flag each), and publisher-only (processor False)</del> — Done: instance-role flags in <code>RuntimeConfig</code>, conditional task creation in <code>MicroDCS.main()</code></li>
+<li><del>Integration tests for retained publish/delete in <code>tests/test_mqtt_integration.py</code>. Unit tests for <code>create_mqtt_client</code>, <code>MQTTPublisher</code>, <code>StateIndexEntry</code>, <code>StateIndex</code>, and instance-role flags in <code>MicroDCS.main()</code></del> — Done: integration tests in <code>test_mqtt_integration.py</code>, unit tests in <code>test_job_order_publisher.py</code> and <code>test_core.py</code></li>
+<li><del><code>src/microdcs/publishers/</code> package kept as an empty placeholder for Phase 3's <code>JobOrderPublisher</code> business logic</del> — Done: <code>publishers/__init__.py</code> with <code>JobOrderPublisher</code> export</li>
+</ol>
+<p>Acceptance: retained publish and delete work correctly against a real broker in CI. <code>is_processor_instance=False</code> skips handler/processor lifecycle. <code>is_publisher_instance=False</code> skips additional tasks.</p>
+<h3 id="phase-3-publisher-core-logic">Phase 3 – Publisher core logic</h3>
+<p>Scope: <code>JobOrderPublisher</code> class, dispatch handlers, <code>MQTTPublisher</code> <code>_run()</code> hook pattern, and <code>PublisherConfig</code>.</p>
+<ol>
+<li><del>Refactor <code>MQTTPublisher</code> to support subclassing: add <code>_connected: asyncio.Event</code> (set on connect, cleared on disconnect) and extract <code>_run()</code> hook method called inside the <code>async with client:</code> block. Base <code>_run()</code> does <code>await self._shutdown_event.wait()</code>. MQTT errors from <code>_run()</code> propagate to <code>task()</code> reconnect logic</del> — Done: <code>_run()</code> hook and <code>_connected</code> event in <code>MQTTPublisher</code> in <code>mqtt.py</code></li>
+<li><del>Add <code>PublisherConfig</code> dataclass to <code>RuntimeConfig</code> (env prefix <code>APP_PUBLISHER_</code>): <code>retained_ttl_seconds=172800</code>, <code>stream_read_count=50</code>, <code>stream_block_ms=500</code></del> — Done: <code>PublisherConfig</code> in <code>src/microdcs/__init__.py</code></li>
+<li><del>Implement <code>JobOrderPublisher(MQTTPublisher)</code> in <code>src/microdcs/publishers/machinery_jobs.py</code> — overrides <code>_run()</code> with XREAD loop and dispatch logic. Uses <code>JobOrderAndStateDAO</code> and <code>JobResponseDAO</code> for reads, <code>MQTTPublisher.publish_retained()</code> and <code>MQTTPublisher.delete_retained()</code> for writes. Constructor takes <code>MQTTConfig</code>, <code>PublisherConfig</code>, <code>ProcessingConfig</code>, <code>redis.ConnectionPool</code>, <code>RedisKeySchema</code></del> — Done: full <code>JobOrderPublisher</code> implementation with XREAD loop and dispatch</li>
+<li><del><code>_load_cursors</code> / <code>_save_cursors</code>: <code>HGETALL</code> / <code>HSET</code> on <code>publisher:stream-cursors</code>. Cursors saved after each successful XREAD batch — on MQTT disconnect the error propagates from <code>_run()</code> to <code>task()</code> reconnect, and <code>_run()</code> is called again with cursors reloaded from Redis (idempotent replay)</del> — Done: cursor persistence with idempotent replay on reconnect</li>
+<li><del>Startup sequence in <code>_run()</code>: load cursors → load <code>active-scopes</code> → publish initial state-index for all scopes → enter XREAD loop. Initial publish covers the gap during pod restart</del> — Done</li>
+<li><del>XREAD BLOCK loop with per-scope streams + global sentinel stream. New scopes discovered from <code>_global</code> stream entries</del> — Done</li>
+<li><del>Dispatch: <code>Store</code>/<code>StoreAndStart</code>/<code>Update</code> → <code>_publish_job_order</code>; <code>ResultUpdate</code> → <code>_publish_job_result</code> (only if clearable); <code>Clear</code> → <code>_delete_job_topics</code>; all → <code>_publish_state_index</code>. State-index excludes <code>EndState</code> jobs, checks <code>has_result</code> via <code>JobResponseDAO</code>, atomically increments <code>pubseq:{scope}</code></del> — Done: all dispatch handlers implemented with state-index exclusion and atomic <code>INCR</code></li>
+<li><del><code>isinstance(task, MQTTPublisher)</code> check in <code>MicroDCS.main()</code> naturally covers <code>JobOrderPublisher</code> — no <code>core.py</code> changes needed</del> — Done</li>
+<li><del><code>app/__main__.py</code> wiring: <code>JobOrderPublisher</code> replaces standalone <code>MQTTPublisher</code> registration</del> — Done: <code>JobOrderPublisher</code> instantiated and registered via <code>add_additional_task()</code> in <code>app/__main__.py</code></li>
+<li><del>Unit tests for all dispatch handlers, cursor load/save, state-index build, <code>_run()</code> lifecycle, <code>_connected</code> event, and scope discovery in <code>tests/test_job_order_publisher.py</code>. Package export tests in <code>tests/test_package_exports.py</code></del> — Done</li>
+<li><del>Update <code>docs/concepts.md</code>, <code>docs/overall-design.md</code>, <code>docs/persistence.md</code> with publisher component documentation (deferred to Phase 4)</del> — Done in Phase 4</li>
+</ol>
+<p>Acceptance: correct retained topics on startup; correct publishes and deletions per stream entry; sequence number increments monotonically; cursor survives restart without reprocessing. <code>JobOrderPublisher</code> inherits reconnect/backoff from <code>MQTTPublisher</code>.</p>
+<h3 id="phase-4-kubernetes-deployment-and-documentation">Phase 4 – Kubernetes deployment and documentation</h3>
+<ol>
+<li><del>Update <code>docs/concepts.md</code>, <code>docs/overall-design.md</code>, <code>docs/persistence.md</code> with publisher component documentation (deferred to Phase 4)</del> — Done: glossary entries in <code>concepts.md</code>, deployment modes in <code>overall-design.md</code>, key schema and Job Change Stream section in <code>persistence.md</code></li>
+<li><del>Write Kubernetes <code>Deployment</code> manifest: <code>replicas: 1</code>, resource limits</del> — Done: two-deployment architecture (processor + publisher) in <code>deploy/k8s.yaml</code> with instance-role flags and publisher config</li>
+<li><del>Update <code>docs/development.md</code>: add publisher deployment and configuration section covering <code>JobOrderPublisherConfig</code>, Kubernetes manifest, and local development setup</del> — Done</li>
+</ol>
+<h3 id="phase-5-mes-integration">Phase 5 – MES integration</h3>
+<ol>
+<li><del>Document topic layout and payload schemas for the MES integration team</del> — Done: MES Integration Reference section in this document with topic layout table, state-index payload schema, and reconnect resync protocol</li>
+<li><del>Implement MES reconnect resync: read state-index, compare seq, fetch <code>order/{id}</code> and <code>result/{id}</code> for each listed job, reconcile internal state, call <code>Clear</code> for terminal jobs whose response has been processed</del> — Done: <code>MESResyncClient</code> reference implementation in <code>tests/test_mes_integration.py</code></li>
+<li>End-to-end test covering high-cadence scenario (job every few seconds), 30-minute outage, reconnect resync, and confirmed zero response data loss — basic integration tests in <code>test_mes_integration.py</code>; full 30-minute outage stress test not yet implemented</li>
+<li><del>Update <code>docs/technical-standards.md</code>: add "MQTT Retained Messages" subsection under MQTT v5 documenting the retained topic pattern, 48-hour TTL, and zero-byte deletion convention</del> — Done</li>
+<li><del>Update <code>docs/index.md</code>: add MES publishing to the "Start Here" reading path and mention retained-topic-based MES reconnect in the overview</del> — Done</li>
+<li><del>Update <code>docs/information-model-standards.md</code>: expand the Machinery Job Management section with the list/variable-based integration mode and how retained topics map to <code>JobOrderList</code> and <code>JobOrderResponseList</code></del> — Done</li>
+</ol>
+<h2 id="mes-integration-reference">MES Integration Reference</h2>
+<p>This section is a consumer-facing reference for MES integration teams. It summarizes the retained topic layout, payload schemas, and reconnect protocol without requiring the full design context above.</p>
+<h3 id="topic-layout">Topic layout</h3>
+<p>All topics below use the configured MQTT topic prefix (e.g. <code>app/jobs</code>) and are scoped per machine via the scope identifier (CloudEvent <code>subject</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Retained</th>
+<th>QoS</th>
+<th>Payload type</th>
+<th>Lifecycle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{prefix}/{scope}/state-index</code></td>
+<td>Yes</td>
+<td>1</td>
+<td><code>StateIndex</code> (JSON)</td>
+<td>Updated on every state transition. Carries seq number for gap detection.</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/order/{id}</code></td>
+<td>Yes</td>
+<td>1</td>
+<td><code>ISA95JobOrderAndStateDataType</code> (JSON)</td>
+<td>Created on <code>Store</code>/<code>StoreAndStart</code>, updated on <code>Update</code>, deleted on <code>Clear</code>.</td>
+</tr>
+<tr>
+<td><code>{prefix}/{scope}/result/{id}</code></td>
+<td>Yes</td>
+<td>1</td>
+<td><code>ISA95JobResponseDataType</code> (JSON)</td>
+<td>Created when job reaches <code>Ended</code> or <code>Aborted</code>, deleted on <code>Clear</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>All retained topics carry an MQTT v5 <code>MessageExpiryInterval</code> of 48 hours (configurable via <code>APP_PUBLISHER_RETAINED_TTL_SECONDS</code>). Topics are deleted by publishing a zero-byte retained message.</p>
+<h3 id="state-index-payload_1">State-index payload</h3>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;seq&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">103</span><span class="p">,</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;scope&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;machine-42&quot;</span><span class="p">,</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;published_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-11T14:23:01Z&quot;</span><span class="p">,</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">&quot;jobs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">&quot;job_order_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;JO-2026-0441&quot;</span><span class="p">,</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;state_text&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Running&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;locale&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;en&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;state_number&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">}],</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">&quot;has_result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">&quot;job_order_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;JO-2026-0442&quot;</span><span class="p">,</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;state_text&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Ended&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;locale&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;en&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;state_number&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">}],</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">&quot;has_result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="p">}</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>seq</code></td>
+<td>int</td>
+<td>Monotonically increasing per scope. Compare with last-seen value to detect missed transitions.</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td>string</td>
+<td>Machine scope identifier.</td>
+</tr>
+<tr>
+<td><code>published_at</code></td>
+<td>string (ISO 8601)</td>
+<td>Timestamp of this state-index publish.</td>
+</tr>
+<tr>
+<td><code>jobs</code></td>
+<td>array</td>
+<td>Active jobs (excludes <code>EndState</code>).</td>
+</tr>
+<tr>
+<td><code>jobs[].job_order_id</code></td>
+<td>string</td>
+<td>The job order ID.</td>
+</tr>
+<tr>
+<td><code>jobs[].state</code></td>
+<td>array</td>
+<td>Current OPC UA state(s) — top-level state plus optional substates.</td>
+</tr>
+<tr>
+<td><code>jobs[].has_result</code></td>
+<td>bool</td>
+<td><code>true</code> if a <code>result/{id}</code> retained topic exists for this job.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reconnect-resync-protocol">Reconnect resync protocol</h3>
+<p>When the MES reconnects after a connectivity outage:</p>
+<ol>
+<li><strong>Subscribe</strong> to <code>{prefix}/{scope}/state-index</code> — the broker delivers the latest retained message immediately.</li>
+<li><strong>Compare <code>seq</code></strong> with the last value seen before disconnection. If equal, no transitions were missed.</li>
+<li><strong>If gap detected</strong>, iterate over <code>jobs</code> in the state-index:</li>
+<li>For jobs with <code>has_result: true</code> not yet processed: subscribe to <code>{prefix}/{scope}/result/{id}</code>, read the retained response data.</li>
+<li>For any job whose order data needs refreshing: subscribe to <code>{prefix}/{scope}/order/{id}</code>.</li>
+<li><strong>Clear processed jobs</strong> — for each job in a clearable state (<code>Ended</code>/<code>Aborted</code>) whose response has been ingested, publish a <code>Clear</code> command CloudEvent to the command topic. This transitions the job to <code>EndState</code>, removes it from the state-index, and deletes its retained topics.</li>
+<li><strong>Update last-seen seq</strong> to the current value.</li>
+</ol>
+<p>A reference implementation of this protocol is available in <code>tests/test_mes_integration.py</code> as the <code>MESResyncClient</code> class.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../sfc_engine/" class="md-footer__link md-footer__link--prev" aria-label="Previous: SFC Engine">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                SFC Engine
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../development/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2026 Andreas Schamberger
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/aschamberger" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.footer"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
