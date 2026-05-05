@@ -234,9 +234,9 @@ class TestMQTTPublisher:
         connected_during_run = False
 
         class TestPublisher(MQTTPublisher):
-            async def _run(self_inner) -> None:
+            async def _run(self) -> None:
                 nonlocal connected_during_run
-                connected_during_run = self_inner._connected.is_set()
+                connected_during_run = self._connected.is_set()
 
         with patch(
             "microdcs.mqtt.create_mqtt_client", return_value=mock_aiomqtt_client
