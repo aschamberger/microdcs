@@ -1,22 +1,21 @@
 import asyncio
 import dataclasses
 import enum
+import functools
 import logging
-import random
+import re
+import ssl
 import time
 import uuid
-from typing import Any
 
 import aiomqtt
-import paho.mqtt.client
+import mqtt5
 import redis.asyncio as redis
 from opentelemetry import metrics, trace
 from opentelemetry.propagate import extract, inject
 from opentelemetry.semconv._incubating.attributes import messaging_attributes
 from opentelemetry.semconv._incubating.metrics import messaging_metrics
 from opentelemetry.semconv.attributes import error_attributes, server_attributes
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
 
 from microdcs import MQTTConfig, ProcessingConfig
 from microdcs.common import (
@@ -42,42 +41,73 @@ class QoS(enum.IntEnum):
 def create_mqtt_client(
     config: MQTTConfig,
     client_identifier: str | None = None,
-    **kwargs: Any,
+    *,
+    clean_start: bool = False,
+    reconnect: bool = True,
 ) -> aiomqtt.Client:
     """Create an ``aiomqtt.Client`` from a :class:`MQTTConfig`.
 
     Shared between :class:`MQTTHandler` (subscriber) and
     :class:`MQTTPublisher` (retained-publish writer) to avoid duplicating
-    connection setup.  Extra *kwargs* are forwarded to the
-    ``aiomqtt.Client`` constructor (e.g. ``clean_start``,
-    ``max_queued_incoming_messages``).
+    connection setup.
 
     *client_identifier* overrides ``config.identifier`` when provided, which
     allows callers (e.g. :class:`MQTTPublisher`) to use a different MQTT
     client ID than the handler without changing the shared config object.
+
+    *clean_start* and *reconnect* default to the long-lived handler settings
+    (persistent session, auto-reconnect).  Pass ``clean_start=True,
+    reconnect=False`` for short-lived clients such as integration-test helpers.
     """
-    properties = None
+    authentication_method: str | None = None
+    authentication_data: bytes | None = None
     if config.sat_token_path.exists():
         with open(config.sat_token_path, "rb") as f:
-            sat_token = f.read()
-            properties = Properties(PacketTypes.CONNECT)
-            properties.AuthenticationMethod = "K8S-SAT"
-            properties.AuthenticationData = sat_token
-    tls_params = None
+            authentication_method = "K8S-SAT"
+            authentication_data = f.read()
+    ssl_context: ssl.SSLContext | None = None
     if config.tls_cert_path.exists():
-        tls_params = aiomqtt.TLSParameters(ca_certs=str(config.tls_cert_path))
+        ssl_context = ssl.create_default_context(cafile=str(config.tls_cert_path))
     return aiomqtt.Client(
-        protocol=aiomqtt.ProtocolVersion.V5,
         hostname=config.hostname,
         port=config.port,
         identifier=client_identifier
         if client_identifier is not None
         else config.identifier,
-        timeout=config.connect_timeout,
-        properties=properties,
-        tls_params=tls_params,
-        **kwargs,
+        authentication_method=authentication_method,
+        authentication_data=authentication_data,
+        ssl_context=ssl_context,
+        session_expiry_interval=config.session_expiry_interval,
+        clean_start=clean_start,
+        reconnect=reconnect,
     )
+
+
+@functools.lru_cache(maxsize=256)
+def _compile_topic_pattern(pattern: str) -> re.Pattern[str]:
+    """Compile an MQTT subscription pattern to a regex.
+
+    Patterns are fixed at binding setup time, so the cache hit rate is
+    effectively 100% after warm-up.
+    """
+    escaped = re.escape(pattern)
+    regex = escaped.replace(r"\+", "[^/]*").replace(r"/\#", "(|/.*)")
+    return re.compile(regex)
+
+
+def _topic_matches(pattern: str, topic: str) -> bool:
+    """Check if an MQTT topic matches a subscription pattern.
+
+    Supports '+' (single-level wildcard) and '#' (multi-level wildcard).
+    Shared subscription prefixes (``$share/<group>/``) in *pattern* are
+    stripped before matching, because the broker delivers messages with the
+    original topic (without the prefix).
+    """
+    if pattern.startswith("$share/"):
+        pattern = pattern.split("/", 2)[2]
+    if pattern == "#":
+        return True
+    return bool(_compile_topic_pattern(pattern).fullmatch(topic))
 
 
 class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
@@ -98,18 +128,13 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             redis_key_schema,
             ttl=self._runtime_config.dedupe_ttl_seconds,
         )
-        self._expiration_timeout_tasks: dict[str, Any] = {}
+        self._expiration_timeout_tasks: dict[str, asyncio.Task[object]] = {}
 
     def _client(self) -> aiomqtt.Client:
         client = create_mqtt_client(
             self._runtime_config,
             client_identifier=self._runtime_config.identifier + "-proc",
-            clean_start=paho.mqtt.client.MQTT_CLEAN_START_FIRST_ONLY,
-            max_queued_incoming_messages=self._runtime_config.incoming_queue_size,
-            max_queued_outgoing_messages=self._runtime_config.outgoing_queue_size,
         )
-        # FIXME: set this as a aiomqtt client property when https://github.com/empicano/aiomqtt/pull/346 is merged
-        client._client.manual_ack_set(True)  # type: ignore #
         return client
 
     async def _publish_message(
@@ -128,46 +153,49 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             "Publishing message to topic %s",
             cloudevent.transportmetadata.get("mqtt_topic"),
         )
-        qos: int = QoS.AT_MOST_ONCE
-        properties = Properties(PacketTypes.PUBLISH)
+        qos: mqtt5.QoS = mqtt5.QoS.AT_MOST_ONCE
+        message_expiry_interval: int | None = None
         if cloudevent.expiryinterval is not None:
-            properties.MessageExpiryInterval = cloudevent.expiryinterval
+            message_expiry_interval = int(cloudevent.expiryinterval)
+        content_type: str | None = None
         if cloudevent.datacontenttype is not None:
-            properties.ContentType = cloudevent.datacontenttype
-            if cloudevent.datacontenttype == "application/octet-stream":
-                properties.PayloadFormatIndicator = 0  # bytes
-            else:
-                properties.PayloadFormatIndicator = 1  # UTF-8 string
+            content_type = cloudevent.datacontenttype
+        response_topic: str | None = None
         if (
             cloudevent.transportmetadata is not None
             and cloudevent.transportmetadata.get("mqtt_response_topic") is not None
         ):
-            properties.ResponseTopic = cloudevent.transportmetadata.get(
-                "mqtt_response_topic"
-            )
-            qos = QoS.AT_LEAST_ONCE
+            response_topic = cloudevent.transportmetadata.get("mqtt_response_topic")
+            qos = mqtt5.QoS.AT_LEAST_ONCE
         _correlation_data_id = (
             cloudevent.causationid
             if cloudevent.causationid is not None
             else cloudevent.id
         )
+        correlation_data: bytes | None = None
         if _correlation_data_id is not None:
-            properties.CorrelationData = uuid.UUID(_correlation_data_id).bytes  # type: ignore
-        # Convert dictionary to list of tuples
-        properties.UserProperty = list(
+            correlation_data = uuid.UUID(_correlation_data_id).bytes
+        # Convert dictionary to list of tuples for user properties
+        user_properties: list[tuple[str, str]] = list(
             cloudevent.to_dict(
                 context={"remove_data": True, "make_str_values": True}
             ).items()
         )
         await client.publish(
             cloudevent.transportmetadata.get("mqtt_topic", ""),
-            cloudevent.data,
+            cloudevent.data or b"",
             qos=qos,
+            packet_id=next(client.packet_ids)
+            if qos != mqtt5.QoS.AT_MOST_ONCE
+            else None,
             retain=cloudevent.transportmetadata.get("mqtt_retain", False)
             if cloudevent.transportmetadata
             else False,
-            properties=properties,
-            timeout=self._runtime_config.publish_timeout,
+            message_expiry_interval=message_expiry_interval,
+            content_type=content_type,
+            response_topic=response_topic,
+            correlation_data=correlation_data,
+            user_properties=user_properties,
         )
         # schedule expiration handling if applicable
         if (
@@ -217,34 +245,32 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             str(cloudevent.source), str(cloudevent.id)
         )
 
-    def _cloudevent_from_message(self, message: aiomqtt.Message) -> CloudEvent:
+    def _cloudevent_from_message(self, message: mqtt5.PublishPacket) -> CloudEvent:
         # Construct CloudEvent from MQTT message
         cloudevent = CloudEvent(data=message.payload)
         # Populate transport metadata
         cloudevent.transportmetadata = {
-            "mqtt_message_id": message.mid,
-            "mqtt_topic": str(message.topic),
-            "mqtt_qos": QoS(message.qos),
+            "mqtt_message_id": message.packet_id,
+            "mqtt_topic": message.topic,
+            "mqtt_qos": QoS(int(message.qos)),
             "mqtt_retain": message.retain,
         }
-        # Populate from MQTT 5 properties
-        if message.properties and hasattr(message.properties, "PayloadFormatIndicator"):
-            pass
-        if message.properties and hasattr(message.properties, "MessageExpiryInterval"):
-            cloudevent.expiryinterval = message.properties.MessageExpiryInterval  # type: ignore
-        if message.properties and hasattr(message.properties, "ContentType"):
-            cloudevent.datacontenttype = str(message.properties.ContentType)  # type: ignore
-        if message.properties and hasattr(message.properties, "ResponseTopic"):
+        # Populate from MQTT 5 properties (now direct attributes on PublishPacket)
+        if message.message_expiry_interval is not None:
+            cloudevent.expiryinterval = message.message_expiry_interval
+        if message.content_type is not None:
+            cloudevent.datacontenttype = str(message.content_type)
+        if message.response_topic is not None:
             cloudevent.transportmetadata["mqtt_response_topic"] = str(
-                message.properties.ResponseTopic  # type: ignore
+                message.response_topic
             )
-        if message.properties and hasattr(message.properties, "CorrelationData"):
+        if message.correlation_data is not None:
             cloudevent.transportmetadata["mqtt_correlation_data"] = str(
-                uuid.UUID(bytes=message.properties.CorrelationData)  # type: ignore
+                uuid.UUID(bytes=message.correlation_data)
             )
-        if message.properties and hasattr(message.properties, "UserProperty"):
+        if message.user_properties is not None:
             # Convert list of tuples to dictionary
-            cloudevent.custommetadata = dict(message.properties.UserProperty)  # type: ignore
+            cloudevent.custommetadata = dict(message.user_properties)
         # Populate CloudEvent attributes from user properties if present
         for field in dataclasses.fields(CloudEvent):
             if (
@@ -260,22 +286,22 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
         return cloudevent
 
     async def _process_message(
-        self, client: aiomqtt.Client, message: aiomqtt.Message
+        self, client: aiomqtt.Client, message: mqtt5.PublishPacket
     ) -> tuple[bool, str]:
         # extract CloudEvent from MQTT message
         cloudevent = self._cloudevent_from_message(message)
         # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
         if await self._is_duplicate_message(cloudevent):
             logger.info(
-                "Duplicate message received on topic %s with message ID %d",
+                "Duplicate message received on topic %s with message ID %s",
                 message.topic,
-                message.mid,
+                message.packet_id,
             )
             for binding in self._bindings:
-                if message.topic.matches(binding.response_topic):
+                if _topic_matches(binding.response_topic, message.topic):
                     return False, binding.response_topic
                 for topic in binding.topics:
-                    if message.topic.matches(topic):
+                    if _topic_matches(topic, message.topic):
                         return False, topic
             return False, ""
         else:
@@ -294,7 +320,7 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
         # If multiple processors match the topic, all will be invoked sequentially
         subscription: list[str] = []
         for binding in self._bindings:
-            if message.topic.matches(binding.response_topic):
+            if _topic_matches(binding.response_topic, message.topic):
                 subscription.append(binding.response_topic)
                 processor_response = (
                     await binding.processor.process_response_cloudevent(cloudevent)
@@ -309,7 +335,7 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 elif processor_response is None:
                     continue
             for topic in binding.topics:
-                if message.topic.matches(topic):
+                if _topic_matches(topic, message.topic):
                     subscription.append(topic)
                     processor_response = await binding.processor.process_cloudevent(
                         cloudevent
@@ -332,15 +358,17 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                     elif processor_response is None:
                         continue
 
-        # FIXME: use the native ack method when https://github.com/empicano/aiomqtt/pull/346 is merged
-        client._client.ack(message.mid, message.qos)  # type: ignore #
+        # Acknowledge QoS 1 messages using the native puback method
+        if message.packet_id is not None:
+            await client.puback(message.packet_id)
 
         return True, ", ".join(subscription)
 
     async def _process_messages(self, client: aiomqtt.Client) -> None:
         logger.info("Starting MQTT message processing")
-        message: aiomqtt.Message
-        async for message in client.messages:
+        async for message in client.messages():
+            if isinstance(message, aiomqtt.PubRelPacket):
+                continue  # skip QoS 2 pubrel packets (not used in this handler)
             # Shield message processing from cancellation so that in-flight
             # messages are fully processed, ACKed, and expiration tasks set up.
             processing = asyncio.create_task(self._process_message(client, message))
@@ -358,8 +386,20 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             cloudevent, intent = await binding.outgoing_queue.get()
             # Enrich with MQTT transport metadata from the binding
             binding.enrich_publish_transportmetadata(intent, cloudevent)
-
-            await self._publish_message(client, cloudevent, binding.processor)
+            # Retry publish if the connection is temporarily down
+            while True:
+                try:
+                    await self._publish_message(client, cloudevent, binding.processor)
+                    break
+                except (
+                    aiomqtt.ConnectError,
+                    aiomqtt.ProtocolError,
+                    aiomqtt.NegativeAckError,
+                ):
+                    logger.warning(
+                        "Publish failed while reconnecting; waiting for connection"
+                    )
+                    await client.connected()
             binding.outgoing_queue.task_done()
 
     async def _cancel_and_wait(self, tasks: list[asyncio.Task]) -> None:
@@ -376,165 +416,144 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             self._runtime_config.hostname,
             self._runtime_config.port,
         )
-        backoff = 1  # seconds
-        max_backoff = 60  # seconds
-        while True:
-            client: aiomqtt.Client = self._client()
-            try:
-                # redis is required for message deduplication and expiration handling,
-                # so we check the connection before starting the MQTT client
-                try:
-                    await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
-                except redis.RedisError as e:
-                    logger.error(f"Error connecting to Redis: {e}")
-                    raise
-                async with client:
-                    backoff = 1  # reset backoff after successful connection
-                    for binding in self._bindings:
-                        for topic in binding.topics:
-                            await client.subscribe(topic)
-                            logger.info("Subscribed to topic: %s", topic)
-                        await client.subscribe(binding.response_topic)
-                        logger.info(
-                            "Subscribed to response topic: %s",
-                            binding.response_topic,
-                        )
-                    # Start worker and publisher tasks (manual management
-                    # instead of TaskGroup for controlled graceful shutdown)
-                    worker_tasks: list[asyncio.Task] = []
-                    publisher_tasks: list[asyncio.Task] = []
+        # redis is required for message deduplication and expiration handling,
+        # so we check the connection before starting the MQTT client
+        try:
+            await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
+        except redis.RedisError as e:
+            logger.error(f"Error connecting to Redis: {e}")
+            raise
+        client: aiomqtt.Client = self._client()
+        try:
+            async with client:
+                for binding in self._bindings:
+                    for topic in binding.topics:
+                        await client.subscribe(aiomqtt.TopicFilter(topic))
+                        logger.info("Subscribed to topic: %s", topic)
+                    await client.subscribe(aiomqtt.TopicFilter(binding.response_topic))
                     logger.info(
-                        "Starting %d message worker tasks",
-                        self._runtime_config.message_workers,
+                        "Subscribed to response topic: %s",
+                        binding.response_topic,
                     )
-                    for _ in range(self._runtime_config.message_workers):
-                        worker_tasks.append(
-                            asyncio.create_task(self._process_messages(client))
+                # Start worker and publisher tasks (manual management
+                # instead of TaskGroup for controlled graceful shutdown)
+                worker_tasks: list[asyncio.Task] = []
+                publisher_tasks: list[asyncio.Task] = []
+                logger.info(
+                    "Starting %d message worker tasks",
+                    self._runtime_config.message_workers,
+                )
+                for _ in range(self._runtime_config.message_workers):
+                    worker_tasks.append(
+                        asyncio.create_task(self._process_messages(client))
+                    )
+                for binding in self._bindings:
+                    publisher_tasks.append(
+                        asyncio.create_task(
+                            self._outgoing_message_publisher(client, binding)
                         )
-                    for binding in self._bindings:
-                        publisher_tasks.append(
-                            asyncio.create_task(
-                                self._outgoing_message_publisher(client, binding)
-                            )
-                        )
-                    all_tasks = worker_tasks + publisher_tasks
+                    )
+                all_tasks = worker_tasks + publisher_tasks
 
-                    try:
-                        # Wait for shutdown event or an unexpected task failure
-                        shutdown_waiter = asyncio.create_task(
-                            self._shutdown_event.wait()
-                        )
-                        done, _ = await asyncio.wait(
-                            set(all_tasks) | {shutdown_waiter},
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
-
-                        if shutdown_waiter in done:
-                            # === Graceful shutdown sequence ===
-                            # Phase 1: Unsubscribe – stop receiving new messages
-                            logger.info(
-                                "Graceful shutdown: unsubscribing from MQTT topics"
-                            )
-                            for binding in self._bindings:
-                                for topic in binding.topics:
-                                    try:
-                                        await client.unsubscribe(topic)
-                                        logger.info(
-                                            "Unsubscribed from topic: %s", topic
-                                        )
-                                    except aiomqtt.MqttError:
-                                        logger.warning(
-                                            "Failed to unsubscribe from topic: %s",
-                                            topic,
-                                        )
-                                try:
-                                    await client.unsubscribe(binding.response_topic)
-                                    logger.info(
-                                        "Unsubscribed from response topic: %s",
-                                        binding.response_topic,
-                                    )
-                                except aiomqtt.MqttError:
-                                    logger.warning(
-                                        "Failed to unsubscribe from response topic: %s",
-                                        binding.response_topic,
-                                    )
-
-                            # Phase 2: Cancel workers – shielded processing
-                            # ensures in-flight messages finish (process, ack,
-                            # create expiration tasks, enqueue responses)
-                            await self._cancel_and_wait(worker_tasks)
-                            logger.info("All message workers completed")
-
-                            # Phase 3: Drain outgoing queues – send remaining
-                            # outgoing events that were enqueued during processing
-                            for binding in self._bindings:
-                                if not binding.outgoing_queue.empty():
-                                    logger.info(
-                                        "Draining outgoing queue (%d items)",
-                                        binding.outgoing_queue.qsize(),
-                                    )
-                                    await binding.outgoing_queue.join()
-
-                            # Phase 4: Cancel publishers – queues are drained
-                            await self._cancel_and_wait(publisher_tasks)
-                            logger.info("All publishers completed")
-
-                            # Phase 5: Wait for expiration timeout tasks
-                            pending = [
-                                task
-                                for task in self._expiration_timeout_tasks.values()
-                                if not task.done()
-                            ]
-                            if pending:
-                                logger.info(
-                                    "Waiting for %d expiration timeout task(s)",
-                                    len(pending),
-                                )
-                                await asyncio.gather(*pending, return_exceptions=True)
-
-                            logger.info("MQTT graceful shutdown complete")
-                            break  # exit retry loop
-                        else:
-                            # A worker/publisher died unexpectedly
-                            shutdown_waiter.cancel()
-                            await self._cancel_and_wait(all_tasks)
-                            for task in done:
-                                if (
-                                    not task.cancelled()
-                                    and task.exception() is not None
-                                ):
-                                    raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
-
-                    except asyncio.CancelledError:
-                        # Force shutdown (grace period exceeded) –
-                        # cancel everything including expiration tasks
-                        await self._cancel_and_wait(all_tasks)
-                        for task in list(self._expiration_timeout_tasks.values()):
-                            if not task.done():
-                                task.cancel()
-                        raise
-
-            except aiomqtt.MqttError:
-                if self._shutdown_event.is_set():
-                    logger.info("MQTT connection lost during shutdown; exiting")
-                    break
-                sleep_time = backoff + random.uniform(0, 0.1 * backoff)
-                logger.warning(f"Connection lost. Retrying in {sleep_time:.2f}s...")
                 try:
-                    await asyncio.wait_for(
-                        self._shutdown_event.wait(), timeout=sleep_time
+                    # Wait for shutdown event or an unexpected task failure
+                    shutdown_waiter = asyncio.create_task(self._shutdown_event.wait())
+                    done, _ = await asyncio.wait(
+                        set(all_tasks) | {shutdown_waiter},
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                    logger.info("Shutdown during reconnect backoff; exiting")
-                    break
-                except asyncio.TimeoutError:
-                    backoff = min(backoff * 2, max_backoff)
 
-            except asyncio.CancelledError:
-                logger.info("MQTT handler task cancelled; shutting down")
-                for task in list(self._expiration_timeout_tasks.values()):
-                    if not task.done():
-                        task.cancel()
-                raise
+                    if shutdown_waiter in done:
+                        # === Graceful shutdown sequence ===
+                        # Phase 1: Unsubscribe – stop receiving new messages
+                        logger.info("Graceful shutdown: unsubscribing from MQTT topics")
+                        for binding in self._bindings:
+                            for topic in binding.topics:
+                                try:
+                                    await client.unsubscribe(topic)
+                                    logger.info("Unsubscribed from topic: %s", topic)
+                                except (
+                                    aiomqtt.ConnectError,
+                                    aiomqtt.ProtocolError,
+                                    aiomqtt.NegativeAckError,
+                                ):
+                                    logger.warning(
+                                        "Failed to unsubscribe from topic: %s",
+                                        topic,
+                                    )
+                            try:
+                                await client.unsubscribe(binding.response_topic)
+                                logger.info(
+                                    "Unsubscribed from response topic: %s",
+                                    binding.response_topic,
+                                )
+                            except (
+                                aiomqtt.ConnectError,
+                                aiomqtt.ProtocolError,
+                                aiomqtt.NegativeAckError,
+                            ):
+                                logger.warning(
+                                    "Failed to unsubscribe from response topic: %s",
+                                    binding.response_topic,
+                                )
+
+                        # Phase 2: Cancel workers – shielded processing
+                        # ensures in-flight messages finish (process, ack,
+                        # create expiration tasks, enqueue responses)
+                        await self._cancel_and_wait(worker_tasks)
+                        logger.info("All message workers completed")
+
+                        # Phase 3: Drain outgoing queues – send remaining
+                        # outgoing events that were enqueued during processing
+                        for binding in self._bindings:
+                            if not binding.outgoing_queue.empty():
+                                logger.info(
+                                    "Draining outgoing queue (%d items)",
+                                    binding.outgoing_queue.qsize(),
+                                )
+                                await binding.outgoing_queue.join()
+
+                        # Phase 4: Cancel publishers – queues are drained
+                        await self._cancel_and_wait(publisher_tasks)
+                        logger.info("All publishers completed")
+
+                        # Phase 5: Wait for expiration timeout tasks
+                        pending = [
+                            task
+                            for task in self._expiration_timeout_tasks.values()
+                            if not task.done()
+                        ]
+                        if pending:
+                            logger.info(
+                                "Waiting for %d expiration timeout task(s)",
+                                len(pending),
+                            )
+                            await asyncio.gather(*pending, return_exceptions=True)
+
+                        logger.info("MQTT graceful shutdown complete")
+                    else:
+                        # A worker/publisher died unexpectedly
+                        shutdown_waiter.cancel()
+                        await self._cancel_and_wait(all_tasks)
+                        for task in done:
+                            if not task.cancelled() and task.exception() is not None:
+                                raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
+
+                except asyncio.CancelledError:
+                    # Force shutdown (grace period exceeded) –
+                    # cancel everything including expiration tasks
+                    await self._cancel_and_wait(all_tasks)
+                    for task in list(self._expiration_timeout_tasks.values()):
+                        if not task.done():
+                            task.cancel()
+                    raise
+
+        except asyncio.CancelledError:
+            logger.info("MQTT handler task cancelled; shutting down")
+            for task in list(self._expiration_timeout_tasks.values()):
+                if not task.done():
+                    task.cancel()
+            raise
 
         logger.info("MQTT handler shutdown complete")
 
@@ -564,14 +583,14 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
         )
 
     async def _process_message(
-        self, client: aiomqtt.Client, message: aiomqtt.Message
+        self, client: aiomqtt.Client, message: mqtt5.PublishPacket
     ) -> tuple[bool, str]:
         # extract creation context from MQTT user properties for trace linking
         links: list[trace.Link] = []
-        if message.properties and hasattr(message.properties, "UserProperty"):
-            user_props: list[tuple[str, str]] = list(message.properties.UserProperty)  # type: ignore
+        if message.user_properties is not None:
+            user_props = dict(message.user_properties)
             if user_props:
-                creation_ctx = extract(dict(user_props))
+                creation_ctx = extract(user_props)
                 creation_span_ctx = trace.get_current_span(
                     creation_ctx
                 ).get_span_context()
@@ -583,9 +602,9 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
             messaging_attributes.MESSAGING_SYSTEM: "mqtt",
             messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.PROCESS.value,
             messaging_attributes.MESSAGING_OPERATION_NAME: "process",
-            messaging_attributes.MESSAGING_DESTINATION_NAME: str(message.topic),
+            messaging_attributes.MESSAGING_DESTINATION_NAME: message.topic,
             messaging_attributes.MESSAGING_CLIENT_ID: self._runtime_config.identifier,
-            messaging_attributes.MESSAGING_MESSAGE_ID: str(message.mid),
+            messaging_attributes.MESSAGING_MESSAGE_ID: str(message.packet_id),
             server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
             server_attributes.SERVER_PORT: self._runtime_config.port,
         }
@@ -886,15 +905,14 @@ class MQTTPublisher(AdditionalTask):
             ttl: Message Expiry Interval in seconds.
         """
         assert self._client is not None, "Client not connected — use from within task()"
-        properties = Properties(PacketTypes.PUBLISH)
-        properties.MessageExpiryInterval = ttl
         publisher_logger.debug("Publishing retained message to %s (ttl=%d)", topic, ttl)
         await self._client.publish(
             topic,
-            payload,
-            qos=1,
+            payload.encode() if isinstance(payload, str) else payload,
+            qos=aiomqtt.QoS.AT_LEAST_ONCE,
+            packet_id=next(self._client.packet_ids),
             retain=True,
-            properties=properties,
+            message_expiry_interval=ttl,
         )
 
     async def delete_retained(self, topic: str) -> None:
@@ -908,7 +926,8 @@ class MQTTPublisher(AdditionalTask):
         await self._client.publish(
             topic,
             b"",
-            qos=1,
+            qos=aiomqtt.QoS.AT_LEAST_ONCE,
+            packet_id=next(self._client.packet_ids),
             retain=True,
         )
 
@@ -917,7 +936,7 @@ class MQTTPublisher(AdditionalTask):
 
         Override in subclasses to perform work (e.g. stream processing).
         The default implementation waits for the shutdown event.  Any
-        :class:`aiomqtt.MqttError` raised here is caught by :meth:`task`
+        MQTT error raised here is caught by :meth:`task`
         which triggers reconnection.
         """
         await self._shutdown_event.wait()
@@ -928,40 +947,27 @@ class MQTTPublisher(AdditionalTask):
             self._config.hostname,
             self._config.port,
         )
-        backoff = 1  # seconds
-        max_backoff = 60  # seconds
-        while True:
-            client = create_mqtt_client(
-                self._config,
-                client_identifier=self._config.identifier + "-pub",
-            )
-            try:
-                async with client:
-                    self._client = client
-                    self._connected.set()
-                    publisher_logger.info("MQTT publisher connected")
-                    await self._run()
-                    self._client = None
-                    self._connected.clear()
-                    publisher_logger.info("MQTT publisher shutdown complete")
-                    return
-            except aiomqtt.MqttError:
-                self._client = None
-                self._connected.clear()
-                if self._shutdown_event.is_set():
-                    publisher_logger.info(
-                        "MQTT connection lost during shutdown; exiting"
-                    )
-                    return
-                sleep_time = backoff + random.uniform(0, 0.1 * backoff)
-                publisher_logger.warning(
-                    "Connection lost. Retrying in %.2fs...", sleep_time
-                )
+        client = create_mqtt_client(
+            self._config,
+            client_identifier=self._config.identifier + "-pub",
+        )
+        async with client:
+            self._client = client
+            self._connected.set()
+            publisher_logger.info("MQTT publisher connected")
+            while True:
                 try:
-                    await asyncio.wait_for(
-                        self._shutdown_event.wait(), timeout=sleep_time
+                    await self._run()
+                    break  # normal exit (shutdown event)
+                except (
+                    aiomqtt.ConnectError,
+                    aiomqtt.ProtocolError,
+                    aiomqtt.NegativeAckError,
+                ):
+                    publisher_logger.warning(
+                        "Connection lost in _run(); waiting for reconnect"
                     )
-                    publisher_logger.info("Shutdown during reconnect backoff; exiting")
-                    return
-                except asyncio.TimeoutError:
-                    backoff = min(backoff * 2, max_backoff)
+                    await client.connected()
+            self._client = None
+            self._connected.clear()
+        publisher_logger.info("MQTT publisher shutdown complete")

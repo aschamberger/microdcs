@@ -48,15 +48,12 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_MQTT_HOSTNAME` | `str` | `localhost` | MQTT broker hostname |
 | `APP_MQTT_PORT` | `int` | `1883` | MQTT broker port |
 | `APP_MQTT_IDENTIFIER` | `str` | `app_client` | MQTT client identifier |
-| `APP_MQTT_CONNECT_TIMEOUT` | `int` | `10` | Broker connection timeout (seconds) |
-| `APP_MQTT_PUBLISH_TIMEOUT` | `int` | `5` | Publish confirmation timeout (seconds) |
 | `APP_MQTT_SAT_TOKEN_PATH` | `Path` | `/var/run/secrets/tokens/broker-sat` | Path to SAT token for broker auth |
 | `APP_MQTT_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate for TLS connections |
-| `APP_MQTT_INCOMING_QUEUE_SIZE` | `int` | `0` (unbounded) | Max queued incoming messages in aiomqtt client |
-| `APP_MQTT_OUTGOING_QUEUE_SIZE` | `int` | `0` (unbounded) | Max queued outgoing messages in aiomqtt client |
 | `APP_MQTT_MESSAGE_WORKERS` | `int` | `5` | Concurrent tasks processing incoming messages |
 | `APP_MQTT_DEDUPE_TTL_SECONDS` | `int` | `600` | TTL for Redis deduplication keys (seconds) |
 | `APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE` | `int` | `5` | Per-binding outgoing queue capacity |
+| `APP_MQTT_SESSION_EXPIRY_INTERVAL` | `int` | `4294967295` | MQTT v5 session expiry interval in seconds (`2³²−1` = never expire) |
 
 ### MessagePack RPC (`APP_MSGPACK_*`)
 
@@ -255,8 +252,6 @@ Each queue has a distinct fill condition and a distinct consequence when full.
 
 | Queue | Config variable | Default | Fills when | Producer behaviour when full |
 |---|---|---|---|---|
-| MQTT incoming | `APP_MQTT_INCOMING_QUEUE_SIZE` | `0` (unbounded) | Messages arrive faster than `message_workers` can dispatch | With default `0`: unbounded growth until OOM. With a finite value: backpressure to aiomqtt receive loop — new messages are not read from the socket until space is available |
-| MQTT outgoing | `APP_MQTT_OUTGOING_QUEUE_SIZE` | `0` (unbounded) | Processors produce outgoing events faster than the MQTT handler can publish | With default `0`: unbounded growth until OOM. With a finite value: paho client blocks publish calls until space is available |
 | MQTT binding outgoing | `APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE` | `5` | A single binding's outgoing events accumulate faster than the handler drains them | **Raises `RuntimeError`** — the producer is not blocked, the error propagates to the caller |
 | MessagePack binding outgoing | `APP_MSGPACK_BINDING_OUTGOING_QUEUE_SIZE` | `5` | Outgoing notification frames queue faster than connected clients consume them | **Raises `RuntimeError`** — same behaviour as MQTT binding queues |
 | MessagePack concurrent requests | `APP_MSGPACK_MAX_CONCURRENT_REQUESTS` | `10` | More than N simultaneous `publish` RPC calls arrive from the same client | Server stops reading from the socket — TCP-level backpressure to the client |
@@ -267,24 +262,12 @@ Each queue has a distinct fill condition and a distinct consequence when full.
     to the cap value with a warning log. If the protocol-level setting is `0`, the cap value
     is used as the effective size.
 
-!!! warning "Unbounded MQTT queues by default"
-    The MQTT incoming and outgoing queues default to `0` (unbounded). This means they will
-    never apply backpressure — instead, memory grows without bound under sustained overload.
-    For production deployments, set explicit finite values for `APP_MQTT_INCOMING_QUEUE_SIZE`
-    and `APP_MQTT_OUTGOING_QUEUE_SIZE` based on your expected burst profile.
-
 ### Isolation
 
 The binding-level queues (`APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE`,
 `APP_MSGPACK_BINDING_OUTGOING_QUEUE_SIZE`) are per-binding instances. A slow or
 saturated binding does not affect other bindings — a tightening controller processor
 that falls behind does not block a QA camera processor from publishing its results.
-
-The shared queues (`APP_MQTT_INCOMING_QUEUE_SIZE`, `APP_MQTT_OUTGOING_QUEUE_SIZE`)
-sit at the handler level and are shared across all bindings registered with that
-handler. A sustained fill on either of these affects the whole handler and therefore
-all processors attached to it. Sizing these queues appropriately for the expected burst
-profile is the primary tuning lever for the shared transport layer.
 
 ### Tuning Signals
 
