@@ -132,109 +132,77 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
 
     async def task(self) -> None:
         logger.info("Starting MessagePack handler task")
+        # redis is required for message deduplication and expiration handling,
+        # so we check the connection before starting the server
+        try:
+            await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
+        except redis.RedisError as e:
+            logger.error(f"Error connecting to Redis: {e}")
+            raise
         server = self._server()
-        backoff = 1  # seconds
-        max_backoff = 60  # seconds
-        while True:
-            try:
-                # redis is required for message deduplication and expiration handling,
-                # so we check the connection before starting the server
-                try:
-                    await self._redis_client.ping()  # pyright: ignore[reportGeneralTypeIssues]
-                except redis.RedisError as e:
-                    logger.error(f"Error connecting to Redis: {e}")
-                    raise
-                async with server:
-                    backoff = 1  # Reset backoff after successful start
-                    # Start publisher tasks for outgoing events
-                    publisher_tasks: list[asyncio.Task] = []
-                    for binding in self._bindings:
-                        publisher_tasks.append(
-                            asyncio.create_task(
-                                self._outgoing_message_publisher(server, binding)
-                            )
+        try:
+            async with server:
+                # Start publisher tasks for outgoing events
+                publisher_tasks: list[asyncio.Task] = []
+                for binding in self._bindings:
+                    publisher_tasks.append(
+                        asyncio.create_task(
+                            self._outgoing_message_publisher(server, binding)
                         )
-                    # Wait for either serve_forever to end or shutdown event
-                    serve_task = asyncio.create_task(server.serve_forever())
-                    shutdown_task = asyncio.create_task(self._shutdown_event.wait())
-
-                    done, _ = await asyncio.wait(
-                        {serve_task, shutdown_task} | set(publisher_tasks),
-                        return_when=asyncio.FIRST_COMPLETED,
                     )
+                # Wait for either serve_forever to end or shutdown event
+                serve_task = asyncio.create_task(server.serve_forever())
+                shutdown_task = asyncio.create_task(self._shutdown_event.wait())
 
-                    if shutdown_task in done:
-                        # Graceful shutdown: close server to stop accepting
-                        # new connections; __aexit__ handles wait_closed()
-                        # to let in-flight RPCs drain
-                        logger.info("Graceful shutdown: closing MessagePack server")
-                        serve_task.cancel()
-                        try:
-                            await serve_task
-                        except asyncio.CancelledError:
-                            pass
+                done, _ = await asyncio.wait(
+                    {serve_task, shutdown_task} | set(publisher_tasks),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
 
-                        # Drain outgoing queues before cancelling publishers
-                        for binding in self._bindings:
-                            if not binding.outgoing_queue.empty():
-                                logger.info(
-                                    "Draining outgoing queue (%d items)",
-                                    binding.outgoing_queue.qsize(),
-                                )
-                                await binding.outgoing_queue.join()
-
-                        # Cancel publishers after queues are drained
-                        for task in publisher_tasks:
-                            if not task.done():
-                                task.cancel()
-                        await asyncio.gather(*publisher_tasks, return_exceptions=True)
-                        logger.info("All publishers completed")
-
-                        break  # exit retry loop
-                    else:
-                        # serve_forever or a publisher ended unexpectedly
-                        shutdown_task.cancel()
-                        serve_task.cancel()
-                        for task in publisher_tasks:
-                            if not task.done():
-                                task.cancel()
-                        await asyncio.gather(
-                            serve_task,
-                            *publisher_tasks,
-                            return_exceptions=True,
-                        )
-                        for task in done:
-                            if not task.cancelled() and task.exception() is not None:
-                                raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
-
-            except OSError as e:
-                # 1. Config Check: Check for fatal errors
-                if e.errno in (errno.EADDRNOTAVAIL, errno.EACCES):
-                    logger.error(f"FATAL CONFIG ERROR: {e.strerror} (errno {e.errno})")
-                    raise  # Break out of the loop and the app
-
-                # 2. Retry Logic: Handle 'Address in use'
-                if e.errno == errno.EADDRINUSE:
-                    sleep_time = backoff + random.uniform(0, 0.1 * backoff)
-                    logger.warning(
-                        f"Port {self._runtime_config.port} busy. Retrying in {sleep_time:.2f}s..."
-                    )
+                if shutdown_task in done:
+                    # Graceful shutdown: close server to stop accepting
+                    # new connections; __aexit__ handles wait_closed()
+                    # to let in-flight RPCs drain
+                    logger.info("Graceful shutdown: closing MessagePack server")
+                    serve_task.cancel()
                     try:
-                        await asyncio.wait_for(
-                            self._shutdown_event.wait(), timeout=sleep_time
-                        )
-                        logger.info("Shutdown during reconnect backoff; exiting")
-                        break
-                    except asyncio.TimeoutError:
-                        backoff = min(backoff * 2, max_backoff)
-                        continue
+                        await serve_task
+                    except asyncio.CancelledError:
+                        pass
 
-                raise  # Any other OSError we didn't account for
+                    # Drain outgoing queues before cancelling publishers
+                    for binding in self._bindings:
+                        if not binding.outgoing_queue.empty():
+                            logger.info(
+                                "Draining outgoing queue (%d items)",
+                                binding.outgoing_queue.qsize(),
+                            )
+                            await binding.outgoing_queue.join()
 
-            except asyncio.CancelledError:
-                logger.info("MessagePack handler task cancelled; shutting down")
-                raise
-
+                    # Cancel publishers after queues are drained
+                    for task in publisher_tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*publisher_tasks, return_exceptions=True)
+                    logger.info("All publishers completed")
+                else:
+                    # serve_forever or a publisher ended unexpectedly
+                    shutdown_task.cancel()
+                    serve_task.cancel()
+                    for task in publisher_tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        serve_task,
+                        *publisher_tasks,
+                        return_exceptions=True,
+                    )
+                    for task in done:
+                        if not task.cancelled() and task.exception() is not None:
+                            raise task.exception()  # pyright: ignore[reportGeneralTypeIssues]
+        except asyncio.CancelledError:
+            logger.info("MessagePack handler task cancelled; shutting down")
+            raise
         logger.info("MessagePack handler shutdown complete")
 
 
@@ -345,6 +313,7 @@ class MessagePackRpcServer:
         max_queued_connections: int = 100,
         max_concurrent_requests: int = 10,
         max_buffer_size: int = 8 * 1024 * 1024,
+        reconnect: bool = True,
     ):
         self._host = hostname
         self._port = port
@@ -352,6 +321,8 @@ class MessagePackRpcServer:
         self._max_queued_connections = max_queued_connections
         self._max_concurrent_requests = max_concurrent_requests
         self._max_buffer_size = max_buffer_size
+        self._reconnect = reconnect
+        self._backoff: int = 1
         self._server: asyncio.Server | None = None
         self._methods: dict[str, Callable] = {}
         self._dispatcher = dispatcher
@@ -359,20 +330,40 @@ class MessagePackRpcServer:
         self._clients: dict[Any, tuple[asyncio.StreamWriter, asyncio.Lock]] = {}
 
     async def __aenter__(self) -> MessagePackRpcServer:
-        """Starts the server when entering the 'async with' block."""
-        self._server = await asyncio.start_server(
-            self._handle_client,
-            self._host,
-            self._port,
-            ssl=self._ssl_context,
-            backlog=self._max_queued_connections,
-        )
-        logger.info(
-            "MessagePack-RPC Server running on %s:%d",
-            self._host,
-            self._port,
-        )
-        return self
+        """Starts the server, retrying on EADDRINUSE if reconnect=True.
+
+        Interrupted by CancelledError (force-cancel from SystemEventTaskGroup
+        grace-period expiry) if shutdown occurs during a backoff sleep.
+        """
+        max_backoff = 60  # seconds
+        while True:
+            try:
+                self._server = await asyncio.start_server(
+                    self._handle_client,
+                    self._host,
+                    self._port,
+                    ssl=self._ssl_context,
+                    backlog=self._max_queued_connections,
+                )
+                logger.info(
+                    "MessagePack-RPC Server running on %s:%d",
+                    self._host,
+                    self._port,
+                )
+                return self
+            except OSError as e:
+                if e.errno in (errno.EADDRNOTAVAIL, errno.EACCES):
+                    logger.error(f"FATAL CONFIG ERROR: {e.strerror} (errno {e.errno})")
+                    raise
+                if self._reconnect and e.errno == errno.EADDRINUSE:
+                    sleep_time = self._backoff + random.uniform(0, 0.1 * self._backoff)
+                    logger.warning(
+                        f"Port {self._port} busy. Retrying in {sleep_time:.2f}s..."
+                    )
+                    await asyncio.sleep(sleep_time)
+                    self._backoff = min(self._backoff * 2, max_backoff)
+                    continue
+                raise
 
     async def __aexit__(self, exc_type, exc, tb):
         """Ensures the server closes cleanly when the block is exited."""
