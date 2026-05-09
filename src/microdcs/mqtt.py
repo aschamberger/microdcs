@@ -5,17 +5,13 @@ import functools
 import logging
 import re
 import ssl
-import time
 import uuid
 
 import aiomqtt
 import mqtt5
 import redis.asyncio as redis
-from opentelemetry import metrics, trace
-from opentelemetry.propagate import extract, inject
+from opentelemetry import trace
 from opentelemetry.semconv._incubating.attributes import messaging_attributes
-from opentelemetry.semconv._incubating.metrics import messaging_metrics
-from opentelemetry.semconv.attributes import error_attributes, server_attributes
 
 from microdcs import MQTTConfig, ProcessingConfig
 from microdcs.common import (
@@ -288,6 +284,16 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
     async def _process_message(
         self, client: aiomqtt.Client, message: mqtt5.PublishPacket
     ) -> tuple[bool, str]:
+        """Process a single incoming MQTT message end-to-end.
+
+        Deserialises the raw publish packet into a :class:`CloudEvent`, performs
+        deduplication, cancels any pending expiration task for incoming responses,
+        dispatches to matching processor bindings, and ACKs QoS 1 messages.
+
+        Returns a ``(success, subscription)`` tuple where *success* is ``False``
+        for duplicate messages and *subscription* is a comma-joined string of
+        the binding topic patterns that matched.
+        """
         # extract CloudEvent from MQTT message
         cloudevent = self._cloudevent_from_message(message)
         # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
@@ -559,178 +565,24 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
 
 
 class OTELInstrumentedMQTTHandler(MQTTHandler):
-    def __init__(
-        self,
-        runtime_config: MQTTConfig,
-        redis_connection_pool: redis.ConnectionPool,
-        redis_key_schema: "RedisKeySchema",
-    ):
-        super().__init__(runtime_config, redis_connection_pool, redis_key_schema)
-
-        self._tracer: trace.Tracer = trace.get_tracer(__name__)
-        self._meter: metrics.Meter = metrics.get_meter(__name__)
-        self._consumed_messages = (
-            messaging_metrics.create_messaging_client_consumed_messages(self._meter)
-        )
-        self._process_duration = messaging_metrics.create_messaging_process_duration(
-            self._meter
-        )
-        self._operation_duration = (
-            messaging_metrics.create_messaging_client_operation_duration(self._meter)
-        )
-        self._sent_messages = messaging_metrics.create_messaging_client_sent_messages(
-            self._meter
-        )
-
     async def _process_message(
         self, client: aiomqtt.Client, message: mqtt5.PublishPacket
     ) -> tuple[bool, str]:
-        # extract creation context from MQTT user properties for trace linking
-        links: list[trace.Link] = []
-        if message.user_properties is not None:
-            user_props = dict(message.user_properties)
-            if user_props:
-                creation_ctx = extract(user_props)
-                creation_span_ctx = trace.get_current_span(
-                    creation_ctx
-                ).get_span_context()
-                if creation_span_ctx.is_valid:
-                    links = [trace.Link(creation_span_ctx)]
+        """Extend base processing with ``MESSAGING_DESTINATION_SUBSCRIPTION_NAME``.
 
-        # span attributes (high-cardinality destination name kept on span only)
-        span_attrs: dict[str, Any] = {
-            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
-            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.PROCESS.value,
-            messaging_attributes.MESSAGING_OPERATION_NAME: "process",
-            messaging_attributes.MESSAGING_DESTINATION_NAME: message.topic,
-            messaging_attributes.MESSAGING_CLIENT_ID: self._runtime_config.identifier,
-            messaging_attributes.MESSAGING_MESSAGE_ID: str(message.packet_id),
-            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
-            server_attributes.SERVER_PORT: self._runtime_config.port,
-        }
-        if isinstance(message.payload, (bytes, bytearray)):
-            span_attrs[messaging_attributes.MESSAGING_MESSAGE_BODY_SIZE] = len(
-                message.payload
+        After ``super()._process_message()`` resolves which binding pattern
+        matched the incoming topic, the matched subscription string is set on
+        the active OpenTelemetry span.  The aiomqtt auto-instrumentor cannot
+        provide this attribute because it wraps the low-level ``messages()``
+        iterator and has no knowledge of the binding/subscription routing logic.
+        """
+        ok, subscription = await super()._process_message(client, message)
+        if subscription:
+            trace.get_current_span().set_attribute(
+                messaging_attributes.MESSAGING_DESTINATION_SUBSCRIPTION_NAME,
+                subscription,
             )
-
-        # metric attributes (no high-cardinality destination name)
-        metric_attrs: dict[str, Any] = {
-            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
-            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.PROCESS.value,
-            messaging_attributes.MESSAGING_OPERATION_NAME: "process",
-            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
-            server_attributes.SERVER_PORT: self._runtime_config.port,
-        }
-
-        # count delivery before processing (tracks messages dispatched to application)
-        self._consumed_messages.add(1, metric_attrs)
-
-        start = time.monotonic()
-        error_type: str | None = None
-        ok: bool = False
-        subscription: str = ""
-
-        with self._tracer.start_as_current_span(
-            "process",
-            kind=trace.SpanKind.CONSUMER,
-            attributes=span_attrs,
-            links=links,
-        ) as span:
-            try:
-                ok, subscription = await super()._process_message(client, message)
-                span.set_attribute(
-                    messaging_attributes.MESSAGING_DESTINATION_SUBSCRIPTION_NAME,
-                    subscription,
-                )
-            except Exception as exc:
-                error_type = type(exc).__qualname__
-                span.record_exception(exc)
-                span.set_status(trace.Status(trace.StatusCode.ERROR))
-                raise
-            finally:
-                duration = time.monotonic() - start
-                if error_type is not None:
-                    self._process_duration.record(
-                        duration,
-                        metric_attrs | {error_attributes.ERROR_TYPE: error_type},
-                    )
-                else:
-                    self._process_duration.record(duration, metric_attrs)
-
         return ok, subscription
-
-    async def _publish_message(
-        self,
-        client: aiomqtt.Client,
-        cloudevent: CloudEvent,
-        processor: CloudEventProcessor | None = None,
-    ) -> None:
-        topic = (
-            cloudevent.transportmetadata.get("mqtt_topic")
-            if cloudevent.transportmetadata is not None
-            else None
-        )
-        if topic is None:
-            await super()._publish_message(client, cloudevent, processor)
-            return
-
-        span_attrs: dict[str, Any] = {
-            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
-            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.SEND.value,
-            messaging_attributes.MESSAGING_OPERATION_NAME: "publish",
-            messaging_attributes.MESSAGING_DESTINATION_NAME: str(topic),
-            messaging_attributes.MESSAGING_CLIENT_ID: self._runtime_config.identifier,
-            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
-            server_attributes.SERVER_PORT: self._runtime_config.port,
-        }
-        if isinstance(cloudevent.data, (bytes, bytearray)):
-            span_attrs[messaging_attributes.MESSAGING_MESSAGE_BODY_SIZE] = len(
-                cloudevent.data
-            )
-
-        metric_attrs: dict[str, Any] = {
-            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
-            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.SEND.value,
-            messaging_attributes.MESSAGING_OPERATION_NAME: "publish",
-            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
-            server_attributes.SERVER_PORT: self._runtime_config.port,
-        }
-
-        start = time.monotonic()
-        error_type: str | None = None
-
-        with self._tracer.start_as_current_span(
-            "publish",
-            kind=trace.SpanKind.PRODUCER,
-            attributes=span_attrs,
-        ):
-            # inject current span context into custommetadata so it propagates as MQTT
-            # UserProperty — CloudEvent.__post_serialize__ flattens custommetadata keys
-            trace_headers: dict[str, str] = {}
-            inject(trace_headers)
-            if trace_headers:
-                if cloudevent.custommetadata is None:
-                    cloudevent.custommetadata = {}
-                cloudevent.custommetadata.update(trace_headers)
-
-            try:
-                await super()._publish_message(client, cloudevent, processor)
-            except Exception as exc:
-                error_type = type(exc).__qualname__
-                trace.get_current_span().record_exception(exc)
-                trace.get_current_span().set_status(
-                    trace.Status(trace.StatusCode.ERROR)
-                )
-                raise
-            finally:
-                duration = time.monotonic() - start
-                if error_type is not None:
-                    err_attrs = metric_attrs | {error_attributes.ERROR_TYPE: error_type}
-                    self._operation_duration.record(duration, err_attrs)
-                    self._sent_messages.add(1, err_attrs)
-                else:
-                    self._operation_duration.record(duration, metric_attrs)
-                    self._sent_messages.add(1, metric_attrs)
 
 
 class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
