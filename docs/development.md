@@ -167,12 +167,12 @@ sfc_engine = SfcEngine(
 greetings_processor.register_action_completion_handler(sfc_engine.complete_action)
 greetings_processor.register_action_failure_handler(sfc_engine.fail_action)
 # For pull_event actions also add:
-# greetings_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)
+# greetings_processor.register_pull_completion_handler(sfc_engine.pull_event_handler)
 machinery_jobs_processor.register_scope_handler(sfc_engine.register_scope)
 microdcs.add_additional_task(sfc_engine)
 ```
 
-The `register_pull_completion_handler` line is required when the recipe uses `pull_event` actions — it bridges incoming CloudEvents from the SB processor to the SFC engine's pull-action completion logic. The example recipe uses only `push_command`, so this wiring is omitted in `app/__main__.py`.
+The `register_pull_completion_handler` line is required when the recipe uses `pull_event` actions — it registers `sfc_engine.pull_event_handler`, which writes the incoming CloudEvent as a `pull_event:` work item into `sfc:work:{scope}` so any live engine replica can complete the waiting action. The example recipe uses only `push_command`, so this wiring is omitted in `app/__main__.py`.
 
 `tests/example_sfc.py` provides a reusable `build_example_work_master()` helper containing an SFC recipe payload so you can seed Redis or publish a `ConfigWorkMaster` event during manual testing.
 

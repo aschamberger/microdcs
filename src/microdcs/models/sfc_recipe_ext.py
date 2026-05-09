@@ -39,6 +39,12 @@ class SfcActionExecution:
 
     name: str
     state: SfcActionState = SfcActionState.PENDING
+    type_id: str | None = None
+    """The CloudEvent type this action is associated with.  For ``pull_event``
+    actions this is the type of the incoming event the engine waits for.
+    Populated at creation time from ``SfcActionAssociation.type_id`` so
+    ``_handle_pull_event`` can match incoming events without re-loading the
+    recipe from Redis."""
     command_ce_id: str | None = None
     """The CloudEvent ``id`` of the dispatched command CE; used as the routing key
     to match incoming responses and map them back to this action."""

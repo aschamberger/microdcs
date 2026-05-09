@@ -8,6 +8,7 @@ import redis.asyncio as redis
 
 from microdcs.common import (
     AdditionalTask,
+    CloudEvent,
     CloudEventProcessor,
     MessageIntent,
 )
@@ -98,9 +99,6 @@ class SfcEngine(AdditionalTask):
 
         self._known_scopes: set[str] = set()
         self._pending_commands: dict[str, str] = {}  # command_id → job_id
-        self._pull_event_keys: dict[
-            tuple[str, str], str
-        ] = {}  # (scope, type_id) → command_id
 
     # ── AdditionalTask entry point ──────────────────────────────────────
 
@@ -238,7 +236,8 @@ class SfcEngine(AdditionalTask):
         action = fields.get("action", "")
         scope = fields.get("scope", "")
 
-        if not job_id or not action:
+        # pull_event entries have no job_id — allow them through.
+        if not action or (not job_id and not action.startswith("pull_event:")):
             logger.warning("Invalid work item %s: %s", entry_id, fields)
             await self._ack(stream_key, entry_id)
             return
@@ -251,6 +250,18 @@ class SfcEngine(AdditionalTask):
                 await self._handle_dispatch_action(job_id, action_name)
             elif action == SfcWorkAction.RESUME.value:
                 await self._handle_resume(job_id)
+            elif action.startswith("pull_event:"):
+                type_id = fields.get("type_id", "")
+                ce_subject = fields.get("ce_subject", "")
+                ce_correlation_id = fields.get("ce_correlation_id", "")
+                if type_id and scope:
+                    await self._handle_pull_event(
+                        scope, type_id, ce_subject, ce_correlation_id
+                    )
+                else:
+                    logger.warning(
+                        "pull_event work item missing type_id or scope: %s", fields
+                    )
             else:
                 logger.warning("Unknown work action '%s' for job %s", action, job_id)
         except Exception:
@@ -331,10 +342,13 @@ class SfcEngine(AdditionalTask):
             logger.warning("Failed to trigger Run for job %s", job_id)
             return
 
-        # Create execution state
+        # Create execution state — type_id is stored so _handle_pull_event can
+        # match incoming events without re-loading the recipe.
         actions: dict[str, SfcActionExecution] = {}
         for assoc in recipe.actions:
-            actions[assoc.name] = SfcActionExecution(name=assoc.name)
+            actions[assoc.name] = SfcActionExecution(
+                name=assoc.name, type_id=assoc.type_id
+            )
 
         exec_state = SfcExecutionState(
             job_id=job_id,
@@ -540,8 +554,6 @@ class SfcEngine(AdditionalTask):
             command_ce_id=command_id,
         )
         if result == "OK":
-            self._pending_commands[command_id] = job_id
-            self._pull_event_keys[(scope, assoc.type_id)] = command_id
             logger.info(
                 "Action %s on job %s now waiting for pull_event (%s, command_id=%s)",
                 assoc.name,
@@ -550,19 +562,104 @@ class SfcEngine(AdditionalTask):
                 command_id,
             )
 
-    async def complete_pull_action(self, scope: str, type_id: str) -> None:
-        """Called when an incoming event arrives that matches a PULL_EVENT action.
+    # ── Pull-event completion (stream-based, any instance) ─────────────
 
-        Routes to ``complete_action`` using the command_id registered when the
-        pull action was activated.  Silently ignores events that are not tracked
-        (i.e. the scope/type combination has no active WAITING pull action).
+    async def _handle_pull_event(
+        self,
+        scope: str,
+        type_id: str,
+        ce_subject: str,
+        ce_correlation_id: str,
+    ) -> None:
+        """Complete the first WAITING pull_event action in *scope* whose
+        ``type_id`` matches the incoming CloudEvent type.
+
+        Uses ``sfc:activejobs:{scope}`` to locate candidate jobs without
+        scanning the global active-jobs set.  The first match that wins the
+        atomic CAS advances the step; any racing instance's CAS discards
+        silently.
         """
-        command_id = self._pull_event_keys.pop((scope, type_id), None)
-        if command_id is None:
+        active_jobs = await self._execution_dao.list_active_jobs_in_scope(scope)
+        if not active_jobs:
+            logger.debug("No active jobs in scope %s for pull_event %s", scope, type_id)
             return
-        await self.complete_action(command_id)
+
+        for job_id in active_jobs:
+            exec_state = await self._execution_dao.retrieve(job_id)
+            if exec_state is None or exec_state.completed or exec_state.failed:
+                continue
+
+            # Find a WAITING action whose type_id matches the incoming event.
+            matching_action: str | None = None
+            for action_name, action_exec in exec_state.actions.items():
+                if (
+                    action_exec.state == SfcActionState.WAITING
+                    and action_exec.type_id == type_id
+                ):
+                    matching_action = action_name
+                    break
+
+            if matching_action is None:
+                continue
+
+            # Atomic CAS: WAITING → COMPLETED.
+            cas_result = await self._execution_dao.cas_action_state(
+                job_id=job_id,
+                scope=exec_state.scope,
+                action_name=matching_action,
+                expected_state=SfcActionState.WAITING,
+                new_state=SfcActionState.COMPLETED,
+            )
+            if cas_result != "OK":
+                logger.debug(
+                    "CAS for pull_event %s on job %s returned %s (race?)",
+                    type_id,
+                    job_id,
+                    cas_result,
+                )
+                continue  # Another instance won the race; try next candidate.
+
+            logger.info(
+                "Pull event %s completed action %s on job %s",
+                type_id,
+                matching_action,
+                job_id,
+            )
+            await self._check_step_completion(job_id, exec_state.scope)
+            return  # Successfully handled.
+
+        logger.debug("No WAITING action for pull_event %s in scope %s", type_id, scope)
 
     # ── Event completion (called by SB processors) ──────────────────────
+
+    async def pull_event_handler(self, cloudevent: CloudEvent) -> None:
+        """Pull-completion handler for SB processors.
+
+        Extracts the scope from the CloudEvent subject and writes a
+        ``pull_event:`` work item to the SFC work stream so that any live
+        engine replica can complete the waiting action.
+
+        Register this directly on the SB processor::
+
+            greetings_processor.register_pull_completion_handler(
+                sfc_engine.pull_event_handler
+            )
+        """
+        if not cloudevent.subject:
+            return
+        scope = cloudevent.subject.split("/")[0]
+        await self._redis_client.xadd(
+            self._key_schema.sfc_work_stream(scope),
+            {
+                "action": f"pull_event:{scope}:{cloudevent.type}",
+                "type_id": cloudevent.type or "",
+                "ce_subject": cloudevent.subject or "",
+                "ce_correlation_id": cloudevent.correlationid or "",
+                "scope": scope,
+            },
+            maxlen=5000,
+            approximate=True,
+        )
 
     async def complete_action(
         self,
@@ -1048,7 +1145,9 @@ class SfcEngine(AdditionalTask):
 
     async def _complete_job(self, job_id: str, scope: str) -> None:
         """Mark job as completed in SFC state and OPC UA state machine."""
-        cas_result = await self._execution_dao.cas_finish(job_id, "completed")
+        cas_result = await self._execution_dao.cas_finish(
+            job_id, "completed", scope=scope
+        )
         if cas_result != "OK":
             return
 
@@ -1078,7 +1177,9 @@ class SfcEngine(AdditionalTask):
         if exec_state is None:
             return
 
-        cas_result = await self._execution_dao.cas_finish(job_id, "failed", error)
+        cas_result = await self._execution_dao.cas_finish(
+            job_id, "failed", error, scope=exec_state.scope
+        )
         if cas_result != "OK":
             return
 
@@ -1139,16 +1240,10 @@ class SfcEngine(AdditionalTask):
                             job_id, exec_state.scope, assoc, action_exec
                         )
                 elif action_exec.state == SfcActionState.WAITING:
-                    if (
-                        assoc.interaction == SfcInteraction.PULL_EVENT
-                        and action_exec.command_ce_id
-                    ):
-                        # Re-register routing so complete_pull_action can route the
-                        # incoming event after recovery.
-                        self._pending_commands[action_exec.command_ce_id] = job_id
-                        self._pull_event_keys[(exec_state.scope, assoc.type_id)] = (
-                            action_exec.command_ce_id
-                        )
+                    # WAITING pull_event actions are self-contained in Redis:
+                    # _handle_pull_event matches by type_id at stream-processing
+                    # time, so no local routing tables need to be re-registered.
+                    pass
 
         await self._check_step_completion(job_id, exec_state.scope)
 

@@ -357,7 +357,7 @@ Dashed arrows are direct Python method calls within the same process. Solid arro
 5. **Walks the SFC** — all state mutations use atomic compare-and-swap (CAS) via Lua scripts:
     - Steps are tracked in Redis via `SfcExecutionState` (`current_step` for linear flow, `active_steps` for branches)
     - For `push_command` actions: atomically sets action state `pending → dispatched`, calls the SB processor's `callback_outgoing()` directly, and writes the next work item to the stream in the same CAS if the response completes the step
-    - For `pull_event` actions: sets action state to `waiting` and returns — the step completes when **the instance that registered the wait** receives the matching incoming CloudEvent and routes it to `complete_pull_action` (routing is instance-local; see [Multi-Instance Safety Summary](#multi-instance-safety-summary))
+    - For `pull_event` actions: sets action state to `waiting` and returns — when the matching CloudEvent arrives at any live instance, the SB processor's `_pull_completion_handler` writes a `pull_event:` work item to the SFC work stream so any consumer can call `_handle_pull_event`, which scans `sfc:activejobs:{scope}` to find the WAITING action and CAS-completes it
     - On step completion: the CAS atomically advances the current step and (if the next step has a `push_command` action) writes a `dispatch_action:{name}` entry to the work stream — ensuring another instance can pick it up
     - Simultaneous branches: `current_step` set to branch name, all path first-steps added to `active_steps`; each path advances independently via `cas_branch_advance`; convergence when `active_steps` is empty
     - Selection branches: highest-priority entry transition selects one path; convergence when that path completes
@@ -396,6 +396,51 @@ This builds on the existing Redis JSON persistence pattern used by `JobOrderAndS
 ### Multi-Instance Coordination
 
 The SFC engine runs as an `AdditionalTask` on **every** MicroDCS instance (not gated by a single-instance flag). Multiple instances coordinate through two Redis primitives: a **work stream with consumer groups** and **atomic compare-and-swap (CAS) state transitions**.
+
+```mermaid
+flowchart TB
+    nb(["NB Processor"])
+    equipment(["Equipment"])
+
+    subgraph redis["Redis"]
+        stream[["sfc:work:{scope}\nconsumer group: sfc-engine"]]
+        state[("sfc:execution:{job_id}")]
+        jobs[("sfc:activejobs:{scope}")]
+    end
+
+    subgraph ia["Instance A"]
+        ea["SFC Engine A"]
+        sa["SB Processor A"]
+    end
+
+    subgraph ib["Instance B"]
+        eb["SFC Engine B"]
+        sb["SB Processor B"]
+    end
+
+    nb -- "XADD start_recipe" --> stream
+    stream -- "XREADGROUP" --> ea
+    stream -- "XREADGROUP" --> eb
+    stream -. "XAUTOCLAIM\n(idle > 30 s)" .-> eb
+
+    ea -- "XADD dispatch_action\n/ pull_event:" --> stream
+    eb -- "XADD dispatch_action\n/ pull_event:" --> stream
+    ea -- "Lua CAS" --> state
+    eb -- "Lua CAS" --> state
+    ea -- "SADD / SREM" --> jobs
+    eb -- "SADD / SREM" --> jobs
+
+    ea -- "callback_outgoing()" --> sa
+    eb -- "callback_outgoing()" --> sb
+    sa -- "complete_action()" --> ea
+    sb -- "complete_action()" --> eb
+    sa -- "pull_event_handler()\n→ XADD pull_event:" --> stream
+    sb -- "pull_event_handler()\n→ XADD pull_event:" --> stream
+    sa --- equipment
+    sb --- equipment
+```
+
+> Solid arrows are direct Python calls or Redis commands. The dotted arrow shows `XAUTOCLAIM` recovering an unACKed entry from a dead consumer. Only one instance receives each stream entry via `XREADGROUP`; the CAS ensures only one instance wins a state mutation regardless.
 
 #### SFC Work Stream
 
@@ -436,7 +481,7 @@ On startup or reconnect, each SFC engine instance:
 
 1. Joins the consumer group (`XGROUP CREATE ... MKSTREAM`)
 2. Claims orphaned entries from dead consumers (`XAUTOCLAIM` with min-idle-time, e.g., 30 seconds)
-3. Scans Redis for all SFC execution states that are not yet completed or failed — enqueues `resume` work items so that each active job is reprocessed by the pool of surviving consumers. The `resume` handler re-populates instance-local routing tables (`_pending_commands`, `_pull_event_keys`) from persisted Redis state so that incoming responses and pull events can be routed correctly.
+3. Scans Redis for all SFC execution states that are not yet completed or failed — enqueues `resume` work items so that each active job is reprocessed by the pool of surviving consumers. The `resume` handler re-dispatches `PENDING` and `DISPATCHED` push_command actions. `WAITING` pull_event actions are self-contained in Redis (`type_id` stored in `SfcActionExecution`); `_handle_pull_event` can complete them at stream-processing time when the next event arrives, without any local re-registration.
 4. Begins the normal `XREADGROUP` loop
 
 #### Event Flow Examples
@@ -473,29 +518,28 @@ Instance B:   XAUTOCLAIM → gets orphaned "dispatch_action:tighten"
 
 ```
 Instance A:   step QaCheck active → CAS "pending → waiting"
-              (scope, type_id) → command_id stored in Instance A's local routing table
+              type_id stored in SfcActionExecution in Redis
 Equipment:    sends QA result CloudEvent → MQTT shared subscription → Instance A
-Instance A:   SB processor callback_incoming → complete_pull_action(scope, type_id)
-              → resolves command_id from local routing table
-              → CAS "waiting → completed" → advances step
+Instance A:   SB processor callback_incoming → _pull_event_handler(cloudevent)
+              → XADD sfc:work:{scope} pull_event:{type_id}
+Any instance: XREADGROUP → picks up pull_event entry
+              → _handle_pull_event: scans sfc:activejobs:{scope}
+              → finds WAITING action with type_id match
+              → CAS "waiting → completed" → XACK → advances step
 ```
 
-**Pull event — different instance receives event (routing miss):**
+**Pull event — different instance receives event (now fully safe):**
 
 ```
 Instance A:   step QaCheck active → CAS "pending → waiting"
-              (routing registered only in Instance A's local table; no stream entry)
 Equipment:    sends QA result CloudEvent → MQTT delivers to Instance B
-Instance B:   SB processor callback_incoming → complete_pull_action(scope, type_id)
-              → local routing table miss → no-op
-              → MQTT message is consumed and gone
-              → action remains "waiting" in Redis indefinitely
-              → restart: _recovery_scan enqueues resume,
-                _handle_resume re-registers routing, but the original event is lost
-              → stuck permanently unless equipment resends the event
+Instance B:   SB processor callback_incoming → _pull_event_handler(cloudevent)
+              → XADD sfc:work:{scope} pull_event:{type_id}
+Any instance: XREADGROUP → picks up pull_event entry → CAS-completes action
+              (stream entry survives pod restarts via XAUTOCLAIM)
 ```
 
-> **Note:** For pull_event actions to route at all, the SB processor must have `register_pull_completion_handler(sfc_engine.complete_pull_action)` wired in the application. Without this wiring the `_pull_completion_handler` is `None` and no signal is ever sent to the engine. The example app (`app/__main__.py`) does not include this wiring because its example recipe uses only `push_command` actions.
+> **Note:** For pull_event actions to route into the work stream, the SB processor must have `register_pull_completion_handler(sfc_engine.pull_event_handler)` wired in the application. The example app (`app/__main__.py`) includes this wiring.
 
 #### Idempotency Contract
 
@@ -511,8 +555,8 @@ For `pull_event` actions there is no stream entry to reclaim. Recovery relies en
 | Instance dies before ACKing stream entry | ✅ | `XAUTOCLAIM` re-delivers entry after idle timeout |
 | Push-command response arrives at dispatching instance | ✅ | Normal routing via local `_pending_commands` |
 | Push-command response arrives at **non-dispatching** instance | ⚠️ | Response consumed/lost; action stays `dispatched`; restart → re-dispatch → new response (delay, not permanent miss — requires equipment idempotency) |
-| Pull event arrives at the instance that registered the wait | ✅ | Normal routing via local `_pull_event_keys` |
-| Pull event arrives at a **different** instance | ⚠️ | Event consumed/lost; action stays `waiting`; restart re-registers routing but cannot recover the event — **permanently stuck** unless equipment resends |
+| Pull event arrives at the instance that registered the wait | ✅ | Normal stream routing via `_pull_completion_handler` → `XADD` → `_handle_pull_event` |
+| Pull event arrives at a **different** instance | ✅ | Same stream path — any instance that receives the MQTT message writes to the stream; `XAUTOCLAIM` ensures the work item is processed even if the writing instance dies after the `XADD` |
 | Pod restart with active jobs | ✅ | `_recovery_scan` + `resume`: re-dispatches `push_command` actions, re-registers `pull_event` routing |
 
 ## Implementation Plan
@@ -609,11 +653,11 @@ For `pull_event` actions there is no stream entry to reclaim. Recovery relies en
 8. ~~Update `docs/development.md`: add SFC engine runtime wiring example (`SfcEngine` instantiation + `add_additional_task`)~~
 9. ~~Update `docs/index.md`: add SFC Engine to the "Start Here" reading path and mention recipe-driven station orchestration in the overview~~
 
-> **Status**: Implemented. `app/__main__.py` wires `SfcEngine` as an `AdditionalTask`, registers scope discovery from the Machinery Jobs processor, and bridges greetings response/timeout callbacks back into `SfcEngine.complete_action()` / `fail_action()`. The example recipe helper lives in `tests/example_sfc.py`. App-wiring tests are in `tests/test_app_main.py`; broker-backed happy-path coverage is in `tests/test_app_sfc_integration.py`. Multi-instance recovery remains covered by `tests/test_sfc_engine.py`.
->
-> **Note:** The example app wires `register_action_completion_handler` and `register_action_failure_handler` but **not** `register_pull_completion_handler`. This is intentional: the example recipe uses only `push_command` actions. Any application that uses `pull_event` actions must additionally call `greetings_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)` (or the equivalent for its own SB processor) during wiring.
+> **Status**: Implemented. `app/__main__.py` wires `SfcEngine` as an `AdditionalTask`, registers scope discovery from the Machinery Jobs processor, and bridges greetings response/timeout callbacks back into `SfcEngine.complete_action()` / `fail_action()`. A stream-based `_pull_event_handler` is registered via `register_pull_completion_handler`, writing `pull_event:` work items to `sfc:work:{scope}` so any replica can complete waiting actions. The example recipe helper lives in `tests/example_sfc.py`. App-wiring tests are in `tests/test_app_main.py`; broker-backed happy-path coverage is in `tests/test_app_sfc_integration.py`. Multi-instance recovery remains covered by `tests/test_sfc_engine.py`.
 
 ### Phase 7: Distributed Pull-Event Routing
+
+> **Status**: Implemented. Pull-event routing now goes through the existing `sfc:work:{scope}` Redis stream. The `_pull_completion_handler` receives the full `CloudEvent` and writes a `pull_event:` work item to the stream; `_handle_pull_event` in `_process_work_item` scans `sfc:activejobs:{scope}` (new per-scope Redis set) for WAITING actions and CAS-completes the first match. `SfcActionExecution` carries `type_id` so matching works without re-loading the recipe. `complete_pull_action` and `_pull_event_keys` are removed. `_handle_resume` no longer re-registers local routing for WAITING pull actions. `app/__main__.py` wires the stream-based handler via `register_pull_completion_handler`.
 
 **Goal**: Remove instance-affine pull-event completion so that any live replica can complete a waiting `pull_event` action, and so that delivery survives pod restarts. The current design stores `(scope, type_id) → command_id` in `_pull_event_keys`, a local in-memory map populated only on the dispatching instance. If MQTT delivers the pull event to any other live instance, the lookup misses, the event is consumed and gone, and the action stays stuck in `waiting` state indefinitely.
 

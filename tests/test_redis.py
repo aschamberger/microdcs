@@ -1279,7 +1279,10 @@ class TestSfcExecutionDAO:
         data = call_args[0][2]
         assert data["job_id"] == "job-1"
         assert data["current_step"] == "step_init"
-        pipe.sadd.assert_called_once_with(self.schema.sfc_active_jobs(), "job-1")
+        assert pipe.sadd.call_count == 2
+        sadd_calls = [c[0] for c in pipe.sadd.call_args_list]
+        assert (self.schema.sfc_active_jobs(), "job-1") in sadd_calls
+        assert (self.schema.sfc_active_jobs_key("scope-1"), "job-1") in sadd_calls
 
     @pytest.mark.asyncio
     async def test_save_completed_does_not_add_to_active_set(self):
@@ -1402,10 +1405,11 @@ class TestSfcExecutionDAO:
         self.redis.script_load = AsyncMock(return_value="sha789")
         self.redis.evalsha = AsyncMock(return_value=b"OK")
 
-        result = await self.dao.cas_finish("job-1", "completed")
+        result = await self.dao.cas_finish("job-1", "completed", scope="scope-1")
         assert result == "OK"
         args = self.redis.evalsha.call_args[0]
-        assert args[4] == "completed"
+        assert args[1] == 3  # 3 keys: execution key, global set, scoped set
+        assert args[5] == "completed"
 
     @pytest.mark.asyncio
     async def test_enqueue_work(self):

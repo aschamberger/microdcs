@@ -295,6 +295,17 @@ class RedisKeySchema:
         """
         return "sfc:active-jobs"
 
+    @prefixed_key
+    def sfc_active_jobs_key(self, scope: str) -> str:
+        """
+        sfc:activejobs:[scope]
+        Redis type: set
+        Job IDs with active SFC execution state in a specific scope.
+        Used by ``_handle_pull_event`` to find active jobs without scanning
+        the global active-jobs set.
+        """
+        return f"sfc:activejobs:{scope}"
+
 
 class CloudEventDedupeDAO:
     """
@@ -1177,13 +1188,15 @@ return 'OK'
 
     # Lua script: mark execution as completed/failed.
     # KEYS[1] = sfc:execution:{job_id}
-    # KEYS[2] = sfc:active-jobs
+    # KEYS[2] = sfc:active-jobs  (global set)
+    # KEYS[3] = sfc:activejobs:{scope}  (scoped set; empty string if not used)
     # ARGV[1] = "completed" or "failed"
     # ARGV[2] = error message (or empty string)
     # Returns: "OK" or "NOT_FOUND"
     _CAS_FINISH_LUA = """
 local key = KEYS[1]
 local active_jobs_key = KEYS[2]
+local scoped_jobs_key = KEYS[3]
 local finish_type = ARGV[1]
 local error_msg = ARGV[2]
 
@@ -1206,6 +1219,9 @@ if job_id_raw and job_id_raw ~= '' then
     local job_id = string.match(job_id_raw, '"([^"]+)"')
     if job_id then
         redis.call('SREM', active_jobs_key, job_id)
+        if scoped_jobs_key ~= '' then
+            redis.call('SREM', scoped_jobs_key, job_id)
+        end
     end
 end
 
@@ -1297,6 +1313,7 @@ return cjson.encode(new_active)
         """Create or overwrite the execution state for a job."""
         key = self.key_schema.sfc_execution_key(state.job_id)
         active_jobs_key = self.key_schema.sfc_active_jobs()
+        scoped_jobs_key = self.key_schema.sfc_active_jobs_key(state.scope)
         data = asdict(state)
         # Convert enum values to strings for JSON storage
         for action_data in data.get("actions", {}).values():
@@ -1306,6 +1323,7 @@ return cjson.encode(new_active)
             pipe.json().set(key, "$", data)
             if not state.completed and not state.failed:
                 pipe.sadd(active_jobs_key, state.job_id)  # type: ignore[reportGeneralTypeIssues]
+                pipe.sadd(scoped_jobs_key, state.job_id)  # type: ignore[reportGeneralTypeIssues]
             await pipe.execute()
 
     async def retrieve(self, job_id: str) -> SfcExecutionState | None:
@@ -1322,6 +1340,7 @@ return cjson.encode(new_active)
             actions[name] = SfcActionExecution(
                 name=action_data["name"],
                 state=SfcActionState(action_data["state"]),
+                type_id=action_data.get("type_id"),
                 command_ce_id=action_data.get("command_ce_id"),
                 attempt=action_data.get("attempt", 0),
                 result=action_data.get("result"),
@@ -1352,6 +1371,12 @@ return cjson.encode(new_active)
     async def list_active_jobs(self) -> set[str]:
         """Return all job IDs with active SFC execution state."""
         key = self.key_schema.sfc_active_jobs()
+        members = await self.redis.smembers(key)  # type: ignore[reportGeneralTypeIssues]
+        return {m.decode() if isinstance(m, bytes) else m for m in members}
+
+    async def list_active_jobs_in_scope(self, scope: str) -> set[str]:
+        """Return job IDs with active SFC execution state in a specific scope."""
+        key = self.key_schema.sfc_active_jobs_key(scope)
         members = await self.redis.smembers(key)  # type: ignore[reportGeneralTypeIssues]
         return {m.decode() if isinstance(m, bytes) else m for m in members}
 
@@ -1443,19 +1468,26 @@ return cjson.encode(new_active)
         job_id: str,
         finish_type: str,
         error: str = "",
+        scope: str = "",
     ) -> str:
         """Atomically mark a job as completed or failed.
+
+        Pass *scope* to also remove the job from the per-scope active-jobs set
+        (``sfc:activejobs:{scope}``).  When *scope* is empty the scoped removal
+        is skipped.
 
         Returns ``"OK"`` or ``"NOT_FOUND"``.
         """
         await self._ensure_scripts()
         key = self.key_schema.sfc_execution_key(job_id)
         active_jobs_key = self.key_schema.sfc_active_jobs()
+        scoped_jobs_key = self.key_schema.sfc_active_jobs_key(scope) if scope else ""
         result = await self.redis.evalsha(
             self._cas_finish_sha,  # type: ignore[arg-type]
-            2,
+            3,
             key,
             active_jobs_key,
+            scoped_jobs_key,
             finish_type,
             error,
         )

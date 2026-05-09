@@ -281,13 +281,13 @@ microdcs.add_additional_task(sfc_engine)
 
 For `push_command` actions, the southbound processor also needs callbacks that map correlated responses and expirations back to `sfc_engine.complete_action()` and `sfc_engine.fail_action()`. The example app does this in `app/__main__.py` for the greetings processor.
 
-For `pull_event` actions — where equipment sends an event unprompted and the SFC engine simply waits for it — the southbound processor must additionally register a pull completion handler:
+For `pull_event` actions — where equipment sends an event unprompted and the SFC engine simply waits for it — the southbound processor must additionally register the engine's pull event handler:
 
 ```python
-ping_pong_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)
+ping_pong_processor.register_pull_completion_handler(sfc_engine.pull_event_handler)
 ```
 
-Without this wiring the `_pull_completion_handler` is `None` and incoming events never signal the SFC engine to advance `waiting` pull actions. `push_command`-only recipes do not require this wiring.
+This routes incoming CloudEvents through the Redis stream so any replica can complete the waiting action. `push_command`-only recipes do not require this wiring.
 
 ### Adding a MessagePack-RPC Binding
 

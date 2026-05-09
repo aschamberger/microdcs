@@ -745,7 +745,7 @@ class TestCloudEventProcessorSfcHooks:
         )
         await proc.callback_incoming(ce)
 
-        pull_handler.assert_awaited_once_with("scope-1", "com.test.sample.v1")
+        pull_handler.assert_awaited_once_with(ce)
 
     @pytest.mark.asyncio
     async def test_callback_incoming_pull_handler_not_called_without_subject(self):

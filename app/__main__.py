@@ -135,6 +135,7 @@ if microdcs.runtime_config.is_processor_instance:
     )
     greetings_processor.register_action_completion_handler(sfc_engine.complete_action)
     greetings_processor.register_action_failure_handler(sfc_engine.fail_action)
+    greetings_processor.register_pull_completion_handler(sfc_engine.pull_event_handler)
     machinery_jobs_processor.register_scope_handler(sfc_engine.register_scope)
     microdcs.add_additional_task(sfc_engine)
 

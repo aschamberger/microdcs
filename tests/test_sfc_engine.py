@@ -112,10 +112,20 @@ def _make_exec_state(
     action_command_ce_ids: dict[str, str] | None = None,
 ) -> SfcExecutionState:
     actions = {}
+def _make_exec_state(
+    job_id: str = "job-1",
+    scope: str = "scope-1",
+    current_step: str = "step_init",
+    action_states: dict[str, SfcActionState] | None = None,
+    action_command_ce_ids: dict[str, str] | None = None,
+    action_type_ids: dict[str, str] | None = None,
+) -> SfcExecutionState:
+    actions = {}
     for name, state in (action_states or {}).items():
         cmd_ce_id = (action_command_ce_ids or {}).get(name)
+        type_id = (action_type_ids or {}).get(name)
         actions[name] = SfcActionExecution(
-            name=name, state=state, command_ce_id=cmd_ce_id
+            name=name, state=state, command_ce_id=cmd_ce_id, type_id=type_id
         )
     return SfcExecutionState(
         job_id=job_id,
@@ -701,7 +711,8 @@ class TestSfcEnginePullCompletion:
         )
 
     @pytest.mark.asyncio
-    async def test_dispatch_pull_event_registers_command_id(self):
+    async def test_dispatch_pull_event_does_not_store_in_pending_commands(self):
+        """pull_event dispatch uses stream routing — no local in-memory routing tables."""
         exec_state = _make_exec_state(
             action_states={"action_pull": SfcActionState.PENDING}
         )
@@ -711,8 +722,9 @@ class TestSfcEnginePullCompletion:
 
         await self.engine._dispatch_pull_event("job-1", "scope-1", assoc, action_exec)
 
-        assert len(self.engine._pending_commands) == 1
-        assert ("scope-1", "com.example.pull") in self.engine._pull_event_keys
+        # No local routing tables populated.
+        assert len(self.engine._pending_commands) == 0
+        assert not hasattr(self.engine, "_pull_event_keys")
 
     @pytest.mark.asyncio
     async def test_dispatch_pull_event_passes_command_ce_id_to_cas(self):
@@ -729,7 +741,6 @@ class TestSfcEnginePullCompletion:
         assert cas_call.kwargs["new_state"] == SfcActionState.WAITING
         cmd_ce_id = cas_call.kwargs["command_ce_id"]
         assert cmd_ce_id  # non-empty UUID
-        assert self.engine._pending_commands[cmd_ce_id] == "job-1"
 
     @pytest.mark.asyncio
     async def test_dispatch_pull_event_skips_if_cas_fails(self):
@@ -742,60 +753,105 @@ class TestSfcEnginePullCompletion:
 
         await self.engine._dispatch_pull_event("job-1", "scope-1", assoc, action_exec)
 
+        # Nothing was registered locally.
         assert len(self.engine._pending_commands) == 0
-        assert ("scope-1", "com.example.pull") not in self.engine._pull_event_keys
 
     @pytest.mark.asyncio
-    async def test_complete_pull_action_routes_to_complete_action(self):
+    async def test_handle_pull_event_cas_completes_waiting_action(self):
+        """_handle_pull_event finds the WAITING action and CAS-completes it."""
         exec_state = _make_exec_state(
             action_states={"action_pull": SfcActionState.WAITING},
             action_command_ce_ids={"action_pull": _CMD_UUID},
+            action_type_ids={"action_pull": "com.example.pull"},
         )
+        exec_state.active_steps = ["step_2"]
+        self.mock_execution_dao.list_active_jobs_in_scope.return_value = {"job-1"}
         self.mock_execution_dao.retrieve.return_value = exec_state
         self.mock_execution_dao.cas_action_state.return_value = "OK"
         self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
-        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+        self.mock_execution_dao.cas_advance_step = AsyncMock(return_value="OK")
 
-        self.engine._pending_commands[_CMD_UUID] = "job-1"
-        self.engine._pull_event_keys[("scope-1", "com.example.pull")] = _CMD_UUID
-
-        await self.engine.complete_pull_action("scope-1", "com.example.pull")
+        await self.engine._handle_pull_event(
+            "scope-1", "com.example.pull", "scope-1/asset", ""
+        )
 
         self.mock_execution_dao.cas_action_state.assert_awaited_once()
         cas_call = self.mock_execution_dao.cas_action_state.call_args
         assert cas_call.kwargs["new_state"] == SfcActionState.COMPLETED
+        assert cas_call.kwargs["expected_state"] == SfcActionState.WAITING
 
     @pytest.mark.asyncio
-    async def test_complete_pull_action_ignores_unknown_scope_type(self):
-        await self.engine.complete_pull_action("unknown-scope", "unknown.type")
+    async def test_handle_pull_event_ignores_unknown_type_id(self):
+        """No WAITING action for the type_id — CAS is never called."""
+        exec_state = _make_exec_state(
+            action_states={"action_pull": SfcActionState.WAITING},
+            action_type_ids={"action_pull": "com.example.pull"},
+        )
+        self.mock_execution_dao.list_active_jobs_in_scope.return_value = {"job-1"}
+        self.mock_execution_dao.retrieve.return_value = exec_state
+
+        await self.engine._handle_pull_event(
+            "scope-1", "com.example.unknown", "", ""
+        )
+
         self.mock_execution_dao.cas_action_state.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_complete_pull_action_removes_from_pull_event_keys(self):
-        exec_state = _make_exec_state(
-            action_states={"action_pull": SfcActionState.WAITING},
-            action_command_ce_ids={"action_pull": _CMD_UUID},
-        )
-        self.mock_execution_dao.retrieve.return_value = exec_state
-        self.mock_execution_dao.cas_action_state.return_value = "OK"
-        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
-        self.mock_execution_dao.cas_advance_step.return_value = "OK"
+    async def test_handle_pull_event_skips_if_no_active_jobs(self):
+        """Empty scope active-jobs set — nothing to do."""
+        self.mock_execution_dao.list_active_jobs_in_scope.return_value = set()
 
-        self.engine._pending_commands[_CMD_UUID] = "job-1"
-        self.engine._pull_event_keys[("scope-1", "com.example.pull")] = _CMD_UUID
+        await self.engine._handle_pull_event("scope-1", "com.example.pull", "", "")
 
-        await self.engine.complete_pull_action("scope-1", "com.example.pull")
-
-        assert ("scope-1", "com.example.pull") not in self.engine._pull_event_keys
+        self.mock_execution_dao.retrieve.assert_not_awaited()
+        self.mock_execution_dao.cas_action_state.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_resume_reregisters_waiting_pull_action(self):
+    async def test_handle_pull_event_race_condition_tries_next_candidate(self):
+        """If CAS misses (race), the handler tries remaining jobs."""
+        exec_state_a = _make_exec_state(
+            job_id="job-a",
+            action_states={"action_pull": SfcActionState.WAITING},
+            action_type_ids={"action_pull": "com.example.pull"},
+        )
+        exec_state_b = _make_exec_state(
+            job_id="job-b",
+            action_states={"action_pull": SfcActionState.WAITING},
+            action_type_ids={"action_pull": "com.example.pull"},
+        )
+        self.mock_execution_dao.list_active_jobs_in_scope.return_value = {
+            "job-a",
+            "job-b",
+        }
+        self.mock_execution_dao.retrieve.side_effect = [
+            exec_state_a,
+            exec_state_b,
+            exec_state_b,  # re-read inside _check_step_completion
+        ]
+        # First CAS misses; second wins.
+        self.mock_execution_dao.cas_action_state.side_effect = [
+            "ALREADY_HANDLED",
+            "OK",
+        ]
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_advance_step = AsyncMock(return_value="OK")
+
+        await self.engine._handle_pull_event(
+            "scope-1", "com.example.pull", "", ""
+        )
+
+        assert self.mock_execution_dao.cas_action_state.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_resume_does_not_reregister_routing(self):
+        """WAITING pull_event actions are self-contained in Redis after recovery."""
         exec_state = _make_exec_state(
             job_id="job-1",
             scope="scope-1",
             current_step="step_2",
             action_states={"action_pull": SfcActionState.WAITING},
             action_command_ce_ids={"action_pull": _CMD_UUID},
+            action_type_ids={"action_pull": "com.example.pull"},
         )
         exec_state.active_steps = ["step_2"]
         self.mock_execution_dao.retrieve.return_value = exec_state
@@ -803,11 +859,9 @@ class TestSfcEnginePullCompletion:
 
         await self.engine._handle_resume("job-1")
 
-        assert self.engine._pending_commands.get(_CMD_UUID) == "job-1"
-        assert (
-            self.engine._pull_event_keys.get(("scope-1", "com.example.pull"))
-            == _CMD_UUID
-        )
+        # No local routing populated for WAITING pull actions.
+        assert _CMD_UUID not in self.engine._pending_commands
+        assert not hasattr(self.engine, "_pull_event_keys")
 
 
 class TestSfcEngineHelpers:

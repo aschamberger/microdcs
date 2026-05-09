@@ -595,9 +595,9 @@ class CloudEventProcessor(ABC):
         self._scope_handlers: list[Callable[[str], None]] = []
         self._action_completion_handler: Callable[[str], Awaitable[None]] | None = None
         self._action_failure_handler: Callable[[str], Awaitable[None]] | None = None
-        self._pull_completion_handler: Callable[[str, str], Awaitable[None]] | None = (
-            None
-        )
+        self._pull_completion_handler: (
+            Callable[[CloudEvent], Awaitable[None]] | None
+        ) = None
         self._register_decorated_callbacks()
 
     @property
@@ -634,15 +634,15 @@ class CloudEventProcessor(ABC):
         self._action_failure_handler = handler
 
     def register_pull_completion_handler(
-        self, handler: Callable[[str, str], Awaitable[None]]
+        self, handler: Callable[[CloudEvent], Awaitable[None]]
     ) -> None:
         """Register a callback invoked when an incoming event may complete a PULL_EVENT action.
 
-        The handler receives ``(scope, type_id)`` where *scope* is the first
-        segment of the incoming CloudEvent's subject and *type_id* is the
-        CloudEvent type.  The handler is called after every successful incoming
-        callback; the SFC engine ignores scope/type combinations it is not
-        tracking.
+        The handler receives the full incoming ``CloudEvent``.  Typically the
+        handler writes a ``pull_event`` work item to the SFC work stream via
+        ``XADD``, so any live replica can process it and complete the waiting
+        action.  The SFC engine ignores stream entries whose type_id does not
+        match any active WAITING action.
         """
         self._pull_completion_handler = handler
 
@@ -903,8 +903,7 @@ class CloudEventProcessor(ABC):
             and request_cloudevent.subject is not None
             and request_cloudevent.type is not None
         ):
-            scope = request_cloudevent.subject.split("/")[0]
-            await self._pull_completion_handler(scope, request_cloudevent.type)
+            await self._pull_completion_handler(request_cloudevent)
 
         if responses is None:
             return None
