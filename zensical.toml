@@ -1,0 +1,86 @@
+[project]
+site_name = "MicroDCS"
+site_url = "https://aschamberger.github.io/microdcs/"
+site_description = "An Open-Standards-Based Framework for Distributed Sequence Control Applications"
+repo_url = "https://github.com/aschamberger/microdcs"
+repo_name = "aschamberger/microdcs"
+copyright = "Copyright &copy; 2026 Andreas Schamberger"
+nav = [
+  {"Home" = "index.md"},
+  {"Concepts at a Glance" = "concepts.md"},
+  {"Your First Processor" = "your-first-processor.md"},
+  {"Overall Design" = [
+    {"Overview" = "overall-design.md"},
+    {"Technical Standards" = "technical-standards.md"},
+    {"Information Model Standards" = "information-model-standards.md"},
+    {"SFC Engine" = "sfc_engine.md"},
+    {"Machinery Jobs \u2013 MES Publishing" = "machinery-jobs-mes-publishing.md"}
+  ]},
+  {"Development" = [
+    {"Overview" = "development.md"},
+    {"Persistence" = "persistence.md"}
+  ]},
+  {"Operations" = [
+    {"Overview" = "operations.md"}
+  ]}
+]
+
+[project.theme]
+features = [
+    "navigation.tabs",
+    "navigation.footer"
+]
+
+[project.theme.icon]
+logo = "simple/microstation"
+repo = "simple/github"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "deep purple"
+toggle.icon = "material/weather-sunny"
+toggle.name = "Dark mode"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "blue"
+accent = "deep orange"
+toggle.icon = "material/weather-night"
+toggle.name = "Light mode"
+
+[[project.extra.social]]
+icon = "simple/github"
+link = "https://github.com/aschamberger"
+
+[project.markdown_extensions.attr_list]
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.pymdownx.magiclink]
+
+[project.markdown_extensions.pymdownx.tilde]
+
+[project.markdown_extensions.pymdownx.emoji]
+emoji_index = "zensical.extensions.emoji.twemoji"
+emoji_generator = "zensical.extensions.emoji.to_svg"
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+
+[project.markdown_extensions.pymdownx.snippets]
+base_path = ["."]
+
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }
+]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+[project.markdown_extensions.pymdownx.details]
