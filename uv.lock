@@ -2,6 +2,13 @@ version = 1
 revision = 3
 requires-python = ">=3.14"
 
+[manifest]
+overrides = [
+    { name = "opentelemetry-api", specifier = "==1.41.1" },
+    { name = "opentelemetry-instrumentation", specifier = "==0.62b1" },
+    { name = "opentelemetry-semantic-conventions", specifier = "==0.62b1" },
+]
+
 [[package]]
 name = "aiomqtt"
 version = "3.0.0a1"
@@ -336,6 +343,7 @@ dependencies = [
     { name = "mashumaro", extra = ["orjson"] },
     { name = "msgpack" },
     { name = "opentelemetry-distro" },
+    { name = "opentelemetry-instrumentation-aiomqtt" },
     { name = "opentelemetry-instrumentation-redis" },
     { name = "redis", extra = ["hiredis"] },
     { name = "transitions" },
@@ -357,6 +365,7 @@ requires-dist = [
     { name = "mashumaro", extras = ["orjson"], specifier = ">=3.21" },
     { name = "msgpack", specifier = ">=1.1.2" },
     { name = "opentelemetry-distro", specifier = ">=0.60b1" },
+    { name = "opentelemetry-instrumentation-aiomqtt", git = "https://github.com/aschamberger/opentelemetry-python-contrib?subdirectory=instrumentation%2Fopentelemetry-instrumentation-aiomqtt&branch=feat%2Faiomqtt-instrumentation" },
     { name = "opentelemetry-instrumentation-redis", specifier = ">=0.62b0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
     { name = "transitions", specifier = ">=0.9.3" },
@@ -493,6 +502,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/52/cb/0523b92c112a6cc70be43724343dc45225d3af134419844d7879a07755d4/opentelemetry_instrumentation-0.62b1.tar.gz", hash = "sha256:90e92a905ba4f84db06ac3aec96701df6c079b2d66e9379f8739f0a1bdcc7f45", size = 34043, upload-time = "2026-04-24T13:22:31.997Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/0f/45adbaea1f81b847cffdcee4f4b5f89297e42facf7fac78c7aaac4c38e75/opentelemetry_instrumentation-0.62b1-py3-none-any.whl", hash = "sha256:976fc6e640f2006599e97429c949e622c108d0c17c2059347d1e6c93c707f257", size = 34163, upload-time = "2026-04-24T13:21:31.722Z" },
+]
+
+[[package]]
+name = "opentelemetry-instrumentation-aiomqtt"
+version = "0.63b0.dev0"
+source = { git = "https://github.com/aschamberger/opentelemetry-python-contrib?subdirectory=instrumentation%2Fopentelemetry-instrumentation-aiomqtt&branch=feat%2Faiomqtt-instrumentation#a93de59d3863377eec1981181634243ec5404ec2" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "wrapt" },
 ]
 
 [[package]]
