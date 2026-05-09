@@ -142,8 +142,8 @@ A named step in the sequence. Steps are the states of the SFC state machine.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Unique step identifier |
-| `initial` | boolean | Whether this is the initial step (exactly one per recipe) |
+| `name` | `string` | Unique step identifier |
+| `initial` | `boolean` | Whether this is the initial step (exactly one per recipe) |
 
 #### Transition
 
@@ -151,10 +151,10 @@ A directed edge between steps (or branch constructs). Transitions carry conditio
 
 | Field | Type | Description |
 |---|---|---|
-| `source` | string | Source step or branch name |
-| `target` | string | Target step or branch name |
-| `condition` | string | Condition identifier — resolved at runtime |
-| `priority` | integer | Priority for selection divergence (lower = higher priority) |
+| `source` | `string` | Source step or branch name |
+| `target` | `string` | Target step or branch name |
+| `condition` | `string` | Condition identifier — resolved at runtime |
+| `priority` | `integer` | Priority for selection divergence (lower = higher priority) |
 
 #### Action Association
 
@@ -162,12 +162,12 @@ Associates an action with a step, including the interaction pattern and IEC 6113
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Action identifier |
-| `qualifier` | enum | IEC 61131-3 action qualifier: `N` (non-stored), `P` (pulse), `P0`/`P1` (falling/rising edge), `S` (set/stored), `R` (reset), `L` (time limited), `D` (time delayed) |
-| `interaction` | enum | `push_command` or `pull_event` — see [Equipment Interaction Patterns](#equipment-interaction-patterns) |
-| `type_id` | string | Type identifier for the outgoing command or expected incoming event |
-| `timeout_seconds` | integer | Maximum wait time before expiration handling |
-| `parameters` | object | Step-specific parameters passed to the action |
+| `name` | `string` | Action identifier |
+| `qualifier` | `enum` | IEC 61131-3 action qualifier: `N` (non-stored), `P` (pulse), `P0`/`P1` (falling/rising edge), `S` (set/stored), `R` (reset), `L` (time limited), `D` (time delayed) |
+| `interaction` | `enum` | `push_command` or `pull_event` — see [Equipment Interaction Patterns](#equipment-interaction-patterns) |
+| `type_id` | `string` | Type identifier for the outgoing command or expected incoming event |
+| `timeout_seconds` | `integer` | Maximum wait time before expiration handling |
+| `parameters` | `object` | Step-specific parameters passed to the action |
 
 #### Selection Branch
 
@@ -175,9 +175,9 @@ OR-branching: one of N paths is taken based on transition priorities/conditions.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Branch identifier (used as source/target in transitions) |
+| `name` | `string` | Branch identifier (used as source/target in transitions) |
 | `type` | `"selection"` | Discriminator |
-| `branches` | list[list[string]] | Each inner list is a sequence of step names forming one branch |
+| `branches` | `list[list[string]]` | Each inner list is a sequence of step names forming one branch |
 
 #### Simultaneous Branch
 
@@ -185,9 +185,9 @@ AND-branching: all N paths execute in parallel and must all complete before conv
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Branch identifier (used as source/target in transitions) |
+| `name` | `string` | Branch identifier (used as source/target in transitions) |
 | `type` | `"simultaneous"` | Discriminator |
-| `branches` | list[list[string]] | Each inner list is a sequence of step names forming one parallel branch |
+| `branches` | `list[list[string]]` | Each inner list is a sequence of step names forming one parallel branch |
 
 ### Equipment Interaction Patterns
 

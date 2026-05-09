@@ -215,11 +215,11 @@ uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
 
 ## Documentation
 
-The documentation site is built with MkDocs Material.
+The documentation site is built with Zensical.
 
 ```bash
 # Start the local docs server
-mkdocs serve
+zensical serve
 ```
 
 ## Container Build

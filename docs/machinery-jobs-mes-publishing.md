@@ -233,11 +233,11 @@ The following Redis key schema additions are required:
 
 | Key | Type | Purpose |
 |---|---|---|
-| `joborder:changes:{scope}` | Stream | Change log consumed by the publisher |
-| `pubseq:{scope}` | String (integer) | Monotonic sequence counter per scope |
-| `publisher:stream-cursors` | Hash | Last-processed stream ID per scope, for publisher restart recovery |
-| `active-scopes` | Set | All scopes that have had at least one job stored |
-| `joborder:changes:_global` | Stream | Sentinel stream — every DAO save appends here for new-scope discovery |
+| `joborder:changes:{scope}` | `Stream` | Change log consumed by the publisher |
+| `pubseq:{scope}` | `String (integer)` | Monotonic sequence counter per scope |
+| `publisher:stream-cursors` | `Hash` | Last-processed stream ID per scope, for publisher restart recovery |
+| `active-scopes` | `Set` | All scopes that have had at least one job stored |
+| `joborder:changes:_global` | `Stream` | Sentinel stream — every DAO save appends here for new-scope discovery |
 
 The `active-scopes` set is updated with `SADD active-scopes {scope}` inside `JobOrderAndStateDAO.save()` on the first `Store` for a new scope.
 
@@ -423,13 +423,13 @@ All retained topics carry an MQTT v5 `MessageExpiryInterval` of 48 hours (config
 
 | Field | Type | Description |
 |---|---|---|
-| `seq` | int | Monotonically increasing per scope. Compare with last-seen value to detect missed transitions. |
-| `scope` | string | Machine scope identifier. |
-| `published_at` | string (ISO 8601) | Timestamp of this state-index publish. |
-| `jobs` | array | Active jobs (excludes `EndState`). |
-| `jobs[].job_order_id` | string | The job order ID. |
-| `jobs[].state` | array | Current OPC UA state(s) — top-level state plus optional substates. |
-| `jobs[].has_result` | bool | `true` if a `result/{id}` retained topic exists for this job. |
+| `seq` | `int` | Monotonically increasing per scope. Compare with last-seen value to detect missed transitions. |
+| `scope` | `string` | Machine scope identifier. |
+| `published_at` | `string (ISO 8601)` | Timestamp of this state-index publish. |
+| `jobs` | `array` | Active jobs (excludes `EndState`). |
+| `jobs[].job_order_id` | `string` | The job order ID. |
+| `jobs[].state` | `array` | Current OPC UA state(s) — top-level state plus optional substates. |
+| `jobs[].has_result` | `bool` | `true` if a `result/{id}` retained topic exists for this job. |
 
 ### Reconnect resync protocol
 
