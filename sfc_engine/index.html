@@ -1044,100 +1044,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#implementation-plan" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Implementation Plan
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Implementation Plan">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#phase-1-extended-work-master" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 1: Extended Work Master
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-2-station-configuration-delivery" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 2: Station Configuration Delivery
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-3-sfc-recipe-schema-and-dataclasses" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 3: SFC Recipe Schema and Dataclasses
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-4-sfc-engine-core" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 4: SFC Engine (Core)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-5-branching" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 5: Branching
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-6-application-wiring" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 6: Application Wiring
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-7-distributed-pull-event-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 7: Distributed Pull-Event Routing
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#design-decisions" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1894,100 +1800,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#implementation-plan" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Implementation Plan
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Implementation Plan">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#phase-1-extended-work-master" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 1: Extended Work Master
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-2-station-configuration-delivery" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 2: Station Configuration Delivery
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-3-sfc-recipe-schema-and-dataclasses" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 3: SFC Recipe Schema and Dataclasses
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-4-sfc-engine-core" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 4: SFC Engine (Core)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-5-branching" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 5: Branching
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-6-application-wiring" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 6: Application Wiring
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-7-distributed-pull-event-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Phase 7: Distributed Pull-Event Routing
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#design-decisions" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2632,7 +2444,7 @@
 <li><strong>Walks the SFC</strong> — all state mutations use atomic compare-and-swap (CAS) via Lua scripts:<ul>
 <li>Steps are tracked in Redis via <code>SfcExecutionState</code> (<code>current_step</code> for linear flow, <code>active_steps</code> for branches)</li>
 <li>For <code>push_command</code> actions: atomically sets action state <code>pending → dispatched</code>, calls the SB processor's <code>callback_outgoing()</code> directly, and writes the next work item to the stream in the same CAS if the response completes the step</li>
-<li>For <code>pull_event</code> actions: sets action state to <code>waiting</code> and returns — the step completes when <strong>the instance that registered the wait</strong> receives the matching incoming CloudEvent and routes it to <code>complete_pull_action</code> (routing is instance-local; see <a href="#multi-instance-safety-summary">Multi-Instance Safety Summary</a>)</li>
+<li>For <code>pull_event</code> actions: sets action state to <code>waiting</code> and returns — when the matching CloudEvent arrives at any live instance, the SB processor's <code>_pull_completion_handler</code> writes a <code>pull_event:</code> work item to the SFC work stream so any consumer can call <code>_handle_pull_event</code>, which scans <code>sfc:activejobs:{scope}</code> to find the WAITING action and CAS-completes it</li>
 <li>On step completion: the CAS atomically advances the current step and (if the next step has a <code>push_command</code> action) writes a <code>dispatch_action:{name}</code> entry to the work stream — ensuring another instance can pick it up</li>
 <li>Simultaneous branches: <code>current_step</code> set to branch name, all path first-steps added to <code>active_steps</code>; each path advances independently via <code>cas_branch_advance</code>; convergence when <code>active_steps</code> is empty</li>
 <li>Selection branches: highest-priority entry transition selects one path; convergence when that path completes</li>
@@ -2696,6 +2508,49 @@
 <p>This builds on the existing Redis JSON persistence pattern used by <code>JobOrderAndStateDAO</code>.</p>
 <h3 id="multi-instance-coordination">Multi-Instance Coordination</h3>
 <p>The SFC engine runs as an <code>AdditionalTask</code> on <strong>every</strong> MicroDCS instance (not gated by a single-instance flag). Multiple instances coordinate through two Redis primitives: a <strong>work stream with consumer groups</strong> and <strong>atomic compare-and-swap (CAS) state transitions</strong>.</p>
+<pre class="mermaid"><code>flowchart TB
+    nb(["NB Processor"])
+    equipment(["Equipment"])
+
+    subgraph redis["Redis"]
+        stream[["sfc:work:{scope}\nconsumer group: sfc-engine"]]
+        state[("sfc:execution:{job_id}")]
+        jobs[("sfc:activejobs:{scope}")]
+    end
+
+    subgraph ia["Instance A"]
+        ea["SFC Engine A"]
+        sa["SB Processor A"]
+    end
+
+    subgraph ib["Instance B"]
+        eb["SFC Engine B"]
+        sb["SB Processor B"]
+    end
+
+    nb -- "XADD start_recipe" --&gt; stream
+    stream -- "XREADGROUP" --&gt; ea
+    stream -- "XREADGROUP" --&gt; eb
+    stream -. "XAUTOCLAIM\n(idle &gt; 30 s)" .-&gt; eb
+
+    ea -- "XADD dispatch_action\n/ pull_event:" --&gt; stream
+    eb -- "XADD dispatch_action\n/ pull_event:" --&gt; stream
+    ea -- "Lua CAS" --&gt; state
+    eb -- "Lua CAS" --&gt; state
+    ea -- "SADD / SREM" --&gt; jobs
+    eb -- "SADD / SREM" --&gt; jobs
+
+    ea -- "callback_outgoing()" --&gt; sa
+    eb -- "callback_outgoing()" --&gt; sb
+    sa -- "complete_action()" --&gt; ea
+    sb -- "complete_action()" --&gt; eb
+    sa -- "pull_event_handler()\n→ XADD pull_event:" --&gt; stream
+    sb -- "pull_event_handler()\n→ XADD pull_event:" --&gt; stream
+    sa --- equipment
+    sb --- equipment</code></pre>
+<blockquote>
+<p>Solid arrows are direct Python calls or Redis commands. The dotted arrow shows <code>XAUTOCLAIM</code> recovering an unACKed entry from a dead consumer. Only one instance receives each stream entry via <code>XREADGROUP</code>; the CAS ensures only one instance wins a state mutation regardless.</p>
+</blockquote>
 <h4 id="sfc-work-stream">SFC Work Stream</h4>
 <p>A Redis stream <code>sfc:work:{scope}</code> with consumer group <code>sfc-engine</code> distributes work items:</p>
 <table>
@@ -2746,7 +2601,7 @@
 <ol>
 <li>Joins the consumer group (<code>XGROUP CREATE ... MKSTREAM</code>)</li>
 <li>Claims orphaned entries from dead consumers (<code>XAUTOCLAIM</code> with min-idle-time, e.g., 30 seconds)</li>
-<li>Scans Redis for all SFC execution states that are not yet completed or failed — enqueues <code>resume</code> work items so that each active job is reprocessed by the pool of surviving consumers. The <code>resume</code> handler re-populates instance-local routing tables (<code>_pending_commands</code>, <code>_pull_event_keys</code>) from persisted Redis state so that incoming responses and pull events can be routed correctly.</li>
+<li>Scans Redis for all SFC execution states that are not yet completed or failed — enqueues <code>resume</code> work items so that each active job is reprocessed by the pool of surviving consumers. The <code>resume</code> handler re-dispatches <code>PENDING</code> and <code>DISPATCHED</code> push_command actions. <code>WAITING</code> pull_event actions are self-contained in Redis (<code>type_id</code> stored in <code>SfcActionExecution</code>); <code>_handle_pull_event</code> can complete them at stream-processing time when the next event arrives, without any local re-registration.</li>
 <li>Begins the normal <code>XREADGROUP</code> loop</li>
 </ol>
 <h4 id="event-flow-examples">Event Flow Examples</h4>
@@ -2775,26 +2630,25 @@
 </span></code></pre></div>
 <p><strong>Pull event — same instance receives event (normal):</strong></p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Instance A:   step QaCheck active → CAS &quot;pending → waiting&quot;
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>              (scope, type_id) → command_id stored in Instance A&#39;s local routing table
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>              type_id stored in SfcActionExecution in Redis
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>Equipment:    sends QA result CloudEvent → MQTT shared subscription → Instance A
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>Instance A:   SB processor callback_incoming → complete_pull_action(scope, type_id)
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>              → resolves command_id from local routing table
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>              → CAS &quot;waiting → completed&quot; → advances step
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>Instance A:   SB processor callback_incoming → _pull_event_handler(cloudevent)
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>              → XADD sfc:work:{scope} pull_event:{type_id}
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>Any instance: XREADGROUP → picks up pull_event entry
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>              → _handle_pull_event: scans sfc:activejobs:{scope}
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>              → finds WAITING action with type_id match
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>              → CAS &quot;waiting → completed&quot; → XACK → advances step
 </span></code></pre></div>
-<p><strong>Pull event — different instance receives event (routing miss):</strong></p>
+<p><strong>Pull event — different instance receives event (now fully safe):</strong></p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Instance A:   step QaCheck active → CAS &quot;pending → waiting&quot;
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>              (routing registered only in Instance A&#39;s local table; no stream entry)
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>Equipment:    sends QA result CloudEvent → MQTT delivers to Instance B
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>Instance B:   SB processor callback_incoming → complete_pull_action(scope, type_id)
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>              → local routing table miss → no-op
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>              → MQTT message is consumed and gone
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>              → action remains &quot;waiting&quot; in Redis indefinitely
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>              → restart: _recovery_scan enqueues resume,
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>                _handle_resume re-registers routing, but the original event is lost
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>              → stuck permanently unless equipment resends the event
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>Equipment:    sends QA result CloudEvent → MQTT delivers to Instance B
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>Instance B:   SB processor callback_incoming → _pull_event_handler(cloudevent)
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>              → XADD sfc:work:{scope} pull_event:{type_id}
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>Any instance: XREADGROUP → picks up pull_event entry → CAS-completes action
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>              (stream entry survives pod restarts via XAUTOCLAIM)
 </span></code></pre></div>
 <blockquote>
-<p><strong>Note:</strong> For pull_event actions to route at all, the SB processor must have <code>register_pull_completion_handler(sfc_engine.complete_pull_action)</code> wired in the application. Without this wiring the <code>_pull_completion_handler</code> is <code>None</code> and no signal is ever sent to the engine. The example app (<code>app/__main__.py</code>) does not include this wiring because its example recipe uses only <code>push_command</code> actions.</p>
+<p><strong>Note:</strong> For pull_event actions to route into the work stream, the SB processor must have <code>register_pull_completion_handler(sfc_engine.pull_event_handler)</code> wired in the application. The example app (<code>app/__main__.py</code>) includes this wiring.</p>
 </blockquote>
 <h4 id="idempotency-contract">Idempotency Contract</h4>
 <p>Re-delivery of <code>push_command</code> actions is the fundamental recovery mechanism. After consumer death, <code>XAUTOCLAIM</code> hands the unACKed work item to another instance, which may re-dispatch an already-sent command. <strong>Equipment must handle duplicate commands idempotently</strong> — this is the contract that makes multi-instance recovery safe without distributed locks. The SFC engine adds a <code>correlation_id</code> (derived from <code>{job_id}:{action_name}:{attempt}</code>) to every outgoing command, giving equipment a stable key for deduplication.</p>
@@ -2832,12 +2686,12 @@
 <tr>
 <td>Pull event arrives at the instance that registered the wait</td>
 <td>✅</td>
-<td>Normal routing via local <code>_pull_event_keys</code></td>
+<td>Normal stream routing via <code>_pull_completion_handler</code> → <code>XADD</code> → <code>_handle_pull_event</code></td>
 </tr>
 <tr>
 <td>Pull event arrives at a <strong>different</strong> instance</td>
-<td>⚠️</td>
-<td>Event consumed/lost; action stays <code>waiting</code>; restart re-registers routing but cannot recover the event — <strong>permanently stuck</strong> unless equipment resends</td>
+<td>✅</td>
+<td>Same stream path — any instance that receives the MQTT message writes to the stream; <code>XAUTOCLAIM</code> ensures the work item is processed even if the writing instance dies after the <code>XADD</code></td>
 </tr>
 <tr>
 <td>Pod restart with active jobs</td>
@@ -2846,152 +2700,6 @@
 </tr>
 </tbody>
 </table>
-<h2 id="implementation-plan">Implementation Plan</h2>
-<h3 id="phase-1-extended-work-master">Phase 1: Extended Work Master</h3>
-<p><strong>Goal</strong>: Enable Work Masters to carry recipe content without changing the NB processor.</p>
-<ol>
-<li><del>Add <code>ISA95WorkMasterDataTypeExt</code> to <code>machinery_jobs_ext.py</code> with <code>data</code> and <code>dataschema</code> fields</del> — Done: <code>ISA95WorkMasterDataTypeExt</code> in <code>src/microdcs/models/machinery_jobs_ext.py</code></li>
-<li><del>Update <code>WorkMasterDAO.retrieve()</code> to deserialize as <code>ISA95WorkMasterDataTypeExt</code></del> — Done: backward-compatible since both new fields have <code>None</code> defaults</li>
-<li><del>Update <code>WorkMasterDAO.save()</code> type hint to accept the ext type</del> — Done: accepts <code>ISA95WorkMasterDataTypeExt</code> directly</li>
-<li><del>Add unit tests for serialization roundtrip with and without recipe data</del> — Done</li>
-<li><del>Update existing <code>WorkMasterDAO</code> tests for the new return type</del> — Done</li>
-<li><del>Update this document's "Extended Work Master" section with final field names and code snippets</del> — Done</li>
-<li><del>Update <code>docs/concepts.md</code>: add "Extended Work Master" to the ISA-95 Job Management section explaining the opaque data envelope; add glossary entries for <strong>Work Master</strong>, <strong>Extended Work Master</strong>, <strong><code>dataschema</code> (Work Master)</strong></del> — Done</li>
-<li><del>Update <code>docs/information-model-standards.md</code>: add "Extended Work Master (ISA95WorkMasterDataTypeExt)" subsection after OPC UA / Machinery Job Management with field table, code snippet, and DAO behavior</del> — Done</li>
-</ol>
-<h3 id="phase-2-station-configuration-delivery">Phase 2: Station Configuration Delivery</h3>
-<p><strong>Goal</strong>: Enable MOM to push station configuration (resource lists, Work Masters, operational parameters) into MicroDCS via CloudEvents.</p>
-<ol>
-<li><del>Define CloudEvent data models for each configuration type</del> — Done: thin subclasses (<code>ConfigEquipment</code>, <code>ConfigMaterialClass</code>, <code>ConfigMaterialDefinition</code>, <code>ConfigPersonnel</code>, <code>ConfigPhysicalAsset</code>, <code>ConfigWorkMaster</code>, <code>ConfigJobAcceptance</code>) in <code>machinery_jobs_ext.py</code></li>
-<li><del>Add <code>method</code> CloudEvent extension attribute</del> — Done: <code>method: str | None = None</code> on <code>CloudEvent</code>; mapped to <code>ce_method</code> kwarg in handlers via <code>CloudeventAttributeTuple</code></li>
-<li><del>Add <code>@incoming</code> handlers for each configuration CloudEvent type</del> — Done: 7 handlers on <code>MachineryJobsCloudEventProcessor</code>, each dispatching to the corresponding DAO based on <code>ce_method</code> (<code>PUT</code> / <code>DELETE</code>)</li>
-<li><del>Add <code>JobAcceptanceConfigDAO</code></del> — Done: persists per-scope <code>max_downloadable_job_orders</code> in Redis; <code>is_job_acceptable()</code> queries it for scope-specific override, falling back to the code-configured default</li>
-<li><del>Add unit tests</del> — Done: <code>TestJobAcceptanceConfigDAO</code> in <code>test_redis.py</code>, config handler tests and scoped acceptance tests in <code>test_machinery_jobs_processor.py</code></li>
-<li><del>Update docs</del> — Done: <code>sfc_engine.md</code>, <code>concepts.md</code>, <code>information-model-standards.md</code>, <code>persistence.md</code></li>
-</ol>
-<h3 id="phase-3-sfc-recipe-schema-and-dataclasses">Phase 3: SFC Recipe Schema and Dataclasses</h3>
-<p><strong>Goal</strong>: Define the recipe format and generate typed dataclasses.</p>
-<ol>
-<li><del>Create <code>schemas/sfc_recipe.schema.json</code> with steps, transitions, actions, branches</del> — Done: schema defines <code>SfcStep</code>, <code>SfcTransition</code>, <code>SfcActionAssociation</code>, <code>SfcBranch</code>, <code>SfcRecipe</code> with enums <code>SfcActionQualifier</code>, <code>SfcInteraction</code>, <code>SfcBranchType</code></li>
-<li><del>Generate dataclasses via <code>dataclassgen</code>: <code>sfc_recipe.py</code> in <code>models/</code></del> — Done: <code>uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json</code></li>
-<li><del>Create <code>sfc_recipe_mixin.py</code> if needed for <code>transitions</code> library integration</del> — Not needed: pure data models with no <code>__post_init__</code> or state machine logic</li>
-<li><del>Add the SFC recipe <code>dataschema</code> URI constant</del> — Done: <code>SFC_RECIPE_DATASCHEMA</code> in <code>sfc_recipe_ext.py</code></li>
-<li><del>Update <code>models/__init__.py</code> exports</del> — Done: added <code>sfc_recipe</code> and <code>sfc_recipe_ext</code> imports</li>
-<li><del>Add unit tests for recipe dataclass serialization/deserialization</del> — Done: <code>test_sfc_recipe.py</code> with JSON/msgpack roundtrips, full example recipe, enum values, and config attributes</li>
-<li><del>Update this document's "SFC Recipe Schema" section with the final JSON Schema and generated dataclass details</del> — Done</li>
-<li><del>Update <code>docs/concepts.md</code></del> — Done: added glossary entries for SFC recipe, step, transition, action association, action qualifier, selection/simultaneous branch, <code>push_command</code>, <code>pull_event</code></li>
-<li><del>Update <code>docs/information-model-standards.md</code></del> — Done: added "SFC Recipe Schema" subsection</li>
-<li><del>Update <code>docs/technical-standards.md</code></del> — Done: added "IEC 61131-3 SFC" section</li>
-<li><del>Update <code>docs/development.md</code></del> — Done: added SFC recipe generation command</li>
-</ol>
-<h3 id="phase-4-sfc-engine-core">Phase 4: SFC Engine (Core)</h3>
-<p><strong>Goal</strong>: Implement the multi-instance sequential execution engine as an <code>AdditionalTask</code>.</p>
-<ol>
-<li><del>Create <code>src/microdcs/sfc_engine.py</code> with <code>SfcEngine(AdditionalTask)</code></del> — Done: <code>SfcEngine</code> in <code>src/microdcs/sfc_engine.py</code></li>
-<li><del>Accept NB processor and SB processor references via constructor injection</del> — Done: <code>nb_processor</code> + <code>sb_processors: Mapping[str, CloudEventProcessor]</code></li>
-<li><del>Implement SFC work stream setup: consumer group creation (<code>XGROUP CREATE ... MKSTREAM</code>), <code>XREADGROUP</code> loop, <code>XAUTOCLAIM</code> for orphaned entries</del> — Done: <code>_run_loop()</code> + <code>_read_work_items()</code> + <code>_autoclaim_orphaned()</code></li>
-<li><del>Implement recipe loading: Job Order → Work Master ID → Redis → recipe deserialization dispatched by <code>dataschema</code></del> — Done: <code>_handle_start_recipe()</code> loads job order → resolves work master → checks <code>dataschema</code> → deserializes <code>SfcRecipe</code></li>
-<li><del>Implement <code>Run</code> trigger on the NB processor's <code>HierarchicalGraphMachine</code> via direct call</del> — Done: <code>_trigger_job_transition()</code> adds model to state machine, triggers, persists, removes model</li>
-<li><del>Implement linear step execution (no branching): step entry → action dispatch → wait for completion → transition evaluation → next step</del> — Done: <code>_handle_dispatch_action()</code> + <code>_check_step_completion()</code> + <code>_evaluate_transitions()</code></li>
-<li><del>Implement <code>push_command</code> action pattern: atomic CAS <code>pending → dispatched</code> + call SB processor's <code>callback_outgoing()</code> directly + <code>correlation_id</code> for idempotent re-delivery</del> — Done: <code>_dispatch_push_command()</code></li>
-<li><del>Implement <code>pull_event</code> action pattern: CAS to <code>waiting</code> state + SB processor incoming event delivery + CAS <code>waiting → completed</code></del> — Done: <code>_dispatch_pull_event()</code> + <code>complete_action()</code></li>
-<li><del>Implement atomic CAS via Lua script: compare-and-swap on <code>sfc:execution:{job_id}</code> with optional <code>XADD</code> of follow-up work items</del> — Done: 3 Lua scripts in <code>SfcExecutionDAO</code> (<code>cas_action_state</code>, <code>cas_advance_step</code>, <code>cas_finish</code>)</li>
-<li><del>Implement <code>SfcExecutionDAO</code> with Redis JSON persistence for execution state (current step, per-action states, branch states)</del> — Done: <code>SfcExecutionDAO</code> in <code>src/microdcs/redis.py</code></li>
-<li><del>Add SFC work stream and execution state keys to <code>RedisKeySchema</code></del> — Done: <code>sfc_work_stream(scope)</code>, <code>sfc_execution_key(job_id)</code>, <code>sfc_active_jobs()</code></li>
-<li><del>Implement recovery scan on startup: find <code>dispatched</code> actions idle beyond threshold, re-dispatch via CAS</del> — Done: <code>_recovery_scan()</code> enqueues <code>resume</code> for all active incomplete jobs; <code>_handle_resume</code> re-populates routing tables and re-dispatches unfinished actions</li>
-<li><del>Implement job completion: <code>Ended_Completed</code> state transition on NB processor + <code>ISA95JobResponseDataType</code></del> — Done: <code>_complete_job()</code></li>
-<li><del>Implement job failure: timeout → <code>Ended_Aborted</code>, equipment error → <code>Aborted</code> via NB processor</del> — Done: <code>_fail_job()</code></li>
-<li><del>Add unit tests with mocked processors, Redis, and multi-instance race scenarios</del> — Done: 25 tests in <code>tests/test_sfc_engine.py</code> + 14 tests in <code>tests/test_redis.py</code> for <code>SfcExecutionDAO</code></li>
-<li><del>Update this document's "SFC Engine Architecture" section with final class design, method signatures, and persistence schema</del> — Done</li>
-<li><del>Update <code>docs/concepts.md</code>: add a new "SFC Engine" section under Framework Concepts explaining the three-layer architecture (NB protocol → SFC orchestration → SB protocol), the <code>AdditionalTask</code> base, and multi-instance coordination; add glossary entries for <strong>SFC engine</strong>, <strong>AdditionalTask</strong>, <strong>Three-layer architecture</strong>, <strong>SFC work stream</strong>, <strong>Atomic CAS</strong>, <strong>Idempotency contract</strong></del> — Done</li>
-<li><del>Update <code>docs/overall-design.md</code>: add "Three-Layer Architecture" subsection describing the NB protocol / SFC orchestration / SB protocol layer separation and multi-instance model</del> — Done</li>
-<li><del>Update <code>docs/persistence.md</code>: expand key schema table with SFC execution state keys and work stream; add "SFC Execution State" section documenting <code>SfcExecutionDAO</code>, CAS Lua scripts, and stream consumer group; add "SFC Work Stream" section with stream schema and consumer group semantics</del> — Done</li>
-<li><del>Update <code>docs/your-first-processor.md</code>: add note in overview that processors are stateless protocol adapters and point to SFC Engine docs for multi-step orchestration</del> — Done</li>
-</ol>
-<h3 id="phase-5-branching">Phase 5: Branching</h3>
-<p><strong>Goal</strong>: Add parallel and selection branching support.</p>
-<ol>
-<li><del>Implement simultaneous (AND) branches via <code>active_steps</code> tracking in Redis with atomic CAS operations</del></li>
-<li><del>Implement selection (OR) branches via priority-based transition evaluation</del></li>
-<li><del>Implement convergence logic (simultaneous: all must complete; selection: first wins)</del></li>
-<li><del>Add unit tests for branching scenarios</del></li>
-<li><del>Update this document's "State Machine Integration" section with final branching implementation details</del></li>
-<li><del>Update <code>docs/concepts.md</code>: expand the SFC Engine section with branching semantics (simultaneous/selection divergence and convergence)</del></li>
-</ol>
-<blockquote>
-<p><strong>Status</strong>: Implemented. Branching in <code>SfcEngine</code> (<code>src/microdcs/sfc_engine.py</code>), <code>cas_branch_advance</code> Lua script in <code>SfcExecutionDAO</code> (<code>src/microdcs/redis.py</code>). Tests in <code>tests/test_sfc_engine.py</code> and <code>tests/test_redis.py</code>.</p>
-</blockquote>
-<h3 id="phase-6-application-wiring">Phase 6: Application Wiring</h3>
-<p><strong>Goal</strong>: Integrate into the example application.</p>
-<ol>
-<li><del>Instantiate <code>SfcEngine</code> in <code>app/__main__.py</code>, injecting the NB and SB processor references</del></li>
-<li><del>Register via <code>microdcs.add_additional_task(sfc_engine)</code> — the engine runs as a long-lived task within the <code>SystemEventTaskGroup</code> on every instance and monitors <code>_shutdown_event</code> for graceful shutdown</del></li>
-<li><del>SB processors are still registered with their own protocol bindings as usual — the engine calls them directly, it does not replace their transport wiring</del></li>
-<li><del>Create example Work Master with SFC recipe for testing</del></li>
-<li><del>Add MQTT + Redis integration coverage for the example app happy path</del></li>
-<li><del>Update Kubernetes deployment: remove single-instance publisher gating for the SFC engine — all processor instances run the engine; document the idempotency contract for equipment integrators</del></li>
-<li><del>Update <code>docs/your-first-processor.md</code>: add "SFC Engine Integration" subsection in "Wire It Up" explaining that the engine calls processors directly and showing wiring example</del></li>
-<li><del>Update <code>docs/development.md</code>: add SFC engine runtime wiring example (<code>SfcEngine</code> instantiation + <code>add_additional_task</code>)</del></li>
-<li><del>Update <code>docs/index.md</code>: add SFC Engine to the "Start Here" reading path and mention recipe-driven station orchestration in the overview</del></li>
-</ol>
-<blockquote>
-<p><strong>Status</strong>: Implemented. <code>app/__main__.py</code> wires <code>SfcEngine</code> as an <code>AdditionalTask</code>, registers scope discovery from the Machinery Jobs processor, and bridges greetings response/timeout callbacks back into <code>SfcEngine.complete_action()</code> / <code>fail_action()</code>. The example recipe helper lives in <code>tests/example_sfc.py</code>. App-wiring tests are in <code>tests/test_app_main.py</code>; broker-backed happy-path coverage is in <code>tests/test_app_sfc_integration.py</code>. Multi-instance recovery remains covered by <code>tests/test_sfc_engine.py</code>.</p>
-<p><strong>Note:</strong> The example app wires <code>register_action_completion_handler</code> and <code>register_action_failure_handler</code> but <strong>not</strong> <code>register_pull_completion_handler</code>. This is intentional: the example recipe uses only <code>push_command</code> actions. Any application that uses <code>pull_event</code> actions must additionally call <code>greetings_processor.register_pull_completion_handler(sfc_engine.complete_pull_action)</code> (or the equivalent for its own SB processor) during wiring.</p>
-</blockquote>
-<h3 id="phase-7-distributed-pull-event-routing">Phase 7: Distributed Pull-Event Routing</h3>
-<p><strong>Goal</strong>: Remove instance-affine pull-event completion so that any live replica can complete a waiting <code>pull_event</code> action, and so that delivery survives pod restarts. The current design stores <code>(scope, type_id) → command_id</code> in <code>_pull_event_keys</code>, a local in-memory map populated only on the dispatching instance. If MQTT delivers the pull event to any other live instance, the lookup misses, the event is consumed and gone, and the action stays stuck in <code>waiting</code> state indefinitely.</p>
-<p>The fix routes incoming pull events through the existing <code>sfc:work:{scope}</code> Redis stream. Once a <code>pull_event</code> work item is in the stream, <code>XAUTOCLAIM</code> provides the same restart-survival guarantee that already covers <code>push_command</code> work items. No new Redis key families are needed. No recipe schema changes are required.</p>
-<ol>
-<li>
-<p>Add <code>type_id: str | None = None</code> to <code>SfcActionExecution</code> in <code>sfc_recipe_ext.py</code>. Set this field when a <code>pull_event</code> action transitions to <code>WAITING</code> so the engine can match incoming events at stream-processing time without re-loading the recipe.</p>
-</li>
-<li>
-<p>Add <code>sfc_active_jobs_key(scope: str)</code> to <code>RedisKeySchema</code>, returning <code>sfc:activejobs:{scope}</code> (a Redis set). Update <code>SfcExecutionDAO.save()</code> to add <code>job_id</code> to this set and <code>cas_finish</code> to remove it. This allows <code>_handle_pull_event</code> to find active jobs in a scope without scanning the global active-jobs list.</p>
-</li>
-<li>
-<p>Change the <code>_pull_completion_handler</code> contract in <code>common.py</code> from <code>Callable[[str, str], Awaitable[None]]</code> (receiving <code>scope, type_id</code>) to <code>Callable[[CloudEvent], Awaitable[None]]</code> (receiving the full incoming <code>CloudEvent</code>). Update <code>callback_incoming</code> to pass <code>request_cloudevent</code> directly to the handler. Update <code>register_pull_completion_handler</code> docstring accordingly.</p>
-</li>
-<li>
-<p>Update <code>_dispatch_pull_event</code> in <code>sfc_engine.py</code>: after the CAS to <code>WAITING</code> succeeds, write <code>assoc.type_id</code> into the <code>SfcActionExecution</code> record (via a second <code>cas_action_state</code> call or by extending the existing CAS script). Remove <code>self._pull_event_keys[(scope, assoc.type_id)] = command_id</code> and the <code>self._pending_commands[command_id] = job_id</code> line that applies to pull paths.</p>
-</li>
-<li>
-<p>Add <code>_handle_pull_event(self, scope: str, type_id: str, ce_subject: str, ce_correlation_id: str | None)</code> to <code>sfc_engine.py</code>:</p>
-<ul>
-<li>Query <code>sfc_active_jobs_key(scope)</code> to get the set of active job IDs for the scope.</li>
-<li>For each job, load <code>SfcExecutionState</code> and scan <code>actions</code> for <code>state == WAITING</code> and <code>action_exec.type_id == type_id</code>.</li>
-<li>On first match, CAS <code>waiting → completed</code> via <code>cas_action_state</code>. If CAS returns <code>OK</code>, call <code>_check_step_completion</code>. If CAS misses (another instance raced to the same action), continue to the next candidate.</li>
-<li>If no match is found (event arrived before any job registered a wait, or the wait was already claimed), log at debug level and return — <code>XAUTOCLAIM</code> will retry the work item if it was not yet ACKed.</li>
-</ul>
-</li>
-<li>
-<p>Extend <code>_process_work_item</code> in <code>sfc_engine.py</code> with a new branch: <code>elif action.startswith("pull_event:")</code>. Extract <code>type_id</code>, <code>ce_subject</code>, <code>ce_correlation_id</code> from the work item fields and call <code>_handle_pull_event</code>.</p>
-</li>
-<li>
-<p>Remove <code>complete_pull_action</code> from <code>sfc_engine.py</code>. The stream-based handler in <code>_process_work_item</code> replaces it entirely.</p>
-</li>
-<li>
-<p>Remove the <code>_pull_event_keys</code> field declaration and all read/write sites from <code>sfc_engine.py</code>.</p>
-</li>
-<li>
-<p>Remove the block in <code>_handle_resume</code> that re-registers <code>_pull_event_keys</code> and the corresponding <code>_pending_commands</code> entry for WAITING pull actions. WAITING pull actions are now self-contained in <code>SfcExecutionState</code>; they are matched when a <code>pull_event</code> work item is processed.</p>
-</li>
-<li>
-<p>Update <code>__main__.py</code> wiring: replace <code>register_pull_completion_handler(sfc_engine.complete_pull_action)</code> with an async handler that extracts <code>scope</code> from the first CloudEvent subject segment and calls <code>await redis_client.xadd(key_schema.sfc_work_stream(scope), {"action": f"pull_event:{scope}:{cloudevent.type}", "type_id": cloudevent.type, "ce_subject": cloudevent.subject or "", "ce_correlation_id": cloudevent.correlationid or ""})</code>. Update the Phase 6 note in this document to reflect the new wiring contract.</p>
-</li>
-<li>
-<p>Update tests:</p>
-<ul>
-<li><code>test_common.py</code>: update <code>test_register_pull_completion_handler</code>, <code>test_callback_incoming_calls_pull_completion_handler</code>, and <code>test_callback_incoming_pull_handler_not_called_without_subject</code> to assert the handler receives a full <code>CloudEvent</code> rather than <code>(scope, type_id)</code>.</li>
-<li><code>test_sfc_engine.py</code>: replace tests built around <code>_pull_event_keys</code> and <code>complete_pull_action</code> with DAO-based expectations. Add tests for: pull wait written to execution state, <code>_handle_pull_event</code> matches and CAS-completes a WAITING action, unknown <code>type_id</code> leaves state unchanged, two races on the same action leave one completed and one unchanged, resume does not re-register any local routing.</li>
-</ul>
-</li>
-<li>
-<p>Update this document: replace the instance-local pull-event description in <a href="#execution-flow">Execution Flow</a>, remove <code>_pull_event_keys</code> re-registration from <a href="#recovery-flow">Recovery Flow</a>, replace the ⚠️ pull-event rows in <a href="#multi-instance-safety-summary">Multi-Instance Safety Summary</a> with the corrected guarantees, and update the "Action completion routing is instance-affine" design decision to reflect that pull-event routing is no longer instance-local.</p>
-</li>
-<li>
-<p>Update <code>docs/overall-design.md</code>: replace the pull-event paragraph that states wrong-instance delivery is permanently stuck. The new guarantee is: once a live instance receives the pull event and <code>XADD</code> succeeds, delivery survives pod restarts via <code>XAUTOCLAIM</code>. The remaining gap (all instances simultaneously down in the window between MQTT receive and <code>XADD</code>) is a single async write — substantially narrower than the previous instance-affine failure mode.</p>
-</li>
-</ol>
 <h2 id="design-decisions">Design Decisions</h2>
 <ul>
 <li><strong>Opaque <code>data</code> + <code>dataschema</code> on Work Master</strong>: Follows the CloudEvent envelope pattern. The NB processor and DAO stay ignorant of recipe content. Any future recipe format can be added by defining a new <code>dataschema</code> URI without touching existing code.</li>
@@ -3000,10 +2708,10 @@
 <li><strong><code>transitions</code> library for OPC UA only</strong>: The <code>HierarchicalGraphMachine</code> is used for the OPC UA job lifecycle state machine (<code>AllowedToStart</code> → <code>Running</code> → <code>Ended</code>), reusing the same pattern proven in <code>MachineryJobsCloudEventProcessor</code>. SFC recipe execution does <strong>not</strong> use the <code>transitions</code> library — step sequencing, branching, and convergence are tracked in Redis via <code>SfcExecutionState</code> with atomic CAS Lua scripts. This avoids coupling recipe complexity to an in-memory state machine that would need reconciliation with Redis persistence.</li>
 <li><strong>IEC 61131-3 SFC terminology</strong>: Uses standardized names (step, transition, action, qualifier, selection/simultaneous divergence) from IEC 61131-3 without adopting the PLCopen TC6 graphical exchange format.</li>
 <li><strong>Two interaction patterns</strong>: <code>push_command</code> and <code>pull_event</code> cover the two real-world equipment integration scenarios observed in discrete manufacturing (automotive). The pattern is declared per action in the recipe, not globally.</li>
-<li><strong>Station configuration delivery before SFC engine</strong>: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, <code>is_job_acceptable()</code> rejects every Job Order and no job ever reaches <code>AllowedToStart</code>. Configuration delivery is therefore Phase 2 — after the Work Master extension (Phase 1) but before the SFC engine (Phase 4). This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.</li>
+<li><strong>Station configuration delivery before SFC engine</strong>: Resource lists (equipment, material, personnel, physical asset), Work Masters, and operational parameters (max downloadable orders) are all prerequisites for job acceptance. Without populated lists, <code>is_job_acceptable()</code> rejects every Job Order and no job ever reaches <code>AllowedToStart</code>. Configuration delivery is therefore a prerequisite for the SFC engine — implemented after the Work Master extension but before the execution engine itself. This also means the MES/MOM layer owns the station's allowed resource set, which matches the ISA-95 Level 3 → Level 2 responsibility split.</li>
 <li><strong><code>method</code> extension attribute for PUT/DELETE</strong>: Using an HTTP-style <code>method</code> CloudEvent extension attribute to distinguish upsert vs. delete keeps the payload structure identical for both operations. <code>PUT</code> (the default when <code>method</code> is absent) performs an upsert; <code>DELETE</code> removes the resource. Incremental updates (add one equipment ID, remove one) avoid the complexity of full-replacement semantics and allow the MES layer to manage resource lists without MicroDCS needing to reconcile diffs. The attribute is mapped to <code>ce_method</code> in handler kwargs to avoid a name collision with the OPC UA <code>method</code> positional parameter.</li>
 <li><strong>Multi-instance SFC engine, not single-instance</strong>: Unlike the publisher (which is single-instance to avoid duplicate retained topic writes), the SFC engine runs on <strong>every</strong> instance. The publisher's problem is idempotent <em>output deduplication</em> on a shared MQTT broker, which is hard with standalone <code>XREAD</code>. The SFC engine's problem is <em>work distribution and recovery</em>, which maps cleanly to Redis consumer groups (<code>XREADGROUP</code> + <code>XAUTOCLAIM</code>). Running on every instance eliminates a single point of failure and lets K8s horizontal scaling naturally increase throughput.</li>
-<li><strong>Action completion routing is instance-affine</strong>: When the SFC engine dispatches a <code>push_command</code>, it stores <code>command_id → job_id</code> in <code>_pending_commands</code> (in-memory). When it activates a <code>pull_event</code> wait, it stores <code>(scope, type_id) → command_id</code> in <code>_pull_event_keys</code> (in-memory). Both lookups are instance-local: only the dispatching instance can route the response or pull event back to <code>complete_action</code>. If MQTT delivers the message to a different live instance, the lookup misses and the event is silently dropped. The action stays stuck in its current state in Redis. For <code>push_command</code> when the dispatching instance <strong>dies</strong> before ACKing the stream entry, <code>XAUTOCLAIM</code> provides automatic recovery. For all other wrong-instance delivery scenarios, recovery requires a pod restart: <code>_recovery_scan</code> enqueues <code>resume</code> work items and <code>_handle_resume</code> re-populates routing tables from Redis state. Moving routing tables to Redis would eliminate instance-affinity at the cost of a Redis round-trip on every incoming event.</li>
+<li><strong><code>push_command</code> response routing is instance-affine by design</strong>: <code>_pending_commands</code> is an in-memory map on the dispatching instance. If MQTT delivers the equipment response to a different live instance, <code>complete_action</code> finds no matching entry and silently ignores it. The action stays <code>dispatched</code> in Redis until pod restart triggers <code>_recovery_scan</code> and <code>XAUTOCLAIM</code> recovers the work item. This is intentional: moving <code>_pending_commands</code> to Redis would add a round-trip per incoming response. <code>pull_event</code> routing is fully distributed: any instance that receives the CloudEvent writes a <code>pull_event:</code> work item to the work stream; <code>XAUTOCLAIM</code> guarantees completion even across restarts.</li>
 <li><strong>Atomic CAS via Lua scripts, not distributed locks</strong>: Every SFC state mutation (action dispatch, completion, step advancement) uses a Redis Lua script that atomically reads the current state, verifies it matches an expected value, and writes the new state. This is a compare-and-swap — if two instances race on the same action, only one succeeds and the loser discards silently. This avoids the complexity and failure modes of distributed locks (heartbeats, TTL tuning, split-brain) while providing the same correctness guarantee. The CAS also atomically writes follow-up work items to the stream, preventing the gap between "state updated" and "next work item enqueued" that would require recovery logic.</li>
 <li><strong>Equipment idempotency is a hard requirement</strong>: After consumer death, <code>XAUTOCLAIM</code> hands unACKed work items to another instance, which may re-dispatch an already-sent <code>push_command</code>. The SFC engine includes a <code>correlation_id</code> on every outgoing command for equipment-side deduplication. This is the contract that makes multi-instance recovery safe without distributed locks or exactly-once delivery guarantees. Equipment that cannot handle duplicate commands must implement deduplication on the <code>correlation_id</code>.</li>
 <li><strong><code>XAUTOCLAIM</code> over heartbeat-based ownership</strong>: Redis Stream consumer groups provide automatic pending-entry-list (PEL) tracking. <code>XAUTOCLAIM</code> with a min-idle-time (e.g., 30 seconds) transfers entries from dead consumers to live ones without any custom heartbeat mechanism. This leverages a built-in Redis primitive rather than reimplementing failure detection.</li>
