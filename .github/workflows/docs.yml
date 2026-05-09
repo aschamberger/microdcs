@@ -25,4 +25,8 @@ jobs:
           restore-keys: |
             zensical-
       - run: pip install zensical
-      - run: zensical gh-deploy --force
+      - run: zensical build
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
