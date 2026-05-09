@@ -1674,26 +1674,10 @@ class TestOTELInstrumentedMQTTHandler:
         handler = self._make_otel_handler()
         assert handler._tracer is not None
         assert handler._meter is not None
-        assert "process_counter" in handler._metrics
-        assert "process_duration" in handler._metrics
-
-    def test_record_metrics_success(self):
-        handler = self._make_otel_handler()
-        handler._metrics["process_counter"] = MagicMock()
-        handler._metrics["process_duration"] = MagicMock()
-        handler.record_metrics(0.5, error=False, base_attributes={"key": "val"})
-        handler._metrics["process_counter"].add.assert_called_once()
-        handler._metrics["process_duration"].record.assert_called_once()
-        attrs = handler._metrics["process_counter"].add.call_args[0][1]
-        assert attrs["status"] == "success"
-
-    def test_record_metrics_error(self):
-        handler = self._make_otel_handler()
-        handler._metrics["process_counter"] = MagicMock()
-        handler._metrics["process_duration"] = MagicMock()
-        handler.record_metrics(1.0, error=True)
-        attrs = handler._metrics["process_counter"].add.call_args[0][1]
-        assert attrs["status"] == "error"
+        assert handler._consumed_messages is not None
+        assert handler._process_duration is not None
+        assert handler._operation_duration is not None
+        assert handler._sent_messages is not None
 
     @pytest.mark.asyncio
     async def test_process_message_with_tracing(self):
@@ -1703,8 +1687,8 @@ class TestOTELInstrumentedMQTTHandler:
         client._client.ack = MagicMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        handler._metrics["process_counter"] = MagicMock()
-        handler._metrics["process_duration"] = MagicMock()
+        handler._consumed_messages = MagicMock()
+        handler._process_duration = MagicMock()
 
         msg = _make_mqtt_message()
         props = MagicMock()
@@ -1716,7 +1700,7 @@ class TestOTELInstrumentedMQTTHandler:
         msg.properties = props
 
         error, sub = await handler._process_message(client, msg)
-        handler._metrics["process_counter"].add.assert_called()
+        handler._consumed_messages.add.assert_called()
 
     @pytest.mark.asyncio
     async def test_process_message_without_user_properties(self):
@@ -1726,52 +1710,129 @@ class TestOTELInstrumentedMQTTHandler:
         client._client.ack = MagicMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        handler._metrics["process_counter"] = MagicMock()
-        handler._metrics["process_duration"] = MagicMock()
+        handler._consumed_messages = MagicMock()
+        handler._process_duration = MagicMock()
 
         msg = _make_mqtt_message(properties=None)
         error, sub = await handler._process_message(client, msg)
-        handler._metrics["process_counter"].add.assert_called()
+        handler._consumed_messages.add.assert_called()
 
     @pytest.mark.asyncio
-    async def test_process_message_success_classified_as_success(self):
-        """A normally processed message must be recorded as success, not error."""
+    async def test_process_message_success_no_error_type(self):
+        """A normally processed message must not set error.type on metrics."""
         handler = self._make_otel_handler()
         client = AsyncMock()
         client._client = MagicMock()
         client._client.ack = MagicMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        handler._metrics["process_counter"] = MagicMock()
-        handler._metrics["process_duration"] = MagicMock()
+        handler._consumed_messages = MagicMock()
+        handler._process_duration = MagicMock()
 
         msg = _make_mqtt_message(properties=None)
         ok, _sub = await handler._process_message(client, msg)
 
-        assert ok is True, (
-            "base handler should have returned True for a processed message"
-        )
-        attrs = handler._metrics["process_counter"].add.call_args[0][1]
-        assert attrs["status"] == "success"
+        assert ok is True
+        attrs = handler._process_duration.record.call_args[0][1]
+        assert "error.type" not in attrs
 
     @pytest.mark.asyncio
-    async def test_process_message_duplicate_classified_as_error(self):
-        """A duplicate (skipped) message must be recorded as error in metrics."""
+    async def test_process_message_duplicate_no_error_type(self):
+        """A duplicate (skipped) message is not a processing error; error.type must not be set."""
         handler = self._make_otel_handler()
         client = AsyncMock()
         client._client = MagicMock()
         client._client.ack = MagicMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
-        handler._metrics["process_counter"] = MagicMock()
-        handler._metrics["process_duration"] = MagicMock()
+        handler._consumed_messages = MagicMock()
+        handler._process_duration = MagicMock()
 
         msg = _make_mqtt_message(properties=None)
         ok, _sub = await handler._process_message(client, msg)
 
-        assert ok is False, "base handler should have returned False for a duplicate"
-        attrs = handler._metrics["process_counter"].add.call_args[0][1]
-        assert attrs["status"] == "error"
+        assert ok is False
+        attrs = handler._process_duration.record.call_args[0][1]
+        assert "error.type" not in attrs
+
+    @pytest.mark.asyncio
+    async def test_publish_message_producer_span_and_metrics(self):
+        """_publish_message override creates a PRODUCER span and records sent/operation metrics."""
+        handler = self._make_otel_handler()
+        handler._operation_duration = MagicMock()
+        handler._sent_messages = MagicMock()
+
+        client = AsyncMock()
+        client.publish = AsyncMock()
+
+        ce = CloudEvent(
+            type="com.example.test",
+            source="test",
+            transportmetadata={"mqtt_topic": "test/topic"},
+            datacontenttype="application/json",
+            data=b'{"hello": "world"}',
+        )
+
+        with patch.object(handler, "_publish_message", wraps=handler._publish_message):
+            # patch the parent class _publish_message so it doesn't need a real MQTT client
+            with patch.object(
+                type(handler).__bases__[0], "_publish_message", new=AsyncMock()
+            ) as mock_parent:
+                await handler._publish_message(client, ce)
+                mock_parent.assert_called_once()
+
+        handler._sent_messages.add.assert_called_once()
+        handler._operation_duration.record.assert_called_once()
+        attrs = handler._sent_messages.add.call_args[0][1]
+        assert attrs["messaging.system"] == "mqtt"
+        assert attrs["messaging.operation.name"] == "publish"
+        assert "error.type" not in attrs
+
+    @pytest.mark.asyncio
+    async def test_publish_message_injects_trace_context(self):
+        """_publish_message injects W3C traceparent into custommetadata."""
+        handler = self._make_otel_handler()
+        handler._operation_duration = MagicMock()
+        handler._sent_messages = MagicMock()
+
+        client = AsyncMock()
+        ce = CloudEvent(
+            type="com.example.test",
+            source="test",
+            transportmetadata={"mqtt_topic": "test/topic"},
+        )
+
+        with patch.object(
+            type(handler).__bases__[0], "_publish_message", new=AsyncMock()
+        ):
+            with patch("microdcs.mqtt.inject") as mock_inject:
+                mock_inject.side_effect = lambda carrier: carrier.update({
+                    "traceparent": "00-aaa-bbb-01"
+                })
+                await handler._publish_message(client, ce)
+
+        assert ce.custommetadata is not None
+        assert "traceparent" in ce.custommetadata
+
+    @pytest.mark.asyncio
+    async def test_publish_message_no_topic_delegates_to_parent(self):
+        """_publish_message with no mqtt_topic falls through to parent (logs error)."""
+        handler = self._make_otel_handler()
+        handler._operation_duration = MagicMock()
+        handler._sent_messages = MagicMock()
+
+        client = AsyncMock()
+        ce = CloudEvent(type="com.example.test", source="test")  # no transportmetadata
+
+        with patch.object(
+            type(handler).__bases__[0], "_publish_message", new=AsyncMock()
+        ) as mock_parent:
+            await handler._publish_message(client, ce)
+            mock_parent.assert_called_once()
+
+        # no metrics when delegating without a topic
+        handler._sent_messages.add.assert_not_called()
+        handler._operation_duration.record.assert_not_called()
 
 
 # ===================================================================

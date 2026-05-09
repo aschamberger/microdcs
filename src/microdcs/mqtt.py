@@ -11,8 +11,10 @@ import aiomqtt
 import paho.mqtt.client
 import redis.asyncio as redis
 from opentelemetry import metrics, trace
-from opentelemetry.propagate import extract
+from opentelemetry.propagate import extract, inject
 from opentelemetry.semconv._incubating.attributes import messaging_attributes
+from opentelemetry.semconv._incubating.metrics import messaging_metrics
+from opentelemetry.semconv.attributes import error_attributes, server_attributes
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -548,71 +550,168 @@ class OTELInstrumentedMQTTHandler(MQTTHandler):
 
         self._tracer: trace.Tracer = trace.get_tracer(__name__)
         self._meter: metrics.Meter = metrics.get_meter(__name__)
-        self._metrics: dict[str, metrics.Instrument] = {
-            "process_counter": self._meter.create_counter(
-                "messaging.process.counter",
-                description="Count of MQTT messages processed",
-            ),
-            "process_duration": self._meter.create_histogram(
-                "messaging.process.duration",
-                description="Duration of MQTT message processing in milliseconds",
-            ),
-        }
-
-    def record_metrics(
-        self, duration: float, error: bool = False, base_attributes: dict[str, str] = {}
-    ) -> None:
-        attributes = base_attributes | {"status": "error" if error else "success"}
-        self._metrics["process_counter"].add(1, attributes)  # pyright: ignore[reportAttributeAccessIssue]
-        self._metrics["process_duration"].record(duration, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+        self._consumed_messages = (
+            messaging_metrics.create_messaging_client_consumed_messages(self._meter)
+        )
+        self._process_duration = messaging_metrics.create_messaging_process_duration(
+            self._meter
+        )
+        self._operation_duration = (
+            messaging_metrics.create_messaging_client_operation_duration(self._meter)
+        )
+        self._sent_messages = messaging_metrics.create_messaging_client_sent_messages(
+            self._meter
+        )
 
     async def _process_message(
         self, client: aiomqtt.Client, message: aiomqtt.Message
     ) -> tuple[bool, str]:
-        # start timing
-        processing_start_time = time.time()
-        # extract context from MQTT message properties
-        context = None
+        # extract creation context from MQTT user properties for trace linking
+        links: list[trace.Link] = []
         if message.properties and hasattr(message.properties, "UserProperty"):
-            user_properties = dict(message.properties.UserProperty)  # type: ignore
-            context = extract(user_properties) if user_properties else None
-        # define base attributes for both trace and metrics
-        base_attributes = {
+            user_props: list[tuple[str, str]] = list(message.properties.UserProperty)  # type: ignore
+            if user_props:
+                creation_ctx = extract(dict(user_props))
+                creation_span_ctx = trace.get_current_span(
+                    creation_ctx
+                ).get_span_context()
+                if creation_span_ctx.is_valid:
+                    links = [trace.Link(creation_span_ctx)]
+
+        # span attributes (high-cardinality destination name kept on span only)
+        span_attrs: dict[str, Any] = {
             messaging_attributes.MESSAGING_SYSTEM: "mqtt",
-            messaging_attributes.MESSAGING_OPERATION_TYPE: "process",
-            messaging_attributes.MESSAGING_OPERATION_NAME: "process receive",
+            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.PROCESS.value,
+            messaging_attributes.MESSAGING_OPERATION_NAME: "process",
             messaging_attributes.MESSAGING_DESTINATION_NAME: str(message.topic),
-            "messaging.mqtt.qos": str(message.qos),
-            "messaging.mqtt.retain": str(message.retain),
+            messaging_attributes.MESSAGING_CLIENT_ID: self._runtime_config.identifier,
+            messaging_attributes.MESSAGING_MESSAGE_ID: str(message.mid),
+            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
+            server_attributes.SERVER_PORT: self._runtime_config.port,
         }
-        # start trace span and call parent method
+        if isinstance(message.payload, (bytes, bytearray)):
+            span_attrs[messaging_attributes.MESSAGING_MESSAGE_BODY_SIZE] = len(
+                message.payload
+            )
+
+        # metric attributes (no high-cardinality destination name)
+        metric_attrs: dict[str, Any] = {
+            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
+            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.PROCESS.value,
+            messaging_attributes.MESSAGING_OPERATION_NAME: "process",
+            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
+            server_attributes.SERVER_PORT: self._runtime_config.port,
+        }
+
+        # count delivery before processing (tracks messages dispatched to application)
+        self._consumed_messages.add(1, metric_attrs)
+
+        start = time.monotonic()
+        error_type: str | None = None
+        ok: bool = False
+        subscription: str = ""
+
         with self._tracer.start_as_current_span(
-            "process MQTT {messaging.destination.name}",
+            "process",
             kind=trace.SpanKind.CONSUMER,
-            context=context,
+            attributes=span_attrs,
+            links=links,
         ) as span:
-            span.set_attributes(base_attributes)
-            span.set_attribute(
-                messaging_attributes.MESSAGING_MESSAGE_ID, str(message.mid)
-            )
-
-            ok, subscription = await super()._process_message(client, message)
-
-            span.set_attribute(
-                messaging_attributes.MESSAGING_DESTINATION_SUBSCRIPTION_NAME,
-                subscription,
-            )
-            if not ok:
-                span.set_status(
-                    trace.Status(
-                        trace.StatusCode.ERROR,
-                        "Error processing MQTT message",
-                    )
+            try:
+                ok, subscription = await super()._process_message(client, message)
+                span.set_attribute(
+                    messaging_attributes.MESSAGING_DESTINATION_SUBSCRIPTION_NAME,
+                    subscription,
                 )
-            processing_duration = time.time() - processing_start_time
-            self.record_metrics(processing_duration, not ok, base_attributes)
+            except Exception as exc:
+                error_type = type(exc).__qualname__
+                span.record_exception(exc)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                raise
+            finally:
+                duration = time.monotonic() - start
+                if error_type is not None:
+                    self._process_duration.record(
+                        duration,
+                        metric_attrs | {error_attributes.ERROR_TYPE: error_type},
+                    )
+                else:
+                    self._process_duration.record(duration, metric_attrs)
 
-            return ok, subscription
+        return ok, subscription
+
+    async def _publish_message(
+        self,
+        client: aiomqtt.Client,
+        cloudevent: CloudEvent,
+        processor: CloudEventProcessor | None = None,
+    ) -> None:
+        topic = (
+            cloudevent.transportmetadata.get("mqtt_topic")
+            if cloudevent.transportmetadata is not None
+            else None
+        )
+        if topic is None:
+            await super()._publish_message(client, cloudevent, processor)
+            return
+
+        span_attrs: dict[str, Any] = {
+            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
+            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.SEND.value,
+            messaging_attributes.MESSAGING_OPERATION_NAME: "publish",
+            messaging_attributes.MESSAGING_DESTINATION_NAME: str(topic),
+            messaging_attributes.MESSAGING_CLIENT_ID: self._runtime_config.identifier,
+            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
+            server_attributes.SERVER_PORT: self._runtime_config.port,
+        }
+        if isinstance(cloudevent.data, (bytes, bytearray)):
+            span_attrs[messaging_attributes.MESSAGING_MESSAGE_BODY_SIZE] = len(
+                cloudevent.data
+            )
+
+        metric_attrs: dict[str, Any] = {
+            messaging_attributes.MESSAGING_SYSTEM: "mqtt",
+            messaging_attributes.MESSAGING_OPERATION_TYPE: messaging_attributes.MessagingOperationTypeValues.SEND.value,
+            messaging_attributes.MESSAGING_OPERATION_NAME: "publish",
+            server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
+            server_attributes.SERVER_PORT: self._runtime_config.port,
+        }
+
+        start = time.monotonic()
+        error_type: str | None = None
+
+        with self._tracer.start_as_current_span(
+            "publish",
+            kind=trace.SpanKind.PRODUCER,
+            attributes=span_attrs,
+        ):
+            # inject current span context into custommetadata so it propagates as MQTT
+            # UserProperty — CloudEvent.__post_serialize__ flattens custommetadata keys
+            trace_headers: dict[str, str] = {}
+            inject(trace_headers)
+            if trace_headers:
+                if cloudevent.custommetadata is None:
+                    cloudevent.custommetadata = {}
+                cloudevent.custommetadata.update(trace_headers)
+
+            try:
+                await super()._publish_message(client, cloudevent, processor)
+            except Exception as exc:
+                error_type = type(exc).__qualname__
+                trace.get_current_span().record_exception(exc)
+                trace.get_current_span().set_status(
+                    trace.Status(trace.StatusCode.ERROR)
+                )
+                raise
+            finally:
+                duration = time.monotonic() - start
+                if error_type is not None:
+                    err_attrs = metric_attrs | {error_attributes.ERROR_TYPE: error_type}
+                    self._operation_duration.record(duration, err_attrs)
+                    self._sent_messages.add(1, err_attrs)
+                else:
+                    self._operation_duration.record(duration, metric_attrs)
+                    self._sent_messages.add(1, metric_attrs)
 
 
 class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
