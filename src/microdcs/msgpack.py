@@ -12,12 +12,13 @@ from typing import Any, Callable
 import msgpack
 import redis.asyncio as redis
 from opentelemetry import metrics, trace
-from opentelemetry.propagate import extract
+from opentelemetry.propagate import extract, inject
 from opentelemetry.semconv._incubating.attributes import (
     network_attributes,
     rpc_attributes,
     server_attributes,
 )
+from opentelemetry.semconv.attributes import error_attributes
 
 from microdcs import MessagePackConfig, ProcessingConfig
 from microdcs.common import (
@@ -88,7 +89,12 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
         # No return value needed for notification
 
     async def _dispatch_method(
-        self, method_name: str, params: list, msg_type: RpcMessageType, msg_id: int
+        self,
+        method_name: str,
+        params: list,
+        msg_type: RpcMessageType,
+        msg_id: int,
+        peer_addr: tuple | None = None,
     ):
         """Finds the method and executes it."""
         if method_name not in self._methods:
@@ -221,66 +227,107 @@ class OTELInstrumentedMessagePackHandler(MessagePackHandler):
 
         self._tracer: trace.Tracer = trace.get_tracer(__name__)
         self._meter: metrics.Meter = metrics.get_meter(__name__)
-        self._metrics: dict[str, metrics.Instrument] = {
-            "call_counter": self._meter.create_counter(
-                "rpc.server.call.count",
-                description="Count of MessagePack RPC calls processed",
-            ),
-            "call_duration": self._meter.create_histogram(
-                "rpc.server.call.duration",
-                description="Duration of MessagePack RPC calls in milliseconds",
-            ),
-        }
-
-    def record_metrics(
-        self, duration: float, error: bool = False, base_attributes: dict[str, str] = {}
-    ) -> None:
-        attributes = base_attributes | {"status": "error" if error else "success"}
-        self._metrics["call_counter"].add(1, attributes)  # pyright: ignore[reportAttributeAccessIssue]
-        self._metrics["call_duration"].record(duration, attributes)  # pyright: ignore[reportAttributeAccessIssue]
+        self._server_duration = self._meter.create_histogram(
+            "rpc.server.call.duration",
+            unit="s",
+            description="Duration of inbound MessagePack RPC calls in seconds",
+            explicit_bucket_boundaries_advisory=[
+                0.005,
+                0.01,
+                0.025,
+                0.05,
+                0.075,
+                0.1,
+                0.25,
+                0.5,
+                0.75,
+                1,
+                2.5,
+                5,
+                7.5,
+                10,
+            ],
+        )
 
     async def _dispatch_method(
-        self, method_name: str, params: list, msg_type: RpcMessageType, msg_id: int
+        self,
+        method_name: str,
+        params: list,
+        msg_type: RpcMessageType,
+        msg_id: int,
+        peer_addr: tuple | None = None,
     ):
         # start timing
-        processing_start_time = time.time()
+        start = time.monotonic()
         # extract context from MessagePack message properties
         context = None
         if len(params) > 0 and isinstance(params[0], dict):
             context = extract(params[0])
+        # determine if method is recognized; unknown methods map to "_OTHER" per spec
+        recognized = method_name in self._methods
+        span_method = method_name if recognized else "_OTHER"
         # define base attributes for both trace and metrics
-        base_attributes = {
+        base_attributes: dict[str, Any] = {
             rpc_attributes.RPC_SYSTEM: "messagepack",
-            rpc_attributes.RPC_SERVICE: "micro-dcs",
-            rpc_attributes.RPC_METHOD: method_name,
+            rpc_attributes.RPC_METHOD: span_method,
             network_attributes.NETWORK_TRANSPORT: "tcp",
             server_attributes.SERVER_ADDRESS: self._runtime_config.hostname,
             server_attributes.SERVER_PORT: self._runtime_config.port,
         }
-        # start trace span and call parent method
-        ok = True
+        if not recognized:
+            base_attributes[rpc_attributes.RPC_METHOD_ORIGINAL] = method_name
+        if peer_addr is not None:
+            base_attributes[network_attributes.NETWORK_PEER_ADDRESS] = str(peer_addr[0])
+            base_attributes[network_attributes.NETWORK_PEER_PORT] = peer_addr[1]
+        # start trace span (SERVER kind per spec) and call parent method
+        error_type: str | None = None
         result = None
         with self._tracer.start_as_current_span(
-            "{rpc.method}",
-            kind=trace.SpanKind.CONSUMER,
+            span_method,
+            kind=trace.SpanKind.SERVER,
             context=context,
         ) as span:
             span.set_attributes(base_attributes)
             try:
                 result = await super()._dispatch_method(
-                    method_name, params, msg_type, msg_id
+                    method_name, params, msg_type, msg_id, peer_addr
                 )
-            except Exception:
-                span.set_status(
-                    trace.Status(
-                        trace.StatusCode.ERROR,
-                        "Error processing MessagePack message",
+            except Exception as exc:
+                error_type = type(exc).__qualname__
+                span.record_exception(exc)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                span.set_attribute(error_attributes.ERROR_TYPE, error_type)
+                raise
+            finally:
+                duration = time.monotonic() - start
+                if error_type is not None:
+                    self._server_duration.record(
+                        duration,
+                        base_attributes | {error_attributes.ERROR_TYPE: error_type},
                     )
-                )
-                ok = False
-            processing_duration = time.time() - processing_start_time
-            self.record_metrics(processing_duration, not ok, base_attributes)
+                else:
+                    self._server_duration.record(duration, base_attributes)
         return result
+
+    async def _outgoing_message_publisher(
+        self, server: MessagePackRpcServer, binding: "MessagePackProtocolBinding"
+    ) -> None:
+        while True:
+            cloudevent, intent = await binding.outgoing_queue.get()
+            # inject current span context so receivers can link to the originating trace
+            with self._tracer.start_as_current_span(
+                "cloudevent",
+                kind=trace.SpanKind.PRODUCER,
+            ):
+                trace_headers: dict[str, str] = {}
+                inject(trace_headers)
+                if trace_headers:
+                    if cloudevent.custommetadata is None:
+                        cloudevent.custommetadata = {}
+                    cloudevent.custommetadata.update(trace_headers)
+                notification_params = [cloudevent.to_dict(), intent.value]
+                await server.send_notification("cloudevent", notification_params)
+            binding.outgoing_queue.task_done()
 
 
 class MessagePackProtocolBinding(ProtocolBinding["MessagePackHandler"]):
@@ -306,7 +353,7 @@ class MessagePackProtocolBinding(ProtocolBinding["MessagePackHandler"]):
 class MessagePackRpcServer:
     def __init__(
         self,
-        dispatcher: Callable[[str, list, RpcMessageType, int], Any],
+        dispatcher: Callable[[str, list, RpcMessageType, int, tuple | None], Any],
         hostname: str = "localhost",
         port: int = 8888,
         ssl_context: ssl.SSLContext | None = None,
@@ -405,7 +452,15 @@ class MessagePackRpcServer:
             logger.error("Failed to write response: %s", e)
 
     async def _handle_rpc_task(
-        self, writer, lock, semaphore, msg_type, msg_id, method, params
+        self,
+        writer,
+        lock,
+        semaphore,
+        msg_type,
+        msg_id,
+        method,
+        params,
+        peer_addr: tuple | None = None,
     ):
         """
         Executes business logic.
@@ -418,7 +473,9 @@ class MessagePackRpcServer:
 
             try:
                 # Execute business logic
-                result = await self._dispatcher(method, params, msg_type, msg_id)
+                result = await self._dispatcher(
+                    method, params, msg_type, msg_id, peer_addr
+                )
             except asyncio.CancelledError:
                 # If the server cancels us (client disconnect), we stop immediately.
                 logger.info("Task cancelled for %s", method)
@@ -516,6 +573,7 @@ class MessagePackRpcServer:
                             msg_id,
                             method,
                             params,
+                            addr,
                         )
                     )
 

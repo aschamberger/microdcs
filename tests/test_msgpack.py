@@ -491,7 +491,9 @@ class TestMessagePackHandler:
         handler = _make_handler()
         server = handler._server()
 
-        async def cancel_dispatch(method_name, params, msg_type, msg_id):
+        async def cancel_dispatch(
+            method_name, params, msg_type, msg_id, peer_addr=None
+        ):
             raise asyncio.CancelledError()
 
         server._dispatcher = cancel_dispatch
@@ -896,69 +898,50 @@ class TestOTELInstrumentedMessagePackHandler:
         handler = self._make_otel_handler()
         assert handler._tracer is not None
         assert handler._meter is not None
-        assert "call_counter" in handler._metrics
-        assert "call_duration" in handler._metrics
-
-    def test_record_metrics_success(self):
-        handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
-        handler.record_metrics(0.5, error=False, base_attributes={"rpc.method": "x"})
-        handler._metrics["call_counter"].add.assert_called_once()
-        handler._metrics["call_duration"].record.assert_called_once()
-
-    def test_record_metrics_error(self):
-        handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
-        handler.record_metrics(1.0, error=True)
-        attrs = handler._metrics["call_counter"].add.call_args[0][1]
-        assert attrs["status"] == "error"
+        assert handler._server_duration is not None
 
     @pytest.mark.asyncio
     async def test_dispatch_method_calls_parent_and_records_metrics(self):
         handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
+        handler._server_duration = MagicMock()
 
         await handler._dispatch_method("heartbeat", ["ts"], RpcMessageType.REQUEST, 1)
-        handler._metrics["call_counter"].add.assert_called()
+        handler._server_duration.record.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_dispatch_method_with_context_extraction(self):
         """First param is dict → extract OTEL context."""
         handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
+        handler._server_duration = MagicMock()
 
-        # params[0] is dict → triggers context extraction
+        # params[0] is dict → triggers context extraction; single element satisfies heartbeat(timestamp)
         await handler._dispatch_method(
             "heartbeat",
-            [{"traceparent": "00-abc-def-01"}, "ts"],
+            [{"traceparent": "00-abc-def-01"}],
             RpcMessageType.REQUEST,
             2,
         )
-        handler._metrics["call_counter"].add.assert_called()
+        handler._server_duration.record.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_dispatch_method_error_path(self):
         handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
+        handler._server_duration = MagicMock()
 
-        # Parent's _dispatch_method raises ValueError for unknown method;
-        # OTEL handler catches Exception and records error=True
-        await handler._dispatch_method("no_such_method", [], RpcMessageType.REQUEST, 3)
-        # Metrics should record error=True
-        counter_call_attrs = handler._metrics["call_counter"].add.call_args[0][1]
-        assert counter_call_attrs["status"] == "error"
+        # ValueError is re-raised; metrics include error.type
+        with pytest.raises(ValueError):
+            await handler._dispatch_method(
+                "no_such_method", [], RpcMessageType.REQUEST, 3
+            )
+        attrs = handler._server_duration.record.call_args[0][1]
+        assert "error.type" in attrs
+        assert attrs["error.type"] == "ValueError"
 
     @pytest.mark.asyncio
     async def test_dispatch_method_returns_result(self):
         """Return value from the base handler must be propagated to the caller."""
         handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
+        handler._server_duration = MagicMock()
         expected = [{"type": "com.example.response"}]
         handler._methods["publish"] = AsyncMock(return_value=expected)
 
@@ -972,14 +955,15 @@ class TestOTELInstrumentedMessagePackHandler:
     async def test_dispatch_method_passes_msg_type_and_id(self):
         """msg_type and msg_id must be forwarded to the base, not hardcoded."""
         handler = self._make_otel_handler()
-        handler._metrics["call_counter"] = MagicMock()
-        handler._metrics["call_duration"] = MagicMock()
+        handler._server_duration = MagicMock()
         captured: list = []
         original = MessagePackHandler._dispatch_method
 
-        async def spy(self, method_name, params, msg_type, msg_id):
+        async def spy(self, method_name, params, msg_type, msg_id, peer_addr=None):
             captured.extend([msg_type, msg_id])
-            return await original(self, method_name, params, msg_type, msg_id)
+            return await original(
+                self, method_name, params, msg_type, msg_id, peer_addr
+            )
 
         with patch.object(MessagePackHandler, "_dispatch_method", spy):
             await handler._dispatch_method(
@@ -988,6 +972,80 @@ class TestOTELInstrumentedMessagePackHandler:
 
         assert captured[0] == RpcMessageType.NOTIFICATION
         assert captured[1] == 99
+
+    @pytest.mark.asyncio
+    async def test_dispatch_method_unknown_method_maps_to_other(self):
+        """Unknown method name → rpc.method=_OTHER, rpc.method_original=<name> in metric attrs."""
+        handler = self._make_otel_handler()
+        handler._server_duration = MagicMock()
+
+        with pytest.raises(ValueError):
+            await handler._dispatch_method(
+                "no_such_method", [], RpcMessageType.REQUEST, 1
+            )
+
+        # Metric attrs must reflect the _OTHER mapping and the original name
+        metric_attrs = handler._server_duration.record.call_args[0][1]
+        assert metric_attrs["rpc.method"] == "_OTHER"
+        assert metric_attrs["rpc.method_original"] == "no_such_method"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_method_with_peer_addr(self):
+        """peer_addr is reflected as network.peer.address / network.peer.port."""
+        handler = self._make_otel_handler()
+        handler._server_duration = MagicMock()
+
+        await handler._dispatch_method(
+            "heartbeat",
+            ["ts"],
+            RpcMessageType.REQUEST,
+            1,
+            peer_addr=("192.168.1.1", 54321),
+        )
+
+        record_call_attrs = handler._server_duration.record.call_args[0][1]
+        assert record_call_attrs["network.peer.address"] == "192.168.1.1"
+        assert record_call_attrs["network.peer.port"] == 54321
+
+    @pytest.mark.asyncio
+    async def test_dispatch_method_success_no_error_type_in_metrics(self):
+        """Successful calls must NOT include error.type in metric attributes."""
+        handler = self._make_otel_handler()
+        handler._server_duration = MagicMock()
+
+        await handler._dispatch_method("heartbeat", ["ts"], RpcMessageType.REQUEST, 1)
+
+        attrs = handler._server_duration.record.call_args[0][1]
+        assert "error.type" not in attrs
+
+    @pytest.mark.asyncio
+    async def test_outgoing_publisher_injects_trace_context(self):
+        """OTEL publisher injects trace headers into cloudevent.custommetadata."""
+        handler = self._make_otel_handler()
+        server = MagicMock()
+        server.send_notification = AsyncMock()
+        binding = MagicMock()
+        cloudevent = CloudEvent(type="com.example.v1", data=b"{}")
+        binding.outgoing_queue.get = AsyncMock(
+            side_effect=[
+                (cloudevent, MessageIntent.EVENT),
+                asyncio.CancelledError(),
+            ]
+        )
+        binding.outgoing_queue.task_done = MagicMock()
+
+        with patch("microdcs.msgpack.inject") as mock_inject:
+
+            def side_effect_inject(carrier):
+                carrier["traceparent"] = "00-trace-span-01"
+
+            mock_inject.side_effect = side_effect_inject
+
+            with pytest.raises(asyncio.CancelledError):
+                await handler._outgoing_message_publisher(server, binding)
+
+        assert cloudevent.custommetadata is not None
+        assert "traceparent" in cloudevent.custommetadata
 
 
 # ===================================================================
