@@ -36,6 +36,7 @@ def _create_microdcs(otel_enabled: bool) -> MicroDCS:
     dcs.runtime_config.is_processor_instance = True
     dcs.runtime_config.is_publisher_instance = True
     dcs.redis_connection_pool = AsyncMock()
+    dcs.redis_connection_pool.connection_kwargs = {}
     dcs.redis_key_schema = MagicMock()
     dcs._protocol_handlers = {}
     dcs._handler_bindings = {}

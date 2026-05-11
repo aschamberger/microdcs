@@ -1371,10 +1371,21 @@ class TestMQTTHandler:
         mock_task = loop.create_future()
         mock_task.cancel()
 
+        def _create_task_closing_coro(coro, **kwargs):
+            """Close the coroutine to avoid 'never awaited' warnings."""
+            import inspect
+
+            if inspect.iscoroutine(coro):
+                coro.close()
+            return mock_task
+
         # Make asyncio.wait raise CancelledError to simulate force shutdown
         with (
             patch.object(handler, "_client", return_value=mock_client),
-            patch("microdcs.mqtt.asyncio.create_task", return_value=mock_task),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=_create_task_closing_coro,
+            ),
             patch("microdcs.mqtt.asyncio.wait", side_effect=asyncio.CancelledError()),
         ):
             with pytest.raises(asyncio.CancelledError):
