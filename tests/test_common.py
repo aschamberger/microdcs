@@ -130,14 +130,13 @@ class TestCloudEventConstruction:
 
 
 class TestCloudEventSerialization:
-    def test_json_round_trip_basic(self):
+    def test_json_round_trip_basic(self, benchmark):
         ce = CloudEvent(
             source="test",
             type="com.test.v1",
             datacontenttype="application/json",
         )
-        json_bytes = ce.to_jsonb()
-        restored = CloudEvent.from_json(json_bytes)
+        restored = benchmark(lambda: CloudEvent.from_json(ce.to_jsonb()))
         assert restored.source == "test"
         assert restored.type == "com.test.v1"
         assert restored.specversion == "1.0"
@@ -255,10 +254,9 @@ class TestCloudEventSerialization:
         assert d["expiryinterval"] == "30"
         assert isinstance(d["source"], str)
 
-    def test_msgpack_round_trip(self):
+    def test_msgpack_round_trip(self, benchmark):
         ce = CloudEvent(source="test", type="com.test.v1")
-        packed = ce.to_msgpack()
-        restored = CloudEvent.from_msgpack(packed)
+        restored = benchmark(lambda: CloudEvent.from_msgpack(ce.to_msgpack()))
         assert restored.source == "test"
         assert restored.type == "com.test.v1"
 
@@ -269,13 +267,13 @@ class TestCloudEventSerialization:
 
 
 class TestCloudEventPayload:
-    def test_unserialize_json_payload(self):
+    def test_unserialize_json_payload(self, benchmark):
         payload = SamplePayload(value="world")
         ce = CloudEvent(
             datacontenttype="application/json",
             data=payload.to_jsonb(),
         )
-        result = ce.unserialize_payload(SamplePayload)
+        result = benchmark(ce.unserialize_payload, SamplePayload)
         assert isinstance(result, SamplePayload)
         assert result.value == "world"
 
@@ -289,13 +287,13 @@ class TestCloudEventPayload:
         assert isinstance(result, SamplePayload)
         assert result.value == "utf8"
 
-    def test_unserialize_msgpack_payload(self):
+    def test_unserialize_msgpack_payload(self, benchmark):
         payload = SamplePayload(value="packed")
         ce = CloudEvent(
             datacontenttype="application/msgpack",
             data=payload.to_msgpack(),
         )
-        result = ce.unserialize_payload(SamplePayload)
+        result = benchmark(ce.unserialize_payload, SamplePayload)
         assert isinstance(result, SamplePayload)
         assert result.value == "packed"
 
@@ -355,10 +353,10 @@ class TestCloudEventPayload:
         with pytest.raises(Exception):
             ce.unserialize_payload(SamplePayload)
 
-    def test_serialize_json_payload(self):
+    def test_serialize_json_payload(self, benchmark):
         payload = SamplePayload(value="ser")
         ce = CloudEvent(datacontenttype="application/json")
-        ce.serialize_payload(payload)
+        benchmark(ce.serialize_payload, payload)
         assert ce.data is not None
         restored = SamplePayload.from_json(ce.data)
         assert restored.value == "ser"
@@ -371,10 +369,10 @@ class TestCloudEventPayload:
         restored = SamplePayload.from_json(ce.data)
         assert restored.value == "ser-utf8"
 
-    def test_serialize_msgpack_payload(self):
+    def test_serialize_msgpack_payload(self, benchmark):
         payload = SamplePayload(value="packed-ser")
         ce = CloudEvent(datacontenttype="application/msgpack")
-        ce.serialize_payload(payload)
+        benchmark(ce.serialize_payload, payload)
         assert ce.data is not None
         restored = SamplePayload.from_msgpack(ce.data)
         assert restored.value == "packed-ser"

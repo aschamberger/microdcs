@@ -52,6 +52,31 @@ Run test coverage:
 uv run pytest --cov=microdcs --cov-report=term-missing tests/ --ignore=tests/test_mqtt_integration.py --ignore=tests/test_msgpack_integration.py
 ```
 
+Run benchmarks and save results:
+
+```bash
+uv run pytest --benchmark-only --benchmark-autosave
+```
+
+Compare against a previously saved baseline:
+
+```bash
+# Save current results as the named baseline
+uv run pytest --benchmark-only --benchmark-save=baseline
+
+# Later, compare against that baseline
+uv run pytest --benchmark-only --benchmark-compare=baseline
+```
+
+Benchmarks are automatically disabled during normal test runs. They only execute when `--benchmark-only` is passed, or when running the full suite with `--benchmark-autosave` (which runs them alongside regular tests and persists results under `.benchmarks/`).
+
+The benchmarked tests cover the per-message hot paths:
+
+* **`test_common.py`** — `CloudEvent` JSON and msgpack round-trips; payload serialization/deserialization
+* **`test_dataclass.py`** — `DataClassMixin` JSON and msgpack round-trips
+* **`test_sfc_recipe.py`** — `SfcStep` and full `SfcRecipe` JSON and msgpack round-trips
+* **`statemachine_test.py`** — ISA95 job state machine trigger dispatch
+
 Run the example application:
 
 ```bash
