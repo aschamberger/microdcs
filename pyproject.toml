@@ -12,6 +12,8 @@ dependencies = [
     "mashumaro[orjson]>=3.21",
     "msgpack>=1.1.2",
     "opentelemetry-distro>=0.60b1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.41.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.41.1",
     "opentelemetry-instrumentation-aiomqtt",
     "opentelemetry-instrumentation-redis>=0.62b0",
     "redis[hiredis]>=7.4.0",

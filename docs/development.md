@@ -238,6 +238,47 @@ Generate the SFC recipe dataclasses:
 uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
 ```
 
+## OpenTelemetry Analysis with Aspire Dashboard
+
+The [Aspire dashboard](https://aspire.dev/dashboard/standalone/) can be run as a standalone container to visualise traces, metrics, and structured logs from any OpenTelemetry-enabled app — no .NET or full Aspire installation required.
+
+Start the dashboard container:
+
+```bash
+docker start aspire-dashboard 2>/dev/null || docker run --rm -p 18888:18888 -p 4317:18889 -p 4318:18890 -d --name aspire-dashboard mcr.microsoft.com/dotnet/aspire-dashboard:latest
+```
+
+Port mapping:
+
+| Host port | Container port | Purpose |
+|---|---|---|
+| `18888` | `18888` | Dashboard UI |
+| `4317` | `18889` | OTLP/gRPC endpoint |
+| `4318` | `18890` | OTLP/HTTP endpoint |
+
+Open `http://localhost:18888` in the browser. The dashboard is secured with a login token by default — retrieve it from the container logs:
+
+```bash
+docker logs aspire-dashboard 2>&1 | grep "login?t="
+```
+
+To run the app and send telemetry to the dashboard, configure the OTLP exporter and start via `opentelemetry-instrument`:
+
+```bash
+APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED=true \
+OTEL_SERVICE_NAME=microdcs.app \
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_METRICS_EXPORTER=otlp \
+OTEL_LOGS_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
+OTEL_PYTHON_LOG_CORRELATION=true \
+OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true \
+  .venv/bin/opentelemetry-instrument python -m app
+```
+
+Or use the VS Code task **Run App (instrumented/Aspire dashboard)** which starts MQTT, Redis, and the Aspire dashboard automatically.
+
 ## Documentation
 
 The documentation site is built with Zensical.
