@@ -103,10 +103,14 @@ class MESResyncClient:
 
     async def _read_retained(self, topic: str, timeout: float = 5.0) -> bytes | None:
         async with aiomqtt.Client(hostname=self._hostname, port=self._port) as client:
-            await client.subscribe(topic, qos=1)
+            await client.subscribe(
+                aiomqtt.TopicFilter(topic, max_qos=aiomqtt.QoS.AT_LEAST_ONCE)
+            )
             try:
                 async with asyncio.timeout(timeout):
-                    async for message in client.messages:
+                    async for message in client.messages():
+                        if isinstance(message, aiomqtt.PubRelPacket):
+                            continue
                         return bytes(message.payload) if message.payload else None
             except TimeoutError:
                 return None
@@ -158,7 +162,9 @@ async def _delete_retained(topic: str) -> None:
     async with aiomqtt.Client(
         hostname=MQTT_CONFIG.hostname, port=MQTT_CONFIG.port
     ) as client:
-        await client.publish(topic, payload=b"", qos=1, retain=True)
+        await client.publish(
+            topic, payload=b"", qos=aiomqtt.QoS.AT_MOST_ONCE, retain=True
+        )
 
 
 # ---------------------------------------------------------------------------

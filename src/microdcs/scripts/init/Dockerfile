@@ -3,6 +3,9 @@
 # Use a Python image with uv pre-installed
 FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim AS builder
 
+# Add git for installing dependencies from git repositories
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Install the project into `/app`
 WORKDIR /app
 
@@ -62,5 +65,5 @@ ENV PYTHONUNBUFFERED=1
 ENTRYPOINT []
 
 # Run the application
-#CMD ["opentelemetry-instrument", "python3", "-m", "app", "2>&1"]
-CMD ["python3", "-m", "app"]
+CMD ["opentelemetry-instrument", "python3", "-m", "app"]
+#CMD ["python3", "-m", "app"]

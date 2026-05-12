@@ -47,10 +47,10 @@ def test_graph(machine: HierarchicalGraphMachine):
         "classDef s_default fill:black,color:white",
     )
     md += "\n```\n"
-    # with open("tests/state_machine.md", "w") as f:
+    # with open("tests/unit/state_machine.md", "w") as f:
     #     f.write(md)
     assert graph is not None
-    assert md == open("tests/state_machine.md").read()
+    assert md == open("tests/unit/state_machine.md").read()
 
 
 def test_state_machine_states(machine: HierarchicalGraphMachine):
@@ -104,15 +104,34 @@ def test_state_machine_triggers(machine: HierarchicalGraphMachine):
     assert "NotAllowedToStartFromWaitingToReady" in triggers
 
 
-def test_state_machine_trigger_store(machine: HierarchicalGraphMachine):
-    model: Job = typing.cast(Job, machine.models[0])
-    assert model._state == "InitialState"
-    model.trigger("Store")
-    assert model._state == "NotAllowedToStart_Ready"
-    assert model.may_trigger("Store") is False
+def test_state_machine_trigger_store(benchmark):
+    def setup():
+        fresh_machine = HierarchicalGraphMachine(
+            model=None,
+            states=JobOrderControlExt.Config.opcua_state_machine_states,
+            transitions=JobOrderControlExt.Config.opcua_state_machine_transitions,
+            initial="InitialState",
+            auto_transitions=False,
+            queued=True,
+            model_attribute="_state",
+            model_override=True,
+        )
+        job = Job()
+        fresh_machine.add_model(job)
+        return (job,), {}
+
+    def trigger_store(job: Job) -> Job:
+        job.trigger("Store")
+        return job
+
+    result = typing.cast(
+        Job, benchmark.pedantic(trigger_store, setup=setup, rounds=50, iterations=1)
+    )
+    assert result._state == "NotAllowedToStart_Ready"
+    assert result.may_trigger("Store") is False
     with pytest.raises(transitions.core.MachineError):
-        model.trigger("Store")
-    assert model._state == "NotAllowedToStart_Ready"
+        result.trigger("Store")
+    assert result._state == "NotAllowedToStart_Ready"
 
 
 def test_state_name_to_tuple(machine: HierarchicalGraphMachine):
@@ -124,7 +143,8 @@ def test_state_name_to_tuple(machine: HierarchicalGraphMachine):
 
 
 def test_tuple_to_state_name(machine: HierarchicalGraphMachine):
-    state_name = JobOrderControlExt.Config.get_state_name_from_tuples(
-        [("NotAllowedToStart", "1"), ("Ready", "2")]
-    )
+    state_name = JobOrderControlExt.Config.get_state_name_from_tuples([
+        ("NotAllowedToStart", "1"),
+        ("Ready", "2"),
+    ])
     assert state_name == "NotAllowedToStart_Ready"

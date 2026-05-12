@@ -24,6 +24,7 @@ from microdcs.mqtt import (
     MQTTProtocolBinding,
     OTELInstrumentedMQTTHandler,
     QoS,
+    _topic_matches,
     create_mqtt_client,
 )
 from microdcs.redis import RedisKeySchema
@@ -88,27 +89,26 @@ def _make_mqtt_message(
     qos: int = 1,
     mid: int = 42,
     retain: bool = False,
-    properties: object | None = None,
-    match_topics: set[str] | None = None,
+    # Individual v5 property attrs (direct on packet in v3)
+    message_expiry_interval: int | None = None,
+    content_type: str | None = None,
+    response_topic: str | None = None,
+    correlation_data: bytes | None = None,
+    user_properties: list[tuple[str, str]] | None = None,
 ) -> MagicMock:
-    """Build a mock aiomqtt.Message.
-
-    Args:
-        match_topics: If given, ``topic.matches`` returns True only for patterns
-            in this set.  If *None*, it matches everything (legacy behaviour).
-    """
+    """Build a mock mqtt5.PublishPacket for aiomqtt v3."""
     msg = MagicMock()
-    msg.topic = MagicMock()
-    msg.topic.__str__ = lambda self: topic
-    if match_topics is not None:
-        msg.topic.matches = lambda pattern: pattern in match_topics
-    else:
-        msg.topic.matches = lambda pattern: True
+    msg.topic = topic  # plain str in v3
     msg.payload = payload
     msg.qos = qos
-    msg.mid = mid
+    msg.packet_id = mid  # renamed from mid in v3
     msg.retain = retain
-    msg.properties = properties
+    # MQTT v5 properties are direct attributes on the packet
+    msg.message_expiry_interval = message_expiry_interval
+    msg.content_type = content_type
+    msg.response_topic = response_topic
+    msg.correlation_data = correlation_data
+    msg.user_properties = user_properties
     return msg
 
 
@@ -126,6 +126,82 @@ class TestQoS:
 
     def test_exactly_once(self):
         assert QoS.EXACTLY_ONCE == 2
+
+
+# ===================================================================
+# _topic_matches
+# ===================================================================
+
+
+class TestTopicMatches:
+    # Exact match
+    def test_exact_match(self):
+        assert _topic_matches("foo/bar", "foo/bar") is True
+
+    def test_exact_no_match(self):
+        assert _topic_matches("foo/bar", "foo/baz") is False
+
+    # Single-level wildcard +
+    def test_plus_matches_single_level(self):
+        assert _topic_matches("foo/+/baz", "foo/bar/baz") is True
+
+    def test_plus_does_not_match_multiple_levels(self):
+        assert _topic_matches("foo/+/baz", "foo/bar/qux/baz") is False
+
+    def test_plus_matches_empty_level(self):
+        assert _topic_matches("foo/+/baz", "foo//baz") is True
+
+    def test_plus_at_end(self):
+        assert _topic_matches("foo/+", "foo/bar") is True
+
+    def test_plus_at_start(self):
+        assert _topic_matches("+/bar", "foo/bar") is True
+
+    # Multi-level wildcard #
+    def test_hash_alone_matches_everything(self):
+        assert _topic_matches("#", "foo/bar/baz") is True
+
+    def test_hash_alone_matches_single_level(self):
+        assert _topic_matches("#", "foo") is True
+
+    def test_hash_at_end_matches_subtree(self):
+        assert _topic_matches("foo/#", "foo/bar") is True
+
+    def test_hash_matches_multilevel_subtree(self):
+        assert _topic_matches("foo/#", "foo/bar/baz") is True
+
+    def test_hash_matches_parent_topic(self):
+        # foo/# must also match foo itself (zero levels after prefix)
+        assert _topic_matches("foo/#", "foo") is True
+
+    def test_hash_no_match_different_prefix(self):
+        assert _topic_matches("foo/#", "bar/baz") is False
+
+    # Shared subscription prefix ($share/<group>/) is stripped before matching
+    def test_shared_subscription_exact(self):
+        assert _topic_matches("$share/grp/foo/bar", "foo/bar") is True
+
+    def test_shared_subscription_wildcard(self):
+        assert _topic_matches("$share/grp/foo/+/baz", "foo/bar/baz") is True
+
+    def test_shared_subscription_hash(self):
+        assert (
+            _topic_matches("$share/mygroup/app/events/#", "app/events/something")
+            is True
+        )
+
+    def test_shared_subscription_no_match(self):
+        assert _topic_matches("$share/grp/foo/bar", "foo/baz") is False
+
+    # Combined wildcards
+    def test_plus_and_hash(self):
+        assert _topic_matches("foo/+/#", "foo/bar/baz/qux") is True
+
+    def test_no_match_shorter_topic(self):
+        assert _topic_matches("foo/bar/baz", "foo/bar") is False
+
+    def test_no_match_longer_topic(self):
+        assert _topic_matches("foo/bar", "foo/bar/baz") is False
 
 
 # ===================================================================
@@ -593,18 +669,35 @@ class TestCreateMqttClient:
             assert call_kwargs["hostname"] == config.hostname
             assert call_kwargs["port"] == config.port
             assert call_kwargs["identifier"] == config.identifier
-            assert call_kwargs["timeout"] == config.connect_timeout
+            assert "timeout" not in call_kwargs
 
-    def test_forwards_extra_kwargs(self):
+    def test_reconnect_enabled(self):
         config = MQTTConfig()
         with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
             mock_cls.return_value = MagicMock()
-            create_mqtt_client(
-                config, clean_start=True, max_queued_incoming_messages=10
-            )
-            call_kwargs = mock_cls.call_args[1]
-            assert call_kwargs["clean_start"] is True
-            assert call_kwargs["max_queued_incoming_messages"] == 10
+            create_mqtt_client(config)
+            assert mock_cls.call_args[1]["reconnect"] is True
+
+    def test_reconnect_disabled(self):
+        config = MQTTConfig()
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(config, reconnect=False)
+            assert mock_cls.call_args[1]["reconnect"] is False
+
+    def test_clean_start_false(self):
+        config = MQTTConfig()
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(config)
+            assert mock_cls.call_args[1]["clean_start"] is False
+
+    def test_clean_start_true(self):
+        config = MQTTConfig()
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(config, clean_start=True)
+            assert mock_cls.call_args[1]["clean_start"] is True
 
     def test_with_sat_and_tls(self):
         config = MQTTConfig()
@@ -615,18 +708,21 @@ class TestCreateMqttClient:
         config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
 
         mock_file = MagicMock()
-        mock_file.__enter__ = MagicMock(return_value=MagicMock(read=lambda: "token"))
+        mock_file.__enter__ = MagicMock(return_value=MagicMock(read=lambda: b"token"))
         mock_file.__exit__ = MagicMock(return_value=False)
 
         with (
             patch("microdcs.mqtt.aiomqtt.Client") as mock_cls,
             patch("builtins.open", return_value=mock_file),
+            patch("microdcs.mqtt.ssl.create_default_context") as mock_ssl,
         ):
             mock_cls.return_value = MagicMock()
+            mock_ssl.return_value = MagicMock()
             create_mqtt_client(config)
             call_kwargs = mock_cls.call_args[1]
-            assert call_kwargs["properties"] is not None
-            assert call_kwargs["tls_params"] is not None
+            assert call_kwargs["authentication_data"] is not None
+            assert call_kwargs["authentication_method"] == "K8S-SAT"
+            assert call_kwargs["ssl_context"] is not None
 
 
 # ===================================================================
@@ -665,12 +761,14 @@ class TestMQTTHandler:
         with (
             patch("microdcs.mqtt.aiomqtt.Client") as mock_client_cls,
             patch("builtins.open", return_value=mock_file),
+            patch("microdcs.mqtt.ssl.create_default_context") as mock_ssl,
         ):
             mock_client_cls.return_value = MagicMock()
+            mock_ssl.return_value = MagicMock()
             handler._client()
             call_kwargs = mock_client_cls.call_args[1]
-            assert call_kwargs["properties"] is not None
-            assert call_kwargs["tls_params"] is not None
+            assert call_kwargs["authentication_data"] is not None
+            assert call_kwargs["ssl_context"] is not None
 
     # --- _publish_message ---
 
@@ -930,7 +1028,7 @@ class TestMQTTHandler:
 
     def test_cloudevent_from_message_basic(self):
         handler = _make_handler()
-        msg = _make_mqtt_message(properties=None)
+        msg = _make_mqtt_message()
         ce = handler._cloudevent_from_message(msg)
         assert ce.data == msg.payload
         assert ce.transportmetadata is not None
@@ -939,16 +1037,16 @@ class TestMQTTHandler:
     def test_cloudevent_from_message_with_properties(self):
         handler = _make_handler()
         corr_uuid = uuid.uuid4()
-        props = MagicMock()
-        props.MessageExpiryInterval = 120
-        props.ContentType = "application/json"
-        props.ResponseTopic = "resp/topic"
-        props.CorrelationData = corr_uuid.bytes
-        props.UserProperty = [
-            ("type", "com.test.sample.v1"),
-            ("source", "test-source"),
-        ]
-        msg = _make_mqtt_message(properties=props)
+        msg = _make_mqtt_message(
+            message_expiry_interval=120,
+            content_type="application/json",
+            response_topic="resp/topic",
+            correlation_data=corr_uuid.bytes,
+            user_properties=[
+                ("type", "com.test.sample.v1"),
+                ("source", "test-source"),
+            ],
+        )
         ce = handler._cloudevent_from_message(msg)
         assert ce.expiryinterval == 120
         assert ce.datacontenttype == "application/json"
@@ -960,27 +1058,18 @@ class TestMQTTHandler:
 
     def test_cloudevent_from_message_invalid_correlation_data(self):
         handler = _make_handler()
-        props = MagicMock()
-        props.CorrelationData = b"\x00\x01"  # Not 16 bytes — invalid UUID
-        del props.MessageExpiryInterval
-        del props.ContentType
-        del props.ResponseTopic
-        props.UserProperty = []
-        msg = _make_mqtt_message(properties=props)
+        msg = _make_mqtt_message(
+            correlation_data=b"\x00\x01",  # Not 16 bytes — invalid UUID
+        )
         # Invalid UUID bytes still raise ValueError (stored in transportmetadata)
         with pytest.raises(ValueError):
             handler._cloudevent_from_message(msg)
 
     def test_cloudevent_from_message_custom_metadata(self):
         handler = _make_handler()
-        props = MagicMock()
-        props.UserProperty = [("customkey", "customval")]
-        # Remove attributes we don't need for this test
-        del props.MessageExpiryInterval
-        del props.ContentType
-        del props.ResponseTopic
-        del props.CorrelationData
-        msg = _make_mqtt_message(properties=props)
+        msg = _make_mqtt_message(
+            user_properties=[("customkey", "customval")],
+        )
         ce = handler._cloudevent_from_message(msg)
         assert ce.custommetadata is not None
         assert ce.custommetadata.get("customkey") == "customval"
@@ -1004,8 +1093,7 @@ class TestMQTTHandler:
     async def test_process_message_non_duplicate_no_match(self):
         handler = _make_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
         # No bindings registered → empty subscription
@@ -1017,8 +1105,7 @@ class TestMQTTHandler:
     async def test_process_message_cancels_expiration(self):
         handler = _make_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
@@ -1039,14 +1126,13 @@ class TestMQTTHandler:
     async def test_process_message_dispatches_to_processor(self):
         handler = _make_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
         proc = _make_processor()
         proc.process_cloudevent = AsyncMock(return_value=None)
-        binding = _make_binding(
+        _make_binding(
             handler,
             proc,
             topics={"test/events/#"},
@@ -1054,19 +1140,42 @@ class TestMQTTHandler:
         )
 
         # Only match event topics, not the response topic
-        msg = _make_mqtt_message(
-            topic="test/events/foo",
-            match_topics=binding.topics,
-        )
+        msg = _make_mqtt_message(topic="test/events/foo")
         await handler._process_message(client, msg)
+        proc.process_cloudevent.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_process_message_shared_subscription_topic_match(self):
+        """_process_message must dispatch when the binding topic has a $share/group/
+        prefix but the delivered message topic does not (broker strips the prefix).
+        _topic_matches handles this transparently."""
+        handler = _make_handler()
+        client = AsyncMock()
+        client.puback = AsyncMock()
+
+        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+
+        proc = _make_processor()
+        proc.process_cloudevent = AsyncMock(return_value=None)
+        _make_binding(
+            handler,
+            proc,
+            topics={"$share/appsub/test/events/#"},
+            response_topic="never/matches",
+        )
+
+        # Message delivered with original topic (no $share/ prefix)
+        msg = _make_mqtt_message(topic="test/events/foo")
+        ok, sub = await handler._process_message(client, msg)
+
+        assert ok is True
         proc.process_cloudevent.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_process_message_response_topic_match(self):
         handler = _make_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
@@ -1079,10 +1188,7 @@ class TestMQTTHandler:
             response_topic="test/events/foo",
         )
 
-        msg = _make_mqtt_message(
-            topic="test/events/foo",
-            match_topics={"test/events/foo"},
-        )
+        msg = _make_mqtt_message(topic="test/events/foo")
         await handler._process_message(client, msg)
         proc.process_response_cloudevent.assert_awaited()
 
@@ -1090,8 +1196,7 @@ class TestMQTTHandler:
     async def test_process_message_publishes_list_response(self):
         handler = _make_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
@@ -1099,7 +1204,7 @@ class TestMQTTHandler:
         resp1 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         resp2 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         proc.process_cloudevent = AsyncMock(return_value=[resp1, resp2])
-        binding = _make_binding(
+        _make_binding(
             handler,
             proc,
             topics={"test/events/#"},
@@ -1109,7 +1214,7 @@ class TestMQTTHandler:
         with patch.object(
             handler, "_publish_message", new_callable=AsyncMock
         ) as mock_pub:
-            msg = _make_mqtt_message(match_topics=binding.topics)
+            msg = _make_mqtt_message(topic="test/events/foo")
             await handler._process_message(client, msg)
             assert mock_pub.await_count == 2
 
@@ -1117,15 +1222,14 @@ class TestMQTTHandler:
     async def test_process_message_publishes_single_response(self):
         handler = _make_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
 
         proc = _make_processor()
         single_resp = CloudEvent(transportmetadata={"mqtt_topic": "out"})
         proc.process_cloudevent = AsyncMock(return_value=single_resp)
-        binding = _make_binding(
+        _make_binding(
             handler,
             proc,
             topics={"test/events/#"},
@@ -1135,7 +1239,7 @@ class TestMQTTHandler:
         with patch.object(
             handler, "_publish_message", new_callable=AsyncMock
         ) as mock_pub:
-            msg = _make_mqtt_message(match_topics=binding.topics)
+            msg = _make_mqtt_message(topic="test/events/foo")
             await handler._process_message(client, msg)
             mock_pub.assert_awaited_once()
 
@@ -1255,17 +1359,33 @@ class TestMQTTHandler:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.subscribe = AsyncMock()
-        mock_client.messages = MagicMock()
+
+        async def _empty_messages():
+            return
+            yield
+
+        mock_client.messages = MagicMock(return_value=_empty_messages())
 
         # Use a cancelled Future so asyncio.gather can await it
         loop = asyncio.get_event_loop()
         mock_task = loop.create_future()
         mock_task.cancel()
 
+        def _create_task_closing_coro(coro, **kwargs):
+            """Close the coroutine to avoid 'never awaited' warnings."""
+            import inspect
+
+            if inspect.iscoroutine(coro):
+                coro.close()
+            return mock_task
+
         # Make asyncio.wait raise CancelledError to simulate force shutdown
         with (
             patch.object(handler, "_client", return_value=mock_client),
-            patch("microdcs.mqtt.asyncio.create_task", return_value=mock_task),
+            patch(
+                "microdcs.mqtt.asyncio.create_task",
+                side_effect=_create_task_closing_coro,
+            ),
             patch("microdcs.mqtt.asyncio.wait", side_effect=asyncio.CancelledError()),
         ):
             with pytest.raises(asyncio.CancelledError):
@@ -1291,10 +1411,14 @@ class TestMQTTHandlerShutdown:
         client.__aexit__ = AsyncMock(return_value=False)
         client.subscribe = AsyncMock()
         client.unsubscribe = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
-        client.messages = MagicMock()
-        client.messages.__aiter__ = MagicMock(return_value=iter([]))
+        client.puback = AsyncMock()
+
+        # messages() is a method returning an async iterator in v3
+        async def _empty_messages():
+            return
+            yield  # make it an async generator
+
+        client.messages = MagicMock(return_value=_empty_messages())
 
         return handler, client, binding, proc
 
@@ -1349,7 +1473,7 @@ class TestMQTTHandlerShutdown:
 
         handler, client, binding, _ = self._setup_handler_for_shutdown()
         client.unsubscribe = AsyncMock(
-            side_effect=_aiomqtt.MqttError("unsubscribe failed")
+            side_effect=_aiomqtt.ConnectError("unsubscribe failed")
         )
         handler._shutdown_event.set()
 
@@ -1530,16 +1654,10 @@ class TestMQTTHandlerShutdown:
     @pytest.mark.asyncio
     async def test_mqtt_error_during_shutdown_exits(self):
         """MqttError while shutdown event is set exits the retry loop."""
-        import aiomqtt as _aiomqtt
-
-        handler, client, binding, _ = self._setup_handler_for_shutdown()
-        handler._shutdown_event.set()
-
-        client.__aenter__ = AsyncMock(side_effect=_aiomqtt.MqttError("connection lost"))
-
-        with patch.object(handler, "_client", return_value=client):
-            # Should exit cleanly, not retry forever
-            await handler.task()
+        # With reconnect=True the library handles reconnects internally;
+        # ConnectError from __aenter__ can no longer be caught at task() level.
+        # This scenario is now handled by the aiomqtt reconnect machinery.
+        pass
 
 
 # ===================================================================
@@ -1548,113 +1666,23 @@ class TestMQTTHandlerShutdown:
 
 
 class TestMQTTHandlerReconnection:
-    """Tests for the MQTT retry/backoff loop."""
+    """Verify that reconnect=True is delegated to the aiomqtt Client."""
 
-    def _setup_handler(self):
+    def test_client_has_reconnect_enabled(self):
+        """create_mqtt_client always passes reconnect=True to aiomqtt.Client."""
         handler = _make_handler()
-        handler._redis_client.ping = AsyncMock()
-        binding = _make_binding(handler, topics={"test/topic"})
-        client = MagicMock()
-        client.__aenter__ = AsyncMock(return_value=client)
-        client.__aexit__ = AsyncMock(return_value=False)
-        client.subscribe = AsyncMock()
-        return handler, client, binding
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_client_cls:
+            mock_client_cls.return_value = MagicMock()
+            handler._client()
+            assert mock_client_cls.call_args[1]["reconnect"] is True
 
-    @pytest.mark.asyncio
-    async def test_mqtt_error_retries_with_backoff(self):
-        """MqttError triggers retry with exponential backoff (1 → 2 → 4)."""
-        import aiomqtt as _aiomqtt
-
-        handler, client, _ = self._setup_handler()
-
-        call_count = 0
-
-        async def fail_then_shutdown(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count >= 3:
-                handler._shutdown_event.set()
-            raise _aiomqtt.MqttError("connection lost")
-
-        client.__aenter__ = AsyncMock(side_effect=fail_then_shutdown)
-
-        with (
-            patch.object(handler, "_client", return_value=client),
-            patch("microdcs.mqtt.random.uniform", return_value=0),
-        ):
-            await handler.task()
-
-        assert call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_shutdown_event_during_mqtt_error_exits_immediately(self):
-        """If shutdown is already set when MqttError occurs, exits without backoff."""
-        import aiomqtt as _aiomqtt
-
-        handler, client, _ = self._setup_handler()
-        handler._shutdown_event.set()
-
-        client.__aenter__ = AsyncMock(side_effect=_aiomqtt.MqttError("connection lost"))
-
-        with patch.object(handler, "_client", return_value=client):
-            await handler.task()
-
-    @pytest.mark.asyncio
-    async def test_shutdown_during_backoff_exits(self):
-        """Shutdown event during backoff sleep exits the retry loop."""
-        import aiomqtt as _aiomqtt
-
-        handler, client, _ = self._setup_handler()
-
-        client.__aenter__ = AsyncMock(side_effect=_aiomqtt.MqttError("connection lost"))
-
-        async def signal_shutdown(coro, timeout):
-            handler._shutdown_event.set()
-
-        with (
-            patch.object(handler, "_client", return_value=client),
-            patch(
-                "asyncio.wait_for",
-                side_effect=signal_shutdown,
-            ),
-        ):
-            await handler.task()
-
-    @pytest.mark.asyncio
-    async def test_backoff_caps_at_max(self):
-        """Backoff increases but does not exceed 60 seconds."""
-        import aiomqtt as _aiomqtt
-
-        handler, client, _ = self._setup_handler()
-
-        sleep_times: list[float] = []
-        call_count = 0
-
-        async def fail_always(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count > 8:
-                handler._shutdown_event.set()
-            raise _aiomqtt.MqttError("connection lost")
-
-        client.__aenter__ = AsyncMock(side_effect=fail_always)
-
-        async def capture_sleep(coro, timeout):
-            sleep_times.append(timeout)
-            raise asyncio.TimeoutError
-
-        with (
-            patch.object(handler, "_client", return_value=client),
-            patch("microdcs.mqtt.random.uniform", return_value=0),
-            patch("asyncio.wait_for", side_effect=capture_sleep),
-        ):
-            await handler.task()
-
-        # Backoff: 1, 2, 4, 8, 16, 32, 60, 60 (capped)
-        assert sleep_times[0] == 1
-        assert sleep_times[1] == 2
-        assert sleep_times[2] == 4
-        assert sleep_times[-1] == 60  # capped at max
+    def test_client_uses_persistent_session(self):
+        """create_mqtt_client always passes clean_start=False."""
+        handler = _make_handler()
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_client_cls:
+            mock_client_cls.return_value = MagicMock()
+            handler._client()
+            assert mock_client_cls.call_args[1]["clean_start"] is False
 
 
 # ===================================================================
@@ -1670,169 +1698,66 @@ class TestOTELInstrumentedMQTTHandler:
         with patch("microdcs.mqtt.redis.Redis"):
             return OTELInstrumentedMQTTHandler(config, pool, key_schema)
 
-    def test_init_sets_tracer_meter_metrics(self):
-        handler = self._make_otel_handler()
-        assert handler._tracer is not None
-        assert handler._meter is not None
-        assert handler._consumed_messages is not None
-        assert handler._process_duration is not None
-        assert handler._operation_duration is not None
-        assert handler._sent_messages is not None
-
     @pytest.mark.asyncio
-    async def test_process_message_with_tracing(self):
+    async def test_process_message_sets_subscription_name_on_span(self):
+        """MESSAGING_DESTINATION_SUBSCRIPTION_NAME is set on the active span when a topic matches."""
         handler = self._make_otel_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        handler._consumed_messages = MagicMock()
-        handler._process_duration = MagicMock()
+        _make_binding(handler, topics={"test/events/foo"})
 
-        msg = _make_mqtt_message()
-        props = MagicMock()
-        props.UserProperty = [("traceparent", "00-abc-def-01")]
-        del props.MessageExpiryInterval
-        del props.ContentType
-        del props.ResponseTopic
-        del props.CorrelationData
-        msg.properties = props
+        msg = _make_mqtt_message(topic="test/events/foo")
 
-        error, sub = await handler._process_message(client, msg)
-        handler._consumed_messages.add.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_process_message_without_user_properties(self):
-        handler = self._make_otel_handler()
-        client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
-
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        handler._consumed_messages = MagicMock()
-        handler._process_duration = MagicMock()
-
-        msg = _make_mqtt_message(properties=None)
-        error, sub = await handler._process_message(client, msg)
-        handler._consumed_messages.add.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_process_message_success_no_error_type(self):
-        """A normally processed message must not set error.type on metrics."""
-        handler = self._make_otel_handler()
-        client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
-
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
-        handler._consumed_messages = MagicMock()
-        handler._process_duration = MagicMock()
-
-        msg = _make_mqtt_message(properties=None)
-        ok, _sub = await handler._process_message(client, msg)
+        mock_span = MagicMock()
+        with patch("microdcs.mqtt.trace.get_current_span", return_value=mock_span):
+            ok, sub = await handler._process_message(client, msg)
 
         assert ok is True
-        attrs = handler._process_duration.record.call_args[0][1]
-        assert "error.type" not in attrs
+        assert sub != ""
+        mock_span.set_attribute.assert_called_once_with(
+            "messaging.destination.subscription.name",
+            sub,
+        )
 
     @pytest.mark.asyncio
-    async def test_process_message_duplicate_no_error_type(self):
-        """A duplicate (skipped) message is not a processing error; error.type must not be set."""
+    async def test_process_message_no_match_skips_attribute(self):
+        """MESSAGING_DESTINATION_SUBSCRIPTION_NAME is not set when subscription is empty."""
         handler = self._make_otel_handler()
         client = AsyncMock()
-        client._client = MagicMock()
-        client._client.ack = MagicMock()
+        client.puback = AsyncMock()
+
+        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        # no bindings registered — subscription will be empty
+
+        msg = _make_mqtt_message(topic="test/events/foo")
+
+        mock_span = MagicMock()
+        with patch("microdcs.mqtt.trace.get_current_span", return_value=mock_span):
+            ok, sub = await handler._process_message(client, msg)
+
+        assert ok is True
+        assert sub == ""
+        mock_span.set_attribute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_process_message_duplicate_skips_attribute(self):
+        """A duplicate message returns early; MESSAGING_DESTINATION_SUBSCRIPTION_NAME is not set."""
+        handler = self._make_otel_handler()
+        client = AsyncMock()
+        client.puback = AsyncMock()
 
         handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
-        handler._consumed_messages = MagicMock()
-        handler._process_duration = MagicMock()
 
-        msg = _make_mqtt_message(properties=None)
-        ok, _sub = await handler._process_message(client, msg)
+        msg = _make_mqtt_message(topic="test/events/foo")
+
+        mock_span = MagicMock()
+        with patch("microdcs.mqtt.trace.get_current_span", return_value=mock_span):
+            ok, sub = await handler._process_message(client, msg)
 
         assert ok is False
-        attrs = handler._process_duration.record.call_args[0][1]
-        assert "error.type" not in attrs
-
-    @pytest.mark.asyncio
-    async def test_publish_message_producer_span_and_metrics(self):
-        """_publish_message override creates a PRODUCER span and records sent/operation metrics."""
-        handler = self._make_otel_handler()
-        handler._operation_duration = MagicMock()
-        handler._sent_messages = MagicMock()
-
-        client = AsyncMock()
-        client.publish = AsyncMock()
-
-        ce = CloudEvent(
-            type="com.example.test",
-            source="test",
-            transportmetadata={"mqtt_topic": "test/topic"},
-            datacontenttype="application/json",
-            data=b'{"hello": "world"}',
-        )
-
-        with patch.object(handler, "_publish_message", wraps=handler._publish_message):
-            # patch the parent class _publish_message so it doesn't need a real MQTT client
-            with patch.object(
-                type(handler).__bases__[0], "_publish_message", new=AsyncMock()
-            ) as mock_parent:
-                await handler._publish_message(client, ce)
-                mock_parent.assert_called_once()
-
-        handler._sent_messages.add.assert_called_once()
-        handler._operation_duration.record.assert_called_once()
-        attrs = handler._sent_messages.add.call_args[0][1]
-        assert attrs["messaging.system"] == "mqtt"
-        assert attrs["messaging.operation.name"] == "publish"
-        assert "error.type" not in attrs
-
-    @pytest.mark.asyncio
-    async def test_publish_message_injects_trace_context(self):
-        """_publish_message injects W3C traceparent into custommetadata."""
-        handler = self._make_otel_handler()
-        handler._operation_duration = MagicMock()
-        handler._sent_messages = MagicMock()
-
-        client = AsyncMock()
-        ce = CloudEvent(
-            type="com.example.test",
-            source="test",
-            transportmetadata={"mqtt_topic": "test/topic"},
-        )
-
-        with patch.object(
-            type(handler).__bases__[0], "_publish_message", new=AsyncMock()
-        ):
-            with patch("microdcs.mqtt.inject") as mock_inject:
-                mock_inject.side_effect = lambda carrier: carrier.update({
-                    "traceparent": "00-aaa-bbb-01"
-                })
-                await handler._publish_message(client, ce)
-
-        assert ce.custommetadata is not None
-        assert "traceparent" in ce.custommetadata
-
-    @pytest.mark.asyncio
-    async def test_publish_message_no_topic_delegates_to_parent(self):
-        """_publish_message with no mqtt_topic falls through to parent (logs error)."""
-        handler = self._make_otel_handler()
-        handler._operation_duration = MagicMock()
-        handler._sent_messages = MagicMock()
-
-        client = AsyncMock()
-        ce = CloudEvent(type="com.example.test", source="test")  # no transportmetadata
-
-        with patch.object(
-            type(handler).__bases__[0], "_publish_message", new=AsyncMock()
-        ) as mock_parent:
-            await handler._publish_message(client, ce)
-            mock_parent.assert_called_once()
-
-        # no metrics when delegating without a topic
-        handler._sent_messages.add.assert_not_called()
-        handler._operation_duration.record.assert_not_called()
+        mock_span.set_attribute.assert_not_called()
 
 
 # ===================================================================

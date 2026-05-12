@@ -8,10 +8,13 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "aiomqtt>=2.4.0",
+    "aiomqtt @ git+https://github.com/empicano/aiomqtt.git@main",
     "mashumaro[orjson]>=3.21",
     "msgpack>=1.1.2",
     "opentelemetry-distro>=0.60b1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.41.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.41.1",
+    "opentelemetry-instrumentation-aiomqtt",
     "opentelemetry-instrumentation-redis>=0.62b0",
     "redis[hiredis]>=7.4.0",
     "transitions>=0.9.3",
@@ -31,6 +34,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
+    "pytest-benchmark>=5.2.3",
 ]
 
 [project.scripts]
@@ -45,6 +49,16 @@ testpaths = ["tests"]
 markers = [
     "integration: integration tests requiring external services (MQTT, Redis)",
 ]
+
+[tool.uv]
+override-dependencies = [
+    "opentelemetry-api==1.41.1",
+    "opentelemetry-instrumentation==0.62b1",
+    "opentelemetry-semantic-conventions==0.62b1",
+]
+
+[tool.uv.sources]
+opentelemetry-instrumentation-aiomqtt = { git = "https://github.com/aschamberger/opentelemetry-python-contrib", subdirectory = "instrumentation/opentelemetry-instrumentation-aiomqtt", branch = "feat/aiomqtt-instrumentation" }
 
 [tool.ruff]
 format.preview = true
