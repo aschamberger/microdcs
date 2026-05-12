@@ -47,10 +47,10 @@ def test_graph(machine: HierarchicalGraphMachine):
         "classDef s_default fill:black,color:white",
     )
     md += "\n```\n"
-    # with open("tests/state_machine.md", "w") as f:
+    # with open("tests/unit/state_machine.md", "w") as f:
     #     f.write(md)
     assert graph is not None
-    assert md == open("tests/state_machine.md").read()
+    assert md == open("tests/unit/state_machine.md").read()
 
 
 def test_state_machine_states(machine: HierarchicalGraphMachine):
