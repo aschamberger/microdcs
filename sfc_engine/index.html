@@ -1347,6 +1347,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security and Authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -2386,7 +2413,7 @@
 <p>A hand-written <code>sfc_recipe_ext.py</code> provides the <code>SFC_RECIPE_DATASCHEMA</code> constant — the schema <code>$id</code> URI (<code>https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/</code>) used as the <code>dataschema</code> value on <code>ISA95WorkMasterDataTypeExt</code> to identify SFC recipe payloads. The SFC engine dispatches on this URI to select the recipe interpreter.</p>
 <h2 id="sfc-engine-architecture">SFC Engine Architecture</h2>
 <blockquote>
-<p><strong>Status</strong>: Implemented. <code>SfcEngine</code> in <code>src/microdcs/sfc_engine.py</code>, <code>SfcExecutionDAO</code> in <code>src/microdcs/redis.py</code>, 25 engine tests in <code>tests/test_sfc_engine.py</code>, 14 DAO tests in <code>tests/test_redis.py</code>.</p>
+<p><strong>Status</strong>: Implemented. <code>SfcEngine</code> in <code>src/microdcs/sfc_engine.py</code>, <code>SfcExecutionDAO</code> in <code>src/microdcs/redis.py</code>, 25 engine tests in <code>tests/unit/test_sfc_engine.py</code>, 14 DAO tests in <code>tests/unit/test_redis.py</code>.</p>
 </blockquote>
 <h3 id="role-in-the-system">Role in the System</h3>
 <p>The SFC engine is <strong>not</strong> a <code>CloudEventProcessor</code>. It is a separate orchestration layer that sits between the northbound and southbound processors and interacts with them via direct Python method calls — not CloudEvent round-trips. This separates three distinct concerns:</p>
@@ -2658,8 +2685,89 @@
 <p><strong>Note:</strong> For pull_event actions to route into the work stream, the SB processor must have <code>register_pull_completion_handler(sfc_engine.pull_event_handler)</code> wired in the application. The example app (<code>app/__main__.py</code>) includes this wiring.</p>
 </blockquote>
 <h4 id="idempotency-contract">Idempotency Contract</h4>
-<p>Re-delivery of <code>push_command</code> actions is the fundamental recovery mechanism. After consumer death, <code>XAUTOCLAIM</code> hands the unACKed work item to another instance, which may re-dispatch an already-sent command. <strong>Equipment must handle duplicate commands idempotently</strong> — this is the contract that makes multi-instance recovery safe without distributed locks. The SFC engine adds a <code>correlation_id</code> (derived from <code>{job_id}:{action_name}:{attempt}</code>) to every outgoing command, giving equipment a stable key for deduplication.</p>
-<p>For <code>pull_event</code> actions there is no stream entry to reclaim. Recovery relies entirely on the <code>_recovery_scan</code> that runs on every pod startup: it re-enqueues <code>resume</code> for all active jobs, and <code>_handle_resume</code> re-registers the routing tables on whichever instance processes the resume item. Until that restart, a <code>pull_event</code> whose CloudEvent was delivered to the wrong instance stays stuck in <code>waiting</code> state.</p>
+<p>The engine delivers <code>push_command</code> actions <strong>at least once</strong>. Re-delivery is the recovery mechanism that makes multi-instance operation safe without distributed locks, so equipment (or the southbound gateway in front of it) must tolerate it.</p>
+<p><strong>When a command is delivered again</strong></p>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Instance dies after dispatch but before ACKing the work item</td>
+<td><code>XAUTOCLAIM</code> hands the entry to another instance, which re-dispatches while the action is still <code>dispatched</code></td>
+</tr>
+<tr>
+<td>Response is lost or arrives at a non-dispatching instance</td>
+<td>The action stays <code>dispatched</code>; the next pod restart runs <code>_recovery_scan</code> → <code>resume</code>, which re-dispatches it</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What each delivery carries</strong></p>
+<table>
+<thead>
+<tr>
+<th>CloudEvent attribute</th>
+<th>Value</th>
+<th>Stable across re-delivery?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>New UUID per dispatch (the engine's <code>command_id</code>)</td>
+<td><strong>No</strong></td>
+</tr>
+<tr>
+<td><code>correlationid</code></td>
+<td>Job-level UUID, identical on every command of the job</td>
+<td>Yes, but not specific to an action</td>
+</tr>
+<tr>
+<td><code>mdcsactionkey</code></td>
+<td><code>{job_id}:{action_name}</code></td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td><code>subject</code></td>
+<td>The scope</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>The action's <code>type_id</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>payload</td>
+<td>Built by the SB processor's <code>@outgoing</code> handler from <code>job_id</code>, <code>scope</code> and the action <code>parameters</code></td>
+<td>Yes, if the handler includes them</td>
+</tr>
+</tbody>
+</table>
+<p>The attempt counter is stored in Redis only; it is not sent to equipment.</p>
+<p><strong>What equipment must do</strong></p>
+<ol>
+<li><strong>Do not deduplicate on the CloudEvent <code>id</code>.</strong> It changes on every re-delivery, so it cannot identify a repeated command.</li>
+<li><strong>Deduplicate on <code>mdcsactionkey</code>.</strong> It identifies the logical command and is identical on every re-delivery. Keep it for as long as the job can still be running.</li>
+<li><strong>Execute a repeated command at most once, but always respond to every delivery.</strong> The response must set <code>causationid</code> to the <code>id</code> of the delivery it answers (the example processor passes it to <code>complete_action</code>). The engine only accepts a response for the most recently dispatched <code>id</code>; responses to superseded ids are ignored as stale. A duplicate that is silently dropped, or answered with the earlier id, leaves the action <code>dispatched</code>.</li>
+<li><strong>Respond before the message expires.</strong> If the command was published with an expiry interval and a response topic, the SB processor's <code>handle_cloudevent_expiration</code> runs when no response arrives in time; with the example processor this fails the action and therefore the job.</li>
+<li>A response for an action that is already completed is harmless: the CAS discards it.</li>
+</ol>
+<blockquote>
+<p><strong>Note.</strong> The engine also passes the key to the SB processor's <code>@outgoing</code> handler as the <code>action_key</code> keyword argument, in addition to <code>job_id</code> and <code>scope</code>.</p>
+</blockquote>
+<p><strong><code>pull_event</code> actions</strong></p>
+<p>No command is sent, so there is nothing to re-deliver. Equipment emits an event that must have:</p>
+<ul>
+<li>a <code>subject</code> whose first segment is the job's scope</li>
+<li>a <code>type</code> equal to the waiting action's <code>type_id</code></li>
+<li>a unique, stable <code>id</code> that is re-used when the event is re-sent. The MQTT handler drops a second event with the same <code>source</code> + <code>id</code> for <code>APP_MQTT_DEDUPE_TTL_SECONDS</code> (default 10 minutes). Re-sending an event under a new <code>id</code> is treated as a new event.</li>
+</ul>
+<p>The engine matches by scope and <code>type</code> only: the first <code>waiting</code> action with that type in the first matching active job completes. <code>subject</code> beyond the scope and <code>correlationid</code> are carried to the work item but not used for matching. Two jobs in the same scope waiting for the same event type are therefore not distinguished.</p>
+<p>Any instance that receives the event writes it to <code>sfc:work:{scope}</code>, so a pull event survives instance loss through <code>XAUTOCLAIM</code>.</p>
 <h4 id="multi-instance-safety-summary">Multi-Instance Safety Summary</h4>
 <table>
 <thead>

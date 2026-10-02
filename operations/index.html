@@ -16,6 +16,8 @@
         <link rel="prev" href="../persistence/">
       
       
+        <link rel="next" href="../security/">
+      
       
         
       
@@ -866,6 +868,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#redis-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Redis Requirements
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration-reference" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -915,6 +928,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Processing (<code>APP_PROCESSING_*</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logging-app_logging_" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Logging (<code>APP_LOGGING_*</code>)
       </span>
     </span>
   </a>
@@ -1251,6 +1275,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security and Authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -1311,6 +1362,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#redis-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Redis Requirements
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration-reference" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1360,6 +1422,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Processing (<code>APP_PROCESSING_*</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logging-app_logging_" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Logging (<code>APP_LOGGING_*</code>)
       </span>
     </span>
   </a>
@@ -1723,6 +1796,35 @@ and processors share this loop — isolation between them is achieved through bo
 async queues, not separate threads or processes. Understanding where those queues sit
 and what happens when they fill is the foundation for operating the system reliably.</p>
 <hr />
+<h2 id="redis-requirements">Redis Requirements</h2>
+<p>Redis is the system of record: job orders and states, SFC execution state, work and change
+streams, and the deduplication keys all live there.</p>
+<p><strong>Version and modules.</strong> Use Redis 8 or Redis Stack. The code relies on JSON documents, search
+indexes (<code>FT.*</code>), streams and Lua scripts. Managed Redis offerings without the JSON and Search
+modules do not work. Redis Cluster is not a supported topology: the Lua scripts touch several
+keys, and the search indexes span key prefixes.</p>
+<p><strong>Persistence baseline.</strong> Run Redis with an append-only file and a persistent volume:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>redis-server<span class="w"> </span>--appendonly<span class="w"> </span>yes<span class="w"> </span>--appendfsync<span class="w"> </span>everysec
+</span></code></pre></div>
+<p>The default Redis configuration only snapshots (<code>save 3600 1 300 100 60 10000</code>) and keeps no
+AOF. After a crash it restarts from the last snapshot and silently loses every write since,
+including job orders the MES was told were stored. With <code>appendfsync everysec</code> at most about one
+second of writes can be lost. Mount the data directory (<code>/data</code> in the official image) on a
+persistent volume, otherwise a rescheduled pod starts empty.</p>
+<p>A single Redis with this baseline is a reasonable starting point. A restart takes seconds, and
+the design already tolerates much longer MES outages (see
+<a href="../machinery-jobs-mes-publishing/#high-availability">High availability</a>). Replication with
+Sentinel or an operator is only needed if even a short pause in sequence control is not
+acceptable. Replication is asynchronous, so a failover can still lose the last writes.</p>
+<p><strong>What a Redis outage does.</strong> A lost Redis connection raises an error in the publisher or the
+SFC engine loop, which cancels the whole task group and exits the process. Kubernetes restarts
+the pod, and startup fails until Redis answers (the connection is checked once at startup), so
+replicas crash-loop with increasing back-off. On restart <code>_recovery_scan</code> resumes active jobs.
+Incoming MQTT messages that were not yet acknowledged are redelivered by the broker because
+the persistent session is kept. A message that was being processed at the crash is claimed
+again once its dedupe lease expires (<code>APP_MQTT_DEDUPE_LEASE_SECONDS</code>), so it is processed at
+least once. There is no in-process Redis reconnection.</p>
+<hr />
 <h2 id="configuration-reference">Configuration Reference</h2>
 <p>All settings are read from environment variables with the prefix <code>APP_</code> and nested
 structure <code>APP_{SECTION}_{FIELD}</code>.</p>
@@ -1765,7 +1867,13 @@ structure <code>APP_{SECTION}_{FIELD}</code>.</p>
 <td><code>APP_REDIS_PASSWORD</code></td>
 <td><code>str</code></td>
 <td><code>None</code></td>
-<td>Redis password (optional)</td>
+<td>Redis password (optional). Prefer <code>APP_REDIS_PASSWORD_FILE</code>; setting both is an error</td>
+</tr>
+<tr>
+<td><code>APP_REDIS_PASSWORD_FILE</code></td>
+<td><code>Path</code></td>
+<td><code>None</code></td>
+<td>File containing the Redis password, for example a mounted Kubernetes secret. A trailing newline is ignored</td>
 </tr>
 <tr>
 <td><code>APP_REDIS_SSL</code></td>
@@ -1778,6 +1886,30 @@ structure <code>APP_{SECTION}_{FIELD}</code>.</p>
 <td><code>Path</code></td>
 <td><code>None</code></td>
 <td>CA certificate for Redis TLS (optional)</td>
+</tr>
+<tr>
+<td><code>APP_REDIS_SOCKET_TIMEOUT</code></td>
+<td><code>float</code></td>
+<td><code>10.0</code></td>
+<td>Seconds before a Redis read or write times out; must exceed the longest blocking stream read (2 s)</td>
+</tr>
+<tr>
+<td><code>APP_REDIS_SOCKET_CONNECT_TIMEOUT</code></td>
+<td><code>float</code></td>
+<td><code>5.0</code></td>
+<td>Seconds before opening a Redis connection times out</td>
+</tr>
+<tr>
+<td><code>APP_REDIS_SOCKET_KEEPALIVE</code></td>
+<td><code>bool</code></td>
+<td><code>true</code></td>
+<td>Enable TCP keep-alive on Redis connections</td>
+</tr>
+<tr>
+<td><code>APP_REDIS_HEALTH_CHECK_INTERVAL</code></td>
+<td><code>int</code></td>
+<td><code>30</code></td>
+<td>Seconds of idleness after which a pooled connection is checked with <code>PING</code> before reuse (<code>0</code> disables)</td>
 </tr>
 </tbody>
 </table>
@@ -1823,6 +1955,42 @@ structure <code>APP_{SECTION}_{FIELD}</code>.</p>
 <td>CA certificate for TLS connections</td>
 </tr>
 <tr>
+<td><code>APP_MQTT_REQUIRE_TLS</code></td>
+<td><code>bool</code></td>
+<td><code>false</code></td>
+<td>Fail at startup if the CA certificate is missing instead of connecting in plaintext</td>
+</tr>
+<tr>
+<td><code>APP_MQTT_USERNAME</code></td>
+<td><code>str</code></td>
+<td><code>None</code></td>
+<td>MQTT username (optional)</td>
+</tr>
+<tr>
+<td><code>APP_MQTT_PASSWORD</code></td>
+<td><code>str</code></td>
+<td><code>None</code></td>
+<td>MQTT password (optional). Prefer <code>APP_MQTT_PASSWORD_FILE</code>; setting both is an error</td>
+</tr>
+<tr>
+<td><code>APP_MQTT_PASSWORD_FILE</code></td>
+<td><code>Path</code></td>
+<td><code>None</code></td>
+<td>File containing the MQTT password, for example a mounted Kubernetes secret. A trailing newline is ignored</td>
+</tr>
+<tr>
+<td><code>APP_MQTT_TLS_CLIENT_CERT_PATH</code></td>
+<td><code>Path</code></td>
+<td><code>None</code></td>
+<td>Client certificate for mutual TLS; requires <code>APP_MQTT_TLS_CLIENT_KEY_PATH</code> and TLS to be on</td>
+</tr>
+<tr>
+<td><code>APP_MQTT_TLS_CLIENT_KEY_PATH</code></td>
+<td><code>Path</code></td>
+<td><code>None</code></td>
+<td>Private key for the client certificate</td>
+</tr>
+<tr>
 <td><code>APP_MQTT_MESSAGE_WORKERS</code></td>
 <td><code>int</code></td>
 <td><code>5</code></td>
@@ -1832,7 +2000,13 @@ structure <code>APP_{SECTION}_{FIELD}</code>.</p>
 <td><code>APP_MQTT_DEDUPE_TTL_SECONDS</code></td>
 <td><code>int</code></td>
 <td><code>600</code></td>
-<td>TTL for Redis deduplication keys (seconds)</td>
+<td>How long Redis remembers a processed message (seconds)</td>
+</tr>
+<tr>
+<td><code>APP_MQTT_DEDUPE_LEASE_SECONDS</code></td>
+<td><code>int</code></td>
+<td><code>30</code></td>
+<td>Lease a worker holds on a message while processing it; must exceed the slowest handler. An expired lease lets another worker process the message again</td>
 </tr>
 <tr>
 <td><code>APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE</code></td>
@@ -1875,13 +2049,31 @@ structure <code>APP_{SECTION}_{FIELD}</code>.</p>
 <td><code>APP_MSGPACK_TLS_CERT_PATH</code></td>
 <td><code>Path</code></td>
 <td><code>/var/run/certs/ca.crt</code></td>
-<td>CA certificate for TLS</td>
+<td>CA certificate used to verify client certificates (with <code>TLS_CLIENT_AUTH</code>)</td>
+</tr>
+<tr>
+<td><code>APP_MSGPACK_TLS_SERVER_CERT_PATH</code></td>
+<td><code>Path</code></td>
+<td><code>/var/run/certs/tls.crt</code></td>
+<td>Server certificate; TLS is enabled when this file exists</td>
+</tr>
+<tr>
+<td><code>APP_MSGPACK_TLS_SERVER_KEY_PATH</code></td>
+<td><code>Path</code></td>
+<td><code>/var/run/certs/tls.key</code></td>
+<td>Private key for the server certificate</td>
+</tr>
+<tr>
+<td><code>APP_MSGPACK_REQUIRE_TLS</code></td>
+<td><code>bool</code></td>
+<td><code>false</code></td>
+<td>Fail at startup if the server certificate or key is missing instead of listening in plaintext</td>
 </tr>
 <tr>
 <td><code>APP_MSGPACK_TLS_CLIENT_AUTH</code></td>
 <td><code>bool</code></td>
 <td><code>false</code></td>
-<td>Require client certificate authentication</td>
+<td>Require a client certificate; implies <code>REQUIRE_TLS</code></td>
 </tr>
 <tr>
 <td><code>APP_MSGPACK_KEEP_ALIVE</code></td>
@@ -1992,6 +2184,55 @@ structure <code>APP_{SECTION}_{FIELD}</code>.</p>
 <td><code>30</code></td>
 <td>TTL (seconds) for the distributed <code>post_start</code> Redis lock; controls how long a crashed instance blocks other replicas</td>
 </tr>
+<tr>
+<td><code>APP_PROCESSING_ENFORCE_SUBJECT_TOPIC_MATCH</code></td>
+<td><code>bool</code></td>
+<td><code>true</code></td>
+<td>Drop incoming MQTT messages whose CloudEvent <code>subject</code> does not match the scope in the topic (see <a href="../security/#what-the-framework-trusts">Security</a>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="logging-app_logging_">Logging (<code>APP_LOGGING_*</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APP_LOGGING_LEVEL</code></td>
+<td><code>str</code></td>
+<td><code>INFO</code></td>
+<td>Root log level</td>
+</tr>
+<tr>
+<td><code>APP_LOGGING_FILENAME</code></td>
+<td><code>str</code></td>
+<td><code>None</code></td>
+<td>Also write logs to this file (overwritten at start). Off by default so the container can run with a read-only root filesystem; logs go to stdout and stderr</td>
+</tr>
+<tr>
+<td><code>APP_LOGGING_FORMAT</code></td>
+<td><code>str</code></td>
+<td><code>%(asctime)s - %(name)s - %(levelname)s - %(message)s</code></td>
+<td>Log record format</td>
+</tr>
+<tr>
+<td><code>APP_LOGGING_LOG_PAYLOADS</code></td>
+<td><code>bool</code></td>
+<td><code>false</code></td>
+<td>Include message payloads in <code>DEBUG</code> logs and in deserialization errors. Off by default because payloads can contain production data; the VS Code run tasks turn it on</td>
+</tr>
+<tr>
+<td><code>APP_LOGGING_DISABLE_IF_OTEL_ENABLED</code></td>
+<td><code>bool</code></td>
+<td><code>true</code></td>
+<td>Leave logging to OpenTelemetry when <code>OTEL_LOGS_EXPORTER</code> is set</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -2004,10 +2245,10 @@ multiple deployed processors.</p>
 <p>Subscribe and publish topics share the same structural pattern, but they differ in
 what fills the wildcard/subject position:</p>
 <p><strong>Subscribe topics</strong> (derived at binding creation, fixed for the lifetime of the connection):</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>{prefix}[/+...N][/{discriminator}]/{intent}
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>{prefix}[/+...N][/{discriminator}]/{intent}
 </span></code></pre></div>
 <p><strong>Publish topics</strong> (derived per outgoing message when <code>mqtt_path_from_subject=True</code>):</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>{prefix}[/{subject-path}][/{discriminator}]/{intent}
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>{prefix}[/{subject-path}][/{discriminator}]/{intent}
 </span></code></pre></div>
 <table>
 <thead>
@@ -2106,15 +2347,15 @@ are appended between the prefix and the intent when subscribing. This allows a s
 binding to receive messages from multiple topic subtrees — for example, across several
 stations under a shared line prefix.</p>
 <p>With <code>name:N</code> where N is the number of wildcard levels, the binding subscribes to:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>{prefix}/{intent}               # level 0 (always included)
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>{prefix}/+/{intent}             # level 1
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>{prefix}/+/+/{intent}           # level 2
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>...
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>{prefix}/+/...+/{intent}        # level N
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>{prefix}/{intent}               # level 0 (always included)
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>{prefix}/+/{intent}             # level 1
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>{prefix}/+/+/{intent}           # level 2
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>...
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>{prefix}/+/...+/{intent}        # level N
 </span></code></pre></div>
 <p>If a discriminator is configured, it is inserted before <code>{intent}</code> at every level:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>{prefix}/{discriminator}/{intent}
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>{prefix}/+/{discriminator}/{intent}
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>{prefix}/{discriminator}/{intent}
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>{prefix}/+/{discriminator}/{intent}
 </span></code></pre></div>
 <h3 id="response-topics">Response Topics</h3>
 <p><code>APP_PROCESSING_RESPONSE_TOPICS</code> configures the backchannel topic used for
@@ -2127,7 +2368,7 @@ device or service knows where to send its reply.</p>
 <h3 id="shared-subscriptions">Shared Subscriptions</h3>
 <p><code>APP_PROCESSING_SHARED_SUBSCRIPTION_NAME</code> wraps every subscribe topic in an MQTT v5
 shared subscription group:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>$share/{group}/{prefix}/.../{intent}
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>$share/{group}/{prefix}/.../{intent}
 </span></code></pre></div>
 <p>This distributes incoming messages across all instances in the group (round-robin at
 the broker), enabling horizontal scaling without duplicate delivery. The response topic
@@ -2147,28 +2388,28 @@ intent in both subscribe and publish topics. Its primary use cases are:</p>
 the same <code>ProcessingConfig</code> share an identical <code>prefix + discriminator</code> combination.
 If they do, a <strong>warning</strong> is logged — this is not an error because intentional fan-out
 routing (delivering the same message to multiple processors) is a supported pattern.</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>WARNING: Processors 'jobs' and 'greetings' share the same topic routing key
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>         'factory/line1'. Incoming messages matching this key will be
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>         delivered to both processors.
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>WARNING: Processors 'jobs' and 'greetings' share the same topic routing key
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>         'factory/line1'. Incoming messages matching this key will be
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>         delivered to both processors.
 </span></code></pre></div>
 <h3 id="configuration-example">Configuration Example</h3>
 <p>The following shows a complete environment variable setup for two processors sharing
 the same line prefix but separated by discriminator:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Two processors, same line prefix, different discriminators</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nv">APP_PROCESSING_TOPIC_PREFIXES</span><span class="o">=</span>jobs:factory/line1,greetings:factory/line1
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nv">APP_PROCESSING_TOPIC_WILDCARD_LEVELS</span><span class="o">=</span>jobs:1,greetings:1
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nv">APP_PROCESSING_TOPIC_DISCRIMINATORS</span><span class="o">=</span>jobs:machinery-jobs,greetings:greetings
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nv">APP_PROCESSING_RESPONSE_TOPICS</span><span class="o">=</span>jobs:factory/responses,greetings:factory/responses
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Two processors, same line prefix, different discriminators</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nv">APP_PROCESSING_TOPIC_PREFIXES</span><span class="o">=</span>jobs:factory/line1,greetings:factory/line1
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nv">APP_PROCESSING_TOPIC_WILDCARD_LEVELS</span><span class="o">=</span>jobs:1,greetings:1
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nv">APP_PROCESSING_TOPIC_DISCRIMINATORS</span><span class="o">=</span>jobs:machinery-jobs,greetings:greetings
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nv">APP_PROCESSING_RESPONSE_TOPICS</span><span class="o">=</span>jobs:factory/responses,greetings:factory/responses
 </span></code></pre></div>
 <p>Results for the <code>jobs</code> processor (SOUTHBOUND, subscribes to data/events/metadata):</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Subscribe: factory/line1/machinery-jobs/data
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>           factory/line1/machinery-jobs/events
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>           factory/line1/machinery-jobs/metadata
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>           factory/line1/+/machinery-jobs/data
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>           factory/line1/+/machinery-jobs/events
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>           factory/line1/+/machinery-jobs/metadata
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>Publish:   factory/line1/{subject-path}/machinery-jobs/commands
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>Response:  factory/responses/{instance-id}
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Subscribe: factory/line1/machinery-jobs/data
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>           factory/line1/machinery-jobs/events
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>           factory/line1/machinery-jobs/metadata
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>           factory/line1/+/machinery-jobs/data
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>           factory/line1/+/machinery-jobs/events
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>           factory/line1/+/machinery-jobs/metadata
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>Publish:   factory/line1/{subject-path}/machinery-jobs/commands
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>Response:  factory/responses/{instance-id}
 </span></code></pre></div>
 <hr />
 <h2 id="backpressure">Backpressure</h2>
@@ -2242,6 +2483,11 @@ startup, connections beyond this limit are refused at the kernel level.</p>
 processed message IDs. After a broker reconnect, messages replayed within this window
 are deduplicated. If your broker's session expiry exceeds this TTL, you may see
 duplicate processing after reconnects.</p>
+<p><strong><code>APP_MQTT_DEDUPE_LEASE_SECONDS</code></strong> (default <code>30</code>) is how long a worker owns a message
+while it is being processed. If the worker dies, the message becomes available again
+when the lease expires, so a redelivered message waits at most this long before it is
+processed. Set it above the slowest message handler: a handler that outlives the lease
+lets a second worker process the same message concurrently.</p>
 <p>Redis operation latency is a secondary signal: slow <code>await</code> on DAO calls inside a
 processor handler holds the worker for that message and reduces effective throughput
 even if the queues are not full.</p>
@@ -2407,27 +2653,27 @@ same signal for the MessagePack path.</p>
 <h3 id="getting-started">Getting Started</h3>
 <p>To enable OTEL instrumentation, set <code>APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED=true</code>
 and configure the standard OpenTelemetry environment variables for your collector:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED</span><span class="o">=</span><span class="nb">true</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nv">OTEL_SERVICE_NAME</span><span class="o">=</span>microdcs.app
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nv">OTEL_TRACES_EXPORTER</span><span class="o">=</span>otlp<span class="w">        </span><span class="c1"># or "console" for local debugging</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nv">OTEL_METRICS_EXPORTER</span><span class="o">=</span>otlp
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nv">OTEL_LOGS_EXPORTER</span><span class="o">=</span>otlp
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://otel-collector:4317
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nv">APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED</span><span class="o">=</span><span class="nb">true</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nv">OTEL_SERVICE_NAME</span><span class="o">=</span>microdcs.app
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nv">OTEL_TRACES_EXPORTER</span><span class="o">=</span>otlp<span class="w">        </span><span class="c1"># or "console" for local debugging</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="nv">OTEL_METRICS_EXPORTER</span><span class="o">=</span>otlp
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nv">OTEL_LOGS_EXPORTER</span><span class="o">=</span>otlp
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://otel-collector:4317
 </span></code></pre></div>
 <p>In the application wiring, register both the plain and instrumented handler variants.
 The framework selects the instrumented variant at runtime when
 <code>otel_instrumentation_enabled</code> is <code>true</code>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">microdcs.mqtt</span><span class="w"> </span><span class="kn">import</span> <span class="n">MQTTHandler</span><span class="p">,</span> <span class="n">OTELInstrumentedMQTTHandler</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">microdcs.msgpack</span><span class="w"> </span><span class="kn">import</span> <span class="n">MessagePackHandler</span><span class="p">,</span> <span class="n">OTELInstrumentedMessagePackHandler</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">microdcs</span><span class="o">.</span><span class="n">register_protocol_handler</span><span class="p">(</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">MQTTHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">OTELInstrumentedMQTTHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">)</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">microdcs</span><span class="o">.</span><span class="n">register_protocol_handler</span><span class="p">(</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">MessagePackHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">OTELInstrumentedMessagePackHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">microdcs.mqtt</span><span class="w"> </span><span class="kn">import</span> <span class="n">MQTTHandler</span><span class="p">,</span> <span class="n">OTELInstrumentedMQTTHandler</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">microdcs.msgpack</span><span class="w"> </span><span class="kn">import</span> <span class="n">MessagePackHandler</span><span class="p">,</span> <span class="n">OTELInstrumentedMessagePackHandler</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">microdcs</span><span class="o">.</span><span class="n">register_protocol_handler</span><span class="p">(</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">MQTTHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">OTELInstrumentedMQTTHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">)</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="n">microdcs</span><span class="o">.</span><span class="n">register_protocol_handler</span><span class="p">(</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="n">MessagePackHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="n">OTELInstrumentedMessagePackHandler</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p">)</span>
 </span></code></pre></div>
 <p>The non-instrumented handler variants (<code>MQTTHandler</code>, <code>MessagePackHandler</code>) remain
 available for local development where an OTEL collector is not present.</p>
@@ -2480,7 +2726,7 @@ commissioning based on observed baselines.</p>
 <h3 id="sizing-message-workers">Sizing Message Workers</h3>
 <p><code>APP_MQTT_MESSAGE_WORKERS</code> (default <code>5</code>) determines how many messages can be
 processed concurrently. The effective throughput is:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>throughput = message_workers / avg_processing_latency_seconds  [messages/s]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>throughput = message_workers / avg_processing_latency_seconds  [messages/s]
 </span></code></pre></div>
 <p>For example, with 5 workers and 200 ms average processing time (including Redis
 round-trips): 5 / 0.2 = 25 messages/s. If your peak arrival rate exceeds this,
@@ -2488,7 +2734,7 @@ either increase workers or reduce processing latency.</p>
 <h3 id="sizing-binding-outgoing-queues">Sizing Binding Outgoing Queues</h3>
 <p>The binding outgoing queue must absorb bursts where a processor produces events faster
 than the handler can publish them. Size it to cover the burst duration:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>queue_size &gt;= burst_rate_msg_per_s × publish_latency_s
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>queue_size &gt;= burst_rate_msg_per_s × publish_latency_s
 </span></code></pre></div>
 <p>The default of <code>5</code> is conservative. For processors that emit multiple outgoing events
 per incoming event (e.g. fan-out patterns), increase proportionally.</p>
@@ -2553,6 +2799,22 @@ resources (it's a semaphore, not pre-allocated).</p>
             </div>
           </a>
         
+        
+          
+          <a href="../security/" class="md-footer__link md-footer__link--next" aria-label="Next: Security and Authorization">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Security and Authorization
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
         
       </nav>
     

@@ -1197,6 +1197,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security and Authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -1618,7 +1645,7 @@
 <tr>
 <td><code>{prefix}:cededupe:{hash}</code></td>
 <td><code>string</code></td>
-<td>CloudEvent deduplication (source + id hash)</td>
+<td>CloudEvent deduplication (source + id hash): <code>processing:{token}</code> while claimed, <code>done</code> once processed</td>
 </tr>
 <tr>
 <td><code>{prefix}:transdedupe:{hash}</code></td>
@@ -1801,15 +1828,22 @@
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">key_schema</span> <span class="o">=</span> <span class="n">RedisKeySchema</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">"microdcs-app"</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="cloudevent-deduplication">CloudEvent Deduplication</h3>
-<p><code>CloudEventDedupeDAO</code> uses atomic <code>SET NX</code> with a TTL to track already-seen event IDs. Returns <code>True</code> if the event is a duplicate.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">dedupe_dao</span> <span class="o">=</span> <span class="n">CloudEventDedupeDAO</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">key_schema</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span>
+<p><code>CloudEventDedupeDAO</code> tracks event IDs with a short <strong>processing lease</strong> that is replaced by a <code>done</code> marker once the event has been processed. A worker that dies mid-processing therefore does not turn the redelivered event into a duplicate: its lease expires and the event is claimed again (at-least-once).</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">dedupe_dao</span> <span class="o">=</span> <span class="n">CloudEventDedupeDAO</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">key_schema</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">600</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">is_dup</span> <span class="o">=</span> <span class="k">await</span> <span class="n">dedupe_dao</span><span class="o">.</span><span class="n">is_duplicate</span><span class="p">(</span><span class="s2">"urn:source:1"</span><span class="p">,</span> <span class="s2">"event-id-123"</span><span class="p">)</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># First call: False (new event, key created with 600s TTL)</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">state</span> <span class="o">=</span> <span class="k">await</span> <span class="n">dedupe_dao</span><span class="o">.</span><span class="n">claim</span><span class="p">(</span><span class="s2">"urn:source:1"</span><span class="p">,</span> <span class="s2">"event-id-123"</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">"worker-a"</span><span class="p">)</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># DedupeState.CLAIMED: key set to "processing:worker-a" with a 30 s lease</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">is_dup</span> <span class="o">=</span> <span class="k">await</span> <span class="n">dedupe_dao</span><span class="o">.</span><span class="n">is_duplicate</span><span class="p">(</span><span class="s2">"urn:source:1"</span><span class="p">,</span> <span class="s2">"event-id-123"</span><span class="p">)</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Second call: True (duplicate, key already exists)</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">state</span> <span class="o">=</span> <span class="k">await</span> <span class="n">dedupe_dao</span><span class="o">.</span><span class="n">claim</span><span class="p">(</span><span class="s2">"urn:source:1"</span><span class="p">,</span> <span class="s2">"event-id-123"</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">"worker-b"</span><span class="p">)</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># DedupeState.BUSY: another worker holds the lease</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="k">await</span> <span class="n">dedupe_dao</span><span class="o">.</span><span class="n">mark_done</span><span class="p">(</span><span class="s2">"urn:source:1"</span><span class="p">,</span> <span class="s2">"event-id-123"</span><span class="p">)</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># key set to "done" with the 600 s TTL</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">state</span> <span class="o">=</span> <span class="k">await</span> <span class="n">dedupe_dao</span><span class="o">.</span><span class="n">claim</span><span class="p">(</span><span class="s2">"urn:source:1"</span><span class="p">,</span> <span class="s2">"event-id-123"</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">"worker-b"</span><span class="p">)</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># DedupeState.DONE: a genuine duplicate</span>
 </span></code></pre></div>
+<p>Claiming again with the same token returns <code>CLAIMED</code>, so a retry after a lost reply is safe. The MQTT handler claims a message before processing it, waits while the state is <code>BUSY</code> (until the lease expires or the holder finishes), calls <code>mark_done</code> after processing and only then acknowledges the message. A duplicate is acknowledged without being processed.</p>
 <h3 id="transaction-deduplication">Transaction Deduplication</h3>
 <p><code>TransactionDedupeDAO</code> works the same way, scoped by a scope string and transaction ID:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">microdcs.redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">TransactionDedupeDAO</span>

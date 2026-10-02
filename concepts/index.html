@@ -1176,6 +1176,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security and Authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -1658,7 +1685,7 @@
 </tr>
 </tbody>
 </table>
-<p>MicroDCS extends the base spec with error attributes (<code>mdcserrorkind</code>, <code>mdcserrormessage</code>), a <code>method</code> attribute for station configuration delivery (<code>PUT</code> / <code>DELETE</code>), and <code>custommetadata</code> for hidden-field round-tripping.</p>
+<p>MicroDCS extends the base spec with error attributes (<code>mdcserrorkind</code>, <code>mdcserrormessage</code>), a <code>method</code> attribute for station configuration delivery (<code>PUT</code> / <code>DELETE</code>), <code>mdcsactionkey</code> (a stable key for SFC commands that is identical on every re-delivery) and <code>custommetadata</code> for hidden-field round-tripping.</p>
 <h3 id="processor">Processor</h3>
 <p>A <strong>processor</strong> (<code>CloudEventProcessor</code> subclass) is the central abstraction for application logic. It handles one domain (e.g. greetings, job management) and is protocol-agnostic. A processor:</p>
 <ul>

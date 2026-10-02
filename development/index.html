@@ -1053,6 +1053,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security and Authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -1341,10 +1368,10 @@
 </ul>
 <h2 id="common-commands">Common Commands</h2>
 <p>Run the main unit test suite:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/<span class="w"> </span>--ignore<span class="o">=</span>tests/test_mqtt_integration.py<span class="w"> </span>--ignore<span class="o">=</span>tests/test_msgpack_integration.py
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/unit
 </span></code></pre></div>
 <p>Run test coverage:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>--cov<span class="o">=</span>microdcs<span class="w"> </span>--cov-report<span class="o">=</span>term-missing<span class="w"> </span>tests/<span class="w"> </span>--ignore<span class="o">=</span>tests/test_mqtt_integration.py<span class="w"> </span>--ignore<span class="o">=</span>tests/test_msgpack_integration.py
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>--cov<span class="o">=</span>microdcs<span class="w"> </span>--cov-report<span class="o">=</span>term-missing<span class="w"> </span>tests/unit
 </span></code></pre></div>
 <p>Run benchmarks and save results:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>--benchmark-only<span class="w"> </span>--benchmark-autosave
@@ -1392,12 +1419,21 @@ does not pass.</p>
 <li>msgpack.hostname</li>
 </ul>
 </li>
+<li>Files that must exist when TLS is required:<ul>
+<li>mqtt.tls_cert_path (with mqtt.require_tls)</li>
+<li>msgpack.tls_server_cert_path and tls_server_key_path (with msgpack.require_tls or tls_client_auth)</li>
+<li>msgpack.tls_cert_path (with msgpack.tls_client_auth)</li>
+<li>mqtt.tls_client_cert_path and tls_client_key_path (when set; both are required together)</li>
+</ul>
+</li>
 <li>Port ranges:<ul>
 <li>redis.port, mqtt.port, msgpack.port must be in 1..65535</li>
 </ul>
 </li>
 <li>Positive values:<ul>
 <li>mqtt.connect_timeout, mqtt.publish_timeout, mqtt.message_workers</li>
+<li>mqtt.dedupe_lease_seconds</li>
+<li>redis.socket_timeout, redis.socket_connect_timeout</li>
 <li>msgpack.max_queued_connections, msgpack.max_concurrent_requests</li>
 <li>msgpack.max_buffer_size</li>
 </ul>
@@ -1479,7 +1515,7 @@ these runtime checks.</p>
 <li><strong><code>microdcs-processor</code></strong> (<code>replicas: 2</code>) — processors plus SFC engine (<code>APP_IS_PUBLISHER_INSTANCE=false</code>)</li>
 <li><strong><code>microdcs-publisher</code></strong> (<code>replicas: 1</code>) — publisher only (<code>APP_IS_PROCESSOR_INSTANCE=false</code>)</li>
 </ul>
-<p>The publisher must be a single replica to avoid conflicting retained writes. The SFC engine is different: it runs on every processor replica and relies on Redis consumer groups plus CAS Lua scripts for work distribution and recovery. Equipment integrations must treat <code>push_command</code> deliveries as idempotent by deduplicating on the <code>correlation_id</code> attached by the engine. The app handles MQTT and Redis reconnection internally with backoff, so health probes on external dependencies are not included — Kubernetes restart-on-crash is sufficient.</p>
+<p>The publisher must be a single replica to avoid conflicting retained writes. The SFC engine is different: it runs on every processor replica and relies on Redis consumer groups plus CAS Lua scripts for work distribution and recovery. Equipment integrations must treat <code>push_command</code> deliveries as idempotent by deduplicating on the <code>mdcsactionkey</code> attached by the engine (see the <a href="../sfc_engine/#idempotency-contract">idempotency contract</a>). The app reconnects to MQTT with backoff but does not reconnect to Redis: a lost Redis connection ends the process and Kubernetes restarts it, so health probes on external dependencies are not included. See <a href="../operations/#redis-requirements">Redis Requirements</a> for the persistence baseline.</p>
 <h3 id="sfc-engine-wiring">SFC Engine Wiring</h3>
 <p>The relevant SFC wiring in <code>app/__main__.py</code> is:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">microdcs.sfc_engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">SfcEngine</span>
@@ -1517,25 +1553,29 @@ these runtime checks.</p>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>app
 </span></code></pre></div>
 <p>Or use the VS Code task <strong>Run App (plain)</strong> which starts both services automatically.</p>
+<p>A <code>compose.yaml</code> in the repository root starts the same infrastructure plus the Aspire dashboard (unauthenticated, local use only):</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w">                          </span><span class="c1"># Mosquitto, Redis, Aspire dashboard</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>--profile<span class="w"> </span>app<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--build<span class="w">    </span><span class="c1"># additionally build and run the example app</span>
+</span></code></pre></div>
 <p>For manual SFC testing, use the example Work Master from <code>tests/example_sfc.py</code> and publish a <code>StoreAndStartCall</code> that references it.</p>
 <p>Generate typed models from a JSON Schema file:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>microdcs<span class="w"> </span>dataclassgen<span class="w"> </span>dataclasses<span class="w"> </span>my-schema.schema.json
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>uv<span class="w"> </span>run<span class="w"> </span>microdcs<span class="w"> </span>dataclassgen<span class="w"> </span>dataclasses<span class="w"> </span>my-schema.schema.json
 </span></code></pre></div>
 <p>Generate models with advanced options (custom metadata, init fields, validation, and root-union workaround):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>uv<span class="w"> </span>run<span class="w"> </span>microdcs<span class="w"> </span>dataclassgen<span class="w"> </span>dataclasses<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>--custom-metadata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>--init-fields<span class="w"> </span><span class="s1">'mystatus-&gt;MyStatus'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--validation<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--collapse-root-workaround<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span>my-schema.schema.json
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>uv<span class="w"> </span>run<span class="w"> </span>microdcs<span class="w"> </span>dataclassgen<span class="w"> </span>dataclasses<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span>--custom-metadata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span>--init-fields<span class="w"> </span><span class="s1">'mystatus-&gt;MyStatus'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span>--validation<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span>--collapse-root-workaround<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">    </span>my-schema.schema.json
 </span></code></pre></div>
 <p>Generate the SFC recipe dataclasses:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>uv<span class="w"> </span>run<span class="w"> </span>microdcs<span class="w"> </span>dataclassgen<span class="w"> </span>dataclasses<span class="w"> </span>sfc_recipe.schema.json
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>uv<span class="w"> </span>run<span class="w"> </span>microdcs<span class="w"> </span>dataclassgen<span class="w"> </span>dataclasses<span class="w"> </span>sfc_recipe.schema.json
 </span></code></pre></div>
 <h2 id="opentelemetry-analysis-with-aspire-dashboard">OpenTelemetry Analysis with Aspire Dashboard</h2>
 <p>The <a href="https://aspire.dev/dashboard/standalone/">Aspire dashboard</a> can be run as a standalone container to visualise traces, metrics, and structured logs from any OpenTelemetry-enabled app — no .NET or full Aspire installation required.</p>
 <p>Start the dashboard container:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>docker<span class="w"> </span>start<span class="w"> </span>aspire-dashboard<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">18888</span>:18888<span class="w"> </span>-p<span class="w"> </span><span class="m">4317</span>:18889<span class="w"> </span>-p<span class="w"> </span><span class="m">4318</span>:18890<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>aspire-dashboard<span class="w"> </span>mcr.microsoft.com/dotnet/aspire-dashboard:latest
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>docker<span class="w"> </span>start<span class="w"> </span>aspire-dashboard<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">18888</span>:18888<span class="w"> </span>-p<span class="w"> </span><span class="m">4317</span>:18889<span class="w"> </span>-p<span class="w"> </span><span class="m">4318</span>:18890<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>aspire-dashboard<span class="w"> </span>mcr.microsoft.com/dotnet/aspire-dashboard:latest
 </span></code></pre></div>
 <p>Port mapping:</p>
 <table>
@@ -1565,29 +1605,29 @@ these runtime checks.</p>
 </tbody>
 </table>
 <p>Open <code>http://localhost:18888</code> in the browser. The dashboard is secured with a login token by default — retrieve it from the container logs:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>docker<span class="w"> </span>logs<span class="w"> </span>aspire-dashboard<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">"login?t="</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>docker<span class="w"> </span>logs<span class="w"> </span>aspire-dashboard<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">"login?t="</span>
 </span></code></pre></div>
 <p>To run the app and send telemetry to the dashboard, configure the OTLP exporter and start via <code>opentelemetry-instrument</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nv">APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nv">OTEL_SERVICE_NAME</span><span class="o">=</span>microdcs.app<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nv">OTEL_TRACES_EXPORTER</span><span class="o">=</span>otlp<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="nv">OTEL_METRICS_EXPORTER</span><span class="o">=</span>otlp<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="nv">OTEL_LOGS_EXPORTER</span><span class="o">=</span>otlp<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://localhost:4317<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="nv">OTEL_EXPORTER_OTLP_PROTOCOL</span><span class="o">=</span>grpc<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="nv">OTEL_PYTHON_LOG_CORRELATION</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="nv">OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">  </span>.venv/bin/opentelemetry-instrument<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>app
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nv">APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nv">OTEL_SERVICE_NAME</span><span class="o">=</span>microdcs.app<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="nv">OTEL_TRACES_EXPORTER</span><span class="o">=</span>otlp<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="nv">OTEL_METRICS_EXPORTER</span><span class="o">=</span>otlp<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="nv">OTEL_LOGS_EXPORTER</span><span class="o">=</span>otlp<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://localhost:4317<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="nv">OTEL_EXPORTER_OTLP_PROTOCOL</span><span class="o">=</span>grpc<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="nv">OTEL_PYTHON_LOG_CORRELATION</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="nv">OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">  </span>.venv/bin/opentelemetry-instrument<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>app
 </span></code></pre></div>
 <p>Or use the VS Code task <strong>Run App (instrumented/Aspire dashboard)</strong> which starts MQTT, Redis, and the Aspire dashboard automatically.</p>
 <h2 id="documentation">Documentation</h2>
 <p>The documentation site is built with Zensical.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Start the local docs server</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>zensical<span class="w"> </span>serve
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Start the local docs server</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>zensical<span class="w"> </span>serve
 </span></code></pre></div>
 <h2 id="container-build">Container Build</h2>
 <p>The project ships with a distroless multi-stage Docker build.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>aschamberger/microdcs<span class="w"> </span>.
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>aschamberger/microdcs<span class="w"> </span>.
 </span></code></pre></div>
 <h2 id="main-libraries">Main Libraries</h2>
 <p>The framework is built around a small set of core dependencies:</p>

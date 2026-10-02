@@ -1131,6 +1131,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security and Authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -1946,7 +1973,7 @@
 <li><strong>Clear processed jobs</strong> — for each job in a clearable state (<code>Ended</code>/<code>Aborted</code>) whose response has been ingested, publish a <code>Clear</code> command CloudEvent to the command topic. This transitions the job to <code>EndState</code>, removes it from the state-index, and deletes its retained topics.</li>
 <li><strong>Update last-seen seq</strong> to the current value.</li>
 </ol>
-<p>A reference implementation of this protocol is available in <code>tests/test_mes_integration.py</code> as the <code>MESResyncClient</code> class.</p>
+<p>A reference implementation of this protocol is available in <code>tests/integration/test_mes_integration.py</code> as the <code>MESResyncClient</code> class.</p>
 
 
 
