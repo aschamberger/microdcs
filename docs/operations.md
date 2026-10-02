@@ -84,6 +84,7 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_PROCESSING_SHUTDOWN_GRACE_PERIOD` | `int` | `30` | Seconds to wait for in-flight work during shutdown |
 | `APP_PROCESSING_BINDING_OUTGOING_QUEUE_MAX_SIZE` | `int` | `1000` | Global upper cap on any binding's outgoing queue |
 | `APP_PROCESSING_POST_START_LOCK_TTL` | `int` | `30` | TTL (seconds) for the distributed `post_start` Redis lock; controls how long a crashed instance blocks other replicas |
+| `APP_PROCESSING_ENFORCE_SUBJECT_TOPIC_MATCH` | `bool` | `true` | Drop incoming MQTT messages whose CloudEvent `subject` does not match the scope in the topic (see [Security](security.md#what-the-framework-trusts)) |
 
 ---
 

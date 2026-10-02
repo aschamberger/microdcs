@@ -1973,6 +1973,94 @@ class TestTopicDiscriminator:
             == "test/greetings/line1/station2/v1/events"
         )
 
+    # --- subject_matches_topic ---
+
+    def test_subject_matches_topic_dotted_subject(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        ce = CloudEvent(subject="line1.station2")
+        assert binding.subject_matches_topic(ce, "test/greetings/line1/station2/events")
+
+    def test_subject_matches_topic_scope_part_of_subject(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        ce = CloudEvent(subject="line1/asset7")
+        assert binding.subject_matches_topic(ce, "test/greetings/line1/events")
+
+    def test_subject_matches_topic_with_discriminator(self):
+        binding = self._make_discriminator_binding(discriminator="v1")
+        ce = CloudEvent(subject="line1")
+        assert binding.subject_matches_topic(ce, "test/greetings/line1/v1/events")
+        assert not binding.subject_matches_topic(
+            CloudEvent(subject="line2"), "test/greetings/line1/v1/events"
+        )
+
+    def test_subject_matches_topic_rejects_other_scope(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        ce = CloudEvent(subject="line2")
+        assert not binding.subject_matches_topic(ce, "test/greetings/line1/events")
+
+    def test_subject_matches_topic_nothing_to_verify(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        # no path between prefix and intent
+        assert binding.subject_matches_topic(
+            CloudEvent(subject="line2"), "test/greetings/events"
+        )
+        # no subject claimed
+        assert binding.subject_matches_topic(
+            CloudEvent(subject=None), "test/greetings/line1/events"
+        )
+
+    def test_subject_matches_topic_can_be_disabled(self):
+        binding = self._make_discriminator_binding(discriminator=None)
+        binding.enforce_subject_topic_match = False
+        assert binding.subject_matches_topic(
+            CloudEvent(subject="line2"), "test/greetings/line1/events"
+        )
+
+    @pytest.mark.asyncio
+    async def test_process_message_drops_subject_topic_mismatch(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        client.puback = AsyncMock()
+        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+
+        proc = _make_processor()
+        proc.process_cloudevent = AsyncMock(return_value=None)
+        _make_binding(
+            handler, proc, topics={"test/+/events"}, response_topic="never/matches"
+        )
+
+        msg = _make_mqtt_message(
+            topic="test/lineA/events",
+            user_properties=[("subject", "lineB")],
+        )
+        ok, sub = await handler._process_message(client, msg)
+
+        assert ok is True
+        assert sub == ""
+        proc.process_cloudevent.assert_not_awaited()
+        client.puback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_process_message_accepts_subject_topic_match(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        client.puback = AsyncMock()
+        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+
+        proc = _make_processor()
+        proc.process_cloudevent = AsyncMock(return_value=None)
+        _make_binding(
+            handler, proc, topics={"test/+/events"}, response_topic="never/matches"
+        )
+
+        msg = _make_mqtt_message(
+            topic="test/lineA/events",
+            user_properties=[("subject", "lineA")],
+        )
+        await handler._process_message(client, msg)
+
+        proc.process_cloudevent.assert_awaited_once()
+
     def test_enrich_publish_with_discriminator_no_subject(self):
         binding = self._make_discriminator_binding(discriminator="v1")
         ce = CloudEvent()

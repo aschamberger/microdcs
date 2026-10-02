@@ -342,6 +342,13 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                     continue
             for topic in binding.topics:
                 if _topic_matches(topic, message.topic):
+                    if not binding.subject_matches_topic(cloudevent, message.topic):
+                        logger.warning(
+                            "Dropping message on topic %s: subject %r does not match topic",
+                            message.topic,
+                            cloudevent.subject,
+                        )
+                        break
                     subscription.append(topic)
                     processor_response = await binding.processor.process_cloudevent(
                         cloudevent
@@ -602,7 +609,9 @@ class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
         )
         self._mqtt_config = mqtt_config
         self.mqtt_path_from_subject = mqtt_path_from_subject
-
+        self.enforce_subject_topic_match = (
+            processor._runtime_config.enforce_subject_topic_match
+        )
         # Resolve topic prefix/wildcard levels for this processor
         self.topic_prefix = processor._runtime_config.get_topic_prefix_for_identifier(
             processor._config_identifier
@@ -657,6 +666,34 @@ class MQTTProtocolBinding(ProtocolBinding["MQTTHandler"]):
             self.topics,
             self.publish_intents,
             self.response_topic,
+        )
+
+    def subject_matches_topic(self, cloudevent: CloudEvent, topic: str) -> bool:
+        """Check that the CloudEvent subject is consistent with the topic it arrived on.
+
+        Topic ACLs only protect a scope if the scope the processor acts on (taken
+        from ``subject``) is the one in the topic.  Mirrors the publish mapping
+        (``subject`` with ``.`` replaced by ``/``) and also accepts the scope part
+        of the subject alone.  Messages without a subject, or on a topic without
+        a path between prefix and intent, carry nothing to verify.
+        """
+        if not self.enforce_subject_topic_match or not self.mqtt_path_from_subject:
+            return True
+        prefix = self.topic_prefix
+        if cloudevent.subject is None or prefix is None:
+            return True
+        if not topic.startswith(f"{prefix}/"):
+            return True
+        segments = topic[len(prefix) + 1 :].split("/")
+        segments.pop()  # intent
+        if self.topic_discriminator and segments[-1:] == [self.topic_discriminator]:
+            segments.pop()
+        path = "/".join(segments)
+        if not path:
+            return True
+        return path in (
+            cloudevent.subject.replace(".", "/"),
+            cloudevent.subject.split("/")[0].replace(".", "/"),
         )
 
     def enrich_publish_transportmetadata(

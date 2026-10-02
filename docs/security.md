@@ -22,11 +22,15 @@ These behaviours determine what a broker ACL has to enforce.
 
 1. **CloudEvent attributes come from the publisher.** The MQTT handler reads `id`, `source`,
    `type`, `subject`, `correlationid` and `causationid` from the MQTT user properties.
-2. **The scope comes from `subject`, not from the topic.** `@scope_from_subject` uses the part of
-   `subject` before the first `/`. The topic is stored in `transportmetadata` but is not compared
-   with the subject. A client allowed to publish to `app/jobs/lineA/commands` can set the subject
-   to `lineB` and the processor acts on `lineB`. Topic ACLs therefore do **not** enforce scope
-   isolation today.
+2. **The scope comes from `subject`, and the MQTT handler checks it against the topic.** The
+   scope is the part of `subject` before the first `/` (`@scope_from_subject`). When the topic
+   has a path between the prefix and the `[discriminator/]intent`, the subject must map to that
+   path (`.` replaced by `/`, the same mapping used when publishing), or its scope part must
+   equal it. A mismatch is logged and the message is dropped. With `app/jobs/lineA/commands`, a
+   subject of `lineB` is rejected. Nothing is verified when the subject is absent or when the
+   topic has no path (level 0), so principals allowed to publish at level 0 are not scope
+   limited. Disable the check with `APP_PROCESSING_ENFORCE_SUBJECT_TOPIC_MATCH=false`.
+   MessagePack-RPC has no topic and is not covered.
 3. **Duplicate suppression is publisher-controlled.** Incoming messages are deduplicated by
    `source` + `id` for `APP_MQTT_DEDUPE_TTL_SECONDS`. A publisher that replays another
    publisher's `source` and `id` causes the genuine message to be dropped as a duplicate.
@@ -65,9 +69,10 @@ ACL rules for the application:
   publish to arbitrary topics.
 - **Restrict clients to their own response topic**, for example by using the client id in the
   topic (`app/jobs/responses/{clientid}`).
-- **Scope the publish permission of each client to its own scope** (`app/jobs/{scope}/commands`),
-  and treat that ACL as the only scope boundary until the processor validates the subject against
-  the topic.
+- **Scope the publish permission of each client to its own scope** (`app/jobs/{scope}/commands`).
+  The handler then guarantees that the subject, and therefore the scope the processor acts on,
+  is that scope. Do not grant publish rights on the level-0 topic (`app/jobs/commands`) to
+  scoped clients: nothing is verified there.
 - **Use unique client identities per principal.** Do not share credentials between equipment
   gateways and job-order clients; the `source` + `id` deduplication relies on distinct publishers.
 - **Make retained topics writable only by the publisher.** Clients should have subscribe-only
@@ -97,7 +102,7 @@ restrict access with a network policy, and keep the set of registered methods mi
 
 | Gap | Mitigation today |
 |---|---|
-| Subject is not validated against the topic | Per-scope publish ACLs on the broker |
+| Subject is only checked against topics that carry a scope path | No publish rights on the level-0 topic for scoped clients |
 | Deduplication key is publisher-controlled | Distinct credentials per publisher; broker ACLs |
 | TLS and SAT silently skipped when files are missing | Verify the secret and certificate mounts; fail the rollout if they are absent |
 | No per-method authorization on MessagePack-RPC | Keep it pod-local or require client certificates |
