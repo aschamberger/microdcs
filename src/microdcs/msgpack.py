@@ -20,7 +20,7 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.semconv.attributes import error_attributes
 
-from microdcs import MessagePackConfig, ProcessingConfig
+from microdcs import MessagePackConfig, ProcessingConfig, loggable
 from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
@@ -63,7 +63,7 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
     ):
         logger.debug(
             "Publishing message %s with transport metadata: %s",
-            cloudevent_dict,
+            loggable(cloudevent_dict),
             transportmetadata,
         )
 

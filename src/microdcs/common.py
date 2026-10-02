@@ -30,8 +30,9 @@ from typing import (
 import msgpack
 import orjson
 from mashumaro.config import BaseConfig
+from mashumaro.exceptions import InvalidFieldValue
 
-from microdcs import ProcessingConfig
+from microdcs import ProcessingConfig, loggable, payloads_logged
 from microdcs.dataclass import (
     DataClassConfig,
     DataClassMixin,
@@ -40,6 +41,15 @@ from microdcs.dataclass import (
 )
 
 logger = logging.getLogger("app.common")
+
+
+def _describe_error(exc: ValueError) -> str:
+    """The error message, without the offending field value unless payload logging is on."""
+    if isinstance(exc, InvalidFieldValue) and not payloads_logged():
+        return (
+            f'Field "{exc.field_name}" in {exc.holder_class_name} has an invalid value'
+        )
+    return str(exc)
 
 
 def get_deep_attr(obj, path) -> Any:
@@ -217,7 +227,7 @@ class CloudEvent(DataClassMixin):
     It also includes transport metadata which is not serialized.
     """
 
-    data: bytes | None = None
+    data: bytes | None = field(default=None, repr=False)
     """The event payload. It is encoded into a media format which is specified by
     the datacontenttype attribute (e.g. application/json), and adheres to the
     dataschema format when those respective attributes are present."""
@@ -873,9 +883,9 @@ class CloudEventProcessor(ABC):
                 payload_type
             )
         except ValueError as e:
-            logger.error(e)
+            logger.error(_describe_error(e))
             return None
-        logger.debug("Request before callback: %s", request)
+        logger.debug("Request before callback: %s", loggable(request))
 
         kwargs = self._cloudevent_attributes_for_callback(request_cloudevent, callback)
         call_callback = True
@@ -918,7 +928,7 @@ class CloudEventProcessor(ABC):
 
         response_cloudevents: list[CloudEvent] = []
         for response in responses:
-            logger.debug("Response from callback: %s", response)
+            logger.debug("Response from callback: %s", loggable(response))
             if not type_has_config_class(type(response)):
                 logger.warning("Response has no Config class")
                 continue
@@ -967,7 +977,7 @@ class CloudEventProcessor(ABC):
 
         response_cloudevents: list[CloudEvent] = []
         for response in responses:
-            logger.debug("Response from callback: %s", response)
+            logger.debug("Response from callback: %s", loggable(response))
             if not type_has_config_class(type(response)):
                 logger.warning("Response has no Config class")
                 continue

@@ -21,6 +21,7 @@
             "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/microdcs/app",
             "APP_LOGGING_LEVEL": "DEBUG",
             "APP_LOGGING_FILENAME": "app.log",
+            "APP_LOGGING_LOG_PAYLOADS": "true",
             "APP_MSGPACK_HOSTNAME": "localhost",
             "APP_MSGPACK_PORT": "8888",
             "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"

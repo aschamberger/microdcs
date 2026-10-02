@@ -20,8 +20,8 @@ from microdcs.models.sfc_recipe_ext import (
 )
 from microdcs.redis import (
     CloudEventDedupeDAO,
-    DedupeState,
     CounterDAO,
+    DedupeState,
     EquipmentListDAO,
     JobAcceptanceConfigDAO,
     JobOrderAndStateDAO,

@@ -1,5 +1,6 @@
 import logging
 
+from microdcs import loggable
 from microdcs.common import (
     CloudEvent,
     CloudEventProcessor,
@@ -20,7 +21,9 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
     async def handle_hello(self, hello: Hello) -> list[Hello] | Hello | None:
         logger.info("Received hello from: %s", hello.name)
 
-        logger.debug("Processing %s %s %s", hello, hello._hidden_str, hello._hidden_obj)
+        logger.debug(
+            "Processing %s", loggable((hello, hello._hidden_str, hello._hidden_obj))
+        )
 
         h1 = hello.response(name=hello.name)
         h2 = Hello(name="Alice")
@@ -91,7 +94,7 @@ class GreetingsCloudEventProcessor(CloudEventProcessor):
         self, *, event_type: type[Greetings], **kwargs
     ) -> None:
         logger.info("Triggering outgoing event: %s", event_type)
-        logger.debug("Triggering with kwargs: %s", kwargs)
+        logger.debug("Triggering with kwargs: %s", loggable(kwargs))
         logger.warning(
             "Triggering outgoing events is currently not implemented in this processor!"
         )

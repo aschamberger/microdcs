@@ -15,6 +15,25 @@ __version__ = importlib.metadata.version("microdcs")
 
 logger = logging.getLogger("app.main")
 
+_log_payloads = False
+
+
+def _set_payload_logging(enabled: bool) -> None:
+    global _log_payloads
+    _log_payloads = enabled
+
+
+def payloads_logged() -> bool:
+    """Whether message payloads may be written to the logs (``APP_LOGGING_LOG_PAYLOADS``)."""
+    return _log_payloads
+
+
+def loggable(value: Any) -> Any:
+    """*value* if payload logging is enabled, otherwise a placeholder without its content."""
+    if _log_payloads:
+        return value
+    return f"<{type(value).__name__}: content hidden>"
+
 
 def _resolve_password(
     name: str, password: str | None, password_file: Path | None
@@ -101,6 +120,7 @@ class LoggingConfig:
     level: str = "INFO"
     filename: str | None = None  # log to this file in addition to stdout/stderr
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    log_payloads: bool = False  # include message payloads in DEBUG logs
 
     def set_logging_config(self):
         config: dict[str, Any] = {
@@ -135,6 +155,8 @@ class LoggingConfig:
 
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
+        if name == "log_payloads":
+            _set_payload_logging(bool(value))
         if not getattr(self, "_initialized", False):
             return
         if (

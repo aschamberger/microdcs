@@ -147,6 +147,7 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_LOGGING_LEVEL` | `str` | `INFO` | Root log level |
 | `APP_LOGGING_FILENAME` | `str` | `None` | Also write logs to this file (overwritten at start). Off by default so the container can run with a read-only root filesystem; logs go to stdout and stderr |
 | `APP_LOGGING_FORMAT` | `str` | `%(asctime)s - %(name)s - %(levelname)s - %(message)s` | Log record format |
+| `APP_LOGGING_LOG_PAYLOADS` | `bool` | `false` | Include message payloads in `DEBUG` logs and in deserialization errors. Off by default because payloads can contain production data; the VS Code run tasks turn it on |
 | `APP_LOGGING_DISABLE_IF_OTEL_ENABLED` | `bool` | `true` | Leave logging to OpenTelemetry when `OTEL_LOGS_EXPORTER` is set |
 
 ---

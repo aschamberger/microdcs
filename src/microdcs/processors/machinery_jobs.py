@@ -5,7 +5,7 @@ from typing import Any
 import redis.asyncio as redis
 from transitions.extensions import HierarchicalMachine
 
-from microdcs import ProcessingConfig
+from microdcs import ProcessingConfig, loggable
 from microdcs.common import (
     CloudEvent,
     CloudeventAttributeTuple,
@@ -377,7 +377,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method.job_order.job_order_id if method.job_order else None,
             method.comment,
         )
-        logger.debug("Received %s: %s", transition, method)
+        logger.debug("Received %s: %s", transition, loggable(method))
 
         if method.job_order is None:
             return method.response(return_status=MethodReturnStatus.INVALID_REQUEST)
@@ -457,7 +457,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method.job_order_id,
             method.comment,
         )
-        logger.debug("Received %s: %s", transition, method)
+        logger.debug("Received %s: %s", transition, loggable(method))
 
         if method.job_order_id is None:
             return method.response(return_status=MethodReturnStatus.INVALID_REQUEST)
@@ -534,7 +534,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
             method.job_order.job_order_id if method.job_order else None,
             method.comment,
         )
-        logger.debug("Received %s: %s", transition, method)
+        logger.debug("Received %s: %s", transition, loggable(method))
 
         if method.job_order is None or method.job_order.job_order_id is None:
             return method.response(return_status=MethodReturnStatus.INVALID_REQUEST)
@@ -892,7 +892,7 @@ class MachineryJobsCloudEventProcessor(CloudEventProcessor):
         self, *, event_type: type[Opc400013MachineryJobMgmtForMqtt], **kwargs
     ) -> None:
         logger.info("Triggering outgoing event: %s", event_type)
-        logger.debug("Triggering with kwargs: %s", kwargs)
+        logger.debug("Triggering with kwargs: %s", loggable(kwargs))
         logger.warning(
             "Triggering outgoing events is currently not implemented in this processor!"
         )

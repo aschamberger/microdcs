@@ -115,6 +115,20 @@ job state, so:
   `/var/run/secrets/redis/password`) rather than a literal `APP_REDIS_PASSWORD` in the manifest.
   The password is excluded from the configuration that is logged at `DEBUG`
 
+## Logging
+
+Log messages carry identifiers (job ids, CloudEvent ids, types, scopes) but not message content.
+Payloads, hidden fields and processor arguments are replaced by a `<Type: content hidden>`
+placeholder in `DEBUG` logs, `CloudEvent.data` is left out of its `repr`, and a deserialization
+error names the field instead of echoing the rejected value. Set `APP_LOGGING_LOG_PAYLOADS=true` to
+log the content while debugging; do not enable it in production, because logs are often exported to
+a collector (`OTEL_LOGS_EXPORTER`) with broader access than the application. The configuration that
+is logged at startup leaves out passwords.
+
+Processors you write should log payload content through `microdcs.loggable()`, which returns the
+value only when payload logging is enabled. Exception messages from your own code and from libraries
+can still contain values, so avoid logging them with `logger.exception` where the data is sensitive.
+
 ## Kubernetes Hardening
 
 [deploy/k8s.yaml](https://github.com/aschamberger/microdcs/blob/main/deploy/k8s.yaml) applies these settings to both Deployments:
