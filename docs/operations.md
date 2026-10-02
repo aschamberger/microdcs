@@ -57,7 +57,10 @@ SFC engine loop, which cancels the whole task group and exits the process. Kuber
 the pod, and startup fails until Redis answers (the connection is checked once at startup), so
 replicas crash-loop with increasing back-off. On restart `_recovery_scan` resumes active jobs.
 Incoming MQTT messages that were not yet acknowledged are redelivered by the broker because
-the persistent session is kept. There is no in-process Redis reconnection.
+the persistent session is kept. Known issue: the deduplication key is written before a message
+is processed, so a message that was in flight at the crash is treated as a duplicate when it is
+redelivered (for `APP_MQTT_DEDUPE_TTL_SECONDS`) and is neither processed nor acknowledged. There
+is no in-process Redis reconnection.
 
 ---
 
