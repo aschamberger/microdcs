@@ -472,6 +472,21 @@ class TestRedisConnectionPool:
         assert pool.connection_class is redis.SSLConnection
         assert pool.connection_kwargs["ssl_ca_certs"] == "/fake/ca.crt"
 
+    def test_timeouts_and_keepalive_defaults(self):
+        pool = self._make_dcs_with_redis_config().redis_connection_pool
+        assert pool.connection_kwargs["socket_timeout"] == 10.0
+        assert pool.connection_kwargs["socket_connect_timeout"] == 5.0
+        assert pool.connection_kwargs["socket_keepalive"] is True
+        assert pool.connection_kwargs["health_check_interval"] == 30
+
+    def test_timeouts_overridden(self):
+        dcs = self._make_dcs_with_redis_config(
+            socket_timeout=3.5, health_check_interval=0
+        )
+        pool = dcs.redis_connection_pool
+        assert pool.connection_kwargs["socket_timeout"] == 3.5
+        assert pool.connection_kwargs["health_check_interval"] == 0
+
 
 class TestInstanceRoleFlags:
     """Tests for is_processor_instance / is_publisher_instance behaviour."""

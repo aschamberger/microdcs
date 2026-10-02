@@ -26,6 +26,10 @@ class MicroDCS:
             "host": self.runtime_config.redis.hostname,
             "port": self.runtime_config.redis.port,
             "protocol": 3,
+            "socket_timeout": self.runtime_config.redis.socket_timeout,
+            "socket_connect_timeout": self.runtime_config.redis.socket_connect_timeout,
+            "socket_keepalive": self.runtime_config.redis.socket_keepalive,
+            "health_check_interval": self.runtime_config.redis.health_check_interval,
         }
         if self.runtime_config.redis.username is not None:
             redis_kwargs["username"] = self.runtime_config.redis.username

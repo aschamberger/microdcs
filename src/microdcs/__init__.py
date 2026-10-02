@@ -25,6 +25,10 @@ class RedisConfig:
     password: str | None = None
     ssl: bool = False
     ssl_ca_certs: Path | None = None
+    socket_timeout: float = 10.0  # must exceed the longest blocking stream read (2 s)
+    socket_connect_timeout: float = 5.0
+    socket_keepalive: bool = True
+    health_check_interval: int = 30
 
 
 @dataclass
@@ -304,7 +308,7 @@ class RuntimeConfig:
             if value < 0:
                 errors.append(f"{field_name} must be >= 0")
 
-        def require_positive(value: int, field_name: str) -> None:
+        def require_positive(value: int | float, field_name: str) -> None:
             if value <= 0:
                 errors.append(f"{field_name} must be > 0")
 
@@ -314,6 +318,14 @@ class RuntimeConfig:
         require_non_empty(self.mqtt.hostname, "mqtt.hostname")
         require_non_empty(self.mqtt.identifier, "mqtt.identifier")
         require_non_empty(self.msgpack.hostname, "msgpack.hostname")
+
+        require_positive(self.redis.socket_timeout, "redis.socket_timeout")
+        require_positive(
+            self.redis.socket_connect_timeout, "redis.socket_connect_timeout"
+        )
+        require_non_negative(
+            self.redis.health_check_interval, "redis.health_check_interval"
+        )
 
         require_port(self.redis.port, "redis.port")
         require_port(self.mqtt.port, "mqtt.port")

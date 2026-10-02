@@ -77,6 +77,10 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_REDIS_PASSWORD` | `str` | `None` | Redis password (optional) |
 | `APP_REDIS_SSL` | `bool` | `false` | Enable TLS for Redis connection |
 | `APP_REDIS_SSL_CA_CERTS` | `Path` | `None` | CA certificate for Redis TLS (optional) |
+| `APP_REDIS_SOCKET_TIMEOUT` | `float` | `10.0` | Seconds before a Redis read or write times out; must exceed the longest blocking stream read (2 s) |
+| `APP_REDIS_SOCKET_CONNECT_TIMEOUT` | `float` | `5.0` | Seconds before opening a Redis connection times out |
+| `APP_REDIS_SOCKET_KEEPALIVE` | `bool` | `true` | Enable TCP keep-alive on Redis connections |
+| `APP_REDIS_HEALTH_CHECK_INTERVAL` | `int` | `30` | Seconds of idleness after which a pooled connection is checked with `PING` before reuse (`0` disables) |
 
 ### MQTT (`APP_MQTT_*`)
 

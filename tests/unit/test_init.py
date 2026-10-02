@@ -271,6 +271,16 @@ class TestRuntimeConfig:
             await cfg.validate()
 
     @pytest.mark.asyncio
+    async def test_validate_rejects_non_positive_redis_timeouts(self):
+        cfg = RuntimeConfig()
+        cfg.redis.socket_timeout = 0
+        cfg.redis.socket_connect_timeout = -1
+        with pytest.raises(
+            ValueError, match="redis.socket_timeout.*redis.socket_connect_timeout"
+        ):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
     async def test_validate_rejects_empty_required_fields(self):
         cfg = RuntimeConfig()
         cfg.redis.key_prefix = "  "
