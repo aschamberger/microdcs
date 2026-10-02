@@ -15,6 +15,7 @@ If you are new to the project, use this reading path:
 7. [Machinery Jobs – MES Publishing](machinery-jobs-mes-publishing.md) for retained-topic-based MES integration and reconnect resync
 8. [Development](development.md) for local development workflow and implementation details
 9. [Persistence](persistence.md) for the Redis-backed persistence model
+10. [Security and Authorization](security.md) for the trust model, TLS, credentials and hardening
 
 ## What MicroDCS Provides
 

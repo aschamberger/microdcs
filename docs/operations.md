@@ -61,6 +61,27 @@ the persistent session is kept. A message that was being processed at the crash 
 again once its dedupe lease expires (`APP_MQTT_DEDUPE_LEASE_SECONDS`), so it is processed at
 least once. There is no in-process Redis reconnection.
 
+### Recovery Objectives
+
+These are design characteristics derived from the implementation and its tests. They are not
+measured service levels, so measure them in your own deployment before committing to a target.
+
+| Event | Data loss (recovery point) | Time to recover |
+|---|---|---|
+| Redis process crash, AOF `everysec` on a persistent volume | About 1 second of writes at most | Redis restart time, then the replicas restart (see below) |
+| Redis process crash, default configuration (snapshots only) | Everything since the last snapshot, up to an hour for a single change | As above |
+| Redis graceful stop and start | None | As above |
+| Redis failover to an asynchronous replica | The last writes not yet replicated | Failover time, then the replicas restart |
+| One processor pod dies | None: unacknowledged MQTT messages are redelivered and work items are re-claimed | `XAUTOCLAIM` re-delivers its SFC work after 30 seconds idle; other replicas keep serving |
+| Publisher pod dies | None | Pod restart (10 to 30 seconds); retained topics bridge the gap |
+| Push-command response delivered to another replica | None | Until the next restart re-dispatches the command (see [SFC Engine](sfc_engine.md#multi-instance-safety-summary)) |
+
+After a Redis outage every replica exits and Kubernetes restarts it with growing back-off, so the
+recovery time is the Redis downtime plus pod startup plus the current back-off delay (Kubernetes
+caps it at five minutes). Messages are delivered at least once: a message in flight at a crash is
+processed again after its dedupe lease expires (`APP_MQTT_DEDUPE_LEASE_SECONDS`, 30 seconds by
+default), and commands to equipment can be repeated.
+
 ---
 
 ## Configuration Reference

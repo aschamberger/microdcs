@@ -74,3 +74,53 @@ The two interaction patterns have different recovery characteristics:
 - **`pull_event`**: any live instance that receives the CloudEvent writes to the Redis stream, and `XAUTOCLAIM` ensures the work item survives pod restarts. The action is completed by whichever engine instance processes the stream entry. No event is permanently lost.
 
 See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the full multi-instance safety matrix.
+
+## Southbound Connectivity
+
+### Context
+
+MicroDCS orchestrates equipment from the SFC engine and the southbound processors. Plants run many
+industrial protocols (OPC UA client/server, Modbus, S7, vendor APIs). The framework is built on
+MQTT v5 and CloudEvents, and uses OPC UA information models as payload definitions, not as a
+transport ([Concepts](concepts.md#opc-ua-and-companion-specifications)).
+
+### Decision
+
+MicroDCS does not contain southbound industrial protocol clients. Equipment is reached over the two
+transports the framework already has, with the protocol translation outside the framework core:
+
+1. **A gateway or the equipment publishes CloudEvents on MQTT.** A southbound processor subscribes to
+   `data`, `events` and `metadata` and publishes `commands`
+   ([topic structure](operations.md#mqtt-topic-structure)). Bridges such as OPC UA to MQTT gateways
+   or edge platforms own the OT protocol.
+2. **A sidecar talks MessagePack-RPC.** A container in the same pod connects to the MessagePack-RPC
+   handler on `localhost` and exchanges CloudEvents
+   ([deployment model](operations.md#deployment-model)).
+3. **A southbound processor translates in-process.** Equipment-specific CloudEvent shaping and
+   protocol translation belong in a processor ([three-layer architecture](#three-layer-architecture)).
+   A processor may use a protocol library, but then it is application code, not part of the
+   framework.
+
+### Consequences
+
+- The framework stays protocol-agnostic and its dependencies stay small. Protocol licences, security
+  patching and certification of the OT stack remain with the gateway.
+- The SFC engine runs on every replica ([multi-instance model](#multi-instance-model)). A direct
+  protocol connection inside each replica would make several replicas compete for the same equipment
+  session, which is another reason to keep it behind a gateway that owns the connection.
+- Commands are delivered at least once, so the gateway or equipment must follow the
+  [idempotency contract](sfc_engine.md#idempotency-contract): deduplicate on `mdcsactionkey`, answer
+  every delivery with `causationid` set to the delivery's `id`, and respond before the message
+  expires.
+- A gateway is one more component to deploy, secure and monitor. Its identity and topic permissions
+  are covered by the [authorization model](security.md#topic-acl-model).
+- The system has no direct visibility of the equipment connection. Equipment availability has to be
+  reported by the gateway as `events` or `data`.
+
+### Alternatives considered
+
+- **An OPC UA client inside the framework.** Rejected because of the replica issue above and because
+  it ties the framework to one protocol and its security model.
+- **Using OPC UA PubSub or client/server as the main transport.** Rejected in favour of MQTT with
+  CloudEvents ([design goals](#design-goals)), which fits the cloud-native deployment and
+  shared-subscription scaling.

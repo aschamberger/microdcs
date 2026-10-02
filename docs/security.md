@@ -161,3 +161,20 @@ restrict access with a network policy, and keep the set of registered methods mi
 | Deduplication key is publisher-controlled | Distinct credentials per publisher; broker ACLs |
 | TLS and SAT silently skipped when files are missing | Set `APP_MQTT_REQUIRE_TLS` and `APP_MSGPACK_REQUIRE_TLS` so startup fails instead; the SAT token and the MQTT username and password are only protected if `require_tls` is set (a warning is logged otherwise) |
 | No per-method authorization on MessagePack-RPC | Keep it pod-local or require client certificates |
+
+## IEC 62443 Alignment
+
+This table maps the framework to the seven foundational requirements (FR) of IEC 62443-3-3 as an
+aid for security assessments. It is not a certification and not a compliance claim: IEC 62443
+applies to the whole system and its operating processes, and most of the controls below depend on
+how you deploy MicroDCS.
+
+| FR | What MicroDCS provides | What the operator must provide |
+|---|---|---|
+| 1. Identification and authentication control | MQTT: `K8S-SAT`, username and password, client certificates. MessagePack-RPC: optional client certificates. Redis: ACL user, password, TLS | One identity per principal, secret storage and rotation, broker and Redis accounts |
+| 2. Use control | Subject must match the topic scope; per-processor binding directions limit which intents are subscribed and published | Broker topic ACLs per principal and scope. There is no per-method authorization on MessagePack-RPC |
+| 3. System integrity | TLS with `require_tls`, locked and audited dependencies in CI, non-root read-only container, at-least-once processing with deduplication | Image provenance and signing, a software bill of materials, patching. Two dependencies are pinned to git commits and are not covered by `pip-audit` |
+| 4. Data confidentiality | TLS in transit, payload content kept out of logs, passwords kept out of logged configuration | Encryption of Redis data at rest and of backups, broker and Redis TLS certificates |
+| 5. Restricted data flow | Deny-ingress `NetworkPolicy`, localhost-only MessagePack-RPC by default, topic structure per processor | Zone and conduit design, an egress policy for Redis, the broker and the telemetry endpoint |
+| 6. Timely response to events | OpenTelemetry traces, metrics and logs; warnings for dropped messages and for credentials sent without TLS | A security event log and alerting. The framework does not record authentication failures itself; use the broker's audit log |
+| 7. Resource availability | Bounded queues with explicit backpressure errors, Redis timeouts, fail-fast restart, [recovery objectives](operations.md#recovery-objectives) | Capacity planning, Redis persistence and backup, broker limits such as the maximum packet size |

@@ -76,6 +76,13 @@ After initialization, generate typed application models from your JSON Schema fi
 uv run microdcs dataclassgen dataclasses my-schema.schema.json
 ```
 
+## Status and Support
+
+MicroDCS is pre-1.0 (version 0.1.0): interfaces can still change between releases. It is maintained
+by a single maintainer on a best-effort basis, without a service-level agreement. Questions and bug
+reports go to the GitHub issue tracker. Security problems follow [SECURITY.md](SECURITY.md). The
+code is licensed under the GNU Lesser General Public License v2.1 (see [LICENSE](LICENSE)).
+
 ## Additional Documentation
 
 * [Your First Processor](https://aschamberger.github.io/microdcs/your-first-processor/)
