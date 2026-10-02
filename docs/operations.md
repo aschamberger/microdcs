@@ -24,6 +24,43 @@ and what happens when they fill is the foundation for operating the system relia
 
 ---
 
+## Redis Requirements
+
+Redis is the system of record: job orders and states, SFC execution state, work and change
+streams, and the deduplication keys all live there.
+
+**Version and modules.** Use Redis 8 or Redis Stack. The code relies on JSON documents, search
+indexes (`FT.*`), streams and Lua scripts. Managed Redis offerings without the JSON and Search
+modules do not work. Redis Cluster is not a supported topology: the Lua scripts touch several
+keys, and the search indexes span key prefixes.
+
+**Persistence baseline.** Run Redis with an append-only file and a persistent volume:
+
+```bash
+redis-server --appendonly yes --appendfsync everysec
+```
+
+The default Redis configuration only snapshots (`save 3600 1 300 100 60 10000`) and keeps no
+AOF. After a crash it restarts from the last snapshot and silently loses every write since,
+including job orders the MES was told were stored. With `appendfsync everysec` at most about one
+second of writes can be lost. Mount the data directory (`/data` in the official image) on a
+persistent volume, otherwise a rescheduled pod starts empty.
+
+A single Redis with this baseline is a reasonable starting point. A restart takes seconds, and
+the design already tolerates much longer MES outages (see
+[High availability](machinery-jobs-mes-publishing.md#high-availability)). Replication with
+Sentinel or an operator is only needed if even a short pause in sequence control is not
+acceptable. Replication is asynchronous, so a failover can still lose the last writes.
+
+**What a Redis outage does.** A lost Redis connection raises an error in the publisher or the
+SFC engine loop, which cancels the whole task group and exits the process. Kubernetes restarts
+the pod, and startup fails until Redis answers (the connection is checked once at startup), so
+replicas crash-loop with increasing back-off. On restart `_recovery_scan` resumes active jobs.
+Incoming MQTT messages that were not yet acknowledged are redelivered by the broker because
+the persistent session is kept. There is no in-process Redis reconnection.
+
+---
+
 ## Configuration Reference
 
 All settings are read from environment variables with the prefix `APP_` and nested

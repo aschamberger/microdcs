@@ -4,6 +4,7 @@
 #   docker compose --profile app up -d --build   # additionally run the example app in a container
 #
 # Run the app on the host instead with `uv run python -m app` (see docs/development.md).
+# Redis data lives in the redis-data volume; `docker compose down -v` wipes it.
 
 services:
   mosquitto:
@@ -19,6 +20,9 @@ services:
 
   redis:
     image: redis:8
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis-data:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -69,3 +73,6 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_PYTHON_LOG_CORRELATION: "true"
       OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+
+volumes:
+  redis-data:

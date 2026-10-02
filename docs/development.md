@@ -163,7 +163,7 @@ The `deploy/k8s.yaml` manifest defines two Deployments:
 - **`microdcs-processor`** (`replicas: 2`) — processors plus SFC engine (`APP_IS_PUBLISHER_INSTANCE=false`)
 - **`microdcs-publisher`** (`replicas: 1`) — publisher only (`APP_IS_PROCESSOR_INSTANCE=false`)
 
-The publisher must be a single replica to avoid conflicting retained writes. The SFC engine is different: it runs on every processor replica and relies on Redis consumer groups plus CAS Lua scripts for work distribution and recovery. Equipment integrations must treat `push_command` deliveries as idempotent by deduplicating on the `correlation_id` attached by the engine. The app handles MQTT and Redis reconnection internally with backoff, so health probes on external dependencies are not included — Kubernetes restart-on-crash is sufficient.
+The publisher must be a single replica to avoid conflicting retained writes. The SFC engine is different: it runs on every processor replica and relies on Redis consumer groups plus CAS Lua scripts for work distribution and recovery. Equipment integrations must treat `push_command` deliveries as idempotent by deduplicating on the `mdcsactionkey` attached by the engine (see the [idempotency contract](sfc_engine.md#idempotency-contract)). The app reconnects to MQTT with backoff but does not reconnect to Redis: a lost Redis connection ends the process and Kubernetes restarts it, so health probes on external dependencies are not included. See [Redis Requirements](operations.md#redis-requirements) for the persistence baseline.
 
 ### SFC Engine Wiring
 
