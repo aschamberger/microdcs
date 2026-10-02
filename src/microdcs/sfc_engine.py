@@ -505,6 +505,7 @@ class SfcEngine(AdditionalTask):
         kwargs: dict[str, Any] = {
             "job_id": job_id,
             "scope": scope,
+            "action_key": f"{job_id}:{assoc.name}",
         }
         if assoc.parameters:
             kwargs["parameters"] = assoc.parameters

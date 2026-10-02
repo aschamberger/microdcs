@@ -75,7 +75,7 @@ The `max_downloadable_job_orders` setting is persisted per scope via `JobAccepta
 | `causationid` | Points to the event that caused this one (causal chain) |
 | `expiryinterval` | Seconds until the event is no longer useful (maps to MQTT Message Expiry Interval) |
 
-MicroDCS extends the base spec with error attributes (`mdcserrorkind`, `mdcserrormessage`), a `method` attribute for station configuration delivery (`PUT` / `DELETE`), and `custommetadata` for hidden-field round-tripping.
+MicroDCS extends the base spec with error attributes (`mdcserrorkind`, `mdcserrormessage`), a `method` attribute for station configuration delivery (`PUT` / `DELETE`), `mdcsactionkey` (a stable key for SFC commands that is identical on every re-delivery) and `custommetadata` for hidden-field round-tripping.
 
 ### Processor
 

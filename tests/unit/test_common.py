@@ -243,6 +243,15 @@ class TestCloudEventSerialization:
         ce = CloudEvent.from_dict(raw)
         assert ce.mdcserrorcontext == {}
 
+    def test_action_key_round_trip(self):
+        ce = CloudEvent(source="test", mdcsactionkey="job-1:tighten")
+        d = ce.to_dict()
+        assert d["mdcsactionkey"] == "job-1:tighten"
+        assert CloudEvent.from_dict(d).mdcsactionkey == "job-1:tighten"
+
+    def test_action_key_omitted_when_unset(self):
+        assert "mdcsactionkey" not in CloudEvent(source="test").to_dict()
+
     def test_remove_data_context(self):
         ce = CloudEvent(source="test", data=b"payload")
         d = ce.to_dict(context={"remove_data": True})

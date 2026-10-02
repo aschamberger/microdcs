@@ -296,6 +296,11 @@ class CloudEvent(DataClassMixin):
     signals an upsert; ``DELETE`` signals removal. Used by station
     configuration delivery handlers."""
 
+    mdcsactionkey: str | None = None
+    """Stable key of the logical command (``{job_id}:{action_name}`` for SFC
+    ``push_command`` actions). Unlike ``id`` it is identical on every re-delivery,
+    so receivers can use it to deduplicate."""
+
     custommetadata: dict[str, Any] | None = field(default_factory=dict)
     """Holds any custom metadata associated with the event.
     (serialized to individual fields with key names)"""
@@ -976,6 +981,8 @@ class CloudEventProcessor(ABC):
                 response_cloudevent.id = kwargs["cloudevent_id"]
             if "correlation_id" in kwargs:
                 response_cloudevent.correlationid = kwargs["correlation_id"]
+            if "action_key" in kwargs:
+                response_cloudevent.mdcsactionkey = kwargs["action_key"]
             if "subject" in kwargs:
                 response_cloudevent.subject = kwargs["subject"]
             try:

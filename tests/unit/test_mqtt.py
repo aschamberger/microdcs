@@ -653,6 +653,21 @@ class TestCloudEventProcessorCallbacks:
         assert len(result) == 2
         assert len(published) == 2
 
+    @pytest.mark.asyncio
+    async def test_type_callback_sets_action_key(self):
+        proc = _make_processor()
+        proc.register_publish_handler(lambda ce, intent: None)  # pyright: ignore[reportArgumentType]
+
+        async def handler(**kwargs):
+            return SamplePayload(value="outbound")
+
+        proc.register_callback(SamplePayload, handler, direction=Direction.OUTGOING)
+        result = await proc.callback_outgoing(
+            SamplePayload, MessageIntent.COMMAND, action_key="job-1:tighten"
+        )
+        assert isinstance(result, list)
+        assert result[0].mdcsactionkey == "job-1:tighten"
+
 
 # ===================================================================
 # create_mqtt_client

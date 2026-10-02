@@ -257,6 +257,25 @@ class TestSfcEngineDispatchAction:
         self.sb_processor.callback_outgoing.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_dispatch_push_command_action_key_stable_across_redispatch(self):
+        """The action key is deterministic while the command id changes."""
+        exec_state = _make_exec_state(
+            action_states={"action_push": SfcActionState.PENDING}
+        )
+        self.mock_execution_dao.retrieve.return_value = exec_state
+        self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
+        self.mock_execution_dao.cas_action_state.return_value = "OK"
+
+        await self.engine._handle_dispatch_action("job-1", "action_push")
+        exec_state.actions["action_push"].state = SfcActionState.DISPATCHED
+        await self.engine._handle_dispatch_action("job-1", "action_push")
+
+        first, second = self.sb_processor.callback_outgoing.await_args_list
+        assert first.kwargs["action_key"] == "job-1:action_push"
+        assert second.kwargs["action_key"] == "job-1:action_push"
+        assert first.kwargs["cloudevent_id"] != second.kwargs["cloudevent_id"]
+
+    @pytest.mark.asyncio
     async def test_dispatch_skips_completed_job(self):
         exec_state = _make_exec_state()
         exec_state.completed = True

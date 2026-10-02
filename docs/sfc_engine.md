@@ -558,6 +558,7 @@ The engine delivers `push_command` actions **at least once**. Re-delivery is the
 |---|---|---|
 | `id` | New UUID per dispatch (the engine's `command_id`) | **No** |
 | `correlationid` | Job-level UUID, identical on every command of the job | Yes, but not specific to an action |
+| `mdcsactionkey` | `{job_id}:{action_name}` | **Yes** |
 | `subject` | The scope | Yes |
 | `type` | The action's `type_id` | Yes |
 | payload | Built by the SB processor's `@outgoing` handler from `job_id`, `scope` and the action `parameters` | Yes, if the handler includes them |
@@ -567,12 +568,12 @@ The attempt counter is stored in Redis only; it is not sent to equipment.
 **What equipment must do**
 
 1. **Do not deduplicate on the CloudEvent `id`.** It changes on every re-delivery, so it cannot identify a repeated command.
-2. **Deduplicate on the logical command.** Use `subject` + `type` + `correlationid`, plus any action-identifying fields the SB processor puts in the payload (for example `job_id` and the `parameters`).
+2. **Deduplicate on `mdcsactionkey`.** It identifies the logical command and is identical on every re-delivery. Keep it for as long as the job can still be running.
 3. **Execute a repeated command at most once, but always respond to every delivery.** The response must set `causationid` to the `id` of the delivery it answers (the example processor passes it to `complete_action`). The engine only accepts a response for the most recently dispatched `id`; responses to superseded ids are ignored as stale. A duplicate that is silently dropped, or answered with the earlier id, leaves the action `dispatched`.
 4. **Respond before the message expires.** If the command was published with an expiry interval and a response topic, the SB processor's `handle_cloudevent_expiration` runs when no response arrives in time; with the example processor this fails the action and therefore the job.
 5. A response for an action that is already completed is harmless: the CAS discards it.
 
-> **Known limitation.** The engine does not put a stable per-action key on the wire. Two `push_command` actions with the same `type_id` and the same payload in one job cannot be told apart by equipment. Until the engine sends one (for example a deterministic `{job_id}:{action_name}` extension attribute), give such actions distinct `type_id`s or distinct `parameters`.
+> **Note.** The engine also passes the key to the SB processor's `@outgoing` handler as the `action_key` keyword argument, in addition to `job_id` and `scope`.
 
 **`pull_event` actions**
 
