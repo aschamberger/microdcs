@@ -1,4 +1,4 @@
-import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +11,7 @@ from microdcs.models.machinery_jobs import (
     ISA95StateDataType,
     LocalizedText,
 )
-from microdcs.models.machinery_jobs_ext import StateIndex, StateIndexEntry
+from microdcs.models.machinery_jobs_ext import StateIndex
 from microdcs.publishers.machinery_jobs import (
     CLEARABLE_STATE_PREFIXES,
     JobOrderPublisher,
@@ -27,8 +27,8 @@ def _make_processing_config() -> MagicMock:
 
 def _make_publisher(
     redis_mock: AsyncMock | None = None,
-) -> tuple["JobOrderPublisher", AsyncMock]:
-    """Create a JobOrderPublisher with mocked Redis and MQTT."""
+) -> tuple[Any, AsyncMock]:
+    """Create a JobOrderPublisher with mocked Redis and MQTT (typed Any: DAOs and publish methods are replaced by mocks)."""
     mock_redis = redis_mock or AsyncMock()
     publisher_config = PublisherConfig()
     processing_config = _make_processing_config()

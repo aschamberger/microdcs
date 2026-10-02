@@ -167,7 +167,7 @@ class {{ class_name }}:
     {%- endif %}
     {%- set _has_aliases = fields | selectattr('alias', 'ne', None) | list | length > 0 %}
     {%- if _has_aliases %}
-        aliases: dict[str, str] = {
+        aliases = {
     {%- for field in fields %}
         {%- if field.alias is not none %}
             "{{ field.name }}": "{{ field.alias }}",

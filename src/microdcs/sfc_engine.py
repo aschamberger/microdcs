@@ -155,7 +155,7 @@ class SfcEngine(AdditionalTask):
             return
 
         try:
-            results = await self._redis_client.xreadgroup(
+            results: Any = await self._redis_client.xreadgroup(
                 groupname=SFC_CONSUMER_GROUP,
                 consumername=self._consumer_name,
                 streams=streams,  # type: ignore[arg-type]

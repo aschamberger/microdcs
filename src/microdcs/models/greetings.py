@@ -36,7 +36,7 @@ class Hello(
         type_schema: str = (
             "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello"
         )
-        aliases: dict[str, str] = {
+        aliases = {
             "name": "Name",
         }
 

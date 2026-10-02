@@ -55,7 +55,7 @@ class SfcStep(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        aliases: dict[str, str] = {
+        aliases = {
             "name": "Name",
             "initial": "Initial",
         }
@@ -86,7 +86,7 @@ class SfcTransition(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        aliases: dict[str, str] = {
+        aliases = {
             "source": "Source",
             "target": "Target",
             "condition": "Condition",
@@ -125,7 +125,7 @@ class SfcActionAssociation(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        aliases: dict[str, str] = {
+        aliases = {
             "name": "Name",
             "step": "Step",
             "qualifier": "Qualifier",
@@ -154,7 +154,7 @@ class SfcBranch(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        aliases: dict[str, str] = {
+        aliases = {
             "name": "Name",
             "type": "Type",
             "branches": "Branches",
@@ -188,7 +188,7 @@ class SfcRecipe(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "com.github.aschamberger.microdcs.sfc-recipe.v1"
         type_schema: str = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/"
-        aliases: dict[str, str] = {
+        aliases = {
             "steps": "Steps",
             "transitions": "Transitions",
             "actions": "Actions",
