@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "aiomqtt @ git+https://github.com/empicano/aiomqtt.git@main",
+    "aiomqtt @ git+https://github.com/empicano/aiomqtt.git@4c362b39a54a64e9a39720d29190cd56f98cb0ca",
     "mashumaro[orjson]>=3.21",
     "msgpack>=1.1.2",
     "opentelemetry-distro>=0.60b1",
@@ -52,13 +52,13 @@ markers = [
 
 [tool.uv]
 override-dependencies = [
-    "opentelemetry-api==1.41.1",
-    "opentelemetry-instrumentation==0.62b1",
-    "opentelemetry-semantic-conventions==0.62b1",
+    "opentelemetry-api==1.45.0",
+    "opentelemetry-instrumentation==0.66b0",
+    "opentelemetry-semantic-conventions==0.66b0",
 ]
 
 [tool.uv.sources]
-opentelemetry-instrumentation-aiomqtt = { git = "https://github.com/aschamberger/opentelemetry-python-contrib", subdirectory = "instrumentation/opentelemetry-instrumentation-aiomqtt", branch = "feat/aiomqtt-instrumentation" }
+opentelemetry-instrumentation-aiomqtt = { git = "https://github.com/aschamberger/opentelemetry-python-contrib", subdirectory = "instrumentation/opentelemetry-instrumentation-aiomqtt", rev = "c4f91c7ebea288253bc0fba3ec9f94b0bd50c0ca" }
 
 [tool.ruff]
 format.preview = true
