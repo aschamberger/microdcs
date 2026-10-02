@@ -21,7 +21,8 @@ nav = [
     {"Persistence" = "persistence.md"}
   ]},
   {"Operations" = [
-    {"Overview" = "operations.md"}
+    {"Overview" = "operations.md"},
+    {"Security and Authorization" = "security.md"}
   ]}
 ]
 

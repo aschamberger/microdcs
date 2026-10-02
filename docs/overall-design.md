@@ -70,7 +70,7 @@ Action completion routing is partially instance-affine: `push_command` response 
 
 The two interaction patterns have different recovery characteristics:
 
-- **`push_command`**: the response message is lost if delivered to the wrong instance, but the action stays `dispatched` in Redis. On restart, `_recovery_scan` → `resume` → `_handle_resume` re-dispatches the command. The equipment receives the command again and produces a new response. This is a **delay until restart** — no step is permanently missed, provided equipment handles idempotent re-delivery on the `correlation_id`.
+- **`push_command`**: the response message is lost if delivered to the wrong instance, but the action stays `dispatched` in Redis. On restart, `_recovery_scan` → `resume` → `_handle_resume` re-dispatches the command. The equipment receives the command again and produces a new response. This is a **delay until restart** — no step is permanently missed, provided equipment tolerates re-delivery (see the [idempotency contract](sfc_engine.md#idempotency-contract)).
 - **`pull_event`**: any live instance that receives the CloudEvent writes to the Redis stream, and `XAUTOCLAIM` ensures the work item survives pod restarts. The action is completed by whichever engine instance processes the stream entry. No event is permanently lost.
 
 See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the full multi-instance safety matrix.

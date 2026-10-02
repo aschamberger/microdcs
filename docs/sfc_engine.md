@@ -543,9 +543,48 @@ Any instance: XREADGROUP → picks up pull_event entry → CAS-completes action
 
 #### Idempotency Contract
 
-Re-delivery of `push_command` actions is the fundamental recovery mechanism. After consumer death, `XAUTOCLAIM` hands the unACKed work item to another instance, which may re-dispatch an already-sent command. **Equipment must handle duplicate commands idempotently** — this is the contract that makes multi-instance recovery safe without distributed locks. The SFC engine adds a `correlation_id` (derived from `{job_id}:{action_name}:{attempt}`) to every outgoing command, giving equipment a stable key for deduplication.
+The engine delivers `push_command` actions **at least once**. Re-delivery is the recovery mechanism that makes multi-instance operation safe without distributed locks, so equipment (or the southbound gateway in front of it) must tolerate it.
 
-For `pull_event` actions there is no stream entry to reclaim. Recovery relies entirely on the `_recovery_scan` that runs on every pod startup: it re-enqueues `resume` for all active jobs, and `_handle_resume` re-registers the routing tables on whichever instance processes the resume item. Until that restart, a `pull_event` whose CloudEvent was delivered to the wrong instance stays stuck in `waiting` state.
+**When a command is delivered again**
+
+| Trigger | Mechanism |
+|---|---|
+| Instance dies after dispatch but before ACKing the work item | `XAUTOCLAIM` hands the entry to another instance, which re-dispatches while the action is still `dispatched` |
+| Response is lost or arrives at a non-dispatching instance | The action stays `dispatched`; the next pod restart runs `_recovery_scan` → `resume`, which re-dispatches it |
+
+**What each delivery carries**
+
+| CloudEvent attribute | Value | Stable across re-delivery? |
+|---|---|---|
+| `id` | New UUID per dispatch (the engine's `command_id`) | **No** |
+| `correlationid` | Job-level UUID, identical on every command of the job | Yes, but not specific to an action |
+| `subject` | The scope | Yes |
+| `type` | The action's `type_id` | Yes |
+| payload | Built by the SB processor's `@outgoing` handler from `job_id`, `scope` and the action `parameters` | Yes, if the handler includes them |
+
+The attempt counter is stored in Redis only; it is not sent to equipment.
+
+**What equipment must do**
+
+1. **Do not deduplicate on the CloudEvent `id`.** It changes on every re-delivery, so it cannot identify a repeated command.
+2. **Deduplicate on the logical command.** Use `subject` + `type` + `correlationid`, plus any action-identifying fields the SB processor puts in the payload (for example `job_id` and the `parameters`).
+3. **Execute a repeated command at most once, but always respond to every delivery.** The response must set `causationid` to the `id` of the delivery it answers (the example processor passes it to `complete_action`). The engine only accepts a response for the most recently dispatched `id`; responses to superseded ids are ignored as stale. A duplicate that is silently dropped, or answered with the earlier id, leaves the action `dispatched`.
+4. **Respond before the message expires.** If the command was published with an expiry interval and a response topic, the SB processor's `handle_cloudevent_expiration` runs when no response arrives in time; with the example processor this fails the action and therefore the job.
+5. A response for an action that is already completed is harmless: the CAS discards it.
+
+> **Known limitation.** The engine does not put a stable per-action key on the wire. Two `push_command` actions with the same `type_id` and the same payload in one job cannot be told apart by equipment. Until the engine sends one (for example a deterministic `{job_id}:{action_name}` extension attribute), give such actions distinct `type_id`s or distinct `parameters`.
+
+**`pull_event` actions**
+
+No command is sent, so there is nothing to re-deliver. Equipment emits an event that must have:
+
+- a `subject` whose first segment is the job's scope
+- a `type` equal to the waiting action's `type_id`
+- a unique, stable `id` that is re-used when the event is re-sent. The MQTT handler drops a second event with the same `source` + `id` for `APP_MQTT_DEDUPE_TTL_SECONDS` (default 10 minutes). Re-sending an event under a new `id` is treated as a new event.
+
+The engine matches by scope and `type` only: the first `waiting` action with that type in the first matching active job completes. `subject` beyond the scope and `correlationid` are carried to the work item but not used for matching. Two jobs in the same scope waiting for the same event type are therefore not distinguished.
+
+Any instance that receives the event writes it to `sfc:work:{scope}`, so a pull event survives instance loss through `XAUTOCLAIM`.
 
 #### Multi-Instance Safety Summary
 
