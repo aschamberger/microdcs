@@ -382,4 +382,4 @@ When the MES reconnects after a connectivity outage:
 4. **Clear processed jobs** — for each job in a clearable state (`Ended`/`Aborted`) whose response has been ingested, publish a `Clear` command CloudEvent to the command topic. This transitions the job to `EndState`, removes it from the state-index, and deletes its retained topics.
 5. **Update last-seen seq** to the current value.
 
-A reference implementation of this protocol is available in `tests/test_mes_integration.py` as the `MESResyncClient` class.
+A reference implementation of this protocol is available in `tests/integration/test_mes_integration.py` as the `MESResyncClient` class.

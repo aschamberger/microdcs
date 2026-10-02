@@ -51,11 +51,11 @@ scripts/init_app.sh       # Bootstraps a new MicroDCS app project (for external 
 # Install dependencies (creates .venv automatically)
 uv sync
 
-# Run unit tests (must exclude integration tests that fail at collection without external services)
-uv run pytest tests/ --ignore=tests/test_mqtt_integration.py --ignore=tests/test_msgpack_integration.py
+# Run unit tests (integration tests in tests/integration need external services)
+uv run pytest tests/unit
 
 # Run tests with coverage
-uv run pytest --cov=microdcs --cov-report=term-missing tests/ --ignore=tests/test_mqtt_integration.py --ignore=tests/test_msgpack_integration.py
+uv run pytest --cov=microdcs --cov-report=term-missing tests/unit
 
 # Run the example app (requires MQTT broker + Redis)
 uv run python -m app

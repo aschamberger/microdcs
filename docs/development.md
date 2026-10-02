@@ -43,13 +43,13 @@ Additional 3.14 features used throughout the codebase:
 Run the main unit test suite:
 
 ```bash
-uv run pytest tests/ --ignore=tests/test_mqtt_integration.py --ignore=tests/test_msgpack_integration.py
+uv run pytest tests/unit
 ```
 
 Run test coverage:
 
 ```bash
-uv run pytest --cov=microdcs --cov-report=term-missing tests/ --ignore=tests/test_mqtt_integration.py --ignore=tests/test_msgpack_integration.py
+uv run pytest --cov=microdcs --cov-report=term-missing tests/unit
 ```
 
 Run benchmarks and save results:

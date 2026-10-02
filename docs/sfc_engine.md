@@ -307,7 +307,7 @@ A hand-written `sfc_recipe_ext.py` provides the `SFC_RECIPE_DATASCHEMA` constant
 
 ## SFC Engine Architecture
 
-> **Status**: Implemented. `SfcEngine` in `src/microdcs/sfc_engine.py`, `SfcExecutionDAO` in `src/microdcs/redis.py`, 25 engine tests in `tests/test_sfc_engine.py`, 14 DAO tests in `tests/test_redis.py`.
+> **Status**: Implemented. `SfcEngine` in `src/microdcs/sfc_engine.py`, `SfcExecutionDAO` in `src/microdcs/redis.py`, 25 engine tests in `tests/unit/test_sfc_engine.py`, 14 DAO tests in `tests/unit/test_redis.py`.
 
 ### Role in the System
 

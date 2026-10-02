@@ -13,7 +13,7 @@ Get the framework installed, run the unit tests, and start the example applicati
 uv sync
 
 # Run unit tests
-uv run pytest tests/ --ignore=tests/test_mqtt_integration.py --ignore=tests/test_msgpack_integration.py
+uv run pytest tests/unit
 
 # Run the example app
 # Requires a reachable MQTT broker and Redis server.

@@ -73,8 +73,8 @@ def _collect_child_names(
     # Recurse into properties, oneOf/anyOf/allOf items, and array items
     for prop_defn in node.get("properties", {}).values():
         _collect_child_names(prop_defn, children, defs_key=None)
-    for keyword in ("oneOf", "anyOf", "allOf"):
-        for item in node.get(keyword, []):
+    for composition_key in ("oneOf", "anyOf", "allOf"):
+        for item in node.get(composition_key, []):
             _collect_child_names(item, children, defs_key=None)
     _collect_child_names(node.get("items"), children, defs_key=None)
 

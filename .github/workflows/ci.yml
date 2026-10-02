@@ -1,0 +1,36 @@
+name: tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Lint
+        run: |
+          uv run ruff check src app tests
+          uv run ruff format --check src app tests
+      - name: Type check
+        run: uv run pyright src app tests
+      - name: Unit tests
+        run: uv run pytest tests/unit --cov=microdcs --cov-report=term-missing
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Audit locked dependencies
+        run: |
+          uv export --locked --no-hashes --no-emit-project -o requirements.audit.txt
+          uvx pip-audit -r requirements.audit.txt --no-deps --disable-pip

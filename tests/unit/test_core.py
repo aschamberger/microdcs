@@ -513,7 +513,7 @@ class TestInstanceRoleFlags:
         dcs._additional_tasks.add(mock_task)
 
         with patch("microdcs.core.SystemEventTaskGroup") as mock_tg_cls:
-            mock_tg = _setup_task_group_mock(mock_tg_cls)
+            _setup_task_group_mock(mock_tg_cls)
             await dcs.main()
 
         # Handler registered and processor lifecycle called
