@@ -20,6 +20,7 @@ from microdcs.models.sfc_recipe_ext import (
 )
 from microdcs.redis import (
     CloudEventDedupeDAO,
+    DedupeState,
     CounterDAO,
     EquipmentListDAO,
     JobAcceptanceConfigDAO,
@@ -278,36 +279,63 @@ class TestCloudEventDedupeDAO:
     def setup_method(self) -> None:
         self.redis = _make_redis_mock()
         self.schema = _make_schema()
-        self.dao = CloudEventDedupeDAO(self.redis, self.schema, ttl=300)
+        self.dao = CloudEventDedupeDAO(self.redis, self.schema, ttl=300, lease=20)
+        self.key = self.schema.cloudevent_dedupe_key("src", "id-1")
 
     @pytest.mark.asyncio
-    async def test_is_duplicate_returns_false_on_first_set(self):
-        # SET NX returns True (key was set) → not a duplicate
+    async def test_claim_takes_lease_with_nx(self):
         self.redis.set.return_value = True
-        result = await self.dao.is_duplicate("src", "id-1")
-        assert result is False
+        assert await self.dao.claim("src", "id-1", "tok") is DedupeState.CLAIMED
+        self.redis.set.assert_awaited_once_with(
+            self.key, "processing:tok", ex=20, nx=True
+        )
 
     @pytest.mark.asyncio
-    async def test_is_duplicate_returns_true_when_already_exists(self):
-        # SET NX returns None/False (key already exists) → duplicate
+    async def test_claim_done_is_duplicate(self):
         self.redis.set.return_value = None
-        result = await self.dao.is_duplicate("src", "id-1")
-        assert result is True
+        self.redis.get.return_value = b"done"
+        assert await self.dao.claim("src", "id-1", "tok") is DedupeState.DONE
 
     @pytest.mark.asyncio
-    async def test_set_called_with_correct_args(self):
-        self.redis.set.return_value = True
-        await self.dao.is_duplicate("src", "id-1")
-        key = self.schema.cloudevent_dedupe_key("src", "id-1")
-        self.redis.set.assert_awaited_once_with(key, "1", ex=300, nx=True)
+    async def test_claim_held_by_other_is_busy(self):
+        self.redis.set.return_value = None
+        self.redis.get.return_value = b"processing:other"
+        assert await self.dao.claim("src", "id-1", "tok") is DedupeState.BUSY
 
     @pytest.mark.asyncio
-    async def test_custom_ttl(self):
-        dao = CloudEventDedupeDAO(self.redis, self.schema, ttl=60)
-        self.redis.set.return_value = True
-        await dao.is_duplicate("src", "id-1")
-        call_kwargs = self.redis.set.call_args.kwargs
-        assert call_kwargs["ex"] == 60
+    async def test_claim_with_own_token_is_idempotent(self):
+        """A retry after a lost reply must not turn into a false duplicate."""
+        self.redis.set.return_value = None
+        self.redis.get.return_value = b"processing:tok"
+        assert await self.dao.claim("src", "id-1", "tok") is DedupeState.CLAIMED
+
+    @pytest.mark.asyncio
+    async def test_claim_retries_when_lease_expires_between_set_and_get(self):
+        self.redis.set.side_effect = [None, True]
+        self.redis.get.return_value = None
+        assert await self.dao.claim("src", "id-1", "tok") is DedupeState.CLAIMED
+        assert self.redis.set.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_claim_gives_up_as_busy_after_repeated_expiry_races(self):
+        self.redis.set.return_value = None
+        self.redis.get.return_value = None
+        assert await self.dao.claim("src", "id-1", "tok") is DedupeState.BUSY
+
+    @pytest.mark.asyncio
+    async def test_mark_done_sets_done_with_ttl(self):
+        await self.dao.mark_done("src", "id-1")
+        self.redis.set.assert_awaited_once_with(self.key, "done", ex=300)
+
+    @pytest.mark.asyncio
+    async def test_lease_remaining_ms(self):
+        self.redis.pttl.return_value = 1500
+        assert await self.dao.lease_remaining_ms("src", "id-1") == 1500
+
+    @pytest.mark.asyncio
+    async def test_lease_remaining_ms_missing_key_is_zero(self):
+        self.redis.pttl.return_value = -2
+        assert await self.dao.lease_remaining_ms("src", "id-1") == 0
 
 
 # ---------------------------------------------------------------------------

@@ -40,6 +40,7 @@ class MQTTConfig:
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
     message_workers: int = 5
     dedupe_ttl_seconds: int = 60 * 10  # 10 minutes
+    dedupe_lease_seconds: int = 30  # must exceed the slowest message handler
     binding_outgoing_queue_size: int = 5
     session_expiry_interval: int = 2**32 - 1  # never expire
 
@@ -333,6 +334,7 @@ class RuntimeConfig:
 
         require_positive(self.mqtt.message_workers, "mqtt.message_workers")
         require_non_negative(self.mqtt.dedupe_ttl_seconds, "mqtt.dedupe_ttl_seconds")
+        require_positive(self.mqtt.dedupe_lease_seconds, "mqtt.dedupe_lease_seconds")
         require_non_negative(
             self.mqtt.binding_outgoing_queue_size,
             "mqtt.binding_outgoing_queue_size",

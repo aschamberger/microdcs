@@ -27,7 +27,7 @@ from microdcs.mqtt import (
     _topic_matches,
     create_mqtt_client,
 )
-from microdcs.redis import RedisKeySchema
+from microdcs.redis import DedupeState, RedisKeySchema
 
 # ---------------------------------------------------------------------------
 # Test fixtures / helpers
@@ -44,6 +44,10 @@ def _make_handler() -> MQTTHandler:
     key_schema = RedisKeySchema()
     with patch("microdcs.mqtt.redis.Redis"):
         handler = MQTTHandler(config, pool, key_schema)
+    # Dedupe defaults to a fresh message; tests override claim() to simulate others.
+    handler._cloudevent_dedupe_dao.claim = AsyncMock(return_value=DedupeState.CLAIMED)  # type: ignore[method-assign]
+    handler._cloudevent_dedupe_dao.mark_done = AsyncMock()  # type: ignore[method-assign]
+    handler._cloudevent_dedupe_dao.lease_remaining_ms = AsyncMock(return_value=0)  # type: ignore[method-assign]
     return handler
 
 
@@ -1023,21 +1027,102 @@ class TestMQTTHandler:
         call_kwargs = client.publish.call_args[1]
         assert call_kwargs["retain"] is True
 
-    # --- is_duplicate_message ---
+    # --- _claim_message ---
 
     @pytest.mark.asyncio
-    async def test_is_duplicate_message(self):
+    async def test_claim_message_duplicate(self):
         handler = _make_handler()
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(return_value=DedupeState.DONE)
         ce = CloudEvent(source="src", id="id-1")
-        assert await handler._is_duplicate_message(ce) is True
+        assert await handler._claim_message(ce) is False
 
     @pytest.mark.asyncio
-    async def test_is_not_duplicate_message(self):
+    async def test_claim_message_new(self):
         handler = _make_handler()
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
         ce = CloudEvent(source="src", id="id-2")
-        assert await handler._is_duplicate_message(ce) is False
+        assert await handler._claim_message(ce) is True
+
+    @pytest.mark.asyncio
+    async def test_claim_message_waits_for_lease_holder(self):
+        handler = _make_handler()
+        dao = handler._cloudevent_dedupe_dao
+        dao.claim = AsyncMock(
+            side_effect=[DedupeState.BUSY, DedupeState.BUSY, DedupeState.CLAIMED]
+        )
+        dao.lease_remaining_ms = AsyncMock(return_value=0)
+        ce = CloudEvent(source="src", id="id-3")
+        with patch("microdcs.mqtt.asyncio.sleep", new=AsyncMock()) as sleep:
+            assert await handler._claim_message(ce) is True
+        assert dao.claim.await_count == 3
+        assert sleep.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_claim_message_busy_then_done_is_duplicate(self):
+        handler = _make_handler()
+        dao = handler._cloudevent_dedupe_dao
+        dao.claim = AsyncMock(side_effect=[DedupeState.BUSY, DedupeState.DONE])
+        dao.lease_remaining_ms = AsyncMock(return_value=250)
+        ce = CloudEvent(source="src", id="id-4")
+        with patch("microdcs.mqtt.asyncio.sleep", new=AsyncMock()) as sleep:
+            assert await handler._claim_message(ce) is False
+        sleep.assert_awaited_once_with(0.25)
+
+    @pytest.mark.asyncio
+    async def test_claim_message_uses_same_token_on_every_attempt(self):
+        handler = _make_handler()
+        dao = handler._cloudevent_dedupe_dao
+        dao.claim = AsyncMock(side_effect=[DedupeState.BUSY, DedupeState.CLAIMED])
+        dao.lease_remaining_ms = AsyncMock(return_value=0)
+        with patch("microdcs.mqtt.asyncio.sleep", new=AsyncMock()):
+            await handler._claim_message(CloudEvent(source="src", id="id-5"))
+        tokens = {call.args[2] for call in dao.claim.await_args_list}
+        assert len(tokens) == 1
+
+    @pytest.mark.asyncio
+    async def test_process_message_marks_done_before_ack(self):
+        handler = _make_handler()
+        order: list[str] = []
+        client = AsyncMock()
+        client.puback = AsyncMock(side_effect=lambda _id: order.append("puback"))
+        handler._cloudevent_dedupe_dao.mark_done = AsyncMock(
+            side_effect=lambda *_: order.append("mark_done")
+        )
+
+        await handler._process_message(client, _make_mqtt_message())
+
+        assert order == ["mark_done", "puback"]
+
+    @pytest.mark.asyncio
+    async def test_process_message_failure_leaves_message_claimed_only(self):
+        """A crash while processing neither marks the message done nor acks it."""
+        handler = _make_handler()
+        client = AsyncMock()
+        proc = _make_processor()
+        proc.process_cloudevent = AsyncMock(side_effect=RuntimeError("boom"))
+        _make_binding(
+            handler, proc, topics={"test/events/#"}, response_topic="never/matches"
+        )
+
+        with pytest.raises(RuntimeError):
+            await handler._process_message(client, _make_mqtt_message())
+
+        handler._cloudevent_dedupe_dao.mark_done.assert_not_awaited()  # type: ignore[attr-defined]
+        client.puback.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_process_message_duplicate_is_acknowledged(self):
+        handler = _make_handler()
+        client = AsyncMock()
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(return_value=DedupeState.DONE)
+
+        ok, _ = await handler._process_message(client, _make_mqtt_message(mid=7))
+
+        assert ok is False
+        client.puback.assert_awaited_once_with(7)
+        handler._cloudevent_dedupe_dao.mark_done.assert_not_awaited()  # type: ignore[attr-defined]
 
     # --- cloudevent_from_message ---
 
@@ -1099,7 +1184,7 @@ class TestMQTTHandler:
         _make_binding(handler, proc)
 
         msg = _make_mqtt_message()
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(return_value=DedupeState.DONE)
 
         ok, sub = await handler._process_message(client, msg)
         assert ok is False
@@ -1110,7 +1195,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
         # No bindings registered → empty subscription
         msg = _make_mqtt_message()
         ok, sub = await handler._process_message(client, msg)
@@ -1122,7 +1209,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         # Simulate an existing expiration task keyed by the original request's id
         request_id = str(uuid.uuid4())
@@ -1143,7 +1232,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         proc.process_cloudevent = AsyncMock(return_value=None)
@@ -1168,7 +1259,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         proc.process_cloudevent = AsyncMock(return_value=None)
@@ -1192,7 +1285,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         proc.process_response_cloudevent = AsyncMock(return_value=None)
@@ -1213,7 +1308,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         resp1 = CloudEvent(transportmetadata={"mqtt_topic": "out"})
@@ -1239,7 +1336,9 @@ class TestMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         single_resp = CloudEvent(transportmetadata={"mqtt_topic": "out"})
@@ -1711,7 +1810,9 @@ class TestOTELInstrumentedMQTTHandler:
         pool = MagicMock()
         key_schema = RedisKeySchema()
         with patch("microdcs.mqtt.redis.Redis"):
-            return OTELInstrumentedMQTTHandler(config, pool, key_schema)
+            handler = OTELInstrumentedMQTTHandler(config, pool, key_schema)
+        handler._cloudevent_dedupe_dao.mark_done = AsyncMock()  # type: ignore[method-assign]
+        return handler
 
     @pytest.mark.asyncio
     async def test_process_message_sets_subscription_name_on_span(self):
@@ -1720,7 +1821,9 @@ class TestOTELInstrumentedMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
         _make_binding(handler, topics={"test/events/foo"})
 
         msg = _make_mqtt_message(topic="test/events/foo")
@@ -1743,7 +1846,9 @@ class TestOTELInstrumentedMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
         # no bindings registered — subscription will be empty
 
         msg = _make_mqtt_message(topic="test/events/foo")
@@ -1763,7 +1868,7 @@ class TestOTELInstrumentedMQTTHandler:
         client = AsyncMock()
         client.puback = AsyncMock()
 
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=True)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(return_value=DedupeState.DONE)
 
         msg = _make_mqtt_message(topic="test/events/foo")
 
@@ -2021,7 +2126,9 @@ class TestTopicDiscriminator:
         handler = _make_handler()
         client = AsyncMock()
         client.puback = AsyncMock()
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         proc.process_cloudevent = AsyncMock(return_value=None)
@@ -2045,7 +2152,9 @@ class TestTopicDiscriminator:
         handler = _make_handler()
         client = AsyncMock()
         client.puback = AsyncMock()
-        handler._cloudevent_dedupe_dao.is_duplicate = AsyncMock(return_value=False)
+        handler._cloudevent_dedupe_dao.claim = AsyncMock(
+            return_value=DedupeState.CLAIMED
+        )
 
         proc = _make_processor()
         proc.process_cloudevent = AsyncMock(return_value=None)

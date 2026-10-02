@@ -22,7 +22,7 @@ from microdcs.common import (
     ProtocolBinding,
     ProtocolHandler,
 )
-from microdcs.redis import CloudEventDedupeDAO, RedisKeySchema
+from microdcs.redis import CloudEventDedupeDAO, DedupeState, RedisKeySchema
 
 logger = logging.getLogger("handler.mqtt")
 publisher_logger = logging.getLogger("publisher.mqtt")
@@ -123,6 +123,7 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
             self._redis_client,
             redis_key_schema,
             ttl=self._runtime_config.dedupe_ttl_seconds,
+            lease=self._runtime_config.dedupe_lease_seconds,
         )
         self._expiration_timeout_tasks: dict[str, asyncio.Task[object]] = {}
 
@@ -231,15 +232,24 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                 )
             )
 
-    async def _is_duplicate_message(self, cloudevent: CloudEvent) -> bool:
-        logger.debug(
-            "Checking for duplicate message with source %s ID %s",
-            cloudevent.source,
-            cloudevent.id,
-        )
-        return await self._cloudevent_dedupe_dao.is_duplicate(
-            str(cloudevent.source), str(cloudevent.id)
-        )
+    async def _claim_message(self, cloudevent: CloudEvent) -> bool:
+        """Take the processing lease, waiting while another worker holds it.
+
+        Returns ``False`` if the message was already processed (a duplicate).
+        """
+        source, event_id = str(cloudevent.source), str(cloudevent.id)
+        logger.debug("Claiming message with source %s ID %s", source, event_id)
+        token = uuid.uuid4().hex
+        while True:
+            state = await self._cloudevent_dedupe_dao.claim(source, event_id, token)
+            if state is DedupeState.CLAIMED:
+                return True
+            if state is DedupeState.DONE:
+                return False
+            remaining_ms = await self._cloudevent_dedupe_dao.lease_remaining_ms(
+                source, event_id
+            )
+            await asyncio.sleep(max(remaining_ms, 100) / 1000)
 
     def _cloudevent_from_message(self, message: mqtt5.PublishPacket) -> CloudEvent:
         # Construct CloudEvent from MQTT message
@@ -296,13 +306,16 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
         """
         # extract CloudEvent from MQTT message
         cloudevent = self._cloudevent_from_message(message)
-        # check for duplicate message IDs due to QoS 1 (at-least-once delivery)
-        if await self._is_duplicate_message(cloudevent):
+        # claim the message so a redelivery (QoS 1) is not processed twice
+        if not await self._claim_message(cloudevent):
             logger.info(
                 "Duplicate message received on topic %s with message ID %s",
                 message.topic,
                 message.packet_id,
             )
+            # already processed: acknowledge so the broker stops redelivering it
+            if message.packet_id is not None:
+                await client.puback(message.packet_id)
             for binding in self._bindings:
                 if _topic_matches(binding.response_topic, message.topic):
                     return False, binding.response_topic
@@ -370,6 +383,12 @@ class MQTTHandler(ProtocolHandler["MQTTProtocolBinding"]):
                         )
                     elif processor_response is None:
                         continue
+
+        # Mark as processed before acknowledging: a crash in between means a
+        # redelivery after the lease expires, never a lost message.
+        await self._cloudevent_dedupe_dao.mark_done(
+            str(cloudevent.source), str(cloudevent.id)
+        )
 
         # Acknowledge QoS 1 messages using the native puback method
         if message.packet_id is not None:

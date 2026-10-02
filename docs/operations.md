@@ -57,10 +57,9 @@ SFC engine loop, which cancels the whole task group and exits the process. Kuber
 the pod, and startup fails until Redis answers (the connection is checked once at startup), so
 replicas crash-loop with increasing back-off. On restart `_recovery_scan` resumes active jobs.
 Incoming MQTT messages that were not yet acknowledged are redelivered by the broker because
-the persistent session is kept. Known issue: the deduplication key is written before a message
-is processed, so a message that was in flight at the crash is treated as a duplicate when it is
-redelivered (for `APP_MQTT_DEDUPE_TTL_SECONDS`) and is neither processed nor acknowledged. There
-is no in-process Redis reconnection.
+the persistent session is kept. A message that was being processed at the crash is claimed
+again once its dedupe lease expires (`APP_MQTT_DEDUPE_LEASE_SECONDS`), so it is processed at
+least once. There is no in-process Redis reconnection.
 
 ---
 
@@ -95,7 +94,8 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_MQTT_SAT_TOKEN_PATH` | `Path` | `/var/run/secrets/tokens/broker-sat` | Path to SAT token for broker auth |
 | `APP_MQTT_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate for TLS connections |
 | `APP_MQTT_MESSAGE_WORKERS` | `int` | `5` | Concurrent tasks processing incoming messages |
-| `APP_MQTT_DEDUPE_TTL_SECONDS` | `int` | `600` | TTL for Redis deduplication keys (seconds) |
+| `APP_MQTT_DEDUPE_TTL_SECONDS` | `int` | `600` | How long Redis remembers a processed message (seconds) |
+| `APP_MQTT_DEDUPE_LEASE_SECONDS` | `int` | `30` | Lease a worker holds on a message while processing it; must exceed the slowest handler. An expired lease lets another worker process the message again |
 | `APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE` | `int` | `5` | Per-binding outgoing queue capacity |
 | `APP_MQTT_SESSION_EXPIRY_INTERVAL` | `int` | `4294967295` | MQTT v5 session expiry interval in seconds (`2³²−1` = never expire) |
 
@@ -339,6 +339,12 @@ startup, connections beyond this limit are refused at the kernel level.
 processed message IDs. After a broker reconnect, messages replayed within this window
 are deduplicated. If your broker's session expiry exceeds this TTL, you may see
 duplicate processing after reconnects.
+
+**`APP_MQTT_DEDUPE_LEASE_SECONDS`** (default `30`) is how long a worker owns a message
+while it is being processed. If the worker dies, the message becomes available again
+when the lease expires, so a redelivered message waits at most this long before it is
+processed. Set it above the slowest message handler: a handler that outlives the lease
+lets a second worker process the same message concurrently.
 
 Redis operation latency is a secondary signal: slow `await` on DAO calls inside a
 processor handler holds the worker for that message and reduces effective throughput

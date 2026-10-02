@@ -308,12 +308,25 @@ class RedisKeySchema:
         return f"sfc:activejobs:{scope}"
 
 
+class DedupeState(StrEnum):
+    """Outcome of :meth:`CloudEventDedupeDAO.claim`."""
+
+    CLAIMED = "claimed"
+    """The caller holds the lease and must process the event."""
+    DONE = "done"
+    """The event was already processed: a genuine duplicate."""
+    BUSY = "busy"
+    """Another worker holds the lease; retry after it finishes or expires."""
+
+
 class CloudEventDedupeDAO:
     """
-    Data Access Object for CloudEvent deduplication.
+    Data Access Object for CloudEvent deduplication based on source and ID.
 
-    This class provides methods to interact with Redis for the purpose of
-    deduplicating CloudEvents based on their source and ID.
+    An event is first *claimed* with a short lease and marked *done* once it
+    has been processed.  A worker that dies while processing therefore does not
+    turn the redelivered event into a duplicate: the lease expires and the
+    event can be claimed again (at-least-once).
     """
 
     def __init__(
@@ -321,30 +334,51 @@ class CloudEventDedupeDAO:
         redis_client: redis.Redis,
         key_schema: RedisKeySchema,
         ttl: int = 600,
+        lease: int = 30,
     ):
         self.redis = redis_client
         self.key_schema = key_schema
         self.ttl = ttl
+        self.lease = lease
 
-    async def is_duplicate(self, cloudevent_source: str, cloudevent_id: str) -> bool:
-        """
-        Check if a CloudEvent with the given source and ID has already been seen.
+    @staticmethod
+    def _decode(value: bytes | str | None) -> str | None:
+        return value.decode() if isinstance(value, bytes) else value
 
-        Returns True if the event is a duplicate, False otherwise.
+    async def claim(
+        self, cloudevent_source: str, cloudevent_id: str, token: str
+    ) -> DedupeState:
+        """Try to take the processing lease for an event.
+
+        *token* identifies the caller; claiming again with the same token
+        returns ``CLAIMED``, which makes a retry after a lost reply safe.
         """
-        # create deduplication key based on CloudEvent source and ID
         key = self.key_schema.cloudevent_dedupe_key(cloudevent_source, cloudevent_id)
-        # atomic SET NX (Set if Not eXists) with expiration
-        return (
-            False
-            if await self.redis.set(
-                key,
-                "1",
-                ex=self.ttl,
-                nx=True,
-            )
-            else True
-        )
+        mine = f"processing:{token}"
+        # A holder's lease can expire between the SET and the GET, so retry briefly.
+        for _ in range(3):
+            if await self.redis.set(key, mine, ex=self.lease, nx=True):
+                return DedupeState.CLAIMED
+            value = self._decode(await self.redis.get(key))
+            if value == "done":
+                return DedupeState.DONE
+            if value == mine:
+                return DedupeState.CLAIMED
+            if value is not None:
+                return DedupeState.BUSY
+        return DedupeState.BUSY
+
+    async def mark_done(self, cloudevent_source: str, cloudevent_id: str) -> None:
+        """Record that the event was processed; it stays a duplicate for *ttl* seconds."""
+        key = self.key_schema.cloudevent_dedupe_key(cloudevent_source, cloudevent_id)
+        await self.redis.set(key, "done", ex=self.ttl)
+
+    async def lease_remaining_ms(
+        self, cloudevent_source: str, cloudevent_id: str
+    ) -> int:
+        """Milliseconds until the current lease expires; 0 if there is none."""
+        key = self.key_schema.cloudevent_dedupe_key(cloudevent_source, cloudevent_id)
+        return max(int(await self.redis.pttl(key)), 0)
 
 
 class TransactionDedupeDAO:

@@ -114,6 +114,8 @@ Checked constraints include:
 	* redis.port, mqtt.port, msgpack.port must be in 1..65535
 * Positive values:
 	* mqtt.connect_timeout, mqtt.publish_timeout, mqtt.message_workers
+	* mqtt.dedupe_lease_seconds
+	* redis.socket_timeout, redis.socket_connect_timeout
 	* msgpack.max_queued_connections, msgpack.max_concurrent_requests
 	* msgpack.max_buffer_size
 * Non-negative values:
