@@ -22,13 +22,30 @@ class RedisConfig:
     port: int = 6379
     key_prefix: str = "microdcs"
     username: str | None = None
-    password: str | None = None
+    password: str | None = field(default=None, repr=False)
+    password_file: Path | None = None  # read the password from a mounted secret
     ssl: bool = False
     ssl_ca_certs: Path | None = None
     socket_timeout: float = 10.0  # must exceed the longest blocking stream read (2 s)
     socket_connect_timeout: float = 5.0
     socket_keepalive: bool = True
     health_check_interval: int = 30
+
+    def resolve_password(self) -> str | None:
+        """The Redis password from ``password_file`` or ``password``."""
+        if self.password_file is None:
+            return self.password
+        if self.password is not None:
+            raise ValueError("Set only one of redis.password and redis.password_file")
+        try:
+            password = self.password_file.read_text().rstrip("\r\n")
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot read redis.password_file {self.password_file}: {exc}"
+            ) from exc
+        if not password:
+            raise ValueError(f"redis.password_file {self.password_file} is empty")
+        return password
 
 
 @dataclass
@@ -244,7 +261,7 @@ class RuntimeConfig:
                         elif field_child.type is bool and not isinstance(value, bool):
                             value = value in [1, "1", "true", "True", "TRUE"]
                         elif (
-                            field_child.type == Path
+                            field_child.type in (Path, Path | None)
                             and not isinstance(value, Path)
                             and isinstance(value, str)
                         ):

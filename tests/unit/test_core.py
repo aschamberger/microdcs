@@ -459,6 +459,16 @@ class TestRedisConnectionPool:
         assert pool.connection_kwargs["username"] == "myuser"
         assert pool.connection_kwargs["password"] == "secret"
 
+    def test_password_read_from_file(self, tmp_path):
+        secret = tmp_path / "redis-password"
+        secret.write_text("file-secret\n")
+        dcs = self._make_dcs_with_redis_config(password_file=secret)
+        assert dcs.redis_connection_pool.connection_kwargs["password"] == "file-secret"
+
+    def test_missing_password_file_fails_fast(self, tmp_path):
+        with pytest.raises(ValueError, match="redis.password_file"):
+            self._make_dcs_with_redis_config(password_file=tmp_path / "missing")
+
     def test_ssl_enabled(self):
         dcs = self._make_dcs_with_redis_config(ssl=True)
         pool = dcs.redis_connection_pool

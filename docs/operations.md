@@ -76,7 +76,8 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_REDIS_PORT` | `int` | `6379` | Redis server port |
 | `APP_REDIS_KEY_PREFIX` | `str` | `microdcs` | Prefix applied to all Redis keys |
 | `APP_REDIS_USERNAME` | `str` | `None` | Redis ACL username (optional) |
-| `APP_REDIS_PASSWORD` | `str` | `None` | Redis password (optional) |
+| `APP_REDIS_PASSWORD` | `str` | `None` | Redis password (optional). Prefer `APP_REDIS_PASSWORD_FILE`; setting both is an error |
+| `APP_REDIS_PASSWORD_FILE` | `Path` | `None` | File containing the Redis password, for example a mounted Kubernetes secret. A trailing newline is ignored |
 | `APP_REDIS_SSL` | `bool` | `false` | Enable TLS for Redis connection |
 | `APP_REDIS_SSL_CA_CERTS` | `Path` | `None` | CA certificate for Redis TLS (optional) |
 | `APP_REDIS_SOCKET_TIMEOUT` | `float` | `10.0` | Seconds before a Redis read or write times out; must exceed the longest blocking stream read (2 s) |

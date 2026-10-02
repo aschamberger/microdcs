@@ -27,6 +27,44 @@ class TestRedisConfig:
         assert cfg.port == 6379
         assert cfg.key_prefix == "microdcs"
 
+    def test_password_not_in_repr(self):
+        assert "hunter2" not in repr(RedisConfig(password="hunter2"))
+        assert "hunter2" not in repr(RuntimeConfig())  # includes redis
+
+    def test_resolve_password_plain(self):
+        assert RedisConfig(password="pw").resolve_password() == "pw"
+        assert RedisConfig().resolve_password() is None
+
+    def test_resolve_password_from_file_strips_trailing_newline(self, tmp_path):
+        secret = tmp_path / "redis-password"
+        secret.write_text("s3cret\n")
+        assert RedisConfig(password_file=secret).resolve_password() == "s3cret"
+
+    def test_resolve_password_rejects_both_sources(self, tmp_path):
+        secret = tmp_path / "redis-password"
+        secret.write_text("s3cret")
+        cfg = RedisConfig(password="pw", password_file=secret)
+        with pytest.raises(ValueError, match="only one"):
+            cfg.resolve_password()
+
+    def test_resolve_password_missing_file(self, tmp_path):
+        cfg = RedisConfig(password_file=tmp_path / "missing")
+        with pytest.raises(ValueError, match="Cannot read redis.password_file"):
+            cfg.resolve_password()
+
+    def test_resolve_password_empty_file(self, tmp_path):
+        secret = tmp_path / "redis-password"
+        secret.write_text("\n")
+        with pytest.raises(ValueError, match="is empty"):
+            RedisConfig(password_file=secret).resolve_password()
+
+    def test_password_file_from_environment(self, tmp_path):
+        secret = tmp_path / "redis-password"
+        secret.write_text("from-env\n")
+        with patch.dict(os.environ, {"APP_REDIS_PASSWORD_FILE": str(secret)}):
+            cfg = RuntimeConfig()
+        assert cfg.redis.resolve_password() == "from-env"
+
 
 class TestMQTTConfig:
     def test_defaults(self):

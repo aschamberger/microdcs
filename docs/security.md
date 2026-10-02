@@ -98,7 +98,9 @@ job state, so:
 - allow connections only from MicroDCS pods (network policy)
 - use a dedicated ACL user limited to the keys under `APP_REDIS_KEY_PREFIX`
 - enable `APP_REDIS_SSL` and `APP_REDIS_SSL_CA_CERTS` outside a single trusted node
-- pass the password from a mounted secret rather than a literal in the manifest
+- pass the password from a mounted secret with `APP_REDIS_PASSWORD_FILE` (for example
+  `/var/run/secrets/redis/password`) rather than a literal `APP_REDIS_PASSWORD` in the manifest.
+  The password is excluded from the configuration that is logged at `DEBUG`
 
 ## Kubernetes Hardening
 

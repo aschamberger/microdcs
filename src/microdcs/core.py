@@ -33,8 +33,9 @@ class MicroDCS:
         }
         if self.runtime_config.redis.username is not None:
             redis_kwargs["username"] = self.runtime_config.redis.username
-        if self.runtime_config.redis.password is not None:
-            redis_kwargs["password"] = self.runtime_config.redis.password
+        password = self.runtime_config.redis.resolve_password()
+        if password is not None:
+            redis_kwargs["password"] = password
         if self.runtime_config.redis.ssl:
             redis_kwargs["connection_class"] = redis.SSLConnection
             if self.runtime_config.redis.ssl_ca_certs is not None:
