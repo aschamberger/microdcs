@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import redis.asyncio as redis
 
@@ -209,7 +210,7 @@ class JobOrderPublisher(MQTTPublisher):
                 streams[stream_key] = self._cursors.get(scope, "0")
             streams[global_stream_key] = self._cursors.get("_global", "0")
 
-            results = await self._redis_client.xread(
+            results: Any = await self._redis_client.xread(
                 streams=streams,  # type: ignore[reportGeneralTypeIssues]
                 block=self._publisher_config.stream_block_ms,
                 count=self._publisher_config.stream_read_count,

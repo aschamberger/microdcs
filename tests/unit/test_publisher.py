@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiomqtt
 import pytest
 
 from microdcs.models.machinery_jobs import ISA95StateDataType, LocalizedText
@@ -164,10 +165,9 @@ class TestMQTTPublisher:
         call_kwargs = mock_client.publish.call_args
         assert call_kwargs.args[0] == "test/topic"
         assert call_kwargs.args[1] == b"payload"
-        assert call_kwargs.kwargs["qos"] == 1
+        assert call_kwargs.kwargs["qos"] == aiomqtt.QoS.AT_LEAST_ONCE
         assert call_kwargs.kwargs["retain"] is True
-        props = call_kwargs.kwargs["properties"]
-        assert props.MessageExpiryInterval == 3600
+        assert call_kwargs.kwargs["message_expiry_interval"] == 3600
 
     @pytest.mark.asyncio
     async def test_delete_retained_publishes_zero_bytes(self):
@@ -181,7 +181,7 @@ class TestMQTTPublisher:
         call_kwargs = mock_client.publish.call_args
         assert call_kwargs.args[0] == "test/topic"
         assert call_kwargs.args[1] == b""
-        assert call_kwargs.kwargs["qos"] == 1
+        assert call_kwargs.kwargs["qos"] == aiomqtt.QoS.AT_LEAST_ONCE
         assert call_kwargs.kwargs["retain"] is True
 
     @pytest.mark.asyncio
@@ -234,7 +234,7 @@ class TestMQTTPublisher:
         connected_during_run = False
 
         class TestPublisher(MQTTPublisher):
-            async def _run(self) -> None:
+            async def _run(self) -> None:  # type: ignore[override]
                 nonlocal connected_during_run
                 connected_during_run = self._connected.is_set()
 

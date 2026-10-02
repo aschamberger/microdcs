@@ -1,6 +1,8 @@
 import asyncio
 import uuid
 
+import aiomqtt
+import mqtt5
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis
@@ -22,7 +24,7 @@ from microdcs.models.machinery_jobs import (
     LocalizedText,
     StoreAndStartCall,
 )
-from microdcs.mqtt import MQTTHandler
+from microdcs.mqtt import MQTTHandler, _topic_matches
 from microdcs.redis import (
     EquipmentListDAO,
     JobResponseDAO,
@@ -108,8 +110,8 @@ async def test_example_app_completes_sfc_recipe_via_greetings_response(
 
     mqtt_client = mqtt_handler._client()
     async with mqtt_client:
-        await mqtt_client.subscribe(job_response_topic)
-        await mqtt_client.subscribe(GREETINGS_COMMAND_TOPIC)
+        await mqtt_client.subscribe(aiomqtt.TopicFilter(job_response_topic))
+        await mqtt_client.subscribe(aiomqtt.TopicFilter(GREETINGS_COMMAND_TOPIC))
         await mqtt_handler._publish_message(mqtt_client, store_ce)
 
         job_response_received = False
@@ -117,20 +119,16 @@ async def test_example_app_completes_sfc_recipe_via_greetings_response(
         command_id: str | None = None
 
         async with asyncio.timeout(10.0):
-            async for message in mqtt_client.messages:
-                if str(message.topic) == job_response_topic:
+            async for message in mqtt_client.messages():
+                if not isinstance(message, mqtt5.PublishPacket):
+                    continue
+                if message.topic == job_response_topic:
                     job_response_received = True
-                elif message.topic.matches(GREETINGS_COMMAND_TOPIC):
-                    if message.properties and hasattr(
-                        message.properties, "ResponseTopic"
-                    ):
-                        response_topic = str(message.properties.ResponseTopic)  # type: ignore[arg-type]
-                    if message.properties and hasattr(
-                        message.properties, "CorrelationData"
-                    ):
-                        command_id = str(
-                            uuid.UUID(bytes=message.properties.CorrelationData)  # type: ignore[arg-type]
-                        )
+                elif _topic_matches(GREETINGS_COMMAND_TOPIC, message.topic):
+                    if message.response_topic is not None:
+                        response_topic = str(message.response_topic)
+                    if message.correlation_data is not None:
+                        command_id = str(uuid.UUID(bytes=message.correlation_data))
                 if response_topic and command_id:
                     break
 

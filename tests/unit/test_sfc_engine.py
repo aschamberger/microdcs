@@ -110,14 +110,6 @@ def _make_exec_state(
     current_step: str = "step_init",
     action_states: dict[str, SfcActionState] | None = None,
     action_command_ce_ids: dict[str, str] | None = None,
-) -> SfcExecutionState:
-    actions = {}
-def _make_exec_state(
-    job_id: str = "job-1",
-    scope: str = "scope-1",
-    current_step: str = "step_init",
-    action_states: dict[str, SfcActionState] | None = None,
-    action_command_ce_ids: dict[str, str] | None = None,
     action_type_ids: dict[str, str] | None = None,
 ) -> SfcExecutionState:
     actions = {}
@@ -790,9 +782,7 @@ class TestSfcEnginePullCompletion:
         self.mock_execution_dao.list_active_jobs_in_scope.return_value = {"job-1"}
         self.mock_execution_dao.retrieve.return_value = exec_state
 
-        await self.engine._handle_pull_event(
-            "scope-1", "com.example.unknown", "", ""
-        )
+        await self.engine._handle_pull_event("scope-1", "com.example.unknown", "", "")
 
         self.mock_execution_dao.cas_action_state.assert_not_awaited()
 
@@ -836,9 +826,7 @@ class TestSfcEnginePullCompletion:
         self.mock_workmaster_dao.retrieve.return_value = _make_work_master()
         self.mock_execution_dao.cas_advance_step = AsyncMock(return_value="OK")
 
-        await self.engine._handle_pull_event(
-            "scope-1", "com.example.pull", "", ""
-        )
+        await self.engine._handle_pull_event("scope-1", "com.example.pull", "", "")
 
         assert self.mock_execution_dao.cas_action_state.await_count == 2
 

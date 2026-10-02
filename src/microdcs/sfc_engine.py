@@ -84,9 +84,14 @@ class SfcEngine(AdditionalTask):
         self._workmaster_dao = WorkMasterDAO(self._redis_client, redis_key_schema)
 
         # State machine for OPC UA job transitions
-        from transitions.extensions import HierarchicalGraphMachine
+        from transitions.extensions import HierarchicalMachine
 
-        self._state_machine = HierarchicalGraphMachine(
+        # model_override=True means transitions only overrides methods that already
+        # exist on the model (the trigger/may_trigger stubs in JobStateMixin). For
+        # every other method it cannot bind, it emits a WARNING — ~70 per add_model
+        # call. Silence those warnings since this is intentional design.
+        logging.getLogger("transitions.core").setLevel(logging.ERROR)
+        self._state_machine = HierarchicalMachine(
             model=None,
             states=JobOrderControlExt.Config.opcua_state_machine_states,
             transitions=JobOrderControlExt.Config.opcua_state_machine_transitions,
@@ -150,7 +155,7 @@ class SfcEngine(AdditionalTask):
             return
 
         try:
-            results = await self._redis_client.xreadgroup(
+            results: Any = await self._redis_client.xreadgroup(
                 groupname=SFC_CONSUMER_GROUP,
                 consumername=self._consumer_name,
                 streams=streams,  # type: ignore[arg-type]

@@ -11,6 +11,19 @@ GITHUB_REPO = "https://github.com/aschamberger/microdcs"
 # available when MicroDCS is installed as a package (not just from a local clone).
 _INIT_DIR = Path(__file__).parent / "init"
 
+# uv sources/overrides are not inherited from microdcs, so the app must repeat them.
+PYPROJECT_UV_SECTIONS = """
+[tool.uv]
+override-dependencies = [
+    "opentelemetry-api==1.45.0",
+    "opentelemetry-instrumentation==0.66b0",
+    "opentelemetry-semantic-conventions==0.66b0",
+]
+
+[tool.uv.sources]
+opentelemetry-instrumentation-aiomqtt = { git = "https://github.com/aschamberger/opentelemetry-python-contrib", subdirectory = "instrumentation/opentelemetry-instrumentation-aiomqtt", rev = "c4f91c7ebea288253bc0fba3ec9f94b0bd50c0ca" }
+"""
+
 PYPROJECT_EXTRA_SECTIONS = """
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]
@@ -80,6 +93,13 @@ def _copy_file(src: Path, dest: Path) -> None:
     shutil.copy2(src, dest)
 
 
+def _append_uv_sections(pyproject: Path) -> None:
+    """Append uv source and override tables to pyproject.toml."""
+    content = pyproject.read_text()
+    if "[tool.uv]" not in content:
+        pyproject.write_text(content.rstrip("\n") + "\n" + PYPROJECT_UV_SECTIONS)
+
+
 def _append_pyproject_sections(pyproject: Path) -> None:
     """Append build-system and pytest sections to pyproject.toml."""
     content = pyproject.read_text()
@@ -106,6 +126,9 @@ def init(path: Path | None = None) -> None:
     _run(["uv", "python", "pin", "3.14"], cwd=path)
     _run(["uv", "init", "--python=>=3.14", "--bare"], cwd=path)
     _run(["uv", "sync"], cwd=path)
+
+    # Sources/overrides must exist before microdcs is resolved
+    _append_uv_sections(path / "pyproject.toml")
 
     # Add the microdcs package and dev dependencies
     _run(["uv", "add", f"git+{GITHUB_REPO}"], cwd=path)

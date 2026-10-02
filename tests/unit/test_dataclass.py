@@ -224,14 +224,14 @@ class TestDataClassMixinSerialization:
         assert data["_scope"] == "s1"
         assert data["_normalized_state"] == "Running"
 
-    def test_json_round_trip(self):
+    def test_json_round_trip(self, benchmark):
         model = EventModel()
-        restored = EventModel.from_json(model.to_jsonb())
+        restored = benchmark(lambda: EventModel.from_json(model.to_jsonb()))
         assert isinstance(restored, EventModel)
 
-    def test_msgpack_round_trip(self):
+    def test_msgpack_round_trip(self, benchmark):
         model = EventModel()
-        restored = EventModel.from_msgpack(model.to_msgpack())
+        restored = benchmark(lambda: EventModel.from_msgpack(model.to_msgpack()))
         assert isinstance(restored, EventModel)
 
 

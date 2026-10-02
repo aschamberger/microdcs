@@ -40,17 +40,15 @@ class TestSfcStep:
         assert restored.name == "Processing"
         assert restored.initial is False
 
-    def test_json_roundtrip(self):
+    def test_json_roundtrip(self, benchmark):
         step = SfcStep(name="Init", initial=True)
-        json_bytes = step.to_jsonb()
-        restored = SfcStep.from_json(json_bytes)
+        restored = benchmark(lambda: SfcStep.from_json(step.to_jsonb()))
         assert restored.name == "Init"
         assert restored.initial is True
 
-    def test_msgpack_roundtrip(self):
+    def test_msgpack_roundtrip(self, benchmark):
         step = SfcStep(name="Init", initial=True)
-        packed = step.to_msgpack()
-        restored = SfcStep.from_msgpack(packed)
+        restored = benchmark(lambda: SfcStep.from_msgpack(step.to_msgpack()))
         assert restored.name == "Init"
         assert restored.initial is True
 
@@ -152,7 +150,7 @@ class TestSfcRecipe:
             == "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/SfcRecipe/"
         )
 
-    def test_minimal_recipe_roundtrip(self):
+    def test_minimal_recipe_roundtrip(self, benchmark):
         recipe = SfcRecipe(
             steps=[
                 SfcStep(name="Init", initial=True),
@@ -172,15 +170,14 @@ class TestSfcRecipe:
                 ),
             ],
         )
-        json_bytes = recipe.to_jsonb()
-        restored = SfcRecipe.from_json(json_bytes)
+        restored = benchmark(lambda: SfcRecipe.from_json(recipe.to_jsonb()))
         assert len(restored.steps) == 2
         assert restored.steps[0].initial is True
         assert len(restored.transitions) == 1
         assert len(restored.actions) == 1
         assert restored.branches is None
 
-    def test_full_recipe_json_roundtrip(self):
+    def test_full_recipe_json_roundtrip(self, benchmark):
         """Roundtrip the example recipe from the sfc_engine.md docs."""
         recipe_json = orjson.dumps({
             "Steps": [
@@ -251,7 +248,7 @@ class TestSfcRecipe:
             ],
         })
 
-        recipe = SfcRecipe.from_json(recipe_json)
+        recipe = benchmark(SfcRecipe.from_json, recipe_json)
 
         # Steps
         assert len(recipe.steps) == 6
@@ -288,7 +285,7 @@ class TestSfcRecipe:
         assert recipe2.branches is not None
         assert len(recipe2.branches) == 1
 
-    def test_msgpack_roundtrip(self):
+    def test_msgpack_roundtrip(self, benchmark):
         recipe = SfcRecipe(
             steps=[SfcStep(name="S1", initial=True)],
             transitions=[SfcTransition(source="S1", target="S2", condition="done")],
@@ -303,8 +300,7 @@ class TestSfcRecipe:
                 )
             ],
         )
-        packed = recipe.to_msgpack()
-        restored = SfcRecipe.from_msgpack(packed)
+        restored = benchmark(lambda: SfcRecipe.from_msgpack(recipe.to_msgpack()))
         assert restored.steps[0].name == "S1"
         assert restored.actions[0].qualifier == SfcActionQualifier.PULSE
         assert restored.actions[0].interaction == SfcInteraction.PULL_EVENT

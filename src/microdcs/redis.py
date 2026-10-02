@@ -6,6 +6,7 @@ import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 import redis.asyncio as redis
 from redis.commands.search.field import TagField
@@ -529,14 +530,14 @@ class JobOrderAndStateDAO:
         """
         logger.debug(f"Retrieving Job Order with ID {job_order_id} from Redis")
         key = self.key_schema.joborder_key(job_order_id)
-        dataschema = await self.redis.json().get(key, "$._dataschema")  # type: ignore[reportGeneralTypeIssues]
+        dataschema = await _json_get(self.redis, key, "$._dataschema")
         if dataschema:
             logger.debug(
                 f"Found Job Order with ID {job_order_id} in Redis with dataschema {dataschema}"
             )
             # here we could check the dataschema to determine which class to deserialize into,
             # but since we only have one class for now, we will just deserialize into that class
-            data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+            data = await _json_get(self.redis, key, "$")
             if isinstance(data, list):
                 data = data[0]
             del data["_dataschema"]  # remove before deserialization
@@ -569,6 +570,18 @@ class JobOrderAndStateDAO:
         """
         key = self.key_schema.joborder_list_key(scope)
         return await self.redis.zrange(key, 0, -1)  # type: ignore[reportGeneralTypeIssues]
+
+
+async def _json_get(client: redis.Redis, key: str, path: str) -> Any:
+    """JSON.GET returning Any; redis-py's JsonType annotation is too narrow to use."""
+    return await client.json().get(key, path)  # type: ignore[reportGeneralTypeIssues]
+
+
+def _resp3_get(data: dict, key: str, default: Any = None) -> Any:
+    """Look up a RESP3 map key that redis-py may return as str or bytes."""
+    if key in data:
+        return data[key]
+    return data.get(key.encode(), default)
 
 
 class JobResponseDAO:
@@ -682,12 +695,12 @@ class JobResponseDAO:
         """
         logger.debug(f"Retrieving Job Response with ID {job_response_id} from Redis")
         key = self.key_schema.jobresponse_key(job_response_id)
-        dataschema = await self.redis.json().get(key, "$._dataschema")  # type: ignore[reportGeneralTypeIssues]
+        dataschema = await _json_get(self.redis, key, "$._dataschema")
         if dataschema:
             logger.debug(
                 f"Found Job Response with ID {job_response_id} in Redis with dataschema {dataschema}"
             )
-            data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+            data = await _json_get(self.redis, key, "$")
             if isinstance(data, list):
                 data = data[0]
             # Remove internal metadata fields before deserialization
@@ -713,7 +726,7 @@ class JobResponseDAO:
         query = Query(f"@job_order_id:{{{escaped}}}").no_content().paging(0, 1)
         results = await self.redis.ft(index_name).search(query)
         total = (
-            results.get(b"total_results", 0)
+            _resp3_get(results, "total_results", 0)
             if isinstance(results, dict)
             else results.total  # type: ignore[reportAttributeAccessIssue]
         )
@@ -721,7 +734,7 @@ class JobResponseDAO:
             return None
         key_prefix = self.key_schema.jobresponse_key("")
         if isinstance(results, dict):
-            doc_id = results[b"results"][0][b"id"]
+            doc_id = _resp3_get(_resp3_get(results, "results")[0], "id")
             if isinstance(doc_id, bytes):
                 doc_id = doc_id.decode()
         else:
@@ -754,9 +767,9 @@ class JobResponseDAO:
         key_prefix = self.key_schema.jobresponse_key("")
         responses: list[ISA95JobResponseDataType] = []
         if isinstance(results, dict):
-            docs = results.get(b"results", [])
+            docs = _resp3_get(results, "results", [])
             for doc in docs:
-                doc_id = doc[b"id"]
+                doc_id = _resp3_get(doc, "id")
                 if isinstance(doc_id, bytes):
                     doc_id = doc_id.decode()
                 job_response_id = doc_id.removeprefix(key_prefix)
@@ -847,12 +860,12 @@ class WorkMasterDAO:
         """
         logger.debug(f"Retrieving Work Master with ID {work_master_id} from Redis")
         key = self.key_schema.workmaster_key(work_master_id)
-        dataschema = await self.redis.json().get(key, "$._dataschema")  # type: ignore[reportGeneralTypeIssues]
+        dataschema = await _json_get(self.redis, key, "$._dataschema")
         if dataschema:
             logger.debug(
                 f"Found Work Master with ID {work_master_id} in Redis with dataschema {dataschema}"
             )
-            data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+            data = await _json_get(self.redis, key, "$")
             if isinstance(data, list):
                 data = data[0]
             del data["_dataschema"]  # remove before deserialization
@@ -1329,7 +1342,7 @@ return cjson.encode(new_active)
     async def retrieve(self, job_id: str) -> SfcExecutionState | None:
         """Load execution state for a job from Redis."""
         key = self.key_schema.sfc_execution_key(job_id)
-        data = await self.redis.json().get(key, "$")  # type: ignore[reportGeneralTypeIssues]
+        data = await _json_get(self.redis, key, "$")
         if not data:
             return None
         if isinstance(data, list):

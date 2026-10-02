@@ -32,15 +32,12 @@ class MQTTConfig:
     hostname: str = "localhost"
     port: int = 1883
     identifier: str = "app_client"
-    connect_timeout: int = 10
-    publish_timeout: int = 5
     sat_token_path: Path = Path("/var/run/secrets/tokens/broker-sat")
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
-    incoming_queue_size: int = 0
-    outgoing_queue_size: int = 0
     message_workers: int = 5
     dedupe_ttl_seconds: int = 60 * 10  # 10 minutes
     binding_outgoing_queue_size: int = 5
+    session_expiry_interval: int = 2**32 - 1  # never expire
 
 
 @dataclass
@@ -321,10 +318,6 @@ class RuntimeConfig:
         require_port(self.mqtt.port, "mqtt.port")
         require_port(self.msgpack.port, "msgpack.port")
 
-        require_positive(self.mqtt.connect_timeout, "mqtt.connect_timeout")
-        require_positive(self.mqtt.publish_timeout, "mqtt.publish_timeout")
-        require_non_negative(self.mqtt.incoming_queue_size, "mqtt.incoming_queue_size")
-        require_non_negative(self.mqtt.outgoing_queue_size, "mqtt.outgoing_queue_size")
         require_positive(self.mqtt.message_workers, "mqtt.message_workers")
         require_non_negative(self.mqtt.dedupe_ttl_seconds, "mqtt.dedupe_ttl_seconds")
         require_non_negative(

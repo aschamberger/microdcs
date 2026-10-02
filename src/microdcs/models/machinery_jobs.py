@@ -22,7 +22,7 @@ class AbortResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Abort.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/AbortResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -34,7 +34,7 @@ class LocalizedText(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        aliases: dict[str, str] = {
+        aliases = {
             "locale": "Locale",
             "text": "Text",
         }
@@ -61,7 +61,7 @@ class AbortCall(DataClassResponseMixin["AbortResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Abort.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/AbortCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -82,7 +82,7 @@ class EUInformation(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.BaseModel.EUInformation.v1"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/EUInformation"
-        aliases: dict[str, str] = {
+        aliases = {
             "namespace_uri": "NamespaceUri",
             "unit_id": "UnitId",
             "display_name": "DisplayName",
@@ -121,7 +121,7 @@ class OutputInformationDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.Machinery.Jobs.OutputInformationDataType.v1"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/OutputInformationDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "item_number": "ItemNumber",
             "output_info": "OutputInfo",
             "order_number": "OrderNumber",
@@ -155,7 +155,7 @@ class BOMComponentInformationDataType(DataClassMixin):
             "org.opcfoundation.Machinery.Jobs.BOMComponentInformationDataType.v1"
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/BOMComponentInformationDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "identification": "Identification",
             "quantity": "Quantity",
             "engineering_units": "EngineeringUnits",
@@ -181,7 +181,7 @@ class BOMInformationDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.Machinery.Jobs.BOMInformationDataType.v1"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/BOMInformationDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "identification": "Identification",
             "component_information": "ComponentInformation",
         }
@@ -203,7 +203,7 @@ class CancelResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Cancel.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/CancelResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -229,7 +229,7 @@ class CancelCall(DataClassResponseMixin["CancelResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Cancel.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/CancelCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -251,7 +251,7 @@ class ClearResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Clear.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ClearResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -277,7 +277,7 @@ class ClearCall(DataClassResponseMixin["ClearResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Clear.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ClearCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -312,7 +312,7 @@ class ISA95PropertyDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95PropertyDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95PropertyDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "id": "ID",
             "value": "Value",
             "description": "Description",
@@ -357,7 +357,7 @@ class ISA95EquipmentDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95EquipmentDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95EquipmentDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "id": "ID",
             "description": "Description",
             "equipment_use": "EquipmentUse",
@@ -415,7 +415,7 @@ class ISA95MaterialDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95MaterialDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95MaterialDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "material_class_id": "MaterialClassID",
             "material_definition_id": "MaterialDefinitionID",
             "material_lot_id": "MaterialLotID",
@@ -457,7 +457,7 @@ class ISA95ParameterDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95ParameterDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95ParameterDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "id": "ID",
             "value": "Value",
             "description": "Description",
@@ -502,7 +502,7 @@ class ISA95PersonnelDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95PersonnelDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95PersonnelDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "id": "ID",
             "description": "Description",
             "personnel_use": "PersonnelUse",
@@ -550,7 +550,7 @@ class ISA95PhysicalAssetDataType(DataClassMixin):
             "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95PhysicalAssetDataType.v2"
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95PhysicalAssetDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "id": "ID",
             "description": "Description",
             "physical_asset_use": "PhysicalAssetUse",
@@ -586,7 +586,7 @@ class ISA95WorkMasterDataType(DataClassMixin):
             "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95WorkMasterDataType.v2"
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95WorkMasterDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "id": "ID",
             "description": "Description",
             "parameters": "Parameters",
@@ -649,7 +649,7 @@ class ISA95JobOrderDataType(JobStateMixin, DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobOrderDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95JobOrderDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "description": "Description",
             "work_master_id": "WorkMasterID",
@@ -679,7 +679,7 @@ class RelativePathElement(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.BaseModel.RelativePathElement.v1"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/RelativePathElement"
-        aliases: dict[str, str] = {
+        aliases = {
             "reference_type_id": "ReferenceTypeId",
             "is_inverse": "IsInverse",
             "include_subtypes": "IncludeSubtypes",
@@ -699,7 +699,7 @@ class RelativePath(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.BaseModel.RelativePath.v1"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/BaseModel/v1.05.06/#/$defs/RelativePath"
-        aliases: dict[str, str] = {
+        aliases = {
             "elements": "Elements",
         }
 
@@ -728,7 +728,7 @@ class ISA95StateDataType(DataClassMixin):
     class Config(DataClassConfig):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95StateDataType.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95StateDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "browse_path": "BrowsePath",
             "state_text": "StateText",
             "state_number": "StateNumber",
@@ -757,7 +757,7 @@ class ISA95JobOrderAndStateDataType(DataClassMixin):
             "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobOrderAndStateDataType.v2"
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95JobOrderAndStateDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order": "JobOrder",
             "state": "State",
         }
@@ -821,7 +821,7 @@ class ISA95JobResponseDataType(DataClassMixin):
             "org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobResponseDataType.v2"
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95JobResponseDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_response_id": "JobResponseID",
             "description": "Description",
             "job_order_id": "JobOrderID",
@@ -853,7 +853,7 @@ class ISA95JobOrderStatusEventType(DataClassMixin):
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ISA95JobOrderStatusEventType"
         opcua_type: str = "Event"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order": "JobOrder",
             "job_response": "JobResponse",
             "job_state": "JobState",
@@ -1124,7 +1124,7 @@ class JobOrderControl(DataClassMixin):
             "Start": "ISA95JobOrderStatusEventType",
             "Pause": "ISA95JobOrderStatusEventType",
         }
-        aliases: dict[str, str] = {
+        aliases = {
             "current_state": "CurrentState",
             "last_transition": "LastTransition",
             "available_states": "AvailableStates",
@@ -1154,7 +1154,7 @@ class JobOrderResults(DataClassMixin):
         type_id: str = "org.opcfoundation.Machinery.Jobs.JobOrderResults.v1"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/JobOrderResults"
         opcua_type: str = "DataSet"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_response_list": "JobOrderResponseList",
         }
 
@@ -1204,7 +1204,7 @@ class OutputPerformanceInfoDataType(DataClassMixin):
             "org.opcfoundation.Machinery.Jobs.OutputPerformanceInfoDataType.v1"
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/OutputPerformanceInfoDataType"
-        aliases: dict[str, str] = {
+        aliases = {
             "identification": "Identification",
             "start_time": "StartTime",
             "end_time": "EndTime",
@@ -1228,7 +1228,7 @@ class PauseResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Pause.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/PauseResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1254,7 +1254,7 @@ class PauseCall(DataClassResponseMixin["PauseResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Pause.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/PauseCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -1293,7 +1293,7 @@ class RequestJobResponseByJobOrderIDResponse(DataClassMixin):
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/RequestJobResponseByJobOrderIDResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_response": "JobResponse",
             "return_status": "ReturnStatus",
         }
@@ -1320,7 +1320,7 @@ class RequestJobResponseByJobOrderIDCall(
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/RequestJobResponseByJobOrderIDCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
         }
 
@@ -1347,7 +1347,7 @@ class RequestJobResponseByJobOrderStateResponse(DataClassMixin):
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/RequestJobResponseByJobOrderStateResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_responses": "JobResponses",
             "return_status": "ReturnStatus",
         }
@@ -1374,7 +1374,7 @@ class RequestJobResponseByJobOrderStateCall(
         )
         type_schema: str = "https://aschamberger.github.com/schemas/UA/Machinery/Jobs/v1.0.1/#/$defs/RequestJobResponseByJobOrderStateCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_state": "JobOrderState",
         }
 
@@ -1395,7 +1395,7 @@ class ResumeResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Resume.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ResumeResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1421,7 +1421,7 @@ class ResumeCall(DataClassResponseMixin["ResumeResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Resume.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/ResumeCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -1443,7 +1443,7 @@ class RevokeStartResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.RevokeStart.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/RevokeStartResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1469,7 +1469,7 @@ class RevokeStartCall(DataClassResponseMixin["RevokeStartResponse"], DataClassMi
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.RevokeStart.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/RevokeStartCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -1491,7 +1491,7 @@ class StartResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Start.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StartResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1517,7 +1517,7 @@ class StartCall(DataClassResponseMixin["StartResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Start.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StartCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -1539,7 +1539,7 @@ class StopResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Stop.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StopResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1565,7 +1565,7 @@ class StopCall(DataClassResponseMixin["StopResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Stop.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StopCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order_id": "JobOrderID",
             "comment": "Comment",
         }
@@ -1587,7 +1587,7 @@ class StoreAndStartResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.StoreAndStart.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StoreAndStartResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1615,7 +1615,7 @@ class StoreAndStartCall(
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.StoreAndStart.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StoreAndStartCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order": "JobOrder",
             "comment": "Comment",
         }
@@ -1637,7 +1637,7 @@ class StoreResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Store.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StoreResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1663,7 +1663,7 @@ class StoreCall(DataClassResponseMixin["StoreResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Store.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/StoreCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order": "JobOrder",
             "comment": "Comment",
         }
@@ -1685,7 +1685,7 @@ class UpdateResponse(DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Update.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/UpdateResponse"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "return_status": "ReturnStatus",
         }
 
@@ -1711,7 +1711,7 @@ class UpdateCall(DataClassResponseMixin["UpdateResponse"], DataClassMixin):
         type_id: str = "org.opcfoundation.ISA95-JOBCONTROL_V2.Update.v2"
         type_schema: str = "https://aschamberger.github.com/schemas/UA/ISA95-JOBCONTROL_V2/v2.0.0/#/$defs/UpdateCall"
         opcua_type: str = "Method"
-        aliases: dict[str, str] = {
+        aliases = {
             "job_order": "JobOrder",
             "comment": "Comment",
         }
@@ -1726,7 +1726,7 @@ class Meta(DataClassMixin):
 
     # mashumaro config class
     class Config(DataClassConfig):
-        aliases: dict[str, str] = {
+        aliases = {
             "model_uri": "modelUri",
             "model_version": "modelVersion",
             "model_date": "modelDate",

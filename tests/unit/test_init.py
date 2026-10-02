@@ -34,12 +34,8 @@ class TestMQTTConfig:
         assert cfg.hostname == "localhost"
         assert cfg.port == 1883
         assert cfg.identifier == "app_client"
-        assert cfg.connect_timeout == 10
-        assert cfg.publish_timeout == 5
         assert cfg.sat_token_path == Path("/var/run/secrets/tokens/broker-sat")
         assert cfg.tls_cert_path == Path("/var/run/certs/ca.crt")
-        assert cfg.incoming_queue_size == 0
-        assert cfg.outgoing_queue_size == 0
         assert cfg.message_workers == 5
         assert cfg.dedupe_ttl_seconds == 600
 

@@ -1,7 +1,9 @@
 import asyncio
+import uuid
 from typing import Any
 
 import aiomqtt
+import mqtt5
 import orjson
 import pytest
 import pytest_asyncio
@@ -26,7 +28,7 @@ from microdcs.models.machinery_jobs import (
     StoreResponse,
 )
 from microdcs.models.machinery_jobs_ext import MethodReturnStatus
-from microdcs.mqtt import MQTTHandler, MQTTPublisher
+from microdcs.mqtt import MQTTHandler, MQTTPublisher, create_mqtt_client
 from microdcs.processors.greetings import GreetingsCloudEventProcessor
 from microdcs.processors.machinery_jobs import MachineryJobsCloudEventProcessor
 from microdcs.redis import RedisKeySchema
@@ -107,25 +109,35 @@ async def _publish_and_collect_responses(
     *,
     expected_responses: int = 1,
     timeout: float = RESPONSE_TIMEOUT,
-) -> list[aiomqtt.Message]:
+) -> list[mqtt5.PublishPacket]:
     """Subscribe to the response topic, publish *cloudevent*, and collect responses.
 
-    Returns the list of :class:`aiomqtt.Message` objects received on the
+    Returns the list of :class:`mqtt5.PublishPacket` objects received on the
     response topic within *timeout* seconds.  The helper waits until
     *expected_responses* messages arrive or the timeout expires — whichever
     comes first.
     """
     response_topic = cloudevent.transportmetadata["mqtt_response_topic"]  # type: ignore[index]
-    mqtt_client = mqtt_handler._client()
-    collected: list[aiomqtt.Message] = []
+    # Use a clean-session, non-reconnecting client so that all MQTTConfig
+    # settings (TLS, SAT-token auth) are applied while avoiding persistent
+    # session and reconnect machinery intended only for long-lived handlers.
+    mqtt_client = create_mqtt_client(
+        MQTT_CONFIG,
+        client_identifier=f"test-resp-{uuid.uuid4().hex[:8]}",
+        clean_start=True,
+        reconnect=False,
+    )
+    collected: list[mqtt5.PublishPacket] = []
 
     async with mqtt_client:
-        await mqtt_client.subscribe(response_topic)
+        await mqtt_client.subscribe(aiomqtt.TopicFilter(response_topic))
         await mqtt_handler._publish_message(mqtt_client, cloudevent)
 
         try:
             async with asyncio.timeout(timeout):
-                async for message in mqtt_client.messages:
+                async for message in mqtt_client.messages():
+                    if isinstance(message, aiomqtt.PubRelPacket):
+                        continue
                     collected.append(message)
                     if len(collected) >= expected_responses:
                         break
@@ -135,12 +147,12 @@ async def _publish_and_collect_responses(
     return collected
 
 
-def _assert_type_id(message: aiomqtt.Message, expected_type: str) -> None:
+def _assert_type_id(message: mqtt5.PublishPacket, expected_type: str) -> None:
     """Assert that an MQTT v5 message carries the expected CloudEvent ``type``
-    in its UserProperty list."""
+    in its user_properties list."""
     user_props = {}
-    if message.properties and hasattr(message.properties, "UserProperty"):
-        user_props = dict(message.properties.UserProperty)  # type: ignore[arg-type]
+    if message.user_properties is not None:
+        user_props = dict(message.user_properties)
     assert user_props.get("type") == expected_type, (
         f"Expected CE type '{expected_type}', got '{user_props.get('type')}'"
     )
@@ -479,33 +491,30 @@ class TestMQTTPublisherIntegration:
 
         # Publish a retained message
         publisher = MQTTPublisher(MQTTConfig())
-        publisher._client = aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-pub-retained",
+        publisher._client = create_mqtt_client(
+            MQTT_CONFIG, "test-pub-retained", clean_start=True, reconnect=False
         )
         async with publisher._client:
             await publisher.publish_retained(topic, payload, ttl=60)
 
         # Reconnect as a new client and verify the retained message is delivered
-        async with aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-sub-retained",
+        async with create_mqtt_client(
+            MQTT_CONFIG, "test-sub-retained", clean_start=True, reconnect=False
         ) as sub:
-            await sub.subscribe(topic, qos=1)
+            await sub.subscribe(
+                aiomqtt.TopicFilter(topic, max_qos=aiomqtt.QoS.AT_LEAST_ONCE)
+            )
             msg = await asyncio.wait_for(
-                sub.messages.__anext__(),
+                sub.messages().__anext__(),
                 timeout=5.0,  # type: ignore[reportAttributeAccessIssue]
             )
+            assert isinstance(msg, mqtt5.PublishPacket)
             assert msg.payload == payload
             assert msg.retain is True
 
         # Clean up retained topic
-        publisher._client = aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-cleanup-retained",
+        publisher._client = create_mqtt_client(
+            MQTT_CONFIG, "test-cleanup-retained", clean_start=True, reconnect=False
         )
         async with publisher._client:
             await publisher.delete_retained(topic)
@@ -517,33 +526,29 @@ class TestMQTTPublisherIntegration:
 
         # Publish retained
         publisher = MQTTPublisher(MQTTConfig())
-        publisher._client = aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-pub-del",
+        publisher._client = create_mqtt_client(
+            MQTT_CONFIG, "test-pub-del", clean_start=True, reconnect=False
         )
         async with publisher._client:
             await publisher.publish_retained(topic, payload, ttl=60)
 
         # Delete retained
-        publisher._client = aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-del",
+        publisher._client = create_mqtt_client(
+            MQTT_CONFIG, "test-del", clean_start=True, reconnect=False
         )
         async with publisher._client:
             await publisher.delete_retained(topic)
 
         # Reconnect and verify no retained message is delivered
-        async with aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-sub-del",
+        async with create_mqtt_client(
+            MQTT_CONFIG, "test-sub-del", clean_start=True, reconnect=False
         ) as sub:
-            await sub.subscribe(topic, qos=1)
+            await sub.subscribe(
+                aiomqtt.TopicFilter(topic, max_qos=aiomqtt.QoS.AT_LEAST_ONCE)
+            )
             with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(
-                    sub.messages.__anext__(),
+                    sub.messages().__anext__(),
                     timeout=2.0,  # type: ignore[reportAttributeAccessIssue]
                 )
 
@@ -553,31 +558,28 @@ class TestMQTTPublisherIntegration:
         payload = '{"message": "hello"}'
 
         publisher = MQTTPublisher(MQTTConfig())
-        publisher._client = aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-pub-str",
+        publisher._client = create_mqtt_client(
+            MQTT_CONFIG, "test-pub-str", clean_start=True, reconnect=False
         )
         async with publisher._client:
             await publisher.publish_retained(topic, payload, ttl=60)
 
-        async with aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-sub-str",
+        async with create_mqtt_client(
+            MQTT_CONFIG, "test-sub-str", clean_start=True, reconnect=False
         ) as sub:
-            await sub.subscribe(topic, qos=1)
+            await sub.subscribe(
+                aiomqtt.TopicFilter(topic, max_qos=aiomqtt.QoS.AT_LEAST_ONCE)
+            )
             msg = await asyncio.wait_for(
-                sub.messages.__anext__(),
+                sub.messages().__anext__(),
                 timeout=5.0,  # type: ignore[reportAttributeAccessIssue]
             )
+            assert isinstance(msg, mqtt5.PublishPacket)
             assert msg.payload == payload.encode()
 
         # Cleanup
-        publisher._client = aiomqtt.Client(
-            hostname=MQTT_CONFIG.hostname,
-            port=MQTT_CONFIG.port,
-            identifier="test-cleanup-str",
+        publisher._client = create_mqtt_client(
+            MQTT_CONFIG, "test-cleanup-str", clean_start=True, reconnect=False
         )
         async with publisher._client:
             await publisher.delete_retained(topic)

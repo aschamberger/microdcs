@@ -40,26 +40,112 @@
             "problemMatcher": []
         },
         {
-            "label": "Run App (instrumented)",
+            "label": "Run App (instrumented/console exporter)",
             "type": "shell",
-            "command": "${workspaceFolder}${/}.venv${/}Scripts${/}opentelemetry-instrument ${command:python.interpreterPath} -m app 2>&1",
+            "command": "${workspaceFolder}${/}.venv${/}bin${/}opentelemetry-instrument ${workspaceFolder}${/}.venv${/}bin${/}python -m app 2>&1",
             "options": {
                 "env": {
+                    "APP_REDIS_HOSTNAME": "localhost",
+                    "APP_REDIS_PORT": "6379",
+                    "APP_MQTT_HOSTNAME": "localhost",
+                    "APP_MQTT_PORT": "1883",
+                    "APP_MQTT_IDENTIFIER": "app",
+                    "APP_MQTT_CONNECT_TIMEOUT": "10",
+                    "APP_MQTT_PUBLISH_TIMEOUT": "5",
+                    //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
+                    //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
+                    "APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL": "10",
+                    "APP_PROCESSING_SHARED_SUBSCRIPTION_NAME": "appsub",
+                    "APP_PROCESSING_TOPIC_PREFIXES": "greetings:app/greetings,machinery-jobs:app/jobs",
+                    "APP_PROCESSING_TOPIC_WILDCARD_LEVELS": "greetings:0,machinery-jobs:3",
+                    "APP_PROCESSING_RESPONSE_TOPICS": "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses",
+                    "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/microdcs/app",
+                    "APP_LOGGING_LEVEL": "DEBUG",
+                    "APP_MSGPACK_HOSTNAME": "localhost",
+                    "APP_MSGPACK_PORT": "8888",
+                    "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml",
                     "APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true",
                     "OTEL_SERVICE_NAME": "microdcs.app",
-                    "OTEL_TRACES_EXPORTER": "console",
-                    "OTEL_METRICS_EXPORTER": "console",
-                    "OTEL_LOGS_EXPORTER": "console",
+                    "OTEL_TRACES_EXPORTER": "console", // console, otlp, none
+                    "OTEL_METRICS_EXPORTER": "console", // console, otlp, none
+                    "OTEL_LOGS_EXPORTER": "console", // console, otlp, none
+                    // "OTEL_EXPORTER_OTLP_ENDPOINT": "0.0.0.0:4318",
                     "OTEL_PYTHON_LOG_CORRELATION": "true",
+                    // "OTEL_PYTHON_LOG_FORMAT": "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s resource.service.name=%(otelServiceName)s trace_sampled=%(otelTraceSampled)s] - %(message)s",
                     "OTEL_PYTHON_LOG_LEVEL": "debug",
                     "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED": "true",
-                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading"
+                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading",
+                    "OTEL_SEMCONV_STABILITY_OPT_IN": "http,database,messaging"
                 }
             },
             "group": "test",
             "dependsOn": ["Start local MQTT broker", "Start local redis server"],
             "dependsOrder": "parallel",
             "problemMatcher": []
+        },
+        {
+            "label": "Run App (instrumented/Aspire dashboard)",
+            "type": "shell",
+            "command": "${workspaceFolder}${/}.venv${/}bin${/}opentelemetry-instrument ${workspaceFolder}${/}.venv${/}bin${/}python -m app 2>&1",
+            "options": {
+                "env": {
+                    "APP_REDIS_HOSTNAME": "localhost",
+                    "APP_REDIS_PORT": "6379",
+                    "APP_MQTT_HOSTNAME": "localhost",
+                    "APP_MQTT_PORT": "1883",
+                    "APP_MQTT_IDENTIFIER": "app",
+                    "APP_MQTT_CONNECT_TIMEOUT": "10",
+                    "APP_MQTT_PUBLISH_TIMEOUT": "5",
+                    //"APP_MQTT_SAT_TOKEN_PATH": "/var/run/secrets/tokens/broker-sat",
+                    //"APP_MQTT_TLS_CERT_PATH": "/var/run/certs/ca.crt",
+                    "APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL": "10",
+                    "APP_PROCESSING_SHARED_SUBSCRIPTION_NAME": "appsub",
+                    "APP_PROCESSING_TOPIC_PREFIXES": "greetings:app/greetings,machinery-jobs:app/jobs",
+                    "APP_PROCESSING_TOPIC_WILDCARD_LEVELS": "greetings:0,machinery-jobs:3",
+                    "APP_PROCESSING_RESPONSE_TOPICS": "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses",
+                    "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/microdcs/app",
+                    "APP_LOGGING_LEVEL": "DEBUG",
+                    "APP_MSGPACK_HOSTNAME": "localhost",
+                    "APP_MSGPACK_PORT": "8888",
+                    "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml",
+                    "APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED": "true",
+                    "OTEL_SERVICE_NAME": "microdcs.app",
+                    "OTEL_TRACES_EXPORTER": "otlp",
+                    "OTEL_METRICS_EXPORTER": "otlp",
+                    "OTEL_LOGS_EXPORTER": "otlp",
+                    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                    "OTEL_PYTHON_LOG_CORRELATION": "true",
+                    "OTEL_PYTHON_LOG_LEVEL": "debug",
+                    "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED": "true",
+                    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "system_metrics,threading",
+                    "OTEL_SEMCONV_STABILITY_OPT_IN": "http,database,messaging"
+                }
+            },
+            "group": "test",
+            "dependsOn": ["Start local MQTT broker", "Start local redis server", "Start Aspire dashboard"],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+        {
+            "label": "Start Aspire dashboard",
+            "type": "shell",
+            "command": "docker start aspire-dashboard 2>/dev/null || docker run --rm -p 18888:18888 -p 4317:18889 -p 4318:18890 -d --name aspire-dashboard mcr.microsoft.com/dotnet/aspire-dashboard:latest",
+            "group": "test",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": ".",
+                    "file": 1,
+                    "location": 2,
+                    "message": 3
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".",
+                    "endsPattern": "."
+                }
+            }
         },
         {
             "label": "Start local MQTT broker",
@@ -116,9 +202,44 @@
             "problemMatcher": []
         },
         {
+            "label": "Line count stats (microdcs,app)",
+            "type": "shell",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],tests,deploy,schemas,scripts",
+            "windows": {
+                "options": {
+                    "env": {
+                        "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
+                    }
+                }
+            },
+            "group": "none",
+            "problemMatcher": []
+        },
+        {
+            "label": "Line count stats (other)",
+            "type": "shell",
+            "command": "uvx pygount --format=summary --generated='[regex][...](?i).*generated' --folders-to-skip=[...],src,app",
+            "windows": {
+                "options": {
+                    "env": {
+                        "GIT_PYTHON_GIT_EXECUTABLE": "C:\\Program Files\\PortableGit\\cmd\\git.exe"
+                    }
+                }
+            },
+            "group": "none",
+            "problemMatcher": []
+        },
+        {
             "label": "Run test coverage",
             "type": "shell",
-            "command": "${command:python.interpreterPath} -m pytest --cov --cov-report=term-missing tests/",
+            "command": "${command:python.interpreterPath} -m pytest --cov=microdcs --cov-report=term-missing tests/",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Remove all containers",
+            "type": "shell",
+            "command": "docker rm -f $(docker ps -aq)",
             "group": "test",
             "problemMatcher": []
         }
