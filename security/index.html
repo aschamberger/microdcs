@@ -980,6 +980,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#iec-62443-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        IEC 62443 Alignment
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1130,6 +1141,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Known Gaps
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iec-62443-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        IEC 62443 Alignment
       </span>
     </span>
   </a>
@@ -1395,6 +1417,57 @@ restrict access with a network policy, and keep the set of registered methods mi
 <tr>
 <td>No per-method authorization on MessagePack-RPC</td>
 <td>Keep it pod-local or require client certificates</td>
+</tr>
+</tbody>
+</table>
+<h2 id="iec-62443-alignment">IEC 62443 Alignment</h2>
+<p>This table maps the framework to the seven foundational requirements (FR) of IEC 62443-3-3 as an
+aid for security assessments. It is not a certification and not a compliance claim: IEC 62443
+applies to the whole system and its operating processes, and most of the controls below depend on
+how you deploy MicroDCS.</p>
+<table>
+<thead>
+<tr>
+<th>FR</th>
+<th>What MicroDCS provides</th>
+<th>What the operator must provide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Identification and authentication control</td>
+<td>MQTT: <code>K8S-SAT</code>, username and password, client certificates. MessagePack-RPC: optional client certificates. Redis: ACL user, password, TLS</td>
+<td>One identity per principal, secret storage and rotation, broker and Redis accounts</td>
+</tr>
+<tr>
+<td>2. Use control</td>
+<td>Subject must match the topic scope; per-processor binding directions limit which intents are subscribed and published</td>
+<td>Broker topic ACLs per principal and scope. There is no per-method authorization on MessagePack-RPC</td>
+</tr>
+<tr>
+<td>3. System integrity</td>
+<td>TLS with <code>require_tls</code>, locked and audited dependencies in CI, non-root read-only container, at-least-once processing with deduplication</td>
+<td>Image provenance and signing, a software bill of materials, patching. Two dependencies are pinned to git commits and are not covered by <code>pip-audit</code></td>
+</tr>
+<tr>
+<td>4. Data confidentiality</td>
+<td>TLS in transit, payload content kept out of logs, passwords kept out of logged configuration</td>
+<td>Encryption of Redis data at rest and of backups, broker and Redis TLS certificates</td>
+</tr>
+<tr>
+<td>5. Restricted data flow</td>
+<td>Deny-ingress <code>NetworkPolicy</code>, localhost-only MessagePack-RPC by default, topic structure per processor</td>
+<td>Zone and conduit design, an egress policy for Redis, the broker and the telemetry endpoint</td>
+</tr>
+<tr>
+<td>6. Timely response to events</td>
+<td>OpenTelemetry traces, metrics and logs; warnings for dropped messages and for credentials sent without TLS</td>
+<td>A security event log and alerting. The framework does not record authentication failures itself; use the broker's audit log</td>
+</tr>
+<tr>
+<td>7. Resource availability</td>
+<td>Bounded queues with explicit backpressure errors, Redis timeouts, fail-fast restart, <a href="../operations/#recovery-objectives">recovery objectives</a></td>
+<td>Capacity planning, Redis persistence and backup, broker limits such as the maximum packet size</td>
 </tr>
 </tbody>
 </table>

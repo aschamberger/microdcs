@@ -614,6 +614,67 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#southbound-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Southbound Connectivity
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Southbound Connectivity">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Context
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Decision
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Consequences
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alternatives-considered" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Alternatives considered
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1062,6 +1123,67 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#southbound-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Southbound Connectivity
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Southbound Connectivity">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Context
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Decision
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Consequences
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alternatives-considered" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Alternatives considered
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1183,6 +1305,52 @@
 <li><strong><code>pull_event</code></strong>: any live instance that receives the CloudEvent writes to the Redis stream, and <code>XAUTOCLAIM</code> ensures the work item survives pod restarts. The action is completed by whichever engine instance processes the stream entry. No event is permanently lost.</li>
 </ul>
 <p>See <a href="../sfc_engine/#sfc-engine-architecture">SFC Engine Architecture</a> for the full multi-instance safety matrix.</p>
+<h2 id="southbound-connectivity">Southbound Connectivity</h2>
+<h3 id="context">Context</h3>
+<p>MicroDCS orchestrates equipment from the SFC engine and the southbound processors. Plants run many
+industrial protocols (OPC UA client/server, Modbus, S7, vendor APIs). The framework is built on
+MQTT v5 and CloudEvents, and uses OPC UA information models as payload definitions, not as a
+transport (<a href="../concepts/#opc-ua-and-companion-specifications">Concepts</a>).</p>
+<h3 id="decision">Decision</h3>
+<p>MicroDCS does not contain southbound industrial protocol clients. Equipment is reached over the two
+transports the framework already has, with the protocol translation outside the framework core:</p>
+<ol>
+<li><strong>A gateway or the equipment publishes CloudEvents on MQTT.</strong> A southbound processor subscribes to
+   <code>data</code>, <code>events</code> and <code>metadata</code> and publishes <code>commands</code>
+   (<a href="../operations/#mqtt-topic-structure">topic structure</a>). Bridges such as OPC UA to MQTT gateways
+   or edge platforms own the OT protocol.</li>
+<li><strong>A sidecar talks MessagePack-RPC.</strong> A container in the same pod connects to the MessagePack-RPC
+   handler on <code>localhost</code> and exchanges CloudEvents
+   (<a href="../operations/#deployment-model">deployment model</a>).</li>
+<li><strong>A southbound processor translates in-process.</strong> Equipment-specific CloudEvent shaping and
+   protocol translation belong in a processor (<a href="#three-layer-architecture">three-layer architecture</a>).
+   A processor may use a protocol library, but then it is application code, not part of the
+   framework.</li>
+</ol>
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li>The framework stays protocol-agnostic and its dependencies stay small. Protocol licences, security
+  patching and certification of the OT stack remain with the gateway.</li>
+<li>The SFC engine runs on every replica (<a href="#multi-instance-model">multi-instance model</a>). A direct
+  protocol connection inside each replica would make several replicas compete for the same equipment
+  session, which is another reason to keep it behind a gateway that owns the connection.</li>
+<li>Commands are delivered at least once, so the gateway or equipment must follow the
+  <a href="../sfc_engine/#idempotency-contract">idempotency contract</a>: deduplicate on <code>mdcsactionkey</code>, answer
+  every delivery with <code>causationid</code> set to the delivery's <code>id</code>, and respond before the message
+  expires.</li>
+<li>A gateway is one more component to deploy, secure and monitor. Its identity and topic permissions
+  are covered by the <a href="../security/#topic-acl-model">authorization model</a>.</li>
+<li>The system has no direct visibility of the equipment connection. Equipment availability has to be
+  reported by the gateway as <code>events</code> or <code>data</code>.</li>
+</ul>
+<h3 id="alternatives-considered">Alternatives considered</h3>
+<ul>
+<li><strong>An OPC UA client inside the framework.</strong> Rejected because of the replica issue above and because
+  it ties the framework to one protocol and its security model.</li>
+<li><strong>Using OPC UA PubSub or client/server as the main transport.</strong> Rejected in favour of MQTT with
+  CloudEvents (<a href="#design-goals">design goals</a>), which fits the cloud-native deployment and
+  shared-subscription scaling.</li>
+</ul>
 
 
 

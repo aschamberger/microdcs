@@ -876,6 +876,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Redis Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recovery-objectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recovery Objectives
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1370,6 +1387,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Redis Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recovery-objectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recovery Objectives
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1824,6 +1858,60 @@ Incoming MQTT messages that were not yet acknowledged are redelivered by the bro
 the persistent session is kept. A message that was being processed at the crash is claimed
 again once its dedupe lease expires (<code>APP_MQTT_DEDUPE_LEASE_SECONDS</code>), so it is processed at
 least once. There is no in-process Redis reconnection.</p>
+<h3 id="recovery-objectives">Recovery Objectives</h3>
+<p>These are design characteristics derived from the implementation and its tests. They are not
+measured service levels, so measure them in your own deployment before committing to a target.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Data loss (recovery point)</th>
+<th>Time to recover</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Redis process crash, AOF <code>everysec</code> on a persistent volume</td>
+<td>About 1 second of writes at most</td>
+<td>Redis restart time, then the replicas restart (see below)</td>
+</tr>
+<tr>
+<td>Redis process crash, default configuration (snapshots only)</td>
+<td>Everything since the last snapshot, up to an hour for a single change</td>
+<td>As above</td>
+</tr>
+<tr>
+<td>Redis graceful stop and start</td>
+<td>None</td>
+<td>As above</td>
+</tr>
+<tr>
+<td>Redis failover to an asynchronous replica</td>
+<td>The last writes not yet replicated</td>
+<td>Failover time, then the replicas restart</td>
+</tr>
+<tr>
+<td>One processor pod dies</td>
+<td>None: unacknowledged MQTT messages are redelivered and work items are re-claimed</td>
+<td><code>XAUTOCLAIM</code> re-delivers its SFC work after 30 seconds idle; other replicas keep serving</td>
+</tr>
+<tr>
+<td>Publisher pod dies</td>
+<td>None</td>
+<td>Pod restart (10 to 30 seconds); retained topics bridge the gap</td>
+</tr>
+<tr>
+<td>Push-command response delivered to another replica</td>
+<td>None</td>
+<td>Until the next restart re-dispatches the command (see <a href="../sfc_engine/#multi-instance-safety-summary">SFC Engine</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>After a Redis outage every replica exits and Kubernetes restarts it with growing back-off, so the
+recovery time is the Redis downtime plus pod startup plus the current back-off delay (Kubernetes
+caps it at five minutes). Messages are delivered at least once: a message in flight at a crash is
+processed again after its dedupe lease expires (<code>APP_MQTT_DEDUPE_LEASE_SECONDS</code>, 30 seconds by
+default), and commands to equipment can be repeated.</p>
 <hr />
 <h2 id="configuration-reference">Configuration Reference</h2>
 <p>All settings are read from environment variables with the prefix <code>APP_</code> and nested
