@@ -16,6 +16,25 @@ __version__ = importlib.metadata.version("microdcs")
 logger = logging.getLogger("app.main")
 
 
+def _resolve_password(
+    name: str, password: str | None, password_file: Path | None
+) -> str | None:
+    """The password from *password_file* or *password*; *name* prefixes error messages."""
+    if password_file is None:
+        return password
+    if password is not None:
+        raise ValueError(f"Set only one of {name}.password and {name}.password_file")
+    try:
+        secret = password_file.read_text().rstrip("\r\n")
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot read {name}.password_file {password_file}: {exc}"
+        ) from exc
+    if not secret:
+        raise ValueError(f"{name}.password_file {password_file} is empty")
+    return secret
+
+
 @dataclass
 class RedisConfig:
     hostname: str = "localhost"
@@ -33,19 +52,7 @@ class RedisConfig:
 
     def resolve_password(self) -> str | None:
         """The Redis password from ``password_file`` or ``password``."""
-        if self.password_file is None:
-            return self.password
-        if self.password is not None:
-            raise ValueError("Set only one of redis.password and redis.password_file")
-        try:
-            password = self.password_file.read_text().rstrip("\r\n")
-        except OSError as exc:
-            raise ValueError(
-                f"Cannot read redis.password_file {self.password_file}: {exc}"
-            ) from exc
-        if not password:
-            raise ValueError(f"redis.password_file {self.password_file} is empty")
-        return password
+        return _resolve_password("redis", self.password, self.password_file)
 
 
 @dataclass
@@ -56,11 +63,20 @@ class MQTTConfig:
     sat_token_path: Path = Path("/var/run/secrets/tokens/broker-sat")
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
     require_tls: bool = False  # fail instead of connecting in plaintext
+    username: str | None = None
+    password: str | None = field(default=None, repr=False)
+    password_file: Path | None = None  # read the password from a mounted secret
+    tls_client_cert_path: Path | None = None  # client certificate for mutual TLS
+    tls_client_key_path: Path | None = None
     message_workers: int = 5
     dedupe_ttl_seconds: int = 60 * 10  # 10 minutes
     dedupe_lease_seconds: int = 30  # must exceed the slowest message handler
     binding_outgoing_queue_size: int = 5
     session_expiry_interval: int = 2**32 - 1  # never expire
+
+    def resolve_password(self) -> str | None:
+        """The MQTT password from ``password_file`` or ``password``."""
+        return _resolve_password("mqtt", self.password, self.password_file)
 
 
 @dataclass
@@ -342,6 +358,22 @@ class RuntimeConfig:
 
         if self.mqtt.require_tls:
             require_file(self.mqtt.tls_cert_path, "mqtt.require_tls is set")
+        if (self.mqtt.tls_client_cert_path is None) != (
+            self.mqtt.tls_client_key_path is None
+        ):
+            errors.append(
+                "mqtt.tls_client_cert_path and mqtt.tls_client_key_path must be set together"
+            )
+        for client_file in (
+            self.mqtt.tls_client_cert_path,
+            self.mqtt.tls_client_key_path,
+        ):
+            if client_file is not None:
+                require_file(client_file, "an MQTT client certificate is configured")
+        try:
+            self.mqtt.resolve_password()
+        except ValueError as exc:
+            errors.append(str(exc))
         if self.msgpack.require_tls or self.msgpack.tls_client_auth:
             reason = (
                 "msgpack.tls_client_auth is set"

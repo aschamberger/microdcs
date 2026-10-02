@@ -95,6 +95,11 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_MQTT_SAT_TOKEN_PATH` | `Path` | `/var/run/secrets/tokens/broker-sat` | Path to SAT token for broker auth |
 | `APP_MQTT_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate for TLS connections |
 | `APP_MQTT_REQUIRE_TLS` | `bool` | `false` | Fail at startup if the CA certificate is missing instead of connecting in plaintext |
+| `APP_MQTT_USERNAME` | `str` | `None` | MQTT username (optional) |
+| `APP_MQTT_PASSWORD` | `str` | `None` | MQTT password (optional). Prefer `APP_MQTT_PASSWORD_FILE`; setting both is an error |
+| `APP_MQTT_PASSWORD_FILE` | `Path` | `None` | File containing the MQTT password, for example a mounted Kubernetes secret. A trailing newline is ignored |
+| `APP_MQTT_TLS_CLIENT_CERT_PATH` | `Path` | `None` | Client certificate for mutual TLS; requires `APP_MQTT_TLS_CLIENT_KEY_PATH` and TLS to be on |
+| `APP_MQTT_TLS_CLIENT_KEY_PATH` | `Path` | `None` | Private key for the client certificate |
 | `APP_MQTT_MESSAGE_WORKERS` | `int` | `5` | Concurrent tasks processing incoming messages |
 | `APP_MQTT_DEDUPE_TTL_SECONDS` | `int` | `600` | How long Redis remembers a processed message (seconds) |
 | `APP_MQTT_DEDUPE_LEASE_SECONDS` | `int` | `30` | Lease a worker holds on a message while processing it; must exceed the slowest handler. An expired lease lets another worker process the message again |

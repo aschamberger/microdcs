@@ -9,7 +9,7 @@ describes what the framework trusts, so that broker ACLs can be written to cover
 
 | Boundary | Authentication | Authorization |
 |---|---|---|
-| MQTT broker | `K8S-SAT` token from `APP_MQTT_SAT_TOKEN_PATH` if the file exists; TLS with the CA from `APP_MQTT_TLS_CERT_PATH` if the file exists | Broker topic ACLs only |
+| MQTT broker | `K8S-SAT` token from `APP_MQTT_SAT_TOKEN_PATH` if the file exists; username and password (`APP_MQTT_USERNAME`, `APP_MQTT_PASSWORD_FILE`); client certificate (`APP_MQTT_TLS_CLIENT_CERT_PATH` / `_KEY_PATH`); TLS with the CA from `APP_MQTT_TLS_CERT_PATH` if the file exists | Broker topic ACLs only |
 | Redis | `APP_REDIS_USERNAME` / `APP_REDIS_PASSWORD`, optional TLS (`APP_REDIS_SSL`) | Redis ACLs, network policy |
 | MessagePack-RPC | TLS with a server certificate (`APP_MSGPACK_TLS_SERVER_CERT_PATH` / `_KEY_PATH`) if present; optional client certificates (`APP_MSGPACK_TLS_CLIENT_AUTH`) | None; any connected client can call every registered method |
 
@@ -23,6 +23,19 @@ server needs a certificate and key (`APP_MSGPACK_TLS_SERVER_CERT_PATH`,
 `APP_MSGPACK_TLS_SERVER_KEY_PATH`, by default `tls.crt` and `tls.key` as in a Kubernetes TLS
 secret). `APP_MSGPACK_TLS_CLIENT_AUTH=true` additionally requires a client certificate signed by
 the CA in `APP_MSGPACK_TLS_CERT_PATH` and implies `require_tls`.
+
+**MQTT credentials.** Choose the mechanism your broker uses:
+
+- `K8S-SAT`: used automatically when the token file at `APP_MQTT_SAT_TOKEN_PATH` exists (Azure IoT
+  Operations). On other brokers the file does not exist and nothing is sent.
+- Username and password: set `APP_MQTT_USERNAME` and mount the password as a file for
+  `APP_MQTT_PASSWORD_FILE`. The password is not included in the logged configuration.
+- Mutual TLS: set `APP_MQTT_TLS_CLIENT_CERT_PATH` and `APP_MQTT_TLS_CLIENT_KEY_PATH`. The files are
+  checked at startup, and a client certificate without the CA (TLS off) is refused.
+
+Credentials are sent in plaintext unless TLS is on; a warning is logged if they are sent without
+it. Use `APP_MQTT_REQUIRE_TLS=true` together with credentials. The SAT token, username/password
+and client certificate are independent: configure the one your broker expects.
 
 ## What the Framework Trusts
 
@@ -132,5 +145,5 @@ restrict access with a network policy, and keep the set of registered methods mi
 |---|---|
 | Subject is only checked against topics that carry a scope path | No publish rights on the level-0 topic for scoped clients |
 | Deduplication key is publisher-controlled | Distinct credentials per publisher; broker ACLs |
-| TLS and SAT silently skipped when files are missing | Set `APP_MQTT_REQUIRE_TLS` and `APP_MSGPACK_REQUIRE_TLS` so startup fails instead; the SAT token is only sent over TLS if `require_tls` is set (a warning is logged otherwise) |
+| TLS and SAT silently skipped when files are missing | Set `APP_MQTT_REQUIRE_TLS` and `APP_MSGPACK_REQUIRE_TLS` so startup fails instead; the SAT token and the MQTT username and password are only protected if `require_tls` is set (a warning is logged otherwise) |
 | No per-method authorization on MessagePack-RPC | Keep it pod-local or require client certificates |

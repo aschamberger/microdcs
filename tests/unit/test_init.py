@@ -77,6 +77,28 @@ class TestMQTTConfig:
         assert cfg.message_workers == 5
         assert cfg.dedupe_ttl_seconds == 600
         assert cfg.require_tls is False
+        assert cfg.username is None
+        assert cfg.resolve_password() is None
+        assert cfg.tls_client_cert_path is None
+
+    def test_password_not_in_repr(self):
+        assert "hunter2" not in repr(MQTTConfig(password="hunter2"))
+
+    def test_credentials_from_environment(self, tmp_path):
+        secret = tmp_path / "mqtt-password"
+        secret.write_text("env-pw\n")
+        env = {
+            "APP_MQTT_USERNAME": "app",
+            "APP_MQTT_PASSWORD_FILE": str(secret),
+            "APP_MQTT_TLS_CLIENT_CERT_PATH": "/c/client.crt",
+            "APP_MQTT_TLS_CLIENT_KEY_PATH": "/c/client.key",
+        }
+        with patch.dict(os.environ, env):
+            cfg = RuntimeConfig()
+        assert cfg.mqtt.username == "app"
+        assert cfg.mqtt.resolve_password() == "env-pw"
+        assert cfg.mqtt.tls_client_cert_path == Path("/c/client.crt")
+        assert cfg.mqtt.tls_client_key_path == Path("/c/client.key")
 
 
 class TestMessagePackConfig:
@@ -387,6 +409,38 @@ class TestRuntimeConfig:
             patch.object(cfg, "_check_tcp_connection", new=AsyncMock()),
             patch.object(cfg, "_check_bindable", new=AsyncMock()),
         ):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_mqtt_client_certificate_needs_cert_and_key(self, tmp_path):
+        cfg = RuntimeConfig()
+        cfg.mqtt.tls_client_cert_path = tmp_path / "client.crt"
+        with pytest.raises(ValueError, match="must be set together"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_mqtt_client_certificate_files_must_exist(self, tmp_path):
+        cfg = RuntimeConfig()
+        cfg.mqtt.tls_client_cert_path = tmp_path / "client.crt"
+        cfg.mqtt.tls_client_key_path = tmp_path / "client.key"
+        with pytest.raises(ValueError, match=r"client\.crt.*client\.key"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_mqtt_password_file_must_be_readable(self, tmp_path):
+        cfg = RuntimeConfig()
+        cfg.mqtt.password_file = tmp_path / "missing"
+        with pytest.raises(ValueError, match="mqtt.password_file"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_mqtt_password_and_file_conflict(self, tmp_path):
+        secret = tmp_path / "pw"
+        secret.write_text("x")
+        cfg = RuntimeConfig()
+        cfg.mqtt.password = "y"
+        cfg.mqtt.password_file = secret
+        with pytest.raises(ValueError, match="only one of mqtt.password"):
             await cfg.validate()
 
     @pytest.mark.asyncio

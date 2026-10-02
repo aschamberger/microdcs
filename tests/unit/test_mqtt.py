@@ -730,6 +730,78 @@ class TestCreateMqttClient:
             create_mqtt_client(config)
             assert mock_cls.call_args[1]["ssl_context"] is None
 
+    def test_username_and_password_passed_as_bytes(self, tmp_path):
+        config = MQTTConfig(
+            tls_cert_path=tmp_path / "missing.crt", username="app", password="pw"
+        )
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            create_mqtt_client(config)
+        assert mock_cls.call_args[1]["username"] == "app"
+        assert mock_cls.call_args[1]["password"] == b"pw"
+
+    def test_password_read_from_file(self, tmp_path):
+        secret = tmp_path / "mqtt-password"
+        secret.write_text("from-file\n")
+        config = MQTTConfig(
+            tls_cert_path=tmp_path / "missing.crt", username="app", password_file=secret
+        )
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            create_mqtt_client(config)
+        assert mock_cls.call_args[1]["password"] == b"from-file"
+
+    def test_no_credentials_by_default(self, tmp_path):
+        config = MQTTConfig(tls_cert_path=tmp_path / "missing.crt")
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            create_mqtt_client(config)
+        assert mock_cls.call_args[1]["username"] is None
+        assert mock_cls.call_args[1]["password"] is None
+
+    def test_warns_when_credentials_sent_without_tls(self, tmp_path, caplog):
+        config = MQTTConfig(
+            tls_cert_path=tmp_path / "missing.crt", username="app", password="pw"
+        )
+        with patch("microdcs.mqtt.aiomqtt.Client"):
+            create_mqtt_client(config)
+        assert "without TLS" in caplog.text
+
+    def test_client_certificate_loaded_into_ssl_context(self, tmp_path):
+        ca = tmp_path / "ca.crt"
+        ca.write_text("x")
+        config = MQTTConfig(
+            tls_cert_path=ca,
+            tls_client_cert_path=tmp_path / "client.crt",
+            tls_client_key_path=tmp_path / "client.key",
+        )
+        with (
+            patch("microdcs.mqtt.aiomqtt.Client"),
+            patch("microdcs.mqtt.ssl.create_default_context") as mock_ssl,
+        ):
+            create_mqtt_client(config)
+        mock_ssl.return_value.load_cert_chain.assert_called_once_with(
+            certfile=str(tmp_path / "client.crt"), keyfile=str(tmp_path / "client.key")
+        )
+
+    def test_client_certificate_without_key_raises(self, tmp_path):
+        ca = tmp_path / "ca.crt"
+        ca.write_text("x")
+        config = MQTTConfig(
+            tls_cert_path=ca, tls_client_cert_path=tmp_path / "client.crt"
+        )
+        with (
+            patch("microdcs.mqtt.ssl.create_default_context"),
+            pytest.raises(ValueError, match="tls_client_key_path"),
+        ):
+            create_mqtt_client(config)
+
+    def test_client_certificate_without_tls_raises(self, tmp_path):
+        config = MQTTConfig(
+            tls_cert_path=tmp_path / "missing.crt",
+            tls_client_cert_path=tmp_path / "client.crt",
+            tls_client_key_path=tmp_path / "client.key",
+        )
+        with pytest.raises(ValueError, match="TLS is off"):
+            create_mqtt_client(config)
+
     def test_with_sat_and_tls(self):
         config = MQTTConfig()
         config.sat_token_path = MagicMock()
