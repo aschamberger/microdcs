@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Installing separately from its dependencies allows optimal layer caching
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked
+    uv sync --locked --no-editable
 
 # Build final image without uv
 FROM gcr.io/distroless/cc-debian13:nonroot

@@ -1,0 +1,71 @@
+# Local development stack. Unauthenticated and plaintext - not for production.
+#
+#   docker compose up -d                  # MQTT broker, Redis, Aspire dashboard
+#   docker compose --profile app up -d --build   # additionally run the example app in a container
+#
+# Run the app on the host instead with `uv run python -m app` (see docs/development.md).
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    command: mosquitto -c /mosquitto-no-auth.conf
+    ports:
+      - "1883:1883"
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    environment:
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "18888:18888" # dashboard UI
+      - "4317:18889" # OTLP/gRPC
+      - "4318:18890" # OTLP/HTTP
+
+  app:
+    profiles: ["app"]
+    build: .
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      aspire-dashboard:
+        condition: service_started
+    ports:
+      - "8888:8888" # MessagePack-RPC
+    environment:
+      APP_REDIS_HOSTNAME: redis
+      APP_MQTT_HOSTNAME: mosquitto
+      APP_MQTT_IDENTIFIER: app
+      APP_MSGPACK_HOSTNAME: 0.0.0.0
+      APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL: "10"
+      APP_PROCESSING_SHARED_SUBSCRIPTION_NAME: appsub
+      APP_PROCESSING_TOPIC_PREFIXES: greetings:app/greetings,machinery-jobs:app/jobs
+      APP_PROCESSING_TOPIC_WILDCARD_LEVELS: greetings:0,machinery-jobs:3
+      APP_PROCESSING_RESPONSE_TOPICS: greetings:app/greetings/responses,machinery-jobs:app/jobs/responses
+      APP_PROCESSING_CLOUDEVENT_SOURCE: https://aschamberger.github.com/microdcs/app
+      APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED: "true"
+      APP_LOGGING_LEVEL: DEBUG
+      OTEL_SERVICE_NAME: microdcs.app
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_PYTHON_LOG_CORRELATION: "true"
+      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"

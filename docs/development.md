@@ -213,6 +213,13 @@ uv run python -m app
 
 Or use the VS Code task **Run App (plain)** which starts both services automatically.
 
+A `compose.yaml` in the repository root starts the same infrastructure plus the Aspire dashboard (unauthenticated, local use only):
+
+```bash
+docker compose up -d                          # Mosquitto, Redis, Aspire dashboard
+docker compose --profile app up -d --build    # additionally build and run the example app
+```
+
 For manual SFC testing, use the example Work Master from `tests/example_sfc.py` and publish a `StoreAndStartCall` that references it.
 
 Generate typed models from a JSON Schema file:
