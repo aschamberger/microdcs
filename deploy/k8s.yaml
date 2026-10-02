@@ -11,8 +11,14 @@
 #
 # The SFC engine is not single-instance gated. It relies on Redis Streams consumer
 # groups and CAS Lua scripts for distributed execution and recovery. Equipment-side
-# command handling must be idempotent on the correlation_id attached to each
-# outgoing push_command.
+# command handling must be idempotent; the engine sends a stable mdcsactionkey
+# with every push_command for deduplication.
+#
+# Hardening: pods run as the distroless non-root user with a read-only root
+# filesystem and no Kubernetes API token, and a NetworkPolicy denies all ingress
+# (the MessagePack-RPC port is meant for a sidecar in the same pod). Pin the image
+# to a digest instead of :latest for production. There are no probes: the process
+# exits when Redis or MQTT is lost and Kubernetes restarts it.
 
 ---
 apiVersion: apps/v1
@@ -34,9 +40,24 @@ spec:
         app: microdcs
         role: processor
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: microdcs
           image: aschamberger/microdcs:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 100m
@@ -63,6 +84,9 @@ spec:
               value: "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses"
             - name: APP_PROCESSING_SHARED_SUBSCRIPTION_NAME
               value: "appsub"
+      volumes:
+        - name: tmp
+          emptyDir: {}
 
 ---
 apiVersion: apps/v1
@@ -84,9 +108,24 @@ spec:
         app: microdcs
         role: publisher
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: microdcs
           image: aschamberger/microdcs:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 50m
@@ -111,3 +150,18 @@ spec:
               value: "greetings:app/greetings,machinery-jobs:app/jobs"
             - name: APP_PUBLISHER_RETAINED_TTL_SECONDS
               value: "172800"
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: microdcs-deny-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: microdcs
+  policyTypes:
+    - Ingress

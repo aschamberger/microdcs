@@ -100,6 +100,24 @@ job state, so:
 - enable `APP_REDIS_SSL` and `APP_REDIS_SSL_CA_CERTS` outside a single trusted node
 - pass the password from a mounted secret rather than a literal in the manifest
 
+## Kubernetes Hardening
+
+[deploy/k8s.yaml](https://github.com/aschamberger/microdcs/blob/main/deploy/k8s.yaml) applies these settings to both Deployments:
+
+| Setting | Effect |
+|---|---|
+| `runAsNonRoot`, `runAsUser: 65532` | Runs as the distroless non-root user |
+| `readOnlyRootFilesystem: true` with an `emptyDir` on `/tmp` | The container cannot modify its image |
+| `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault` | No extra privileges or capabilities |
+| `automountServiceAccountToken: false` | No Kubernetes API token in the pod. This is separate from the projected `broker-sat` token for MQTT, which you mount yourself |
+| `NetworkPolicy` `microdcs-deny-ingress` | Denies all ingress; the MessagePack-RPC port is for a sidecar in the same pod |
+
+The container image runs with these restrictions. A read-only root filesystem is why file logging
+is off by default (`APP_LOGGING_FILENAME`). The manifest has no liveness or readiness probes, because
+the process exits when Redis or the MQTT broker is lost and Kubernetes restarts it. It uses
+`:latest` for the image: pin a digest in production. The `NetworkPolicy` only covers ingress. Add an
+egress policy limited to Redis, the MQTT broker and the OTLP endpoint once their labels are known.
+
 ## MessagePack-RPC
 
 The listener defaults to `localhost` and is intended for a sidecar in the same pod. There is no

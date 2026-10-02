@@ -79,7 +79,27 @@ class TestLoggingConfig:
             cfg = LoggingConfig()
         assert cfg.disable_if_otel_enabled is True
         assert cfg.level == "INFO"
-        assert cfg.filename == "app.log"
+        assert cfg.filename is None
+
+    def test_no_file_handler_by_default(self):
+        captured: dict = {}
+        with (
+            patch.dict(os.environ, {"OTEL_LOGS_EXPORTER": "none"}),
+            patch("logging.config.dictConfig", side_effect=captured.update),
+        ):
+            LoggingConfig()
+        assert "file" not in captured["handlers"]
+        assert captured["root"]["handlers"] == ["stderr", "stdout"]
+
+    def test_file_handler_when_filename_set(self, tmp_path):
+        captured: dict = {}
+        with (
+            patch.dict(os.environ, {"OTEL_LOGS_EXPORTER": "none"}),
+            patch("logging.config.dictConfig", side_effect=captured.update),
+        ):
+            LoggingConfig(filename=str(tmp_path / "app.log"))
+        assert captured["handlers"]["file"]["filename"] == str(tmp_path / "app.log")
+        assert "file" in captured["root"]["handlers"]
 
     def test_set_logging_config_called_once_when_otel_disabled(self):
         """When OTEL_LOGS_EXPORTER is 'none' (default), logging is configured exactly once."""

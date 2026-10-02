@@ -134,6 +134,15 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_PROCESSING_POST_START_LOCK_TTL` | `int` | `30` | TTL (seconds) for the distributed `post_start` Redis lock; controls how long a crashed instance blocks other replicas |
 | `APP_PROCESSING_ENFORCE_SUBJECT_TOPIC_MATCH` | `bool` | `true` | Drop incoming MQTT messages whose CloudEvent `subject` does not match the scope in the topic (see [Security](security.md#what-the-framework-trusts)) |
 
+### Logging (`APP_LOGGING_*`)
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `APP_LOGGING_LEVEL` | `str` | `INFO` | Root log level |
+| `APP_LOGGING_FILENAME` | `str` | `None` | Also write logs to this file (overwritten at start). Off by default so the container can run with a read-only root filesystem; logs go to stdout and stderr |
+| `APP_LOGGING_FORMAT` | `str` | `%(asctime)s - %(name)s - %(levelname)s - %(message)s` | Log record format |
+| `APP_LOGGING_DISABLE_IF_OTEL_ENABLED` | `bool` | `true` | Leave logging to OpenTelemetry when `OTEL_LOGS_EXPORTER` is set |
+
 ---
 
 ## MQTT Topic Structure

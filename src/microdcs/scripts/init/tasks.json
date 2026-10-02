@@ -20,6 +20,7 @@
             "APP_PROCESSING_RESPONSE_TOPICS": "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses",
             "APP_PROCESSING_CLOUDEVENT_SOURCE": "https://aschamberger.github.com/microdcs/app",
             "APP_LOGGING_LEVEL": "DEBUG",
+            "APP_LOGGING_FILENAME": "app.log",
             "APP_MSGPACK_HOSTNAME": "localhost",
             "APP_MSGPACK_PORT": "8888",
             "KUBECONFIG": "${userHome}${/}.kube${/}config.yaml"

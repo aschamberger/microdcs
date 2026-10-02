@@ -66,7 +66,7 @@ class MessagePackConfig:
 class LoggingConfig:
     disable_if_otel_enabled: bool = True
     level: str = "INFO"
-    filename: str = "app.log"
+    filename: str | None = None  # log to this file in addition to stdout/stderr
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     def set_logging_config(self):
@@ -87,15 +87,17 @@ class LoggingConfig:
                     "formatter": "simple",
                     "stream": "ext://sys.stderr",
                 },
-                "file": {
-                    "class": "logging.FileHandler",
-                    "formatter": "simple",
-                    "filename": self.filename,
-                    "mode": "w",
-                },
             },
-            "root": {"level": self.level, "handlers": ["stderr", "stdout", "file"]},
+            "root": {"level": self.level, "handlers": ["stderr", "stdout"]},
         }
+        if self.filename:
+            config["handlers"]["file"] = {
+                "class": "logging.FileHandler",
+                "formatter": "simple",
+                "filename": self.filename,
+                "mode": "w",
+            }
+            config["root"]["handlers"].append("file")
         logging.config.dictConfig(config)
 
     def __setattr__(self, name: str, value: Any) -> None:
