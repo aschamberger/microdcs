@@ -369,29 +369,49 @@ class TestMessagePackHandler:
         server = handler._server()
         assert isinstance(server, MessagePackRpcServer)
 
-    def test_server_with_tls(self):
+    def test_server_without_certificate_is_plaintext(self, tmp_path):
         handler = _make_handler()
-        handler._runtime_config.tls_cert_path = MagicMock()
-        handler._runtime_config.tls_cert_path.exists.return_value = True
-        handler._runtime_config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
-        with patch("ssl.create_default_context") as mock_ssl:
-            server = handler._server()
-            mock_ssl.assert_called_once_with(
-                ssl.Purpose.CLIENT_AUTH, cafile="/fake/cert"
-            )
-            assert server._ssl_context is not None
+        handler._runtime_config.tls_server_cert_path = tmp_path / "missing.crt"
+        assert handler._server()._ssl_context is None
 
-    def test_server_with_tls_client_auth(self):
+    def test_server_with_tls_loads_certificate_chain(self, tmp_path):
         handler = _make_handler()
-        handler._runtime_config.tls_cert_path = MagicMock()
-        handler._runtime_config.tls_cert_path.exists.return_value = True
-        handler._runtime_config.tls_cert_path.__str__ = lambda self: "/fake/cert"  # type: ignore[assignment]
+        (tmp_path / "tls.crt").write_text("x")
+        handler._runtime_config.tls_server_cert_path = tmp_path / "tls.crt"
+        handler._runtime_config.tls_server_key_path = tmp_path / "tls.key"
+        with patch("ssl.create_default_context") as mock_ssl:
+            mock_ctx = MagicMock()
+            mock_ssl.return_value = mock_ctx
+            server = handler._server()
+        mock_ssl.assert_called_once_with(ssl.Purpose.CLIENT_AUTH)
+        mock_ctx.load_cert_chain.assert_called_once_with(
+            certfile=str(tmp_path / "tls.crt"), keyfile=str(tmp_path / "tls.key")
+        )
+        assert server._ssl_context is mock_ctx
+
+    def test_server_with_tls_client_auth(self, tmp_path):
+        handler = _make_handler()
+        (tmp_path / "tls.crt").write_text("x")
+        handler._runtime_config.tls_server_cert_path = tmp_path / "tls.crt"
+        handler._runtime_config.tls_server_key_path = tmp_path / "tls.key"
+        handler._runtime_config.tls_cert_path = tmp_path / "ca.crt"
         handler._runtime_config.tls_client_auth = True
         with patch("ssl.create_default_context") as mock_ssl:
             mock_ctx = MagicMock()
             mock_ssl.return_value = mock_ctx
             handler._server()
-            assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
+        mock_ctx.load_verify_locations.assert_called_once_with(
+            cafile=str(tmp_path / "ca.crt")
+        )
+        assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
+
+    @pytest.mark.parametrize("flag", ["require_tls", "tls_client_auth"])
+    def test_server_refuses_plaintext_when_tls_required(self, tmp_path, flag):
+        handler = _make_handler()
+        handler._runtime_config.tls_server_cert_path = tmp_path / "missing.crt"
+        setattr(handler._runtime_config, flag, True)
+        with pytest.raises(ValueError, match="does not exist"):
+            handler._server()
 
     @pytest.mark.asyncio
     async def test_send_response_success(self):

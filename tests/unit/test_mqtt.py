@@ -718,6 +718,18 @@ class TestCreateMqttClient:
             create_mqtt_client(config, clean_start=True)
             assert mock_cls.call_args[1]["clean_start"] is True
 
+    def test_require_tls_without_ca_raises(self, tmp_path):
+        config = MQTTConfig(require_tls=True, tls_cert_path=tmp_path / "missing.crt")
+        with pytest.raises(ValueError, match="require_tls"):
+            create_mqtt_client(config)
+
+    def test_without_require_tls_falls_back_to_plaintext(self, tmp_path):
+        config = MQTTConfig(tls_cert_path=tmp_path / "missing.crt")
+        with patch("microdcs.mqtt.aiomqtt.Client") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            create_mqtt_client(config)
+            assert mock_cls.call_args[1]["ssl_context"] is None
+
     def test_with_sat_and_tls(self):
         config = MQTTConfig()
         config.sat_token_path = MagicMock()

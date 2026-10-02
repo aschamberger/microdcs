@@ -38,6 +38,7 @@ class TestMQTTConfig:
         assert cfg.tls_cert_path == Path("/var/run/certs/ca.crt")
         assert cfg.message_workers == 5
         assert cfg.dedupe_ttl_seconds == 600
+        assert cfg.require_tls is False
 
 
 class TestMessagePackConfig:
@@ -46,6 +47,9 @@ class TestMessagePackConfig:
         assert cfg.hostname == "localhost"
         assert cfg.port == 8888
         assert cfg.tls_cert_path == Path("/var/run/certs/ca.crt")
+        assert cfg.tls_server_cert_path == Path("/var/run/certs/tls.crt")
+        assert cfg.tls_server_key_path == Path("/var/run/certs/tls.key")
+        assert cfg.require_tls is False
         assert cfg.keep_alive is True
         assert cfg.max_queued_connections == 100
         assert cfg.max_concurrent_requests == 10
@@ -277,6 +281,53 @@ class TestRuntimeConfig:
         cfg.redis.socket_connect_timeout = -1
         with pytest.raises(
             ValueError, match="redis.socket_timeout.*redis.socket_connect_timeout"
+        ):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_mqtt_require_tls_needs_ca(self, tmp_path):
+        cfg = RuntimeConfig()
+        cfg.mqtt.require_tls = True
+        cfg.mqtt.tls_cert_path = tmp_path / "missing-ca.crt"
+        with pytest.raises(ValueError, match="mqtt.require_tls is set but"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_msgpack_require_tls_needs_server_cert_and_key(
+        self, tmp_path
+    ):
+        cfg = RuntimeConfig()
+        cfg.msgpack.require_tls = True
+        cfg.msgpack.tls_server_cert_path = tmp_path / "tls.crt"
+        cfg.msgpack.tls_server_key_path = tmp_path / "tls.key"
+        with pytest.raises(ValueError, match=r"tls\.crt.*tls\.key"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_msgpack_client_auth_needs_tls_and_ca(self, tmp_path):
+        cfg = RuntimeConfig()
+        cfg.msgpack.tls_client_auth = True
+        cfg.msgpack.tls_server_cert_path = tmp_path / "tls.crt"
+        cfg.msgpack.tls_server_key_path = tmp_path / "tls.key"
+        cfg.msgpack.tls_cert_path = tmp_path / "ca.crt"
+        with pytest.raises(ValueError, match="msgpack.tls_client_auth is set"):
+            await cfg.validate()
+
+    @pytest.mark.asyncio
+    async def test_validate_tls_files_present_passes(self, tmp_path):
+        for name in ("ca.crt", "tls.crt", "tls.key"):
+            (tmp_path / name).write_text("x")
+        cfg = RuntimeConfig()
+        cfg.mqtt.require_tls = True
+        cfg.mqtt.tls_cert_path = tmp_path / "ca.crt"
+        cfg.msgpack.require_tls = True
+        cfg.msgpack.tls_client_auth = True
+        cfg.msgpack.tls_cert_path = tmp_path / "ca.crt"
+        cfg.msgpack.tls_server_cert_path = tmp_path / "tls.crt"
+        cfg.msgpack.tls_server_key_path = tmp_path / "tls.key"
+        with (
+            patch.object(cfg, "_check_tcp_connection", new=AsyncMock()),
+            patch.object(cfg, "_check_bindable", new=AsyncMock()),
         ):
             await cfg.validate()
 

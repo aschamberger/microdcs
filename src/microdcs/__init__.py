@@ -38,6 +38,7 @@ class MQTTConfig:
     identifier: str = "app_client"
     sat_token_path: Path = Path("/var/run/secrets/tokens/broker-sat")
     tls_cert_path: Path = Path("/var/run/certs/ca.crt")
+    require_tls: bool = False  # fail instead of connecting in plaintext
     message_workers: int = 5
     dedupe_ttl_seconds: int = 60 * 10  # 10 minutes
     dedupe_lease_seconds: int = 30  # must exceed the slowest message handler
@@ -49,8 +50,11 @@ class MQTTConfig:
 class MessagePackConfig:
     hostname: str = "localhost"
     port: int = 8888
-    tls_cert_path: Path = Path("/var/run/certs/ca.crt")
+    tls_cert_path: Path = Path("/var/run/certs/ca.crt")  # CA for client certificates
+    tls_server_cert_path: Path = Path("/var/run/certs/tls.crt")
+    tls_server_key_path: Path = Path("/var/run/certs/tls.key")
     tls_client_auth: bool = False
+    require_tls: bool = False  # fail instead of listening in plaintext
     keep_alive: bool = True
     max_queued_connections: int = 100
     max_concurrent_requests: int = 10
@@ -312,6 +316,23 @@ class RuntimeConfig:
         def require_positive(value: int | float, field_name: str) -> None:
             if value <= 0:
                 errors.append(f"{field_name} must be > 0")
+
+        def require_file(path: Path, reason: str) -> None:
+            if not path.exists():
+                errors.append(f"{reason} but {path} does not exist")
+
+        if self.mqtt.require_tls:
+            require_file(self.mqtt.tls_cert_path, "mqtt.require_tls is set")
+        if self.msgpack.require_tls or self.msgpack.tls_client_auth:
+            reason = (
+                "msgpack.tls_client_auth is set"
+                if self.msgpack.tls_client_auth
+                else "msgpack.require_tls is set"
+            )
+            require_file(self.msgpack.tls_server_cert_path, reason)
+            require_file(self.msgpack.tls_server_key_path, reason)
+        if self.msgpack.tls_client_auth:
+            require_file(self.msgpack.tls_cert_path, "msgpack.tls_client_auth is set")
 
         require_non_empty(self.instance_id, "instance_id")
         require_non_empty(self.redis.hostname, "redis.hostname")

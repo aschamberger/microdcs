@@ -64,6 +64,12 @@ def create_mqtt_client(
     ssl_context: ssl.SSLContext | None = None
     if config.tls_cert_path.exists():
         ssl_context = ssl.create_default_context(cafile=str(config.tls_cert_path))
+    elif config.require_tls:
+        raise ValueError(
+            f"mqtt.require_tls is set but {config.tls_cert_path} does not exist"
+        )
+    elif authentication_data is not None:
+        logger.warning("Sending the SAT token over a connection without TLS")
     return aiomqtt.Client(
         hostname=config.hostname,
         port=config.port,

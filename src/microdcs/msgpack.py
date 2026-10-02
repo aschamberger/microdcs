@@ -108,15 +108,27 @@ class MessagePackHandler(ProtocolHandler["MessagePackProtocolBinding"]):
         else:
             return func(*params)
 
+    def _server_ssl_context(self) -> ssl.SSLContext | None:
+        config = self._runtime_config
+        if not config.tls_server_cert_path.exists():
+            if config.require_tls or config.tls_client_auth:
+                raise ValueError(
+                    "msgpack.require_tls/tls_client_auth is set but the server "
+                    f"certificate {config.tls_server_cert_path} does not exist"
+                )
+            return None
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(
+            certfile=str(config.tls_server_cert_path),
+            keyfile=str(config.tls_server_key_path),
+        )
+        if config.tls_client_auth:
+            ssl_context.load_verify_locations(cafile=str(config.tls_cert_path))
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+        return ssl_context
+
     def _server(self) -> MessagePackRpcServer:
-        ssl_context = None
-        if self._runtime_config.tls_cert_path.exists():
-            ssl_context = ssl.create_default_context(
-                ssl.Purpose.CLIENT_AUTH,
-                cafile=str(self._runtime_config.tls_cert_path),
-            )
-            if self._runtime_config.tls_client_auth:
-                ssl_context.verify_mode = ssl.CERT_REQUIRED
+        ssl_context = self._server_ssl_context()
         return MessagePackRpcServer(
             dispatcher=self._dispatch_method,
             hostname=self._runtime_config.hostname,

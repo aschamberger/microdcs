@@ -11,10 +11,18 @@ describes what the framework trusts, so that broker ACLs can be written to cover
 |---|---|---|
 | MQTT broker | `K8S-SAT` token from `APP_MQTT_SAT_TOKEN_PATH` if the file exists; TLS with the CA from `APP_MQTT_TLS_CERT_PATH` if the file exists | Broker topic ACLs only |
 | Redis | `APP_REDIS_USERNAME` / `APP_REDIS_PASSWORD`, optional TLS (`APP_REDIS_SSL`) | Redis ACLs, network policy |
-| MessagePack-RPC | Optional client certificates (`APP_MSGPACK_TLS_CLIENT_AUTH`) | None; any connected client can call every registered method |
+| MessagePack-RPC | TLS with a server certificate (`APP_MSGPACK_TLS_SERVER_CERT_PATH` / `_KEY_PATH`) if present; optional client certificates (`APP_MSGPACK_TLS_CLIENT_AUTH`) | None; any connected client can call every registered method |
 
-TLS and the SAT token are only used when their files are present. A missing mount results in an
-unauthenticated, plaintext connection, so verify the mounts in the deployment.
+## TLS
+
+TLS is switched on by the presence of certificate files, so a missing secret mount results in a
+plaintext connection by default. Set `APP_MQTT_REQUIRE_TLS=true` and `APP_MSGPACK_REQUIRE_TLS=true`
+in production: startup then fails with a message naming the missing file instead of running in
+plaintext. The MQTT client needs the broker CA (`APP_MQTT_TLS_CERT_PATH`). The MessagePack-RPC
+server needs a certificate and key (`APP_MSGPACK_TLS_SERVER_CERT_PATH`,
+`APP_MSGPACK_TLS_SERVER_KEY_PATH`, by default `tls.crt` and `tls.key` as in a Kubernetes TLS
+secret). `APP_MSGPACK_TLS_CLIENT_AUTH=true` additionally requires a client certificate signed by
+the CA in `APP_MSGPACK_TLS_CERT_PATH` and implies `require_tls`.
 
 ## What the Framework Trusts
 
@@ -104,5 +112,5 @@ restrict access with a network policy, and keep the set of registered methods mi
 |---|---|
 | Subject is only checked against topics that carry a scope path | No publish rights on the level-0 topic for scoped clients |
 | Deduplication key is publisher-controlled | Distinct credentials per publisher; broker ACLs |
-| TLS and SAT silently skipped when files are missing | Verify the secret and certificate mounts; fail the rollout if they are absent |
+| TLS and SAT silently skipped when files are missing | Set `APP_MQTT_REQUIRE_TLS` and `APP_MSGPACK_REQUIRE_TLS` so startup fails instead; the SAT token is only sent over TLS if `require_tls` is set (a warning is logged otherwise) |
 | No per-method authorization on MessagePack-RPC | Keep it pod-local or require client certificates |

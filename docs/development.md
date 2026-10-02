@@ -110,6 +110,10 @@ Checked constraints include:
 	* mqtt.hostname
 	* mqtt.identifier
 	* msgpack.hostname
+* Files that must exist when TLS is required:
+	* mqtt.tls_cert_path (with mqtt.require_tls)
+	* msgpack.tls_server_cert_path and tls_server_key_path (with msgpack.require_tls or tls_client_auth)
+	* msgpack.tls_cert_path (with msgpack.tls_client_auth)
 * Port ranges:
 	* redis.port, mqtt.port, msgpack.port must be in 1..65535
 * Positive values:

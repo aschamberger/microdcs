@@ -93,6 +93,7 @@ structure `APP_{SECTION}_{FIELD}`.
 | `APP_MQTT_IDENTIFIER` | `str` | `app_client` | MQTT client identifier |
 | `APP_MQTT_SAT_TOKEN_PATH` | `Path` | `/var/run/secrets/tokens/broker-sat` | Path to SAT token for broker auth |
 | `APP_MQTT_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate for TLS connections |
+| `APP_MQTT_REQUIRE_TLS` | `bool` | `false` | Fail at startup if the CA certificate is missing instead of connecting in plaintext |
 | `APP_MQTT_MESSAGE_WORKERS` | `int` | `5` | Concurrent tasks processing incoming messages |
 | `APP_MQTT_DEDUPE_TTL_SECONDS` | `int` | `600` | How long Redis remembers a processed message (seconds) |
 | `APP_MQTT_DEDUPE_LEASE_SECONDS` | `int` | `30` | Lease a worker holds on a message while processing it; must exceed the slowest handler. An expired lease lets another worker process the message again |
@@ -105,8 +106,11 @@ structure `APP_{SECTION}_{FIELD}`.
 |---|---|---|---|
 | `APP_MSGPACK_HOSTNAME` | `str` | `localhost` | RPC server listen address |
 | `APP_MSGPACK_PORT` | `int` | `8888` | RPC server listen port |
-| `APP_MSGPACK_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate for TLS |
-| `APP_MSGPACK_TLS_CLIENT_AUTH` | `bool` | `false` | Require client certificate authentication |
+| `APP_MSGPACK_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate used to verify client certificates (with `TLS_CLIENT_AUTH`) |
+| `APP_MSGPACK_TLS_SERVER_CERT_PATH` | `Path` | `/var/run/certs/tls.crt` | Server certificate; TLS is enabled when this file exists |
+| `APP_MSGPACK_TLS_SERVER_KEY_PATH` | `Path` | `/var/run/certs/tls.key` | Private key for the server certificate |
+| `APP_MSGPACK_REQUIRE_TLS` | `bool` | `false` | Fail at startup if the server certificate or key is missing instead of listening in plaintext |
+| `APP_MSGPACK_TLS_CLIENT_AUTH` | `bool` | `false` | Require a client certificate; implies `REQUIRE_TLS` |
 | `APP_MSGPACK_KEEP_ALIVE` | `bool` | `true` | Enable TCP keep-alive on client connections |
 | `APP_MSGPACK_MAX_QUEUED_CONNECTIONS` | `int` | `100` | TCP backlog for the RPC server socket |
 | `APP_MSGPACK_MAX_CONCURRENT_REQUESTS` | `int` | `10` | Per-client concurrent RPC request cap (semaphore) |
