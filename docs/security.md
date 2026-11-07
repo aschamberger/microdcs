@@ -167,6 +167,17 @@ restrict access with a network policy, and keep the set of registered methods mi
 | TLS and SAT silently skipped when files are missing | Set `APP_MQTT_REQUIRE_TLS` and `APP_MSGPACK_REQUIRE_TLS` so startup fails instead; the SAT token and the MQTT username and password are only protected if `require_tls` is set (a warning is logged otherwise) |
 | No per-method authorization on MessagePack-RPC | Keep it pod-local or require client certificates |
 
+## Scanner Waivers {#scanner-waivers}
+
+This section applies to the .NET port. Gitleaks, Trivy and SonarQube Cloud run on every pull
+request, on `main` and daily ([Development](development.md#security-scanning),
+[D-20](porting/decisions.md#d-20)). Every waiver has a reason and an expiry date, and is reviewed
+in S22 and S23.
+
+| Scanner | Finding | Scope | Reason | Expires |
+|---|---|---|---|---|
+| none | | | | |
+
 ## IEC 62443 Alignment
 
 This table maps the framework to the seven foundational requirements (FR) of IEC 62443-3-3 as an

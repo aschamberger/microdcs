@@ -45,6 +45,9 @@ src/MicroDCS.App/           AOT application (`microdcs`); until S08 only the Clo
 tests/MicroDCS.Core.Tests/  unit tests
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
+scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI
+compose.scan.yaml           digest-pinned scanner containers; configs in .gitleaks.toml, trivy.yaml, .trivyignore.yaml
+.github/workflows/          ci.yml (build, tests, Sonar, AOT image, integration), security.yml (scanners), docs.yml
 Dockerfile                  AOT publish into chiseled runtime-deps (non-root, no shell; linux-x64 and linux-arm64, D-32); `tests` target for compose
 compose.test.yaml           integration harness (D-15): Valkey, Mosquitto, tests container
 docs/                       docs site; docs/porting/ is the port plan
@@ -63,6 +66,7 @@ dotnet test                           # all tests (Microsoft.Testing.Platform)
 dotnet format --verify-no-changes     # style check as in CI; `dotnet format` fixes
 CI=true dotnet restore                # locked-mode restore; commit packages.lock.json changes
 docker compose up -d --wait           # dev stack; `docker compose down -v` wipes Valkey
+scripts/scan                          # Gitleaks (working tree) and Trivy fs; `scripts/scan help` for all modes
 ```
 
 Integration tests run inside compose (D-15):
@@ -106,5 +110,5 @@ Do not flag these in reviews; the full text is in `docs/porting/decisions.md`.
 
 ## Tools
 
-* Prefer the project's own tools when they are available in a session: code-analysis and quality tools (for example SonarQube analysis, from S03) and the MicroDCS dev MCP server (inspection tools, from S11, configured in `.mcp.json`).
+* Prefer the project's own tools when they are available in a session: code-analysis and quality tools (SonarQube Cloud project `aschamberger_microdcs`; use a SonarQube analysis tool on changed files when one is configured) and the MicroDCS dev MCP server (inspection tools, from S11, configured in `.mcp.json`).
 * Read Python sources from the archive branch instead of guessing their behaviour.

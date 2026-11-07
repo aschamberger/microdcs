@@ -89,6 +89,49 @@ MICRODCS_TEST_VALKEY=localhost:6380 MICRODCS_TEST_MQTT=localhost:1884 \
 
 The test ports (6380, 1884) are offset from the dev stack, so both can run at the same time.
 
+## Security Scanning
+
+Gitleaks (secrets) and Trivy (vulnerabilities, misconfiguration, SBOM) run as digest-pinned
+containers from `compose.scan.yaml`, through `scripts/scan`, locally and in CI alike
+([D-20](porting/decisions.md#d-20)). Results go to `scan-results/` (git-ignored); the Trivy DB is
+cached in `.cache/trivy`.
+
+```bash
+scripts/scan                  # Gitleaks over the working tree, then Trivy over the repository
+scripts/scan history          # Gitleaks over the full history of all refs
+scripts/scan range main..HEAD # Gitleaks over a commit range
+scripts/scan image            # build the runtime image and scan it with Trivy
+scripts/scan help             # all modes
+```
+
+| Scanner | What it checks | Fails on |
+|---|---|---|
+| Gitleaks (`.gitleaks.toml`) | Default rules plus a canary rule, in files and history | Any finding |
+| Trivy fs (`trivy.yaml`) | NuGet lock files, `Directory.Packages.props`, `docs/requirements.txt`; `Dockerfile` and `deploy/` misconfiguration | HIGH or CRITICAL with a fix available |
+| Trivy image | OS packages of the runtime image | Same |
+
+Trivy does not check compose files or GitHub workflows. The Native AOT binary carries no
+`.deps.json`, so the image scan sees only OS packages; the NuGet packages are covered by the lock
+files. Each Trivy run also writes a CycloneDX SBOM (`sbom-trivy-fs.cdx.json` for the source,
+`sbom-trivy-image.cdx.json` for the image).
+
+Waivers go to `.trivyignore.yaml` (with a statement and an expiry date) or, for test fixtures
+only, to a narrowly scoped `.gitleaks.toml` allowlist. They are listed in
+[Security](security.md#scanner-waivers).
+
+Optional pre-commit hook (Gitleaks over the staged changes): `git config core.hooksPath .githooks`.
+
+CI: `security.yml` runs `gitleaks` (commit range on PRs, full history on `main` and daily),
+`trivy-fs` and `trivy-image` (SARIF to code scanning, SBOMs as artifacts) on every PR, on `main`
+and daily. The `dotnet` job in `ci.yml` runs the SonarQube Cloud analysis
+(`dotnet sonarscanner begin`/`end` around the build and the tests with coverage from
+`Microsoft.Testing.Extensions.CodeCoverage`). The quality gate is the `SonarCloud Code Analysis`
+check of the SonarQube Cloud app. Coverage locally:
+
+```bash
+dotnet test --coverage --coverage-output-format xml --results-directory TestResults
+```
+
 ## Documentation
 
 The site is built with Zensical, pinned with hashes in `docs/requirements.txt`:
