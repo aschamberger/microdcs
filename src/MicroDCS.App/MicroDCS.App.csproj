@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS application host. Until S08 it only carries the Native AOT smoke checks.</Description>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>microdcs</AssemblyName>
+    <IsPackable>false</IsPackable>
+
+    <!-- Native AOT; RuntimeIdentifiers come from Directory.Build.props. -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!--
+      One warning per assembly instead of one per call site. CloudNative.CloudEvents* is not
+      annotated for trimming yet (upstream PR #381, D-14), so it produces IL2104/IL3053 once per
+      assembly. They are not errors here; scripts/check-aot-warnings fails the publish on every
+      other trim or AOT warning, including IL2104/IL3053 from any other assembly.
+    -->
+    <TrimmerSingleWarn>true</TrimmerSingleWarn>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CloudNative.CloudEvents" />
+    <PackageReference Include="CloudNative.CloudEvents.SystemTextJson" />
+  </ItemGroup>
+</Project>

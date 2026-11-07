@@ -9,7 +9,7 @@ Python workflow follows at the end and is replaced as the port proceeds.
 | Tool | Version | Notes |
 |---|---|---|
 | .NET SDK | 10.0.403 (pinned in `global.json`, `rollForward: latestPatch`) | `dotnet-install.sh` or a package manager |
-| Native AOT prerequisites (Linux) | `clang`, `zlib1g-dev` | Needed by `dotnet publish -p:PublishAot=true` |
+| Native AOT prerequisites (Linux) | `clang`, `zlib1g-dev` | Needed for a host AOT publish (`scripts/aot-publish`); the container build brings its own |
 | Docker with Compose v2 | recent | Dev stack and the integration test harness (D-15) |
 | Python 3 | any 3.x | Only for the docs site (zensical) |
 | GitHub CLI | 2.90.0 or later with `gh-stack` | Stacked PRs ([D-22](porting/decisions.md#d-22)) |
@@ -29,7 +29,16 @@ dotnet build                                  # whole solution (MicroDCS.slnx), 
 dotnet test                                   # Microsoft.Testing.Platform runner (global.json)
 dotnet format --verify-no-changes             # formatting and analyzer style check
 CI=true dotnet restore                        # locked-mode restore, as in CI
+scripts/aot-publish src/MicroDCS.App linux-x64 out/   # Native AOT publish, D-14 warning allowlist
+out/microdcs smoke                            # CloudEvents AOT smoke check
+docker build -t microdcs . && docker run --rm microdcs   # same check in the runtime image
 ```
+
+`scripts/aot-publish` fails on every trim or AOT warning except the per-assembly `IL2104`/`IL3053`
+summaries of `CloudNative.CloudEvents*`, which is not annotated for trimming yet
+([D-14](porting/decisions.md#d-14)). The runtime image is `runtime-deps` chiseled: non-root
+(uid 1654), no shell. `src/` projects restore for `linux-x64` and `linux-arm64`, so the lock files
+stay valid for a RID publish in locked mode.
 
 Packages are managed centrally in `Directory.Packages.props`; every project has a
 `packages.lock.json`. After changing a package version run `dotnet restore` and commit the updated
@@ -45,8 +54,36 @@ docker compose up -d --wait     # Mosquitto :1883, Valkey :6379, Aspire dashboar
 docker compose down -v          # stop and wipe the Valkey volume
 ```
 
-Images are pinned by digest; Dependabot proposes updates. The integration test harness
-(`compose.test.yaml`) follows in S02.
+Images are pinned by digest; Dependabot proposes updates.
+
+## Integration Tests
+
+`compose.test.yaml` is the integration harness ([D-15](porting/decisions.md#d-15)). The `tests`
+service builds the `tests` target of the `Dockerfile` and runs `tests/MicroDCS.IntegrationTests`
+against Valkey and Mosquitto on the compose network. CI runs the same command:
+
+```bash
+docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f compose.test.yaml ps -a tests     # must show "exited (0)"
+docker compose -f compose.test.yaml cp tests:/results TestResults/compose   # TRX report
+docker compose -f compose.test.yaml down -v
+```
+
+Compose exits 0 when the tests container never started (for example a dependency failed), so CI
+checks the container's own exit code too. Every service in the file must stay up until the tests
+end; a one-shot service would trigger `--abort-on-container-exit` early.
+
+The tests read their endpoints from `MICRODCS_TEST_VALKEY` and `MICRODCS_TEST_MQTT` (`host:port`).
+Without them a plain `dotnet test` on the host skips them; inside compose `--fail-skips on` turns a
+skip into a failure. For fast iteration on the host:
+
+```bash
+docker compose -f compose.test.yaml up -d valkey mosquitto
+MICRODCS_TEST_VALKEY=localhost:6380 MICRODCS_TEST_MQTT=localhost:1884 \
+  dotnet test --project tests/MicroDCS.IntegrationTests
+```
+
+The test ports (6380, 1884) are offset from the dev stack, so both can run at the same time.
 
 ## Documentation
 

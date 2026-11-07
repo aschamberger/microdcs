@@ -1,0 +1,110 @@
+# .NET CI: build, tests, format, NuGet audit, Native AOT container image with the CloudEvents
+# smoke check (D-14), and the compose integration harness (D-15).
+# Job names are required checks on `main`; renaming one means updating the branch protection.
+# Actions are pinned by commit SHA in S03.
+name: ci
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+env:
+  CI: "true" # locked-mode restore (Directory.Build.props)
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+jobs:
+  dotnet:
+    name: dotnet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+      # NuGetAudit runs during restore; its warnings are errors (TreatWarningsAsErrors).
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - run: dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx
+      - run: dotnet format --verify-no-changes --no-restore
+      - name: NuGet vulnerability audit (direct and transitive)
+        run: |
+          dotnet package list --vulnerable --include-transitive --format json > vulnerable.json
+          if jq -e '[.projects[] | select(.frameworks)] | length > 0' vulnerable.json > /dev/null; then
+            jq '[.projects[] | select(.frameworks)]' vulnerable.json
+            echo "::error::vulnerable NuGet packages found"
+            exit 1
+          fi
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-results
+          path: TestResults/
+          if-no-files-found: ignore
+
+  # Builds the final image (scripts/aot-publish enforces the D-14 warning allowlist) and runs the
+  # CloudEvents AOT smoke check in it: chiseled runtime-deps, non-root, no shell.
+  container:
+    name: container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: runtime
+          tags: microdcs:ci
+          load: true
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,scope=runtime,mode=max
+      - name: AOT smoke check in the container
+        run: docker run --rm microdcs:ci smoke
+      - name: Image runs as non-root without a shell
+        run: |
+          test "$(docker image inspect microdcs:ci --format '{{.Config.User}}')" = "1654"
+          if docker run --rm --entrypoint sh microdcs:ci -c true 2>/dev/null; then
+            echo "::error::the runtime image contains a shell"
+            exit 1
+          fi
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Compose harness (D-15)
+        run: docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+      # compose exits 0 when the tests container never ran (for example a dependency failed to
+      # start), so check the container's own exit code as well.
+      - name: Tests container exited with 0
+        run: test "$(docker compose -f compose.test.yaml ps -a tests --format '{{.State}} {{.ExitCode}}')" = "exited 0"
+      - if: always()
+        name: Collect results and service logs
+        run: |
+          mkdir -p compose-results
+          docker compose -f compose.test.yaml cp tests:/results compose-results/ || true
+          docker compose -f compose.test.yaml logs --no-color --timestamps > compose-results/services.log || true
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-results
+          path: compose-results/
+          if-no-files-found: ignore
+      - if: always()
+        run: docker compose -f compose.test.yaml down -v
