@@ -42,7 +42,7 @@ If something fails and cannot be fixed in this session, say so plainly and recor
 5. Merge bottom-up with squash: `gh stack merge <pr number> --squash` (merges every PR below it too, atomically). GitHub then rebases the rest of the stack; run `gh stack sync` locally.
    A stack with a single open PR is not a stack on GitHub (it needs two or more PRs), and `gh stack merge` refuses it: use `gh pr merge <pr number> --squash` instead.
 6. Fallback without `gh stack`: `git push -u origin <branch>`, `gh pr create --base <branch below or main>`, `gh pr merge --squash --delete-branch`.
-7. After the merge: `git switch main && git pull --ff-only`, delete the local session branch, and do any post-merge steps of the session. No follow-up PR for the post-merge state: the next session verifies the "Post-merge checks" and records the result in its own entry.
+7. After the merge, while the session branch is still checked out: `gh stack unstack --local` (a merged single-PR stack otherwise stays in `.git/gh-stack`, and the next `gh stack init` fails with "main belongs to multiple stacks"). Then `git switch main && git pull --ff-only`, delete the local session branch, and do any post-merge steps of the session. No follow-up PR for the post-merge state: the next session verifies the "Post-merge checks" and records the result in its own entry.
 
 ## 4. Report
 

@@ -35,6 +35,29 @@ services:
       - ./scan-results:/out
     command: ["dir", "/repo", "--config", "/repo/.gitleaks.toml", "--redact", "--no-banner"]
 
+  # Workflow linters (scripts/scan workflows). actionlint: syntax, expressions, action inputs and
+  # shellcheck over `run:` blocks. zizmor: workflow security (injection, permissions, pinning,
+  # cache poisoning). Neither image is signed; the digest pin is the integrity check.
+  actionlint:
+    image: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+    <<: *hardening
+    network_mode: none
+    volumes:
+      - .:/repo:ro
+    command: ["-color=false"]
+
+  zizmor:
+    image: ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
+    <<: *hardening
+    environment:
+      - HOME=/tmp
+      # Passed through only when set on the host: online audits (impostor commits, known-vulnerable
+      # actions, ref confusion) through the GitHub API. Unset: scripts/scan adds --offline.
+      - GH_TOKEN
+    volumes:
+      - .:/repo:ro
+    command: [".github/workflows"]
+
   trivy:
     # Signed by aquasecurity/trivy release workflows (cosign keyless, verified in S03). Never
     # v0.69.4 to v0.69.6 (GHSA-69fq-xp46-6x23).

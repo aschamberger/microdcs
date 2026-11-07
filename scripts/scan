@@ -2,18 +2,21 @@
 # Security scans through the digest-pinned containers in compose.scan.yaml (D-20), identical
 # locally and in CI. Results go to scan-results/ (git-ignored).
 #
-#   scripts/scan                    secrets in the working tree, then trivy fs (before a commit)
+#   scripts/scan                    secrets in the working tree, workflow linters, trivy fs (before a commit)
 #   scripts/scan secrets            gitleaks over the working tree, untracked files included
 #   scripts/scan staged             gitleaks over staged changes (pre-commit hook)
 #   scripts/scan history            gitleaks over the full history of all refs
 #   scripts/scan range <a>..<b>     gitleaks over a commit range (pull requests)
 #   scripts/scan fs                 trivy: NuGet/pip vulnerabilities, Dockerfile and k8s misconfiguration
 #   scripts/scan image [tar]        trivy over an image tarball (default: build the runtime image)
-#   scripts/scan all                secrets, history, fs, image
+#   scripts/scan workflows          actionlint and zizmor over .github/workflows (zizmor online if GH_TOKEN is set)
+#   scripts/scan all                secrets, history, workflows, fs, image
 #
-# Gate: any Gitleaks finding; Trivy HIGH/CRITICAL with a fix available (trivy.yaml), minus the
-# waivers in .trivyignore.yaml. Each Trivy run writes <name>.json, <name>.sarif and the CycloneDX
-# SBOM sbom-<name>.cdx.json; gitleaks writes gitleaks.sarif. Exit code 1 when a gate fails.
+# Gate: any Gitleaks finding; any actionlint error; any zizmor finding at the default persona
+# (ignores only in .github/zizmor.yml, with a comment); Trivy HIGH/CRITICAL with a fix available
+# (trivy.yaml), minus the waivers in .trivyignore.yaml. Each Trivy run writes <name>.json,
+# <name>.sarif and the CycloneDX SBOM sbom-<name>.cdx.json; gitleaks writes gitleaks.sarif, zizmor
+# zizmor.sarif. Exit code 1 when a gate fails.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -44,6 +47,16 @@ trivy() {
   "${compose[@]}" trivy convert --format table --exit-code 1 "/out/$name.json"
 }
 
+# actionlint, then zizmor (gate in the plain run, SARIF for code scanning in a second run).
+workflows() {
+  local offline=() rc=0
+  [[ -n ${GH_TOKEN:-} ]] || offline=(--offline)
+  "${compose[@]}" actionlint || rc=1
+  "${compose[@]}" zizmor .github/workflows --no-progress "${offline[@]}" || rc=1
+  "${compose[@]}" zizmor .github/workflows --no-progress "${offline[@]}" --format sarif > scan-results/zizmor.sarif || true
+  return "$rc"
+}
+
 image() {
   local tar=${1:-}
   if [[ -z $tar ]]; then
@@ -61,7 +74,7 @@ image() {
 mode=${1:-default}
 shift || true
 case $mode in
-  default) gitleaks_dir && trivy trivy-fs fs /repo ;;
+  default) gitleaks_dir && workflows && trivy trivy-fs fs /repo ;;
   secrets) gitleaks_dir ;;
   staged) gitleaks git /repo --pre-commit --staged ;;
   history) gitleaks git /repo --log-opts=--all ;;
@@ -71,12 +84,14 @@ case $mode in
     ;;
   fs) trivy trivy-fs fs /repo ;;
   image) image "$@" ;;
+  workflows) workflows ;;
   all)
     gitleaks_dir
     gitleaks git /repo --log-opts=--all
+    workflows
     trivy trivy-fs fs /repo
     image
     ;;
-  help | -h | --help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help | -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "unknown mode: $mode (see $0 help)" >&2; exit 2 ;;
 esac
