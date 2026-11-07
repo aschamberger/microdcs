@@ -50,3 +50,4 @@ Decisions: D-24 (MIT licence), D-25 (authoring experience is a primary goal), D-
 Done: .NET SDK 10.0.403 installed in `~/.dotnet` with `dotnet-install.sh`; `clang` and `zlib1g-dev` installed by the maintainer. `~/.dotnet` still has to be added to `PATH` (maintainer).
 D-17 revised: late-response rule (finding 4) and outcome-based transition conditions (IEC 61131-3 compatible: named Boolean transitions, priority order, `"true"` as default) decided.
 Open for S07: `max_attempts` default, outcome mapping per `type_id`, routable `timeout`/`error` outcomes.
+Done: GitHub secret scanning and push protection enabled (2026-11-07); no alerts at the time of the check.
