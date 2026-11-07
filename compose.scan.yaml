@@ -1,0 +1,51 @@
+# Security scanners as digest-pinned containers, identical locally and in CI (D-20).
+# Use scripts/scan instead of calling these services directly; it sets the user ids and commands.
+#
+#   scripts/scan                 # secrets in the working tree, then trivy fs
+#   scripts/scan help            # all modes
+#
+# Results land in ./scan-results (git-ignored), the Trivy DB in ./.cache/trivy (git-ignored).
+# The repository is mounted read-only; the containers run as the calling user with a read-only
+# root filesystem. Gitleaks needs no network; Trivy needs it for its vulnerability DB and checks
+# bundle only.
+name: microdcs-scan
+
+x-hardening: &hardening
+  user: "${SCAN_UID:-1000}:${SCAN_GID:-1000}"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  working_dir: /repo
+
+services:
+  gitleaks:
+    # Gitleaks images are not signed; the digest pin is the integrity check (research/ci-scanning.md).
+    image: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    <<: *hardening
+    network_mode: none
+    environment:
+      HOME: /tmp
+      # The checkout belongs to another uid inside the container (CI runner, bind mount).
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: "*"
+    volumes:
+      - .:/repo:ro
+      - ./scan-results:/out
+    command: ["dir", "/repo", "--config", "/repo/.gitleaks.toml", "--redact", "--no-banner"]
+
+  trivy:
+    # Signed by aquasecurity/trivy release workflows (cosign keyless, verified in S03). Never
+    # v0.69.4 to v0.69.6 (GHSA-69fq-xp46-6x23).
+    image: ghcr.io/aquasecurity/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+    <<: *hardening
+    environment:
+      HOME: /tmp
+      TRIVY_CACHE_DIR: /cache
+      TRIVY_CONFIG: /repo/trivy.yaml
+    volumes:
+      - .:/repo:ro
+      - ./scan-results:/out
+      - ${TRIVY_CACHE_HOST_DIR:-./.cache/trivy}:/cache
+    command: ["fs", "/repo"]

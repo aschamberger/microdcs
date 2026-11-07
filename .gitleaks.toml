@@ -1,0 +1,22 @@
+# Gitleaks configuration (D-20): the default rule set plus a canary rule.
+title = "microdcs"
+
+[extend]
+useDefault = true
+
+# Canary for the gate self-test (research/ci-scanning.md): a value matching this rule must fail the
+# scan. Never commit one to a branch that is merged; the self-test uses a throwaway branch.
+[[rules]]
+id = "microdcs-canary"
+description = "MicroDCS scanner canary (self-test)"
+regex = '''MICRODCS-CANARY-[0-9A-F]{24}'''
+keywords = ["microdcs-canary"]
+
+# Allowlists: test fixtures only, by path and regex together, each with a comment saying why.
+# Never a blanket path. None exist yet.
+#
+# [[allowlists]]
+# description = "Fake broker credentials in integration-test fixtures (not used anywhere real)"
+# condition = "AND"
+# paths = ['''^tests/MicroDCS\.IntegrationTests/Fixtures/''']
+# regexes = ['''fixture-password-[a-z0-9]+''']

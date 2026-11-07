@@ -180,7 +180,7 @@ Q-OPS-1: liveness and readiness, metrics (OTLP and/or Prometheus), job state que
 
 ### S22 Container, Kubernetes, supply chain, security review
 
-Image pinned by digest, one multi-arch image for linux-x64 and linux-arm64 from the two native CI builds (D-32), probes using the HTTP surface, hardened manifest with egress NetworkPolicy, SBOM attestation, signing and verification in CI (R-9; the SBOM artifact exists since S03), review of scanner waivers (D-20), `docs/security.md` update including the trust model (D-13), operational limits per transport (R-12), tenancy for the remaining transports (R-20), support model and zones/conduits (R-21), a review of the "Done in the session" list against the new code, and the unverified items that need a cluster (document what is still unverified).
+Image pinned by digest, one multi-arch image for linux-x64 and linux-arm64 from the two native CI builds (D-32), probes using the HTTP surface, hardened manifest with egress NetworkPolicy, SBOM attestation, signing and verification in CI (R-9; the SBOM artifact exists since S03), review of scanner waivers (D-20), the open SonarQube Cloud findings on `deploy/k8s.yaml` (storage requests and limits, rules S6870/S6897, left for the manifest port in S03), `docs/security.md` update including the trust model (D-13), operational limits per transport (R-12), tenancy for the remaining transports (R-20), support model and zones/conduits (R-21), a review of the "Done in the session" list against the new code, and the unverified items that need a cluster (document what is still unverified).
 
 ### S23 Docs port, parity acceptance, release
 

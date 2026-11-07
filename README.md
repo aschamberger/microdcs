@@ -1,5 +1,10 @@
 # MicroDCS
 
+[![ci](https://github.com/aschamberger/microdcs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aschamberger/microdcs/actions/workflows/ci.yml)
+[![security](https://github.com/aschamberger/microdcs/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/aschamberger/microdcs/actions/workflows/security.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=aschamberger_microdcs&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=aschamberger_microdcs)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=aschamberger_microdcs&metric=coverage)](https://sonarcloud.io/summary/new_code?id=aschamberger_microdcs)
+
 > [!WARNING]
 > **Port to .NET in progress.** `main` is being rewritten in C# (.NET 10, Native AOT) and is not a
 > working product until the parity gate. The Python implementation is archived on the

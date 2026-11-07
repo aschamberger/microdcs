@@ -1,6 +1,7 @@
 version: 2
 updates:
-  # .NET packages (Directory.Packages.props, lock files)
+  # .NET packages (Directory.Packages.props, lock files) and local tools (.config/dotnet-tools.json:
+  # dotnet-sonarscanner)
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
@@ -15,16 +16,24 @@ updates:
     schedule:
       interval: "weekly"
 
-  # Dockerfile (from S02) and digest-pinned images in compose files
+  # Dockerfile (from S02) and digest-pinned images in compose files (compose.yaml,
+  # compose.test.yaml, compose.scan.yaml with the Gitleaks and Trivy scanners, D-20).
+  # Trivy: never v0.69.4 to v0.69.6 (GHSA-69fq-xp46-6x23); review scanner bumps before merging.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      docker:
+        patterns: ["*"]
 
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      docker-compose:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

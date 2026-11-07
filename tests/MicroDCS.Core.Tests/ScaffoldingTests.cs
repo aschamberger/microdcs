@@ -6,6 +6,6 @@ public class ScaffoldingTests
     [Fact]
     public void CoreAssemblyIsLoadable()
     {
-        typeof(MicroDCS.Core.AssemblyMarker).Assembly.GetName().Name.ShouldBe("MicroDCS.Core");
+        MicroDCS.Core.AssemblyMarker.Assembly.GetName().Name.ShouldBe("MicroDCS.Core");
     }
 }

@@ -1,8 +1,9 @@
-# .NET CI: build, tests, format, NuGet audit, Native AOT container image with the CloudEvents
-# smoke check (D-14), and the compose integration harness (D-15).
+# .NET CI: build, tests with coverage, SonarQube Cloud analysis (D-20), format, NuGet audit,
+# Native AOT container image with the CloudEvents smoke check (D-14), and the compose integration
+# harness (D-15). Gitleaks and Trivy run in security.yml.
 # Job names are required checks on `main` (dotnet, container (linux-x64), container (linux-arm64),
 # integration); renaming a job or a matrix entry means updating the branch protection.
-# Actions are pinned by commit SHA in S03.
+# Actions are pinned by full commit SHA with the release in a comment (D-20); Dependabot bumps both.
 name: ci
 on:
   push:
@@ -26,18 +27,57 @@ jobs:
     name: dotnet
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v6
+          fetch-depth: 0 # SonarQube Cloud needs the history for blame and new-code detection
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
       # NuGetAudit runs during restore; its warnings are errors (TreatWarningsAsErrors).
       - run: dotnet restore
-      - run: dotnet build --no-restore -c Release
-      - run: dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx
+      - run: dotnet tool restore
+      # SonarQube Cloud, CI-based analysis (D-20). Secrets are absent on fork PRs (and on
+      # Dependabot PRs without the Dependabot secret), so the analysis is skipped there with a notice.
+      # The quality gate is the required check "SonarCloud Code Analysis" posted by the SonarQube
+      # Cloud app; this job does not wait for it.
+      - name: SonarQube Cloud enabled
+        id: sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::SONAR_TOKEN is not available (fork PR or missing secret); SonarQube Cloud analysis skipped"
+          fi
+      - name: SonarQube Cloud begin
+        if: steps.sonar.outputs.enabled == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >-
+          dotnet sonarscanner begin
+          /k:aschamberger_microdcs /o:aschamberger
+          /d:sonar.host.url=https://sonarcloud.io
+          /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.projectBaseDir="$GITHUB_WORKSPACE"
+          /d:sonar.cs.vscoveragexml.reportsPaths=TestResults/*.xml
+          /d:sonar.cs.vstest.reportsPaths=TestResults/*.trx
+          /d:sonar.exclusions="docs/**,spikes/**,**/*.g.cs"
+          /d:sonar.coverage.exclusions="tests/**"
+          /d:sonar.cpd.exclusions="tests/**"
+          /d:sonar.cs.roslyn.ignoreIssues=true
+      - run: dotnet build --no-restore --no-incremental -c Release
+      - run: >-
+          dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx
+          --coverage --coverage-output-format xml
+      - name: SonarQube Cloud end
+        if: steps.sonar.outputs.enabled == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
       - run: dotnet format --verify-no-changes --no-restore
       - name: NuGet vulnerability audit (direct and transitive)
         run: |
@@ -48,7 +88,7 @@ jobs:
             exit 1
           fi
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unit-test-results
           path: TestResults/
@@ -69,11 +109,11 @@ jobs:
           - rid: linux-arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: runtime
@@ -104,7 +144,7 @@ jobs:
     name: integration
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Compose harness (D-15)
@@ -120,7 +160,7 @@ jobs:
           docker compose -f compose.test.yaml cp tests:/results compose-results/ || true
           docker compose -f compose.test.yaml logs --no-color --timestamps > compose-results/services.log || true
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-results
           path: compose-results/

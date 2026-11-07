@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Security scans through the digest-pinned containers in compose.scan.yaml (D-20), identical
+# locally and in CI. Results go to scan-results/ (git-ignored).
+#
+#   scripts/scan                    secrets in the working tree, then trivy fs (before a commit)
+#   scripts/scan secrets            gitleaks over the working tree, untracked files included
+#   scripts/scan staged             gitleaks over staged changes (pre-commit hook)
+#   scripts/scan history            gitleaks over the full history of all refs
+#   scripts/scan range <a>..<b>     gitleaks over a commit range (pull requests)
+#   scripts/scan fs                 trivy: NuGet/pip vulnerabilities, Dockerfile and k8s misconfiguration
+#   scripts/scan image [tar]        trivy over an image tarball (default: build the runtime image)
+#   scripts/scan all                secrets, history, fs, image
+#
+# Gate: any Gitleaks finding; Trivy HIGH/CRITICAL with a fix available (trivy.yaml), minus the
+# waivers in .trivyignore.yaml. Each Trivy run writes <name>.json, <name>.sarif and the CycloneDX
+# SBOM sbom-<name>.cdx.json; gitleaks writes gitleaks.sarif. Exit code 1 when a gate fails.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+mkdir -p scan-results .cache/trivy
+
+export SCAN_UID=${SCAN_UID:-$(id -u)} SCAN_GID=${SCAN_GID:-$(id -g)}
+compose=(docker compose -f compose.scan.yaml run --rm -T)
+gitleaks_args=(--config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
+  --report-format sarif --report-path /out/gitleaks.sarif)
+
+gitleaks() {
+  "${compose[@]}" gitleaks "$@" "${gitleaks_args[@]}"
+}
+
+# Working tree, untracked and ignored files included. Files over 10 MB are skipped: the Trivy DB in
+# .cache/trivy is 1.6 GB and stalls the scan, and source files are never that large.
+gitleaks_dir() {
+  gitleaks dir /repo --max-target-megabytes 10
+}
+
+# trivy <name> <target args...>: one scan to JSON, then the gate (table) and SARIF/SBOM from it.
+trivy() {
+  local name=$1
+  shift
+  "${compose[@]}" trivy "$@" --exit-code 0 --list-all-pkgs --format json --output "/out/$name.json"
+  "${compose[@]}" trivy convert --format sarif --output "/out/$name.sarif" "/out/$name.json"
+  "${compose[@]}" trivy convert --format cyclonedx --output "/out/sbom-$name.cdx.json" "/out/$name.json"
+  "${compose[@]}" trivy convert --format table --exit-code 1 "/out/$name.json"
+}
+
+image() {
+  local tar=${1:-}
+  if [[ -z $tar ]]; then
+    docker build --target runtime -t microdcs:scan .
+    docker save microdcs:scan -o scan-results/image.tar
+    tar=scan-results/image.tar
+  fi
+  case $tar in
+    scan-results/*) ;;
+    *) echo "image tarball must be under scan-results/ (mounted as /out): $tar" >&2; exit 2 ;;
+  esac
+  trivy trivy-image image --input "/out/${tar#scan-results/}"
+}
+
+mode=${1:-default}
+shift || true
+case $mode in
+  default) gitleaks_dir && trivy trivy-fs fs /repo ;;
+  secrets) gitleaks_dir ;;
+  staged) gitleaks git /repo --pre-commit --staged ;;
+  history) gitleaks git /repo --log-opts=--all ;;
+  range)
+    [[ $# -eq 1 && $1 == *..* ]] || { echo "usage: $0 range <base>..<head>" >&2; exit 2; }
+    gitleaks git /repo "--log-opts=$1"
+    ;;
+  fs) trivy trivy-fs fs /repo ;;
+  image) image "$@" ;;
+  all)
+    gitleaks_dir
+    gitleaks git /repo --log-opts=--all
+    trivy trivy-fs fs /repo
+    image
+    ;;
+  help | -h | --help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "unknown mode: $mode (see $0 help)" >&2; exit 2 ;;
+esac

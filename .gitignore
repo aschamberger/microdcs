@@ -10,6 +10,16 @@ TestResults/
 *.trx
 coverage*.xml
 *.cobertura.xml
+*.coverage
+
+# SonarScanner for .NET working directory
+.sonarqube/
+
+# Security scan outputs (scripts/scan) and the Trivy DB cache (.cache/ below)
+/scan-results/
+
+# Maintenance snapshots of the dev MCP server (D-19, S12): they contain payloads. S12 writes here.
+/dumps/
 BenchmarkDotNet.Artifacts/
 
 # Docs site build

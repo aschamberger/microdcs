@@ -1,0 +1,21 @@
+# Trivy configuration for compose.scan.yaml (D-20). Gate: HIGH and CRITICAL with a fix available.
+# Secret scanning is off on purpose: Gitleaks covers secrets, including the git history.
+severity:
+  - HIGH
+  - CRITICAL
+exit-code: 1
+no-progress: true
+ignorefile: /repo/.trivyignore.yaml
+scan:
+  scanners:
+    - vuln
+    - misconfig
+  skip-dirs:
+    - /repo/.git
+    - /repo/.cache
+    - /repo/scan-results
+    - /repo/site
+    - "/repo/**/bin"
+    - "/repo/**/obj"
+vulnerability:
+  ignore-unfixed: true
