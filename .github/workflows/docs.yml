@@ -1,17 +1,24 @@
 # Builds the docs site with the pinned zensical (docs/requirements.txt) and deploys it to
 # GitHub Pages through Actions (Pages source: GitHub Actions; no gh-pages branch).
+# Pull requests that touch the docs build only (no deploy), so a broken build shows before the merge.
 # Actions are pinned by full commit SHA with the release in a comment (D-20); Dependabot bumps both.
 name: docs
 on:
   push:
     branches:
       - main
+  pull_request:
+    paths:
+      - "docs/**"
+      - "overrides/**"
+      - "zensical.toml"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('docs-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,7 +28,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: 3.x
+          python-version: "3.14" # wheel-only install (pip --only-binary); bump when all docs/requirements.txt pins ship wheels
           cache: pip
           cache-dependency-path: docs/requirements.txt
       - id: cache-id
@@ -34,10 +41,12 @@ jobs:
             zensical-
       - run: 'pip install --require-hashes --only-binary :all: -r docs/requirements.txt'
       - run: zensical build
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./site
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:
