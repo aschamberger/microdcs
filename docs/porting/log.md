@@ -70,9 +70,9 @@ Open questions: none new. Not verified: the cloud setup script and NuGet reachab
 Post-merge (done): Pages source switched to Actions, `github-pages` environment allows `main` only, #38 squash-merged (`8748d43`), docs workflow deployed (build and deploy green), live site shows the banner and "Port to .NET (WIP)", `gh-pages` deleted, Dependabot alerts and security updates on (alerts were off and are a prerequisite). `gh stack merge` refuses a single PR ("not a stacked pull request": a GitHub stack needs two or more PRs); `gh pr merge --squash` used instead, now in `/session-end`. Three stale `dependabot/uv/*` branches without PRs remain on GitHub (harmless).
 Next session pickup: S02. Run `/session-start S02`. All S01 PRs are merged, so start a new M0 stack from `main`: `git switch main && git pull --ff-only && gh stack init s02-ci-container`. Workflow names change in S02 (`docs.yml` is already named `docs`; the new .NET `ci.yml` should be named `ci`) before required checks are added to the `main` protection. Maintainer, optional: paste the setup script from `docs/development.md` into the claude.ai/code environment and run `dotnet restore` in a cloud session to verify NuGet reachability.
 
-## S02 CI, container, compose harness, CloudEvents AOT measurement (2026-11-07, [#40](https://github.com/aschamberger/microdcs/pull/40))
+## S02 CI, container, compose harness, CloudEvents AOT measurement (2026-11-07, [#40](https://github.com/aschamberger/microdcs/pull/40), follow-up `s02-handoff`)
 
-Status: done (merge of #40 and required checks pending the maintainer's go).
+Status: done.
 Done:
 
 * `ci.yml` (workflow `ci`) has three jobs. `dotnet`: locked restore with audit, Release build, tests, format, `dotnet package list --vulnerable`. `container`: AOT image, `microdcs smoke` in it, non-root and no-shell check. `integration`: compose harness plus the tests container's own exit code. All three ran green on #40.
@@ -84,4 +84,5 @@ Findings: the CloudEvents 2.9.0 AOT binary works at runtime, but only with sourc
 Decisions: D-14 gained the measured result and the codec rule (no revision).
 Changed in the plan: index (status, library table, Q-TEST-1 owner S23, event row), D-14, research/cloudevents.md; `CLAUDE.md`, `docs/development.md`, `/session-end` DoD.
 Open questions: none new.
-Next session pickup: S03. Run `/session-start S03`. If #40 is merged: `git switch main && git pull --ff-only && gh stack init s03-scanning`; otherwise `gh stack checkout s02-ci-container && gh stack add s03-scanning`. Required checks on `main` are `dotnet`, `container`, `integration` (workflow `ci`); if they are not set yet, add them first (`gh api -X PATCH repos/aschamberger/microdcs/branches/main/protection/required_status_checks`). Maintainer before S03: SonarQube Cloud project and `SONAR_TOKEN` secret (Actions and Dependabot), see [CI scanning](research/ci-scanning.md).
+Post-merge (done): #40 squash-merged (`729e8a8`); `ci` green on `main` (all three jobs), docs deploy green. Required checks on `main`: `dotnet`, `container`, `integration`, bound to the GitHub Actions app (id 15368), `strict` (branch up to date); the other protection settings are unchanged.
+Next session pickup: S03. Run `/session-start S03`. All S02 PRs are merged, so start a new M0 stack from `main`: `git switch main && git pull --ff-only && gh stack init s03-scanning`. S03 adds jobs to `ci.yml` and a `security.yml`; add their job names to the required checks with a full `PUT .../branches/main/protection` (PATCH on `required_status_checks` only works once checks exist; keep the other settings). Maintainer before S03: SonarQube Cloud project and `SONAR_TOKEN` secret (Actions and Dependabot), see [CI scanning](research/ci-scanning.md).
