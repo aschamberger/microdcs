@@ -52,9 +52,9 @@ D-17 revised: late-response rule (finding 4) and outcome-based transition condit
 Open for S07: `max_attempts` default, outcome mapping per `type_id`, routable `timeout`/`error` outcomes.
 Done: GitHub secret scanning and push protection enabled (2026-11-07); no alerts at the time of the check.
 
-## S01 Repository reset, scaffolding, agent setup (2026-11-07, branch `s01-repo-reset`)
+## S01 Repository reset, scaffolding, agent setup (2026-11-07, [#38](https://github.com/aschamberger/microdcs/pull/38), follow-up `s01-handoff`)
 
-Status: done (post-merge checks for S02 below).
+Status: done.
 Done:
 
 * Python removed from `main` (first commit); MIT `LICENSE`, README banner, `SECURITY.md` without the `pyproject.toml` reference. `compose.yaml` on `valkey-bundle`, images pinned by digest, Python `app` profile dropped. Dependabot: `nuget` replaces `uv`, `pip` for `/docs`, plus `docker-compose` for the digest pins.
@@ -67,4 +67,5 @@ Findings: `clang` was missing despite the earlier log; the maintainer installed 
 Decisions: D-27 to D-30 carried over from Python ([sorted list](research/python-design-decisions.md)), D-31 .NET conventions (S01 defaults taken).
 Changed in the plan: index (D-27 to D-31, session status), decisions, research file added.
 Open questions: none new. Not verified: the cloud setup script and NuGet reachability from a claude.ai/code environment (needs a cloud session).
-Next session pickup: S02. Before starting, check on `main`: the docs workflow deployed through Actions and the site shows "Port to .NET (WIP)"; `gh-pages` branch deleted; Dependabot security updates on; no `uv` Dependabot PRs open. Then `/session-start S02`; S02 is the second PR of the M0 stack (`gh stack init s02-ci-container` from `main` if S01 is merged). Maintainer, optional: paste the setup script from `docs/development.md` into the claude.ai/code environment and run `dotnet restore` in a cloud session.
+Post-merge (done): Pages source switched to Actions, `github-pages` environment allows `main` only, #38 squash-merged (`8748d43`), docs workflow deployed (build and deploy green), live site shows the banner and "Port to .NET (WIP)", `gh-pages` deleted, Dependabot alerts and security updates on (alerts were off and are a prerequisite). `gh stack merge` refuses a single PR ("not a stacked pull request": a GitHub stack needs two or more PRs); `gh pr merge --squash` used instead, now in `/session-end`. Three stale `dependabot/uv/*` branches without PRs remain on GitHub (harmless).
+Next session pickup: S02. Run `/session-start S02`. All S01 PRs are merged, so start a new M0 stack from `main`: `git switch main && git pull --ff-only && gh stack init s02-ci-container`. Workflow names change in S02 (`docs.yml` is already named `docs`; the new .NET `ci.yml` should be named `ci`) before required checks are added to the `main` protection. Maintainer, optional: paste the setup script from `docs/development.md` into the claude.ai/code environment and run `dotnet restore` in a cloud session to verify NuGet reachability.
