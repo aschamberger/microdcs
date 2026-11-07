@@ -154,7 +154,7 @@ The pure core (findings 1 to 11): compiled graph with build-time validation (inc
 
 ### S16 Job models and state machine
 
-Implement the S05 strategy: ISA-95 types, job state machine with persistence, Work Master extension (NodeSet v2 and generated models), the recipe-independent job order types, serialization with source generation. Port the Python state machine tests as the specification.
+Implement the S05 strategy ([D-34](decisions.md#d-34), [OPC UA spike](research/opcua-spike.md)): the version-neutral job model (records, canonical state, operations) with conversions to and from the generated Job Control V1 and V2 types, the OPC UA JSON verbose codec with the traps of D-34, the transition table generated from the vendored V2 NodeSet2 by a small tool (checked in, drift test in CI) with a hand-written supplement for Store, StoreAndStart, Cancel, Clear and the initial sub-states, the pure transition function and V2 state-array codec, V1 rules written from the V1 specification text (Stop removes the order, single-selector response requests, `Loaded` and `Error`) with the V1 state mapping confirmed, the `ReturnStatus` bitmap, the execution-system transitions, lossless same-version round-trip tests, NodeSet pinning test, the Work Master extension as an own NodeSet2 model (`urn:microdcs:jobcontrol`, generated at build time) with its own CloudEvent type, JSON Schema generation for `dataschema`. Cross-check against the upstream provider rules and tests as vectors. Port the Python state machine tests as the specification.
 
 ### S17 Machinery Jobs processor and job DAOs
 

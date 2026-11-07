@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S05** or **S06** (S04 is done, M0 is complete).
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S06** (S04 and S05 are done, M0 is complete).
 
 ## How to use these files
 
@@ -33,7 +33,7 @@ Main drivers for doing this now, before investing more in the Python implementat
 | NATS | NATS.Net | AOT friendly. JetStream vs. core, CloudEvents binding |
 | AMQP | AMQPNetLite | Use `AMQPNetLite.Core`, not the `AMQPNetLite` metapackage: Core is AOT clean (S04 follow-up), the metapackage adds the serializer with 13 warnings (D-33). Alternative for RabbitMQ: `RabbitMQ.AMQP.Client` (builds on Core, untested). AMQP 1.0 only (RabbitMQ 4+, Artemis, Azure Service Bus; not RabbitMQ 0-9-1) |
 | Zenoh | **No official binding** (`eclipse-zenoh/zenoh-csharp` is a placeholder, checked 2026-11-06). **Preferred candidate: [`sanri/zenoh-csharp`](https://github.com/sanri/zenoh-csharp)** (NuGet `Zenoh-CS` 0.5.0, a fork of the Eclipse repository): wraps zenoh-c 1.10.0 with a version mapping per release; EPL-2.0 OR Apache-2.0; covers session, publisher, subscriber, queryable, querier, liveliness and shared memory, with attachments in the C declarations; `netstandard2.0`, classic `DllImport`; native zenoh-c not bundled (installed on the host, built with `UNSTABLE_API` and `SHARED_MEMORY`); one maintainer, 19 stars, a commit gap from 2025-12 to 2026-08. Fallbacks: ZenohDotNet (third-party, MIT, one author, bundles the native library), or a thin binding of our own over zenoh-c | S04 result: publishes clean; pub/sub with attachments works; `Session.Get` against a queryable crashes (suspected stale `ZGetOptions` struct, [library spike](research/library-spike.md#zenoh-cs-050-and-zenoh-c-1100)). Prebuilt zenoh-c 1.10.0 has the needed flags. Choice recorded as a decision before S25 (D-33) |
-| OPC UA | OPC Foundation UA-.NETStandard 2.x (`Opc.Ua.ISA95*`), MIT since v2 (D-21) | AOT supported via source-generated models ([Native AOT](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/NativeAoT.md#publish-an-application)); **do not use** the Reflection.Emit complex-type builder ([Complex Types](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/ComplexTypes.md#type-builders)). Open: version stability, NodeSet v2 tooling for the Work Master extension (S05) |
+| OPC UA | OPC Foundation UA-.NETStandard 2.x (`Opc.Ua.ISA95*`), MIT since v2 (D-21) | AOT supported via source-generated models ([Native AOT](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/NativeAoT.md#publish-an-application)); **do not use** the Reflection.Emit complex-type builder ([Complex Types](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/ComplexTypes.md#type-builders)). S05 result (D-34): 2.0.1 packages target net10.0 and publish AOT clean as plain models; V1 and V2 behind a version-neutral model; the stack's engine is internal, so the transition table is generated from the V2 NodeSet and used by our own pure state machine; the Work Master extension is an own NodeSet2 model with generated code ([OPC UA spike](research/opcua-spike.md)). The ISA95 package pulls the full `Opc.Ua.Core` stack |
 | CloudEvents | `CloudNative.CloudEvents` 2.9.0 (July 2026) | **Not AOT annotated today** (open issue and PR #381); the AOT binary works at runtime with source-generated `JsonSerializerOptions` (measured in S02), no MQTTnet 5 / NATS / Zenoh binding. D-14: use upstream, stay AOT-ready, fork late and only if blocked |
 | MCP | `ModelContextProtocol.AspNetCore` 2.x | Marked AOT compatible; attribute-based tool discovery not verified under AOT (S04) |
 | ~~MessagePack-CSharp~~ | not needed | MessagePack is dropped (driver 4) |
@@ -96,8 +96,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 
 | [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
 | [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP via AMQPNetLite.Core (clean), Zenoh library open (Zenoh-CS `Get` crash) |
+| [D-34](decisions.md#d-34) | decided | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
 
-Next free id: **D-34**.
+Next free id: **D-35**.
 
 ## Open questions
 
@@ -111,9 +112,9 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-STRAT-4 Public API | Goal decided: a polished authoring experience (D-25). Open: the concrete .NET shape of `@incoming`/`@outgoing` handlers and dataclasses (attributes plus source generators, analyzers) | S06 |
 | Q-STRAT-5 Packaging and release | NuGet package split (core, MQTT, NATS, AMQP, Zenoh, OPC UA models, SFC), semver, `dotnet new` templates replacing the Python scaffolder. Publishing needs a released upstream CloudEvents package (D-14). Licence: MIT (D-24), OPC UA dependency fine (D-21) | S26 |
 | ~~Q-ARCH-1~~ Native AOT | → D-33: core stack AOT-clean incl. AMQPNetLite.Core, Zenoh library open until S25 | — |
-| Q-ARCH-2 Serialization | System.Text.Json source generation vs. OPC UA JSON encoders; wire format for job orders (OPC UA JSON vs. plain JSON from the generated schema) | S05 |
+| ~~Q-ARCH-2~~ Serialization | → D-34 for job models: OPC UA JSON verbose through `JsonEncoder`/`JsonDecoder`. Remaining: envelope and other payloads (System.Text.Json source generation) | S06 |
 | Q-ARCH-3 Hosting and configuration | `Microsoft.Extensions.Hosting` as replacement for `MicroDCS`/`SystemEventTaskGroup`/`AdditionalTask`; keep `APP_*` names or move to `IConfiguration` conventions (`APP__MQTT__HOSTNAME`) | S06 |
-| Q-ARCH-4 State machine | Stateless, the OPC UA ISA-95 job state machine, or source generated? Must persist state and support the OPC UA transitions/methods | S05 |
+| ~~Q-ARCH-4~~ State machine | → D-34: transition table generated from the V2 NodeSet, own pure transition function (S16); the stack's engine is internal and not persistence-ready | — |
 | ~~Q-ARCH-5~~ OPC UA server | → D-4 | — |
 | Q-ARCH-6 Abstraction fit | Extension points exist, the transport-neutral pipeline does not. Decide A-1 to A-8 ([abstraction mapping](research/abstraction.md)) | S06 |
 | Q-ARCH-7 Delivery semantics | Which transports need the Valkey dedupe claim (everything with redelivery), and what the Zenoh command path relies on (SFC re-dispatch, D-9) | S06 |
@@ -131,7 +132,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
 | ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
 | OpenTelemetry coverage | What .NET, MQTTnet, NATS.Net and StackExchange.Redis give out of the box; which custom handler variants disappear | S04, S10 |
-| ISA-95 via OPC UA, Work Master extension, JSON Schema generation | Plain typed models without a server? Work Master as NodeSet v2 plus generated models? Can [SchemaGeneration](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/SchemaGeneration.md) replace `dataclassgen`? | S05 |
+| ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
 | R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
 | R-20 Multi-tenancy | NATS accounts in S14, the other transports and the key-prefix convention in S22 | S14, S22 |
 | R-21 Support model, zones/conduits | Language-independent documentation | S22 |
@@ -150,7 +151,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S03 | Security and quality scanning (D-20) | S02 | done |
 | **M1 Foundation** | | | |
 | S04 | Spike: library stack, AOT and Valkey behaviour | S02 | done |
-| S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | open |
+| S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | done |
 | S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | open |
 | S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | open |
 | S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | open |
