@@ -62,6 +62,7 @@ jobs:
           /k:aschamberger_microdcs /o:aschamberger
           /d:sonar.host.url=https://sonarcloud.io
           /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.projectBaseDir="$GITHUB_WORKSPACE"
           /d:sonar.cs.vscoveragexml.reportsPaths=TestResults/*.xml
           /d:sonar.cs.vstest.reportsPaths=TestResults/*.trx
           /d:sonar.exclusions="docs/**,spikes/**,**/*.g.cs"

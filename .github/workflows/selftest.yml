@@ -1,0 +1,13 @@
+# S03 gate self-test, never merged: unpinned action (SonarQube Cloud githubactions:S7637).
+name: selftest
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
