@@ -15,8 +15,8 @@ Run and report the real results:
 
 * `dotnet build` with zero warnings, `dotnet test` green, `dotnet format --verify-no-changes` clean.
 * `CI=true dotnet restore` passes (lock files committed).
-* AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects (once an app project exists, S02).
-* Compose integration tests green for the touched transports (from S02).
+* AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects: `scripts/aot-publish src/MicroDCS.App linux-x64 <out>` (only the D-14 allowlist passes), and `docker build` plus `docker run --rm <image>` for the image.
+* Compose integration tests green for the touched transports (`compose.test.yaml`, and the `tests` container exited with 0).
 * Public API has XML docs; no secrets or payloads in logs.
 * From S03: scanners green (`scripts/scan` for changes to workflows, Dockerfiles or configuration; Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code). Use SonarQube analysis tools when available. Waivers only with reason and expiry (D-20).
 * From S11: every new stateful component ships its read-only inspector (D-19).

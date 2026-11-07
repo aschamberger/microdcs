@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S02**.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S03** (S04 and S05 are also unblocked).
 
 ## How to use these files
 
@@ -34,7 +34,7 @@ Main drivers for doing this now, before investing more in the Python implementat
 | AMQP | AMQPNetLite | AOT needs manual trimmer annotations (`[DynamicDependency]`). AMQP 1.0 only (RabbitMQ 4+, Artemis, Azure Service Bus; not RabbitMQ 0-9-1) |
 | Zenoh | **No official binding** (`eclipse-zenoh/zenoh-csharp` is a placeholder, checked 2026-11-06). **Preferred candidate: [`sanri/zenoh-csharp`](https://github.com/sanri/zenoh-csharp)** (NuGet `Zenoh-CS` 0.5.0, a fork of the Eclipse repository): wraps zenoh-c 1.10.0 with a version mapping per release; EPL-2.0 OR Apache-2.0; covers session, publisher, subscriber, queryable, querier, liveliness and shared memory, with attachments in the C declarations; `netstandard2.0`, classic `DllImport`; native zenoh-c not bundled (installed on the host, built with `UNSTABLE_API` and `SHARED_MEMORY`); one maintainer, 19 stars, a commit gap from 2025-12 to 2026-08. Fallbacks: ZenohDotNet (third-party, MIT, one author, bundles the native library), or a thin binding of our own over zenoh-c | S04: publish-only test of `Zenoh-CS` (AOT warnings, whether managed attachments work, zenoh-c in the image); if the warnings are not clean, contributing upstream (or a fork) beats writing our own binding. Choice recorded as a decision before S25 |
 | OPC UA | OPC Foundation UA-.NETStandard 2.x (`Opc.Ua.ISA95*`), MIT since v2 (D-21) | AOT supported via source-generated models ([Native AOT](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/NativeAoT.md#publish-an-application)); **do not use** the Reflection.Emit complex-type builder ([Complex Types](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/ComplexTypes.md#type-builders)). Open: version stability, NodeSet v2 tooling for the Work Master extension (S05) |
-| CloudEvents | `CloudNative.CloudEvents` 2.9.0 (July 2026) | **Not AOT compatible today** (open issue and PR #381), no MQTTnet 5 / NATS / Zenoh binding. D-14: use upstream, stay AOT-ready, fork late and only if blocked |
+| CloudEvents | `CloudNative.CloudEvents` 2.9.0 (July 2026) | **Not AOT annotated today** (open issue and PR #381); the AOT binary works at runtime with source-generated `JsonSerializerOptions` (measured in S02), no MQTTnet 5 / NATS / Zenoh binding. D-14: use upstream, stay AOT-ready, fork late and only if blocked |
 | MCP | `ModelContextProtocol.AspNetCore` 2.x | Marked AOT compatible; attribute-based tool discovery not verified under AOT (S04) |
 | ~~MessagePack-CSharp~~ | not needed | MessagePack is dropped (driver 4) |
 
@@ -124,7 +124,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-OPS-1 HTTP surface | Liveness/readiness, metrics, job state query API (R-19), OpenAPI; listener layout shared with inspection and MCP (D-19) | S06 layout, S21 |
 | Q-OPS-2 Container and Kubernetes | Chiseled/distroless AOT image, manifest, Zenoh native library in the image, hardening from `docs/security.md` | S22 |
 | Q-OPS-3 Security | Authn/z per transport (NATS accounts/NKeys, AMQP SASL, Zenoh ACLs), the level-0 scope rule (R-6) | S10, S22 |
-| Q-TEST-1 Test strategy | Compose setup decided (D-15). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2 | S02, S23 |
+| Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
 | Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
 | ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
 | OpenTelemetry coverage | What .NET, MQTTnet, NATS.Net and StackExchange.Redis give out of the box; which custom handler variants disappear | S04, S10 |
@@ -143,7 +143,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 |---|---|---|---|
 | **M0 Setup** | | | |
 | S01 | Repository reset: remove Python, scaffolding, Claude Code setup, WIP docs site | none | done |
-| S02 | CI, container, compose harness, CloudEvents AOT measurement | S01 | open |
+| S02 | CI, container, compose harness, CloudEvents AOT measurement | S01 | done |
 | S03 | Security and quality scanning (D-20) | S02 | open |
 | **M1 Foundation** | | | |
 | S04 | Spike: library stack, AOT and Valkey behaviour | S02 | open |
@@ -171,7 +171,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S24 | AMQP transport | S14 | open |
 | S25 | Zenoh transport and CloudEvents-over-Zenoh mapping | S14 | open |
 | S26 | Packaging, NuGet release, `dotnet new` templates | released upstream CloudEvents package | open |
-| Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S02, S06, S08, S26 (D-14) |
+| Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S06, S08, S26 (D-14); S02: open, 2.9.0 latest |
 
 Session ids were renumbered on 2026-11-07; the mapping from the old ids is in the [log](log.md).
 

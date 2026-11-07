@@ -1,0 +1,20 @@
+# Build context for the Dockerfile: sources and build inputs only.
+**/bin/
+**/obj/
+**/TestResults/
+artifacts/
+site/
+.cache/
+.git/
+.github/
+.claude/
+.vscode/
+.idea/
+docs/
+overrides/
+deploy/
+schemas/
+app/
+*.log
+.env
+review.md

@@ -41,7 +41,12 @@ stacked-PR steps. The handoff is part of the session's own PR.
 
 ```
 src/MicroDCS.Core/          core library (contracts arrive in S06)
+src/MicroDCS.App/           AOT application (`microdcs`); until S08 only the CloudEvents AOT smoke check
 tests/MicroDCS.Core.Tests/  unit tests
+tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
+scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
+Dockerfile                  AOT publish into chiseled runtime-deps (non-root, no shell); `tests` target for compose
+compose.test.yaml           integration harness (D-15): Valkey, Mosquitto, tests container
 docs/                       docs site; docs/porting/ is the port plan
 schemas/                    JSON Schemas (greetings, machinery jobs, SFC recipe, IJT)
 deploy/                     Kubernetes manifest (Python era, ported in S22)
@@ -60,10 +65,13 @@ CI=true dotnet restore                # locked-mode restore; commit packages.loc
 docker compose up -d --wait           # dev stack; `docker compose down -v` wipes Valkey
 ```
 
-Integration tests run inside compose (D-15): `compose.test.yaml` arrives in S02; the command is
-`docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests`.
-AOT publish smoke: `dotnet publish -c Release -r linux-x64 -p:PublishAot=true` on the app project
-(S02 adds it).
+Integration tests run inside compose (D-15):
+`docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests`,
+then `docker compose -f compose.test.yaml down -v`. Compose exits 0 if the tests container never ran,
+so also check `docker compose -f compose.test.yaml ps -a tests` (CI does).
+AOT publish: `scripts/aot-publish src/MicroDCS.App linux-x64 <out-dir>` (fails on every trim/AOT
+warning except the allowlisted `CloudNative.CloudEvents*` ones), then `<out-dir>/microdcs smoke`.
+Container: `docker build -t microdcs . && docker run --rm microdcs`.
 
 ## Coding rules
 

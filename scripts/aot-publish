@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Native AOT publish with the D-14 warning allowlist. The project sets PublishAot itself (a global
+# -p:PublishAot=true would also apply to referenced libraries and break the locked restore).
+#
+#   scripts/aot-publish <project> <rid> <output-dir> [extra dotnet publish args...]
+#
+# Every trim/AOT warning is already an error (TreatWarningsAsErrors), except the per-assembly
+# IL2104/IL3053 summaries that TrimmerSingleWarn produces. Those are allowed only for the
+# CloudNative.CloudEvents* assemblies (upstream PR #381); any other assembly fails the publish.
+set -euo pipefail
+
+if [[ $# -lt 3 ]]; then
+  echo "usage: $0 <project> <rid> <output-dir> [dotnet publish args...]" >&2
+  exit 2
+fi
+project=$1 rid=$2 out=$3
+shift 3
+
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
+
+dotnet publish "$project" -c Release -r "$rid" -o "$out" "$@" 2>&1 | tee "$log"
+
+# Assemblies named in IL2104/IL3053 summaries, minus the allowlisted ones.
+mapfile -t unexpected < <(grep -oE "warning IL(2104|3053): Assembly '[^']+'" "$log" \
+  | sed -E "s/.*Assembly '([^']+)'/\1/" \
+  | sort -u \
+  | grep -vE '^CloudNative\.CloudEvents(\..+)?$' || true)
+
+if (( ${#unexpected[@]} > 0 )); then
+  echo "aot-publish: trim/AOT warnings from assemblies outside the D-14 allowlist:" >&2
+  printf '  %s\n' "${unexpected[@]}" >&2
+  exit 1
+fi
+
+allowed=$(grep -cE "warning IL(2104|3053): Assembly 'CloudNative\.CloudEvents" "$log" || true)
+echo "aot-publish: ok (${allowed} allowlisted CloudNative.CloudEvents* warning line(s))"

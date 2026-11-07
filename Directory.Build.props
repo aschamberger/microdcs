@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+    <!-- Project directory relative to the repository root, for the src/ and tests/ groups below.
+         Relative on purpose: an absolute path such as /src/tests/... (container build) must not match. -->
+    <_RepoRelativeProjectDir>$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').Replace('\', '/'))/</_RepoRelativeProjectDir>
 
     <!-- Zero warnings: every warning fails the build. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -35,13 +38,16 @@
   </PropertyGroup>
 
   <!-- Library projects under src/: AOT compatible (enables the trim, AOT and single-file analyzers) and XML docs. -->
-  <PropertyGroup Condition="$(MSBuildProjectDirectory.Replace('\', '/').Contains('/src/'))">
+  <PropertyGroup Condition="$(_RepoRelativeProjectDir.StartsWith('src/'))">
     <IsAotCompatible>true</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Publish targets of the container images. Restoring them keeps every lock file valid for
+         `dotnet publish -r <rid>` in locked mode (a RID publish restores referenced projects too). -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <!-- Test projects under tests/: not packable, no XML docs required. -->
-  <PropertyGroup Condition="$(MSBuildProjectDirectory.Replace('\', '/').Contains('/tests/'))">
+  <PropertyGroup Condition="$(_RepoRelativeProjectDir.StartsWith('tests/'))">
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>

@@ -33,9 +33,25 @@ Checked on 2026-11-06 against the `cloudevents/sdk-csharp` repository (main bran
 * The AOT problem is small and fixable. The allocation-heavy object model (boxed attributes, `byte[]` data) is a design property, but a minor cost compared with broker, Valkey and JSON payload work at DCS message rates. **Measure before breaking it** (R-18).
 * Rewriting from scratch would discard the attribute type system, spec edge cases, the AMQP binding and ~10k lines of tests.
 
+## AOT measurement (S02, 2026-11-07)
+
+Measured with `src/MicroDCS.App` (`microdcs smoke`), .NET SDK 10.0.403, `CloudNative.CloudEvents` and `.SystemTextJson` 2.9.0 from NuGet, linux-x64. The binary ran on the host and in the chiseled `runtime-deps` image, locally and in CI (PR #40).
+
+| Check | Result |
+|---|---|
+| Publish warnings | With `TrimmerSingleWarn`, exactly one `IL2104` and one `IL3053`, both for `CloudNative.CloudEvents.SystemTextJson`. The core `CloudNative.CloudEvents` assembly produces none in this usage. `scripts/aot-publish` enforces the allowlist |
+| Structured mode, `Data` as `JsonElement` | Works, **only with** `new JsonEventFormatter(options, default)`, where `options.TypeInfoResolver` is a source-generated `JsonSerializerContext` that includes `JsonElement` |
+| Structured mode, `Data` as `byte[]` | Works (`data_base64`) |
+| Binary mode, `JsonElement` and `byte[]` | Works |
+| `JsonEventFormatter<T>` with a source-generated type | Works with the same options |
+| Default `new JsonEventFormatter()` with `JsonElement` data | Throws `InvalidOperationException` ("Reflection-based serialization has been disabled"). `PublishAot` sets `JsonSerializerIsReflectionEnabledByDefault=false`, also in JIT runs of the project. The smoke check asserts this failure, so a change in upstream behaviour shows up |
+
+Result: no runtime failure that needs the fork; D-14 stays on upstream. The rule for the S06 envelope codec: always construct the formatter with source-generated options, never with the default constructor.
+PR #381 status on 2026-11-07: open, not merged, last updated 2026-11-01. Latest release: 2.9.0 (2026-07-04).
+
 ## Follow-ups
 
-* Verify in S02 once a .NET SDK is available: publish an AOT app (`PublishAot`, `IsAotCompatible`) against upstream 2.9.0 with `Data` as `JsonElement` and `byte[]`, and as a source-generated type. This turns the AOT finding from "from source" into measured. If it fails at runtime, test with PR #381 applied (fork late rule).
+* ~~Verify in S02~~: done, see above.
 * Check which of our attributes are covered by spec extensions (`expirytime`, `recordedtime`, tracing, correlation) and adopt the spec's names and types where they exist, to stay interoperable; `mdcs*` stays ours. Check the spec NATS binding for the header prefix (not verified here).
 * Benchmark the envelope (BenchmarkDotNet, R-18) in S10, once the pipeline hot path exists; S23 records the baseline.
 * Decide the JSON shape of the transport-neutral envelope together with xRegistry/WoT later (out of scope list).

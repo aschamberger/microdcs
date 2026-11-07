@@ -1,0 +1,55 @@
+# Integration test harness (D-15). Runs identically locally and in CI:
+#
+#   docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+#   docker compose -f compose.test.yaml down -v
+#
+# Host mode for fast iteration: `docker compose -f compose.test.yaml up -d valkey mosquitto`, then
+# `dotnet test` with MICRODCS_TEST_VALKEY=localhost:6380 and MICRODCS_TEST_MQTT=localhost:1884
+# (ports offset from the dev stack in compose.yaml so both can run at once).
+#
+# No named volumes: every run starts empty. Images are pinned by digest (Dependabot docker-compose).
+
+name: microdcs-test
+
+services:
+  valkey:
+    # valkey-bundle (D-26), same image as the dev stack; no persistence in tests.
+    image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+    command: valkey-server --save "" --appendonly no
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  mosquitto:
+    image: eclipse-mosquitto:2@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98
+    command: mosquitto -c /mosquitto-no-auth.conf
+    ports:
+      - "127.0.0.1:1884:1883"
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  # The application image joins as the system under test once it has a long-running host (S08,
+  # S13). A one-shot service cannot be part of this file: any container exit triggers
+  # --abort-on-container-exit before the tests run, and compose then still exits 0. The AOT smoke
+  # check (D-14) runs as `docker run` of the runtime image in CI instead.
+
+  tests:
+    build:
+      context: .
+      target: tests
+    image: microdcs-tests:test
+    environment:
+      MICRODCS_TEST_VALKEY: valkey:6379
+      MICRODCS_TEST_MQTT: mosquitto:1883
+    depends_on:
+      valkey:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
