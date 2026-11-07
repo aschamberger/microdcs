@@ -1,6 +1,7 @@
 # .NET CI: build, tests, format, NuGet audit, Native AOT container image with the CloudEvents
 # smoke check (D-14), and the compose integration harness (D-15).
-# Job names are required checks on `main`; renaming one means updating the branch protection.
+# Job names are required checks on `main` (dotnet, container (linux-x64), container (linux-arm64),
+# integration); renaming a job or a matrix entry means updating the branch protection.
 # Actions are pinned by commit SHA in S03.
 name: ci
 on:
@@ -54,10 +55,19 @@ jobs:
           if-no-files-found: ignore
 
   # Builds the final image (scripts/aot-publish enforces the D-14 warning allowlist) and runs the
-  # CloudEvents AOT smoke check in it: chiseled runtime-deps, non-root, no shell.
+  # CloudEvents AOT smoke check in it: chiseled runtime-deps, non-root, no shell. One native runner
+  # per platform (D-32): Native AOT links for the build machine's architecture, and emulation is slow.
   container:
-    name: container
-    runs-on: ubuntu-latest
+    name: container (${{ matrix.rid }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            runner: ubuntu-24.04
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -69,10 +79,19 @@ jobs:
           target: runtime
           tags: microdcs:ci
           load: true
-          cache-from: type=gha,scope=runtime
-          cache-to: type=gha,scope=runtime,mode=max
+          cache-from: type=gha,scope=runtime-${{ matrix.rid }}
+          cache-to: type=gha,scope=runtime-${{ matrix.rid }},mode=max
       - name: AOT smoke check in the container
         run: docker run --rm microdcs:ci smoke
+      - name: Binary matches the platform
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          arch=$(docker image inspect microdcs:ci --format '{{.Architecture}}')
+          case "$RID:$arch" in
+            linux-x64:amd64|linux-arm64:arm64) echo "image architecture: $arch" ;;
+            *) echo "::error::$RID built an $arch image"; exit 1 ;;
+          esac
       - name: Image runs as non-root without a shell
         run: |
           test "$(docker image inspect microdcs:ci --format '{{.Config.User}}')" = "1654"

@@ -22,6 +22,7 @@ Do not re-research settled decisions. If a decision looks wrong, say so and reco
 
 * Dependencies of the session are `done` (or merged far enough) in the session table.
 * Manual steps named in the previous pickup are done; ask the user if unsure.
+* Post-merge checks of the previous session (its log entry, "Post-merge checks"): verify each one, for example `gh run list --branch main --limit 5` for green CI on `main` and `gh api repos/aschamberger/microdcs/branches/main/protection/required_status_checks` for the required checks. Record the result in one line ("Previous session post-merge: verified" or what was fixed) in this session's log entry. Fix anything that is off in this session's PR; no separate follow-up PR.
 * Toolchain: `dotnet --info` shows the SDK from `global.json`; `docker compose version` works when the session touches compose.
 
 ## 3. Branch in the milestone stack (D-22)

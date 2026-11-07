@@ -12,6 +12,7 @@ Findings: <facts learned that others depend on, with evidence: command, output s
 Decisions: <new or changed D-ids>
 Changed in the plan: <files and sections updated>
 Open questions: <new ones>
+Post-merge checks: <what must hold after the squash merge; the next session verifies and records it>
 Next session pickup: <session id, exact first steps, anything to prepare (manual steps for the maintainer)>
 ```
 
@@ -70,7 +71,7 @@ Open questions: none new. Not verified: the cloud setup script and NuGet reachab
 Post-merge (done): Pages source switched to Actions, `github-pages` environment allows `main` only, #38 squash-merged (`8748d43`), docs workflow deployed (build and deploy green), live site shows the banner and "Port to .NET (WIP)", `gh-pages` deleted, Dependabot alerts and security updates on (alerts were off and are a prerequisite). `gh stack merge` refuses a single PR ("not a stacked pull request": a GitHub stack needs two or more PRs); `gh pr merge --squash` used instead, now in `/session-end`. Three stale `dependabot/uv/*` branches without PRs remain on GitHub (harmless).
 Next session pickup: S02. Run `/session-start S02`. All S01 PRs are merged, so start a new M0 stack from `main`: `git switch main && git pull --ff-only && gh stack init s02-ci-container`. Workflow names change in S02 (`docs.yml` is already named `docs`; the new .NET `ci.yml` should be named `ci`) before required checks are added to the `main` protection. Maintainer, optional: paste the setup script from `docs/development.md` into the claude.ai/code environment and run `dotnet restore` in a cloud session to verify NuGet reachability.
 
-## S02 CI, container, compose harness, CloudEvents AOT measurement (2026-11-07, [#40](https://github.com/aschamberger/microdcs/pull/40), follow-up `s02-handoff`)
+## S02 CI, container, compose harness, CloudEvents AOT measurement (2026-11-07, [#40](https://github.com/aschamberger/microdcs/pull/40), follow-up [#41](https://github.com/aschamberger/microdcs/pull/41))
 
 Status: done.
 Done:
@@ -80,9 +81,11 @@ Done:
 * `compose.test.yaml` (Valkey and Mosquitto on ports 6380/1884, ephemeral) plus `tests/MicroDCS.IntegrationTests` (raw Valkey `PING`, MQTT 5 CONNACK). They skip on the host without `MICRODCS_TEST_*`; in compose `--fail-skips on`.
 * Fixed an S01 bug in `Directory.Build.props`: the `src/` and `tests/` groups matched `Contains('/src/')` on the absolute path, so every project matched in a `/src` container build. The match now uses the repo-relative path. `src/` projects restore `linux-x64;linux-arm64`, so a RID publish works in locked mode.
 
-Findings: the CloudEvents 2.9.0 AOT binary works at runtime, but only with source-generated `JsonSerializerOptions` passed to the formatter ([measurement](research/cloudevents.md#aot-measurement-s02-2026-11-07)). PR #381 is open and 2.9.0 is the latest release. `compose up --exit-code-from tests` exits 0 when `tests` never started, and a one-shot service aborts the run early; both are handled in `ci.yml` and documented in `docs/development.md`. The arm64 AOT link needs an arm64 host or cross toolchain (S22).
-Decisions: D-14 gained the measured result and the codec rule (no revision).
+Findings: the CloudEvents 2.9.0 AOT binary works at runtime, but only with source-generated `JsonSerializerOptions` passed to the formatter ([measurement](research/cloudevents.md#aot-measurement-s02-2026-11-07)). PR #381 is open and 2.9.0 is the latest release. `compose up --exit-code-from tests` exits 0 when `tests` never started, and a one-shot service aborts the run early; both are handled in `ci.yml` and documented in `docs/development.md`. The arm64 AOT link needs an arm64 host or a cross toolchain; follow-up #41 adds native arm64 CI (D-32).
+Decisions: D-14 gained the measured result and the codec rule (no revision). Follow-up #41: D-32 (linux-x64 and linux-arm64, native CI builds), D-22 revised (no post-merge follow-up PR; the next session verifies "Post-merge checks").
 Changed in the plan: index (status, library table, Q-TEST-1 owner S23, event row), D-14, research/cloudevents.md; `CLAUDE.md`, `docs/development.md`, `/session-end` DoD.
 Open questions: none new.
-Post-merge (done): #40 squash-merged (`729e8a8`); `ci` green on `main` (all three jobs), docs deploy green. Required checks on `main`: `dotnet`, `container`, `integration`, bound to the GitHub Actions app (id 15368), `strict` (branch up to date); the other protection settings are unchanged.
-Next session pickup: S03. Run `/session-start S03`. All S02 PRs are merged, so start a new M0 stack from `main`: `git switch main && git pull --ff-only && gh stack init s03-scanning`. S03 adds jobs to `ci.yml` and a `security.yml`; add their job names to the required checks with a full `PUT .../branches/main/protection` (PATCH on `required_status_checks` only works once checks exist; keep the other settings). Maintainer before S03: SonarQube Cloud project and `SONAR_TOKEN` secret (Actions and Dependabot), see [CI scanning](research/ci-scanning.md).
+Post-merge (done for #40): squash-merged (`729e8a8`), `ci` and docs green on `main`.
+Follow-up #41: `container` became a matrix with `container (linux-x64)` on `ubuntu-24.04` and `container (linux-arm64)` on `ubuntu-24.04-arm`, plus an image architecture check. The session skills now use "Post-merge checks" instead of follow-up PRs.
+Post-merge checks (for #41): `ci` green on `main` with all four jobs; required checks on `main` are `dotnet`, `container (linux-x64)`, `container (linux-arm64)`, `integration` (GitHub Actions app id 15368, `strict`), set before the merge.
+Next session pickup: S03. Run `/session-start S03`. All S02 PRs are merged, so start a new M0 stack from `main`: `git switch main && git pull --ff-only && gh stack init s03-scanning`. S03 adds jobs to `ci.yml` and a `security.yml`; add their job names to the required checks (`gh api -X PATCH .../branches/main/protection/required_status_checks` with the full `checks` list, app id 15368). Maintainer before S03: SonarQube Cloud project and `SONAR_TOKEN` secret (Actions and Dependabot), see [CI scanning](research/ci-scanning.md).

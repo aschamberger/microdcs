@@ -74,7 +74,7 @@ In a throwaway project (`spikes/`, deleted or documented at the end), one AOT-pu
 * **NATS.Net:** JetStream, KV, request/reply.
 * **Kestrel minimal APIs** and **`ModelContextProtocol.AspNetCore`** with explicit, source-generated registration (D-19).
 * **AMQPNetLite** publish-only: warnings, trimmer annotations needed.
-* **Zenoh:** `Zenoh-CS` ([`sanri/zenoh-csharp`](https://github.com/sanri/zenoh-csharp)) publish-only: AOT and trim warnings (classic `DllImport` with blittable signatures is usually AOT-safe, `MarshalAs` and delegate marshalling are not always), put/subscribe and get/queryable with attachments through the managed API, zenoh-c 1.10.0 built with `UNSTABLE_API` and `SHARED_MEMORY` in the runtime image. Spot-check the P/Invoke declarations the session uses against the zenoh-c headers. If the result is not clean: try ZenohDotNet, then decide between contributing upstream and a fork.
+* **Zenoh:** `Zenoh-CS` ([`sanri/zenoh-csharp`](https://github.com/sanri/zenoh-csharp)) publish-only: AOT and trim warnings (classic `DllImport` with blittable signatures is usually AOT-safe, `MarshalAs` and delegate marshalling are not always), put/subscribe and get/queryable with attachments through the managed API, zenoh-c 1.10.0 built with `UNSTABLE_API` and `SHARED_MEMORY` in the runtime image, for linux-x64 and linux-arm64 (D-32). Spot-check the P/Invoke declarations the session uses against the zenoh-c headers. If the result is not clean: try ZenohDotNet, then decide between contributing upstream and a fork.
 * Output: findings table in `research/library-spike.md`; decisions on Q-ARCH-1 (which libraries are AOT-clean, whether AMQP is isolated in an optional package); measurements as input for S07 (Q-DATA-1, Q-DATA-2). The Zenoh library choice may wait until before S25, but the findings go in now.
 
 ### S05 Spike: OPC UA ISA-95 for models only (D-4)
@@ -180,7 +180,7 @@ Q-OPS-1: liveness and readiness, metrics (OTLP and/or Prometheus), job state que
 
 ### S22 Container, Kubernetes, supply chain, security review
 
-Image pinned by digest, probes using the HTTP surface, hardened manifest with egress NetworkPolicy, SBOM attestation, signing and verification in CI (R-9; the SBOM artifact exists since S03), review of scanner waivers (D-20), `docs/security.md` update including the trust model (D-13), operational limits per transport (R-12), tenancy for the remaining transports (R-20), support model and zones/conduits (R-21), a review of the "Done in the session" list against the new code, and the unverified items that need a cluster (document what is still unverified).
+Image pinned by digest, one multi-arch image for linux-x64 and linux-arm64 from the two native CI builds (D-32), probes using the HTTP surface, hardened manifest with egress NetworkPolicy, SBOM attestation, signing and verification in CI (R-9; the SBOM artifact exists since S03), review of scanner waivers (D-20), `docs/security.md` update including the trust model (D-13), operational limits per transport (R-12), tenancy for the remaining transports (R-20), support model and zones/conduits (R-21), a review of the "Done in the session" list against the new code, and the unverified items that need a cluster (document what is still unverified).
 
 ### S23 Docs port, parity acceptance, release
 
@@ -194,7 +194,7 @@ AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semant
 
 ### S25 Zenoh transport
 
-Record the binding choice first (`Zenoh-CS`, ZenohDotNet or a fork, from the S04 findings), including how the zenoh-c version is pinned together with the package. Then the binding and the CloudEvents-over-Zenoh mapping (attachment or structured), query/reply for commands (D-10), no-redelivery behaviour (A-5), router versus peer mode, native library in the image.
+Record the binding choice first (`Zenoh-CS`, ZenohDotNet or a fork, from the S04 findings), including how the zenoh-c version is pinned together with the package. Then the binding and the CloudEvents-over-Zenoh mapping (attachment or structured), query/reply for commands (D-10), no-redelivery behaviour (A-5), router versus peer mode, native library in the image for both platforms (D-32).
 
 ### S26 Packaging and release
 

@@ -45,7 +45,7 @@ src/MicroDCS.App/           AOT application (`microdcs`); until S08 only the Clo
 tests/MicroDCS.Core.Tests/  unit tests
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
-Dockerfile                  AOT publish into chiseled runtime-deps (non-root, no shell); `tests` target for compose
+Dockerfile                  AOT publish into chiseled runtime-deps (non-root, no shell; linux-x64 and linux-arm64, D-32); `tests` target for compose
 compose.test.yaml           integration harness (D-15): Valkey, Mosquitto, tests container
 docs/                       docs site; docs/porting/ is the port plan
 schemas/                    JSON Schemas (greetings, machinery jobs, SFC recipe, IJT)
