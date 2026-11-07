@@ -88,8 +88,13 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-24](decisions.md#d-24) | decided | MicroDCS is MIT licensed (Python archive stays LGPL-2.1) |
 | [D-25](decisions.md#d-25) | decided | The processor authoring experience is a primary goal |
 | [D-26](decisions.md#d-26) | decided | `valkey-bundle` is the Valkey image |
+| [D-27](decisions.md#d-27) | decided | Fail-fast startup (carried over from Python) |
+| [D-28](decisions.md#d-28) | decided | Explicit error on queue backpressure (carried over from Python) |
+| [D-29](decisions.md#d-29) | decided | No extra size limit on `custommetadata` (carried over from Python) |
+| [D-30](decisions.md#d-30) | decided | Comma-separated list values in configuration, if lists stay strings (carried over from Python) |
+| [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
 
-Next free id: **D-27**.
+Next free id: **D-32**.
 
 ## Open questions
 
