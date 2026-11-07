@@ -13,8 +13,8 @@ Pass criterion: `dotnet publish -r linux-x64` with `PublishAot` and `IL2026`/`IL
 | NATS.Net | 3.3.2 | clean | request/reply with headers, JetStream (dedupe, ack, redelivery), KV with CAS |
 | Kestrel minimal API + `ModelContextProtocol.AspNetCore` | 2.4.0 | clean | `/healthz`, MCP `initialize`, `tools/list`, `tools/call` over HTTP |
 | Zenoh-CS (`sanri/zenoh-csharp`) | 0.5.0 | clean (see caveat) | put/subscribe with attachment works; **get/queryable crashes the process** |
-| AMQPNetLite | 2.5.5 | **13 warnings** (6 `IL2070`, 7 `IL3050`), all in `Amqp.Serialization` | send and receive with a `Data` body work when the warnings are not errors |
-| All except AMQP in one project | | clean, 24.3 MB binary | `/healthz`, Redis connect, MQTT and NATS client creation, `Config.Default()` of Zenoh |
+| AMQPNetLite.Core | 2.5.5 | clean (the `AMQPNetLite` metapackage: **13 warnings**, 6 `IL2070` and 7 `IL3050`, all in `Amqp.Serialization`) | send and receive with a `Data` body, properties and application properties against Artemis |
+| All except AMQP in one project (AMQP Core is clean on its own) | | clean, 24.3 MB binary | `/healthz`, Redis connect, MQTT and NATS client creation, `Config.Default()` of Zenoh |
 
 Single-project binary sizes (linux-x64, unstripped): Redis 9.0 MB, MQTTnet 7.5 MB, NATS 11.4 MB, Kestrel + MCP 17.3 MB, Zenoh-CS 2.1 MB.
 
@@ -65,9 +65,10 @@ Single-project binary sizes (linux-x64, unstripped): Redis 9.0 MB, MQTTnet 7.5 M
 
 ## AMQPNetLite 2.5.5 (Q-ARCH-1)
 
-* 13 warnings, all in `Amqp.Serialization` (`AmqpSerializer`, `MemberAccessor`, `MethodAccessor`, `AmqpContractResolver`): `MakeGenericType`, `DynamicMethod`, `GetMembers`, `GetInterfaces` and similar. They remain with a plain `Data` body, so the object serializer is reachable from the core codec and cannot be trimmed away.
-* The AOT binary was built with the warnings downgraded and ran against Artemis: attach a receiver, send a message with properties and application properties, receive it and accept it. The path that avoids `AmqpSerializer` works; any use of the serializer would not.
-* The library has no trimming annotations of its own. Upstream is the only place to fix this; until then the package must be isolated (D-33).
+* **Corrected the same day.** The first spike referenced the `AMQPNetLite` metapackage and saw 13 warnings, all in `Amqp.Serialization` (`AmqpSerializer`, `MemberAccessor`, `MethodAccessor`, `AmqpContractResolver`: `MakeGenericType`, `DynamicMethod`, `GetMembers`, `GetInterfaces`). They stayed with a plain `Data` body because the metapackage brings the serializer assembly along. Referencing **`AMQPNetLite.Core` 2.5.5** only: AOT publish with zero IL warnings (`IsAotCompatible` on), 6.3 MB binary, and at runtime against Artemis a receiver attached, a message with properties and application properties was sent, received and accepted.
+* The serializer (object mapping with `[AmqpContract]`) is the only AOT-hostile part and is not needed: CloudEvents map to message properties, application properties and a `Data` body.
+* `RabbitMQ.AMQP.Client` 1.4.1 (Apache-2.0 AND MPL-2.0) depends on `AMQPNetLite.Core` 2.5.4, so it should be clean as well; not tested.
+* Upstream (Azure/amqpnetlite) is active (2.5.5 on 2026-10-29, no open PRs). An AOT-compatible serializer would be a large change (it emits dynamic methods) and is not needed.
 
 ## Zenoh-CS 0.5.0 and zenoh-c 1.10.0
 
