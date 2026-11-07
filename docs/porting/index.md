@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S04** (S05 is also unblocked; M0 is complete with S03).
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S05** or **S06** (S04 is done, M0 is complete).
 
 ## How to use these files
 
@@ -29,10 +29,10 @@ Main drivers for doing this now, before investing more in the Python implementat
 | Purpose | Library | Open point |
 |---|---|---|
 | Valkey/Redis client | StackExchange.Redis (**decided**, D-7) | **No blocking commands at all** (`XREADGROUP ... BLOCK`, `XREAD ... BLOCK` are excluded on purpose), so stream consumption polls (S04, S07). No JSON or search API (`JSON.*`, `FT.*` are used today), see Q-DATA-1. AOT: v2.7+, scripts as plain strings with `RedisKey[]`/`RedisValue[]` (no `LuaScript.Prepare` with anonymous-type parameters) |
-| MQTT | MQTTnet | Conditional AOT: byte payloads or JSON source generators only. MQTT 5 features relied on: user properties, shared subscriptions, manual ack, message expiry, retained |
+| MQTT | MQTTnet | AOT clean in S04 (byte payloads or JSON source generators only). MQTT 5 features relied on: user properties, shared subscriptions, manual ack, message expiry, retained |
 | NATS | NATS.Net | AOT friendly. JetStream vs. core, CloudEvents binding |
-| AMQP | AMQPNetLite | AOT needs manual trimmer annotations (`[DynamicDependency]`). AMQP 1.0 only (RabbitMQ 4+, Artemis, Azure Service Bus; not RabbitMQ 0-9-1) |
-| Zenoh | **No official binding** (`eclipse-zenoh/zenoh-csharp` is a placeholder, checked 2026-11-06). **Preferred candidate: [`sanri/zenoh-csharp`](https://github.com/sanri/zenoh-csharp)** (NuGet `Zenoh-CS` 0.5.0, a fork of the Eclipse repository): wraps zenoh-c 1.10.0 with a version mapping per release; EPL-2.0 OR Apache-2.0; covers session, publisher, subscriber, queryable, querier, liveliness and shared memory, with attachments in the C declarations; `netstandard2.0`, classic `DllImport`; native zenoh-c not bundled (installed on the host, built with `UNSTABLE_API` and `SHARED_MEMORY`); one maintainer, 19 stars, a commit gap from 2025-12 to 2026-08. Fallbacks: ZenohDotNet (third-party, MIT, one author, bundles the native library), or a thin binding of our own over zenoh-c | S04: publish-only test of `Zenoh-CS` (AOT warnings, whether managed attachments work, zenoh-c in the image); if the warnings are not clean, contributing upstream (or a fork) beats writing our own binding. Choice recorded as a decision before S25 |
+| AMQP | AMQPNetLite | **Not AOT clean** (13 warnings in its object serializer, S04); isolated in an optional package (D-33). AMQP 1.0 only (RabbitMQ 4+, Artemis, Azure Service Bus; not RabbitMQ 0-9-1) |
+| Zenoh | **No official binding** (`eclipse-zenoh/zenoh-csharp` is a placeholder, checked 2026-11-06). **Preferred candidate: [`sanri/zenoh-csharp`](https://github.com/sanri/zenoh-csharp)** (NuGet `Zenoh-CS` 0.5.0, a fork of the Eclipse repository): wraps zenoh-c 1.10.0 with a version mapping per release; EPL-2.0 OR Apache-2.0; covers session, publisher, subscriber, queryable, querier, liveliness and shared memory, with attachments in the C declarations; `netstandard2.0`, classic `DllImport`; native zenoh-c not bundled (installed on the host, built with `UNSTABLE_API` and `SHARED_MEMORY`); one maintainer, 19 stars, a commit gap from 2025-12 to 2026-08. Fallbacks: ZenohDotNet (third-party, MIT, one author, bundles the native library), or a thin binding of our own over zenoh-c | S04 result: publishes clean; pub/sub with attachments works; `Session.Get` against a queryable crashes (suspected stale `ZGetOptions` struct, [library spike](research/library-spike.md#zenoh-cs-050-and-zenoh-c-1100)). Prebuilt zenoh-c 1.10.0 has the needed flags. Choice recorded as a decision before S25 (D-33) |
 | OPC UA | OPC Foundation UA-.NETStandard 2.x (`Opc.Ua.ISA95*`), MIT since v2 (D-21) | AOT supported via source-generated models ([Native AOT](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/NativeAoT.md#publish-an-application)); **do not use** the Reflection.Emit complex-type builder ([Complex Types](https://github.com/OPCFoundation/UA-.NETStandard/blob/master/docs/ComplexTypes.md#type-builders)). Open: version stability, NodeSet v2 tooling for the Work Master extension (S05) |
 | CloudEvents | `CloudNative.CloudEvents` 2.9.0 (July 2026) | **Not AOT annotated today** (open issue and PR #381); the AOT binary works at runtime with source-generated `JsonSerializerOptions` (measured in S02), no MQTTnet 5 / NATS / Zenoh binding. D-14: use upstream, stay AOT-ready, fork late and only if blocked |
 | MCP | `ModelContextProtocol.AspNetCore` 2.x | Marked AOT compatible; attribute-based tool discovery not verified under AOT (S04) |
@@ -95,8 +95,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
 
 | [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
+| [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP in an optional package, Zenoh library open (Zenoh-CS `Get` crash) |
 
-Next free id: **D-33**.
+Next free id: **D-34**.
 
 ## Open questions
 
@@ -109,7 +110,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-STRAT-3~~ Port goal | → D-3 | — |
 | Q-STRAT-4 Public API | Goal decided: a polished authoring experience (D-25). Open: the concrete .NET shape of `@incoming`/`@outgoing` handlers and dataclasses (attributes plus source generators, analyzers) | S06 |
 | Q-STRAT-5 Packaging and release | NuGet package split (core, MQTT, NATS, AMQP, Zenoh, OPC UA models, SFC), semver, `dotnet new` templates replacing the Python scaffolder. Publishing needs a released upstream CloudEvents package (D-14). Licence: MIT (D-24), OPC UA dependency fine (D-21) | S26 |
-| Q-ARCH-1 Native AOT | One AOT-published app with all chosen libraries (StackExchange.Redis, MQTTnet, NATS.Net, AMQPNetLite, Zenoh candidate, MCP SDK, Kestrel minimal APIs), `IL2026`/`IL3050` as pass criterion. If AMQPNetLite cannot be made clean, AMQP goes into its own optional package | S04 |
+| ~~Q-ARCH-1~~ Native AOT | → D-33: core stack AOT-clean, AMQP in an optional package (S24), Zenoh library open until S25 | — |
 | Q-ARCH-2 Serialization | System.Text.Json source generation vs. OPC UA JSON encoders; wire format for job orders (OPC UA JSON vs. plain JSON from the generated schema) | S05 |
 | Q-ARCH-3 Hosting and configuration | `Microsoft.Extensions.Hosting` as replacement for `MicroDCS`/`SystemEventTaskGroup`/`AdditionalTask`; keep `APP_*` names or move to `IConfiguration` conventions (`APP__MQTT__HOSTNAME`) | S06 |
 | Q-ARCH-4 State machine | Stateless, the OPC UA ISA-95 job state machine, or source generated? Must persist state and support the OPC UA transitions/methods | S05 |
@@ -119,8 +120,8 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-ARCH-8 SFC multi-instance model | How the CAS scripts relate to the pure transition; scope discovery, retry limit, stream trimming, key identity ([SFC core](research/sfc-core.md)) | S07 |
 | Q-ARCH-9 Deployment modes | Keep the processor/publisher split and single-container mode? Effect of the in-process HTTP surface | S18 |
 | ~~Q-ARCH-10~~ Southbound | → D-11. Remaining: CloudEvents-over-Zenoh mapping (attachment vs. structured), Zenoh query/reply for commands, router vs. peer mode | S25 |
-| Q-DATA-1 Documents and secondary indexes | Today: valkey-json for documents (`JSON.SET` whole-document writes from Python; partial path updates only inside the four SFC Lua CAS scripts) and valkey-search (`FT.CREATE ... ON JSON` with TAG fields `$.JobOrderID`, `$._normalized_state`, `$._scope`; `FT.INFO`; two `FT.SEARCH` queries). Call sites: Lua 9 `JSON.SET`, 4 `JSON.GET`, 1 `JSON.TYPE`; Python 4 whole-document sets, 7 reads. Options: (a) plain strings in a hash `{v, doc}` with explicit secondary indexes (sets/sorted sets per scope and state) written in the same atomic script, no modules, plain `valkey/valkey` image; (b) keep valkey-json and valkey-search through raw `Execute`, with the Valkey-specific `FT.SEARCH` reply parser ([Valkey findings](research/valkey-findings.md)). The image is `valkey-bundle` either way (D-26). With D-17 (whole versioned state document, CAS on the version) partial path updates are not needed, and Lua can decode JSON with the built-in `cjson` where a script must read a field | S04 measures, S07 decides |
-| ~~Q-DATA-2~~ Client library | → D-7. Remaining: no blocking reads (poll, poll plus pub/sub nudge, or raw `BLOCK` on a dedicated multiplexer); consumer groups, `XAUTOCLAIM`, Lua `EVAL`, reconnect behaviour | S04 measures, S07 decides |
+| Q-DATA-1 Documents and secondary indexes | Today: valkey-json for documents (`JSON.SET` whole-document writes from Python; partial path updates only inside the four SFC Lua CAS scripts) and valkey-search (`FT.CREATE ... ON JSON` with TAG fields `$.JobOrderID`, `$._normalized_state`, `$._scope`; `FT.INFO`; two `FT.SEARCH` queries). Call sites: Lua 9 `JSON.SET`, 4 `JSON.GET`, 1 `JSON.TYPE`; Python 4 whole-document sets, 7 reads. Options: (a) plain strings in a hash `{v, doc}` with explicit secondary indexes (sets/sorted sets per scope and state) written in the same atomic script, no modules, plain `valkey/valkey` image; (b) keep valkey-json and valkey-search through raw `Execute`, with the Valkey-specific `FT.SEARCH` reply parser ([Valkey findings](research/valkey-findings.md)). The image is `valkey-bundle` either way (D-26). With D-17 (whole versioned state document, CAS on the version) partial path updates are not needed, and Lua can decode JSON with the built-in `cjson` where a script must read a field | S04 measured ([library spike](research/library-spike.md#stackexchangeredis-d-7-q-data-1-q-data-2): no performance reason to drop the modules), S07 decides |
+| ~~Q-DATA-2~~ Client library | → D-7. Remaining: no blocking reads (poll, poll plus pub/sub nudge, or raw `BLOCK` on a dedicated multiplexer); consumer groups, `XAUTOCLAIM`, Lua `EVAL`, reconnect behaviour | S04 measured (nudge plus slow fallback poll recommended, [library spike](research/library-spike.md)), S07 decides |
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
 | ~~Q-DATA-4~~ High availability | → D-12. Remaining: every write path idempotent under unknown outcome (R-4) | S09 |
 | Q-OPS-1 HTTP surface | Liveness/readiness, metrics, job state query API (R-19), OpenAPI; listener layout shared with inspection and MCP (D-19) | S06 layout, S21 |
@@ -148,7 +149,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S02 | CI, container, compose harness, CloudEvents AOT measurement | S01 | done |
 | S03 | Security and quality scanning (D-20) | S02 | done |
 | **M1 Foundation** | | | |
-| S04 | Spike: library stack, AOT and Valkey behaviour | S02 | open |
+| S04 | Spike: library stack, AOT and Valkey behaviour | S02 | done |
 | S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | open |
 | S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | open |
 | S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | open |

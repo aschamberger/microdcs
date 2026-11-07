@@ -190,11 +190,11 @@ Port `docs/` (concepts, operations with all configuration equivalents, persisten
 
 ### S24 AMQP transport
 
-AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semantics, reply-to, broker target decision, trimmer annotations if needed (AOT finding from S04).
+AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semantics, reply-to, broker target decision. Own optional package, not `IsAotCompatible`, with the AMQPNetLite trim/AOT warnings (all in `Amqp.Serialization`) suppressed in that project only and the `Data` body only ([D-33](decisions.md#d-33)); an AOT-published integration check against an AMQP 1.0 broker (Artemis worked in S04).
 
 ### S25 Zenoh transport
 
-Record the binding choice first (`Zenoh-CS`, ZenohDotNet or a fork, from the S04 findings), including how the zenoh-c version is pinned together with the package. Then the binding and the CloudEvents-over-Zenoh mapping (attachment or structured), query/reply for commands (D-10), no-redelivery behaviour (A-5), router versus peer mode, native library in the image for both platforms (D-32).
+First verify the S04 finding ([library spike](research/library-spike.md#zenoh-cs-050-and-zenoh-c-1100)): `Session.Get` against a queryable crashes with `free(): invalid pointer`; suspected stale `ZGetOptions` (no `cancellation_token`). Compare every struct the transport uses with the zenoh-c headers. Then record the binding choice (`Zenoh-CS` with an upstream fix, a fork, ZenohDotNet or an own binding), including how the zenoh-c version is pinned together with the package. Then the binding and the CloudEvents-over-Zenoh mapping (attachment or structured), query/reply for commands (D-10), no-redelivery behaviour (A-5), router versus peer mode, native library in the image for both platforms (D-32).
 
 ### S26 Packaging and release
 

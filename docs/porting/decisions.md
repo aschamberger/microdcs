@@ -377,3 +377,21 @@ Consequences:
 * Unit and integration tests run on x64 only until a platform-specific code path appears; then add the arm64 runner to that job.
 
 Not chosen: x64 only (excludes arm64 edge devices and Graviton/Ampere hosts); QEMU in one job (slow, and emulation hides nothing the native runner would not show); cross-compilation (sysroot maintenance in the Dockerfile).
+
+## D-33 Library stack: AOT result per library, AMQP isolated, Zenoh open {#d-33}
+
+Status: decided (2026-11-07, S04). Answers Q-ARCH-1. Evidence in [library spike](research/library-spike.md).
+
+Context: the plan assumed one AOT-published application with all chosen libraries. S04 published each library in its own Native AOT project, then together, with `IL2026`/`IL3050` as errors.
+
+Decision:
+
+* **Baseline stack:** StackExchange.Redis 3.4.x, MQTTnet 5.2.x, NATS.Net 3.3.x, Kestrel minimal APIs and `ModelContextProtocol.AspNetCore` 2.4.x publish without trim or AOT warnings and work at runtime in the AOT binary; all together 24.3 MB (linux-x64). They go into the product as planned.
+* **AMQP in its own optional package** (`MicroDCS.Transport.Amqp`, S24). AMQPNetLite 2.5.5 raises 13 warnings (6 `IL2070`, 7 `IL3050`), all in its object serializer, which cannot be trimmed away. The core application and the default image never reference it. The AMQP package is not `IsAotCompatible`; the warnings are suppressed in that one project with a justification comment naming this decision, the transport uses only the `Data` body and message properties (verified at runtime), and the AMQP integration test publishes an AOT binary that contains the package. If upstream annotates the library, the isolation can end.
+* **Zenoh library: no choice yet.** Zenoh-CS 0.5.0 publishes clean, but that proves little (the assembly is not annotated), and publish/subscribe with attachments works, while `Session.Get` against a queryable crashes the process with an invalid free. Suspected cause: `ZGetOptions` lacks the trailing `cancellation_token` field of zenoh-c 1.10.0 (not verified). The choice among a fix upstream, a fork, ZenohDotNet or an own binding is made before S25; S25's first task is to verify the cause and the struct layouts used by the transport against the zenoh-c headers. The Zenoh transport stays in M3, so the parity gate is not affected.
+* **Valkey streams:** consumers poll; the preferred shape for S07 is a pub/sub nudge from the script that runs `XADD` plus a slow fallback poll (D-7 option b). Plain polling costs about half the interval in median latency per hop.
+* Q-DATA-1 is not decided here; the measurements (no performance reason to drop valkey-json and valkey-search) are in the research file for S07.
+
+Consequences: S24 gets the isolation task; S25 starts with the Zenoh verification; S22 sizes the image with a native `libzenohc.so` per architecture only when S25 lands; S07 decides Q-DATA-1 and the stream consumption shape with these numbers.
+
+Not chosen: dropping AMQP (the transport list in the plan stays); keeping AMQPNetLite in the core project with suppressions (it would hide a real AOT risk behind the product's AOT claim); writing an AMQP codec of our own now (cost without need until S24).
