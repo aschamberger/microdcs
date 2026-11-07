@@ -18,7 +18,7 @@ case "$file" in
   *.cs) ;;
   *) exit 0 ;;
 esac
-[ -f "$file" ] || exit 0
+[[ -f "$file" ]] || exit 0
 command -v dotnet >/dev/null 2>&1 || exit 0
 
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0

@@ -1,0 +1,23 @@
+# Trivy waivers (D-20). Empty on purpose.
+#
+# Rules for an entry:
+# * one finding per entry (vulnerability id or misconfiguration id), narrowed by `paths` or `purls`;
+# * `statement` says why it is acceptable (not reachable, not exploitable here, fix pending upstream);
+# * `expired_at` is mandatory, at most 90 days ahead; an expired waiver fails the scan again;
+# * waivers are code-reviewed and listed in docs/security.md; reviewed at S22 and S23.
+#
+# Example:
+# vulnerabilities:
+#   - id: CVE-2026-00000
+#     purls:
+#       - pkg:nuget/Example.Package@1.2.3
+#     statement: Only the parser is affected; MicroDCS never calls it (issue #123).
+#     expired_at: 2027-02-01
+# misconfigurations:
+#   - id: AVD-DS-0002
+#     paths:
+#       - Dockerfile
+#     statement: ...
+#     expired_at: 2027-02-01
+vulnerabilities: []
+misconfigurations: []

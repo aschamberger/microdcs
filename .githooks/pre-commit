@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Opt-in pre-commit hook: Gitleaks over the staged changes (D-20).
+# Enable once per clone: git config core.hooksPath .githooks
+# Skips with a notice when Docker is not available; CI scans every PR regardless.
+set -euo pipefail
+if ! docker info >/dev/null 2>&1; then
+  echo "pre-commit: docker not available, gitleaks skipped (CI still scans)" >&2
+  exit 0
+fi
+exec "$(git rev-parse --show-toplevel)/scripts/scan" staged

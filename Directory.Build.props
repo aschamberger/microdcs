@@ -51,4 +51,8 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+  <!-- Code coverage extension for Microsoft.Testing.Platform (coverage switch of `dotnet test`), read by SonarQube Cloud (D-20). -->
+  <ItemGroup Condition="$(_RepoRelativeProjectDir.StartsWith('tests/'))">
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
 </Project>
