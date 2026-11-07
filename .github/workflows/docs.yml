@@ -24,10 +24,11 @@ jobs:
           python-version: 3.x
           cache: pip
           cache-dependency-path: docs/requirements.txt
-      - run: echo "cache_id=$(date --utc '+%V')" >> "$GITHUB_ENV"
+      - id: cache-id
+        run: echo "week=$(date --utc '+%V')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: zensical-${{ env.cache_id }}
+          key: zensical-${{ steps.cache-id.outputs.week }}
           path: .cache
           restore-keys: |
             zensical-

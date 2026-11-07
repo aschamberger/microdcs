@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S03** (S04 and S05 are also unblocked).
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S04** (S05 is also unblocked; M0 is complete with S03).
 
 ## How to use these files
 
@@ -81,7 +81,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-17](decisions.md#d-17) | proposal | SFC semantics as a pure, dependency-free core library; late-response rule and outcome-based transition conditions decided |
 | [D-18](decisions.md#d-18) | proposal | SFC time model: timestamped events, absolute deadlines, shared due-index; outage grace and recipe timeout decided |
 | [D-19](decisions.md#d-19) | proposal | Inspection layer plus optional dev MCP server, built early |
-| [D-20](decisions.md#d-20) | decided | Gitleaks, Trivy and SonarQube Cloud in CI; scanners as pinned containers |
+| [D-20](decisions.md#d-20) | decided | Gitleaks, Trivy and SonarQube Cloud in CI; scanners as pinned containers; Sonar C# rules in every build (confirmed S03) |
 | [D-21](decisions.md#d-21) | decided | OPC UA .NET stack 2.x is MIT licensed; no licence constraint from driver 1 |
 | [D-22](decisions.md#d-22) | revised | One GitHub stack per milestone, one squash-merged PR per session; post-merge checks verified by the next session |
 | [D-23](decisions.md#d-23) | decided | Claude Code is the agent tool; Copilot files are replaced |
@@ -146,7 +146,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | **M0 Setup** | | | |
 | S01 | Repository reset: remove Python, scaffolding, Claude Code setup, WIP docs site | none | done |
 | S02 | CI, container, compose harness, CloudEvents AOT measurement | S01 | done |
-| S03 | Security and quality scanning (D-20) | S02 | open |
+| S03 | Security and quality scanning (D-20) | S02 | done |
 | **M1 Foundation** | | | |
 | S04 | Spike: library stack, AOT and Valkey behaviour | S02 | open |
 | S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | open |

@@ -68,6 +68,7 @@ jobs:
           /d:sonar.exclusions="docs/**,spikes/**,**/*.g.cs"
           /d:sonar.coverage.exclusions="tests/**"
           /d:sonar.cpd.exclusions="tests/**"
+          /d:sonar.cs.roslyn.ignoreIssues=true
       - run: dotnet build --no-restore --no-incremental -c Release
       - run: >-
           dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx

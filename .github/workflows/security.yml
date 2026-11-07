@@ -63,11 +63,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Trivy DB cache key
-        run: echo "TRIVY_CACHE_KEY=trivy-db-$(date --utc +%Y-%m-%d)" >> "$GITHUB_ENV"
+        id: trivy-db
+        run: echo "key=trivy-db-$(date --utc +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/trivy
-          key: ${{ env.TRIVY_CACHE_KEY }}
+          key: ${{ steps.trivy-db.outputs.key }}
           restore-keys: trivy-db-
       - name: Trivy fs
         run: scripts/scan fs
@@ -99,13 +100,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Trivy DB cache key
+        id: trivy-db
         run: |
-          echo "TRIVY_CACHE_KEY=trivy-db-$(date --utc +%Y-%m-%d)" >> "$GITHUB_ENV"
+          echo "key=trivy-db-$(date --utc +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           mkdir -p scan-results
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/trivy
-          key: ${{ env.TRIVY_CACHE_KEY }}
+          key: ${{ steps.trivy-db.outputs.key }}
           restore-keys: trivy-db-
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Image as a tarball, no registry push; shares the build cache with ci.yml.
