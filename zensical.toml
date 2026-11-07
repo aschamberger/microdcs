@@ -23,10 +23,28 @@ nav = [
   {"Operations" = [
     {"Overview" = "operations.md"},
     {"Security and Authorization" = "security.md"}
+  ]},
+  {"Port to .NET (WIP)" = [
+    {"Plan" = "porting/index.md"},
+    {"Sessions" = "porting/sessions.md"},
+    {"Decisions" = "porting/decisions.md"},
+    {"Log" = "porting/log.md"},
+    {"Research" = [
+      {"Porting approach (branching)" = "porting/research/branching.md"},
+      {"Abstraction mapping" = "porting/research/abstraction.md"},
+      {"CloudEvents" = "porting/research/cloudevents.md"},
+      {"Test setup" = "porting/research/test-setup.md"},
+      {"CI scanning" = "porting/research/ci-scanning.md"},
+      {"Inspection and MCP" = "porting/research/inspection-mcp.md"},
+      {"SFC core" = "porting/research/sfc-core.md"},
+      {"Valkey findings" = "porting/research/valkey-findings.md"},
+      {"Review triage" = "porting/research/review-triage.md"}
+    ]}
   ]}
 ]
 
 [project.theme]
+custom_dir = "overrides"
 features = [
     "navigation.tabs",
     "navigation.footer"

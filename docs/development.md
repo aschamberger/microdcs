@@ -1,8 +1,119 @@
 # Development
 
-This page summarizes the local development workflow for MicroDCS, including environment setup, test execution, documentation work, and container packaging.
+This page describes the development workflow for the .NET port of MicroDCS: toolchain, commands,
+the local dev stack, docs, and the Claude Code setup for local and cloud sessions. The archived
+Python workflow follows at the end and is replaced as the port proceeds.
 
-## Environment Setup
+## Toolchain
+
+| Tool | Version | Notes |
+|---|---|---|
+| .NET SDK | 10.0.403 (pinned in `global.json`, `rollForward: latestPatch`) | `dotnet-install.sh` or a package manager |
+| Native AOT prerequisites (Linux) | `clang`, `zlib1g-dev` | Needed by `dotnet publish -p:PublishAot=true` |
+| Docker with Compose v2 | recent | Dev stack and the integration test harness (D-15) |
+| Python 3 | any 3.x | Only for the docs site (zensical) |
+| GitHub CLI | 2.90.0 or later with `gh-stack` | Stacked PRs ([D-22](porting/decisions.md#d-22)) |
+
+Check the toolchain:
+
+```bash
+dotnet --info            # SDK 10.0.403 listed
+docker compose version
+clang --version
+```
+
+## Common Commands
+
+```bash
+dotnet build                                  # whole solution (MicroDCS.slnx), warnings are errors
+dotnet test                                   # Microsoft.Testing.Platform runner (global.json)
+dotnet format --verify-no-changes             # formatting and analyzer style check
+CI=true dotnet restore                        # locked-mode restore, as in CI
+```
+
+Packages are managed centrally in `Directory.Packages.props`; every project has a
+`packages.lock.json`. After changing a package version run `dotnet restore` and commit the updated
+lock files. `nuget.config` maps every package to nuget.org; NuGet audit runs on every restore.
+
+## Local Dev Stack
+
+`compose.yaml` starts Mosquitto, Valkey (`valkey-bundle`, [D-26](porting/decisions.md#d-26)) and
+the Aspire dashboard, unauthenticated and plaintext, for local use only:
+
+```bash
+docker compose up -d --wait     # Mosquitto :1883, Valkey :6379, Aspire dashboard :18888
+docker compose down -v          # stop and wipe the Valkey volume
+```
+
+Images are pinned by digest; Dependabot proposes updates. The integration test harness
+(`compose.test.yaml`) follows in S02.
+
+## Documentation
+
+The site is built with Zensical, pinned with hashes in `docs/requirements.txt`:
+
+```bash
+python3 -m venv .venv-docs
+.venv-docs/bin/pip install --require-hashes -r docs/requirements.txt
+.venv-docs/bin/zensical serve
+```
+
+Regenerate the pins after changing `docs/requirements.in` with
+`pip-compile --generate-hashes --strip-extras docs/requirements.in`. The site deploys from `main`
+through GitHub Actions (`.github/workflows/docs.yml`).
+
+## Claude Code
+
+The port runs in Claude Code sessions ([D-23](porting/decisions.md#d-23)). The repository carries:
+
+* `CLAUDE.md`: project instructions and the session protocol.
+* `.claude/rules/*.md`: path-scoped rules, loaded when matching files are read or edited.
+* `.claude/skills/session-start` and `.claude/skills/session-end`: run as `/session-start` and
+  `/session-end`.
+* `.claude/settings.json`: shared permission allowlist and the `dotnet format` hook. Personal
+  overrides go into `.claude/settings.local.json` and `CLAUDE.local.md` (both git-ignored).
+
+### Cloud sessions (Claude Code on the web)
+
+Cloud sessions have no .NET SDK preinstalled and read no repository file for machine setup. Paste
+this script into the **setup script** of the claude.ai/code environment for this repository. It
+must stay under about 5 minutes so the environment can be cached:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# .NET SDK, same version as global.json
+curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+bash /tmp/dotnet-install.sh --version 10.0.403 --install-dir "$HOME/.dotnet"
+{
+  echo 'export DOTNET_ROOT="$HOME/.dotnet"'
+  echo 'export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"'
+  echo 'export DOTNET_CLI_TELEMETRY_OPTOUT=1'
+  echo 'export DOTNET_NOLOGO=1'
+} >> "$HOME/.bashrc"
+
+# Native AOT prerequisites; Docker for the compose harness if the image lacks it
+SUDO=$(command -v sudo || true)
+$SUDO apt-get update -qq
+$SUDO apt-get install -y -qq clang zlib1g-dev
+command -v docker >/dev/null || $SUDO apt-get install -y -qq docker.io docker-compose-v2
+```
+
+The network allowlist of the environment must reach `dot.net`, `builds.dotnet.microsoft.com`
+(SDK download), `api.nuget.org` and `globalcdn.nuget.org` (packages), and Docker Hub and
+`mcr.microsoft.com` (images). Verify once in a fresh cloud session: `dotnet --info`,
+`dotnet restore`, `docker compose pull`.
+
+## Python Implementation (archived)
+
+!!! warning "Not yet ported"
+    The rest of this page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    replaced as the port proceeds.
+
+
+### Environment Setup
 
 MicroDCS requires Python ≥ 3.14 and uses `uv` for dependency management, virtual environment creation, and packaging.
 
@@ -11,7 +122,7 @@ MicroDCS requires Python ≥ 3.14 and uses `uv` for dependency management, virtu
 uv sync
 ```
 
-### Why Python 3.14?
+#### Why Python 3.14?
 
 Python 3.14 is the minimum version where the annotation semantics MicroDCS needs work correctly end-to-end without workarounds. The requirement is driven by **PEP 749 (Deferred Evaluation of Annotations)** and the new **`annotationlib`** module.
 
@@ -38,7 +149,7 @@ Additional 3.14 features used throughout the codebase:
 * **`kw_only` dataclasses** (Python 3.10+) — used universally for all model dataclasses
 * **`match`/`case`** (Python 3.10+) — used in validation and content-type routing
 
-## Common Commands
+### Common Commands
 
 Run the main unit test suite:
 
@@ -84,7 +195,7 @@ Run the example application:
 uv run python -m app
 ```
 
-## MessagePack Buffer Limit
+### MessagePack Buffer Limit
 
 The MessagePack-RPC transport sets `msgpack.Unpacker(max_buffer_size=...)` to bound
 the size of buffered, not-yet-decoded payload data.
@@ -95,7 +206,7 @@ the size of buffered, not-yet-decoded payload data.
 This helps protect the process from excessive memory usage caused by oversized or
 malformed input streams.
 
-## Configuration Validation
+### Configuration Validation
 
 At startup, the runtime configuration is validated before protocol handlers enter
 their main loops. Validation fails fast with a clear error message if any check
@@ -140,11 +251,11 @@ Startup pre-check sequence:
 Environment variables are still parsed from APP_* settings, then validated by
 these runtime checks.
 
-## Deployment Modes
+### Deployment Modes
 
 A MicroDCS application consists of two roles: **processor** (handles incoming events, runs state machines) and **publisher** (maintains retained MQTT topics for northbound MES integration). Both can run in a single process (default) or be split into separate Kubernetes deployments.
 
-### Instance Role Flags
+#### Instance Role Flags
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -153,7 +264,7 @@ A MicroDCS application consists of two roles: **processor** (handles incoming ev
 
 For production, set one flag to `false` per deployment: multiple processor replicas with shared MQTT subscriptions and a single publisher replica that owns retained topics.
 
-### Publisher Configuration (`APP_PUBLISHER_*`)
+#### Publisher Configuration (`APP_PUBLISHER_*`)
 
 | Variable | Default | Description |
 |---|---|---|
@@ -163,7 +274,7 @@ For production, set one flag to `false` per deployment: multiple processor repli
 
 The topic prefix identifier (e.g. `"machinery-jobs"`) is a constructor parameter of `JobOrderPublisher`, not an environment variable. It is wired in `app/__main__.py`.
 
-### Kubernetes Manifest
+#### Kubernetes Manifest
 
 The `deploy/k8s.yaml` manifest defines two Deployments:
 
@@ -172,7 +283,7 @@ The `deploy/k8s.yaml` manifest defines two Deployments:
 
 The publisher must be a single replica to avoid conflicting retained writes. The SFC engine is different: it runs on every processor replica and relies on Redis consumer groups plus CAS Lua scripts for work distribution and recovery. Equipment integrations must treat `push_command` deliveries as idempotent by deduplicating on the `mdcsactionkey` attached by the engine (see the [idempotency contract](sfc_engine.md#idempotency-contract)). The app reconnects to MQTT with backoff but does not reconnect to Redis: a lost Redis connection ends the process and Kubernetes restarts it, so health probes on external dependencies are not included. See [Redis Requirements](operations.md#redis-requirements) for the persistence baseline.
 
-### SFC Engine Wiring
+#### SFC Engine Wiring
 
 The relevant SFC wiring in `app/__main__.py` is:
 
@@ -208,7 +319,7 @@ The `register_pull_completion_handler` line is required when the recipe uses `pu
 
 `tests/example_sfc.py` provides a reusable `build_example_work_master()` helper containing an SFC recipe payload so you can seed Redis or publish a `ConfigWorkMaster` event during manual testing.
 
-### Local Development
+#### Local Development
 
 For local development, both roles run in a single process (default). Start MQTT and Redis via Docker and run the app:
 
@@ -252,7 +363,7 @@ Generate the SFC recipe dataclasses:
 uv run microdcs dataclassgen dataclasses sfc_recipe.schema.json
 ```
 
-## OpenTelemetry Analysis with Aspire Dashboard
+### OpenTelemetry Analysis with Aspire Dashboard
 
 The [Aspire dashboard](https://aspire.dev/dashboard/standalone/) can be run as a standalone container to visualise traces, metrics, and structured logs from any OpenTelemetry-enabled app — no .NET or full Aspire installation required.
 
@@ -293,7 +404,7 @@ OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true \
 
 Or use the VS Code task **Run App (instrumented/Aspire dashboard)** which starts MQTT, Redis, and the Aspire dashboard automatically.
 
-## Documentation
+### Documentation
 
 The documentation site is built with Zensical.
 
@@ -302,7 +413,7 @@ The documentation site is built with Zensical.
 zensical serve
 ```
 
-## Container Build
+### Container Build
 
 The project ships with a distroless multi-stage Docker build.
 
@@ -310,7 +421,7 @@ The project ships with a distroless multi-stage Docker build.
 docker build -t aschamberger/microdcs .
 ```
 
-## Main Libraries
+### Main Libraries
 
 The framework is built around a small set of core dependencies:
 
@@ -321,7 +432,7 @@ The framework is built around a small set of core dependencies:
 * [datamodel-code-generator](https://github.com/koxudaxi/datamodel-code-generator) for model generation
 * [Typer](https://github.com/fastapi/typer) for CLI tooling
 
-## Reference Links
+### Reference Links
 
 * [Crow's Nest MQTT](https://github.com/koepalex/Crow-s-Nest-MQTT)
 * [Eclipse Mosquitto Docker image](https://hub.docker.com/_/eclipse-mosquitto)

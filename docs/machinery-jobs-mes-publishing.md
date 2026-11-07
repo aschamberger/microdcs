@@ -1,5 +1,10 @@
 # Machinery Jobs – MES Northbound Publishing
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 This page describes the design of the northbound MQTT publishing interface that makes job order state and job response data reliably available to a Manufacturing Execution System (MES) across connectivity outages. It extends the existing `MachineryJobsCloudEventProcessor` without modifying its command handling logic and adds a dedicated publisher component that maintains retained MQTT topics per job.
 
 ## Background

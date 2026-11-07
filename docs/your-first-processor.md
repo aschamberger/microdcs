@@ -1,5 +1,10 @@
 # Your First Processor
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 This tutorial walks through building a CloudEvent processor from scratch, covering the processor lifecycle, incoming/outgoing event handlers, the response chain, and wiring into the MicroDCS application.
 
 ## Prerequisites

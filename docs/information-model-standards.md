@@ -1,5 +1,10 @@
 # Information Model Standards
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 MicroDCS uses established industrial information-model standards and schema-driven code generation to keep application payloads typed, consistent, and transport-independent. This page summarizes the standards and model-generation patterns that shape the framework's data layer.
 
 ## OPC UA

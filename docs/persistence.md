@@ -1,5 +1,10 @@
 # Persistence
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 MicroDCS uses Redis to persist operational state needed for delivery coordination, job tracking, and multi-instance processing patterns. This page summarizes the persistence requirements behind that choice and shows how the Redis API is used.
 
 ## Persistence Requirements

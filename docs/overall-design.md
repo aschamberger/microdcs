@@ -1,5 +1,10 @@
 # Overall Design
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 MicroDCS is designed to help build OT and manufacturing applications with modern software architecture patterns while staying grounded in open standards. Instead of centering the system on custom protocol glue or tightly coupled device integrations, the framework uses typed events, protocol abstraction, and standard specifications to support distributed sequence control applications.
 
 ## Design Goals
@@ -86,16 +91,24 @@ transport ([Concepts](concepts.md#opc-ua-and-companion-specifications)).
 
 ### Decision
 
-MicroDCS does not contain southbound industrial protocol clients. Equipment is reached over the two
-transports the framework already has, with the protocol translation outside the framework core:
+!!! info "Updated for the .NET port"
+    This section reflects [D-11](porting/decisions.md#d-11): Zenoh is a full CloudEvents transport
+    binding with the same processor model as MQTT, NATS and AMQP. MessagePack-RPC is dropped in the
+    .NET port, so the sidecar path below no longer uses it. The Zenoh binding is built in S25.
 
-1. **A gateway or the equipment publishes CloudEvents on MQTT.** A southbound processor subscribes to
-   `data`, `events` and `metadata` and publishes `commands`
-   ([topic structure](operations.md#mqtt-topic-structure)). Bridges such as OPC UA to MQTT gateways
-   or edge platforms own the OT protocol.
-2. **A sidecar talks MessagePack-RPC.** A container in the same pod connects to the MessagePack-RPC
-   handler on `localhost` and exchanges CloudEvents
-   ([deployment model](operations.md#deployment-model)).
+MicroDCS does not contain southbound industrial protocol clients. Equipment is reached over the
+framework's CloudEvents transports, with the protocol translation outside the framework core:
+
+1. **A gateway or the equipment publishes CloudEvents on MQTT** (or another northbound-capable
+   transport such as NATS). A southbound processor subscribes to `data`, `events` and `metadata` and
+   publishes `commands` ([topic structure](operations.md#mqtt-topic-structure)). Bridges such as
+   OPC UA to MQTT gateways or edge platforms own the OT protocol.
+2. **A gateway, sidecar or the equipment speaks CloudEvents over Zenoh.** Zenoh is a full transport
+   binding: the same processors, handlers and pipeline as on MQTT, with Zenoh key expressions in
+   place of topics. It suits edge and peer-to-peer deployments and replaces the MessagePack-RPC
+   sidecar of the Python implementation. CloudEvents has no Zenoh protocol binding, so MicroDCS
+   defines its own mapping (attributes in the attachment or a structured-mode payload, query/reply
+   for commands, router or peer mode; decided in S25).
 3. **A southbound processor translates in-process.** Equipment-specific CloudEvent shaping and
    protocol translation belong in a processor ([three-layer architecture](#three-layer-architecture)).
    A processor may use a protocol library, but then it is application code, not part of the
@@ -121,6 +134,8 @@ transports the framework already has, with the protocol translation outside the 
 
 - **An OPC UA client inside the framework.** Rejected because of the replica issue above and because
   it ties the framework to one protocol and its security model.
+- **Keeping the MessagePack-RPC sidecar protocol.** Dropped in the .NET port: it duplicated what a
+  standard transport gives, and Zenoh covers the local and edge cases with the same processor model.
 - **Using OPC UA PubSub or client/server as the main transport.** Rejected in favour of MQTT with
   CloudEvents ([design goals](#design-goals)), which fits the cloud-native deployment and
   shared-subscription scaling.

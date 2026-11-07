@@ -1,5 +1,10 @@
 # MicroDCS Documentation
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 MicroDCS is an open-standards-based Python framework for building distributed sequence control applications for OT and manufacturing. The documentation focuses on how the framework is structured, which standards it builds on, and how to work with the codebase and deployment model.
 
 ## Start Here
