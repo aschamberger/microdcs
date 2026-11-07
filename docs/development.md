@@ -101,16 +101,19 @@ scripts/scan                  # Gitleaks over the working tree, then Trivy over 
 scripts/scan history          # Gitleaks over the full history of all refs
 scripts/scan range main..HEAD # Gitleaks over a commit range
 scripts/scan image            # build the runtime image and scan it with Trivy
+scripts/scan workflows        # actionlint and zizmor over .github/workflows
 scripts/scan help             # all modes
 ```
 
 | Scanner | What it checks | Fails on |
 |---|---|---|
 | Gitleaks (`.gitleaks.toml`) | Default rules plus a canary rule, in files and history | Any finding |
+| actionlint | Workflow syntax, expressions, action inputs, shellcheck over `run:` blocks | Any error |
+| zizmor (`.github/zizmor.yml` if needed) | Workflow security: template injection, permissions, pinning, cache poisoning; with `GH_TOKEN` set also impostor commits behind pinned SHAs and known-vulnerable actions | Any finding at the default persona |
 | Trivy fs (`trivy.yaml`) | NuGet lock files, `Directory.Packages.props`, `docs/requirements.txt`; `Dockerfile` and `deploy/` misconfiguration | HIGH or CRITICAL with a fix available |
 | Trivy image | OS packages of the runtime image | Same |
 
-Trivy does not check compose files or GitHub workflows. The Native AOT binary carries no
+Trivy does not check compose files or GitHub workflows; actionlint and zizmor cover the workflows. The Native AOT binary carries no
 `.deps.json`, so the image scan sees only OS packages; the NuGet packages are covered by the lock
 files. Each Trivy run also writes a CycloneDX SBOM (`sbom-trivy-fs.cdx.json` for the source,
 `sbom-trivy-image.cdx.json` for the image).
@@ -122,7 +125,7 @@ only, to a narrowly scoped `.gitleaks.toml` allowlist. They are listed in
 Optional pre-commit hook (Gitleaks over the staged changes): `git config core.hooksPath .githooks`.
 
 CI: `security.yml` runs `gitleaks` (commit range on PRs, full history on `main` and daily),
-`trivy-fs` and `trivy-image` (SARIF to code scanning, SBOMs as artifacts) on every PR, on `main`
+`workflows` (zizmor online with the job token, SARIF to code scanning), `trivy-fs` and `trivy-image` (SARIF to code scanning, SBOMs as artifacts) on every PR, on `main`
 and daily. The `dotnet` job in `ci.yml` runs the SonarQube Cloud analysis
 (`dotnet sonarscanner begin`/`end` around the build and the tests with coverage from
 `Microsoft.Testing.Extensions.CodeCoverage`). The quality gate is the `SonarCloud Code Analysis`
@@ -133,6 +136,31 @@ Coverage locally:
 ```bash
 dotnet test --coverage --coverage-output-format xml --results-directory TestResults
 ```
+
+### SonarQube MCP server (optional, per developer)
+
+Agents can query SonarQube Cloud (PR issues, quality gate, hotspots, coverage) and analyse single
+files through SonarSource's MCP server. It needs a personal user token, so it is configured in the
+user scope of Claude Code, never in the repository's `.mcp.json`. Read-only, with telemetry off and
+a pinned version (D-20); the workspace mount lets the server read files by path instead of taking
+their content through the agent's context:
+
+```bash
+claude mcp add --scope user sonarqube \
+  --env SONARQUBE_TOKEN=<your user token> --env SONARQUBE_ORG=aschamberger \
+  --env SONARQUBE_TOOLSETS=analysis,issues,quality-gates \
+  --env SONARQUBE_READ_ONLY=true --env TELEMETRY_DISABLED=true \
+  -- docker run --init -i --rm -e SONARQUBE_TOKEN -e SONARQUBE_ORG \
+     -e SONARQUBE_TOOLSETS -e SONARQUBE_READ_ONLY -e TELEMETRY_DISABLED \
+     -v "$PWD":/app/mcp-workspace:ro \
+     sonarsource/sonarqube-mcp:1.31.0.4891
+```
+
+Run it from the repository root (`$PWD` is resolved when the command is added). Local file analysis
+without SonarQube for IDE uses `analyze_code_snippet`, which SonarSource has deprecated; with the
+SonarQube for VS Code extension in connected mode, set `SONARQUBE_IDE_PORT` for the
+`analyze_file_list` tool. Read-only mode is deliberate: accepting an issue or marking a false
+positive is a waiver and needs a reason in [Security](security.md#scanner-waivers).
 
 ## Documentation
 

@@ -1,7 +1,7 @@
-# Security scans (D-20): Gitleaks (secrets, git history) and Trivy (vulnerabilities in the lock
+# Security scans (D-20): Gitleaks (secrets, git history), actionlint and zizmor (workflows) and Trivy (vulnerabilities in the lock
 # files, misconfiguration, image OS packages, SBOM). All scanners run through scripts/scan and the
 # digest-pinned containers in compose.scan.yaml, exactly as locally. No marketplace scanner actions.
-# Job names are required checks on `main` (gitleaks, trivy-fs, trivy-image); renaming a job means
+# Job names are required checks on `main` (gitleaks, workflows, trivy-fs, trivy-image); renaming a job means
 # updating the branch protection.
 # Actions are pinned by full commit SHA with the release in a comment (D-20); Dependabot bumps both.
 name: security
@@ -50,6 +50,31 @@ jobs:
           name: gitleaks-sarif
           path: scan-results/gitleaks.sarif
           if-no-files-found: ignore
+
+  # actionlint (correctness, shellcheck) and zizmor (workflow security). zizmor runs online with the
+  # job's read-only token: impostor commits behind pinned SHAs, known-vulnerable actions.
+  workflows:
+    name: workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # SARIF upload to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint and zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p scan-results
+          scripts/scan workflows
+      - if: always() && hashFiles('scan-results/zizmor.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: scan-results/zizmor.sarif
+          category: zizmor
 
   trivy-fs:
     name: trivy-fs
@@ -104,7 +129,9 @@ jobs:
         run: |
           echo "key=trivy-db-$(date --utc +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           mkdir -p scan-results
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore only: trivy-fs saves the same daily key. This job builds an image, so it must not
+      # write caches (zizmor cache-poisoning).
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/trivy
           key: ${{ steps.trivy-db.outputs.key }}

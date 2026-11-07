@@ -66,7 +66,7 @@ dotnet test                           # all tests (Microsoft.Testing.Platform)
 dotnet format --verify-no-changes     # style check as in CI; `dotnet format` fixes
 CI=true dotnet restore                # locked-mode restore; commit packages.lock.json changes
 docker compose up -d --wait           # dev stack; `docker compose down -v` wipes Valkey
-scripts/scan                          # Gitleaks (working tree) and Trivy fs; `scripts/scan help` for all modes
+scripts/scan                          # Gitleaks (working tree), actionlint/zizmor (workflows), Trivy fs; `scripts/scan help` for all modes
 ```
 
 Integration tests run inside compose (D-15):
