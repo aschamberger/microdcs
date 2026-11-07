@@ -146,6 +146,8 @@ Consequences: no fork maintenance and no submodule in the first sessions; no pub
 
 Open: whether the 2.x line stays the only line after the AOT change (a major bump would change the referenced API).
 
+Measured (S02, 2026-11-07): the AOT binary works at runtime. The allowlist is implemented in `scripts/aot-publish`; today only `CloudNative.CloudEvents.SystemTextJson` triggers it. Rule for the codec: construct `JsonEventFormatter` with `JsonSerializerOptions` whose `TypeInfoResolver` is source generated. The default constructor fails under `PublishAot`. Details in the research file.
+
 Background: [CloudEvents SDK check](research/cloudevents.md).
 
 ## D-15 Docker Compose integration tests {#d-15}
