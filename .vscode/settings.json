@@ -4,5 +4,9 @@
   "files.insertFinalNewline": true,
   "[csharp]": {
     "editor.formatOnSave": true
+  },
+  "sonarlint.connectedMode.project": {
+    "connectionId": "aschamberger",
+    "projectKey": "aschamberger_microdcs"
   }
 }

@@ -123,3 +123,5 @@ Changed in the plan: index (status, library table, Q-ARCH-1, Q-DATA-1, Q-DATA-2,
 Open questions: none new. Not covered: arm64 runs (CI is the reference), ZenohDotNet.
 Post-merge checks: `ci`, `security` and `docs` green on `main` (docs-only change).
 Next session pickup: S05 (OPC UA ISA-95 spike, no dependency on S04) or S06 (design, depends on S04). Run `/session-start S05` or `S06`. Start from `main` after the S04 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. Nothing to prepare for the maintainer; for S25 later, decide whether the Zenoh-CS fix goes upstream.
+
+Follow-up (S04, correction): AMQPNetLite's 13 AOT warnings came from the metapackage's serializer. `AMQPNetLite.Core` alone is AOT clean and works at runtime, so D-33 was revised (no optional package for AOT reasons) and S24, the index and the library spike were corrected. The same PR carries the SonarLint connected-mode setting in `.vscode/settings.json`. Post-merge checks: `ci`, `security` and `docs` green on `main`.

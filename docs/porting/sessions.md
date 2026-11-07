@@ -190,7 +190,7 @@ Port `docs/` (concepts, operations with all configuration equivalents, persisten
 
 ### S24 AMQP transport
 
-AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semantics, reply-to, broker target decision. Own optional package, not `IsAotCompatible`, with the AMQPNetLite trim/AOT warnings (all in `Amqp.Serialization`) suppressed in that project only and the `Data` body only ([D-33](decisions.md#d-33)); an AOT-published integration check against an AMQP 1.0 broker (Artemis worked in S04).
+AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semantics, reply-to, broker target decision. Reference `AMQPNetLite.Core`, not the `AMQPNetLite` metapackage (which pulls in the serializer with 13 AOT warnings, [D-33](decisions.md#d-33)); use the `Data` body and message properties only. Optionally spike `RabbitMQ.AMQP.Client` (builds on Core) against RabbitMQ 4 and decide the supported brokers. Add an AOT-published integration check against an AMQP 1.0 broker (Artemis worked in S04).
 
 ### S25 Zenoh transport
 
