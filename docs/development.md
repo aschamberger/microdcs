@@ -126,7 +126,9 @@ CI: `security.yml` runs `gitleaks` (commit range on PRs, full history on `main` 
 and daily. The `dotnet` job in `ci.yml` runs the SonarQube Cloud analysis
 (`dotnet sonarscanner begin`/`end` around the build and the tests with coverage from
 `Microsoft.Testing.Extensions.CodeCoverage`). The quality gate is the `SonarCloud Code Analysis`
-check of the SonarQube Cloud app. Coverage locally:
+check of the SonarQube Cloud app. Sonar's C# rules also run in every local build
+(`SonarAnalyzer.CSharp` as a global package reference); like all warnings they fail the build.
+Coverage locally:
 
 ```bash
 dotnet test --coverage --coverage-output-format xml --results-directory TestResults

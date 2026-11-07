@@ -230,6 +230,8 @@ Decision: Gitleaks, Trivy and SonarQube Cloud. Gitleaks and Trivy run as digest-
 
 Consequences: motivated by the March 2026 compromise of the Trivy action and binaries. Gates: any secret, fixable HIGH/CRITICAL, the Sonar quality gate. Built in S03; the first full-history Gitleaks run there also covers the Python history (no separate scan before the freeze, because the project never used credentials).
 
+Confirmed 2026-11-07 (S03): built as decided, no revision. Gitleaks and Trivy run through `scripts/scan` and `compose.scan.yaml` in `security.yml`; Sonar runs as SonarScanner for .NET in the `ci.yml` `dotnet` job with coverage from `Microsoft.Testing.Extensions.CodeCoverage` (VS coverage XML). Corrections to the background: Trivy does not check compose files or workflows, and the image scan sees only OS packages (the SBOM therefore comes in a source and an image part). Required checks: `gitleaks`, `trivy-fs`, `trivy-image` and the SonarQube Cloud app check `SonarCloud Code Analysis` (the CI job does not wait for the gate). [Findings](research/ci-scanning.md#implementation-findings-s03-2026-11-07).
+
 Background: [CI security and quality scanning](research/ci-scanning.md).
 
 ## D-21 OPC UA .NET stack licence {#d-21}
