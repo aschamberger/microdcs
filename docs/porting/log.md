@@ -51,3 +51,20 @@ Done: .NET SDK 10.0.403 installed in `~/.dotnet` with `dotnet-install.sh`; `clan
 D-17 revised: late-response rule (finding 4) and outcome-based transition conditions (IEC 61131-3 compatible: named Boolean transitions, priority order, `"true"` as default) decided.
 Open for S07: `max_attempts` default, outcome mapping per `type_id`, routable `timeout`/`error` outcomes.
 Done: GitHub secret scanning and push protection enabled (2026-11-07); no alerts at the time of the check.
+
+## S01 Repository reset, scaffolding, agent setup (2026-11-07, branch `s01-repo-reset`)
+
+Status: done (post-merge checks for S02 below).
+Done:
+
+* Python removed from `main` (first commit); MIT `LICENSE`, README banner, `SECURITY.md` without the `pyproject.toml` reference. `compose.yaml` on `valkey-bundle`, images pinned by digest, Python `app` profile dropped. Dependabot: `nuget` replaces `uv`, `pip` for `/docs`, plus `docker-compose` for the digest pins.
+* Scaffolding: `global.json` (10.0.403, MTP runner), `Directory.Build.props`, central packages, `nuget.config` with source mapping, `.editorconfig`, `MicroDCS.slnx`, `MicroDCS.Core` and `MicroDCS.Core.Tests` (one test). Build, test, `format --verify-no-changes` and locked restore pass with zero warnings.
+* Docs: zensical 0.1.0 pinned with hashes (`docs/requirements.txt`); `docs.yml` builds and deploys through Actions. WIP announcement bar (`overrides/main.html`), "Not yet ported" on every Python page, nav "Port to .NET (WIP)"; tables, anchors and mermaid checked in a local build. D-11 in "Southbound Connectivity"; `development.md` has the .NET toolchain and the cloud setup script.
+* Claude Code: `CLAUDE.md` (102 lines), four path rules, `/session-start` and `/session-end` (stack workflow), `.claude/settings.json` with allowlist and hooks (restore at session start, whitespace format of edited `*.cs`). `.mcp.json` left absent until S11; no `.devcontainer`.
+* GitHub: squash merge only, delete head branches, `main` protected (PR required, 0 approvals, admins included, linear history, conversation resolution), milestones M0 to M3, `gh-stack` v0.3.0 installed (official extension; stacked PRs usable with gh 2.103.3).
+
+Findings: `clang` was missing despite the earlier log; the maintainer installed it (clang 18.1.3), and a throwaway AOT console publish ran. Dependabot needs the `docker-compose` ecosystem for digests in compose files. The format hook uses `dotnet format whitespace --folder` (about 1.4 s) instead of a full `dotnet format` (about 4 s).
+Decisions: D-27 to D-30 carried over from Python ([sorted list](research/python-design-decisions.md)), D-31 .NET conventions (S01 defaults taken).
+Changed in the plan: index (D-27 to D-31, session status), decisions, research file added.
+Open questions: none new. Not verified: the cloud setup script and NuGet reachability from a claude.ai/code environment (needs a cloud session).
+Next session pickup: S02. Before starting, check on `main`: the docs workflow deployed through Actions and the site shows "Port to .NET (WIP)"; `gh-pages` branch deleted; Dependabot security updates on; no `uv` Dependabot PRs open. Then `/session-start S02`; S02 is the second PR of the M0 stack (`gh stack init s02-ci-container` from `main` if S01 is merged). Maintainer, optional: paste the setup script from `docs/development.md` into the claude.ai/code environment and run `dotnet restore` in a cloud session.

@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S01**.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S02**.
 
 ## How to use these files
 
@@ -132,7 +132,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
 | R-20 Multi-tenancy | NATS accounts in S14, the other transports and the key-prefix convention in S22 | S14, S22 |
 | R-21 Support model, zones/conduits | Language-independent documentation | S22 |
-| D-11 docs update | Update "Southbound Connectivity" in `docs/overall-design.md` for D-11 | S01 |
+| ~~D-11 docs update~~ | Done in S01 | — |
 | CloudEvents benchmark (R-18) | BenchmarkDotNet on the envelope once the pipeline hot path exists | S10, baseline in S23 |
 
 ## Sessions
@@ -142,7 +142,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | Session | Goal | Depends on | Status |
 |---|---|---|---|
 | **M0 Setup** | | | |
-| S01 | Repository reset: remove Python, scaffolding, Claude Code setup, WIP docs site | none | open |
+| S01 | Repository reset: remove Python, scaffolding, Claude Code setup, WIP docs site | none | done |
 | S02 | CI, container, compose harness, CloudEvents AOT measurement | S01 | open |
 | S03 | Security and quality scanning (D-20) | S02 | open |
 | **M1 Foundation** | | | |
