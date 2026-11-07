@@ -40,6 +40,10 @@ summaries of `CloudNative.CloudEvents*`, which is not annotated for trimming yet
 (uid 1654), no shell. `src/` projects restore for `linux-x64` and `linux-arm64`, so the lock files
 stay valid for a RID publish in locked mode.
 
+Platforms are linux-x64 and linux-arm64 ([D-32](porting/decisions.md#d-32)). Native AOT links for
+the build machine's architecture, so CI builds each image on a native runner. On an x64 machine an
+arm64 build needs QEMU (`docker buildx build --platform linux/arm64 .`, slow) or is left to CI.
+
 Packages are managed centrally in `Directory.Packages.props`; every project has a
 `packages.lock.json`. After changing a package version run `dotnet restore` and commit the updated
 lock files. `nuget.config` maps every package to nuget.org; NuGet audit runs on every restore.

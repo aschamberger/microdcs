@@ -31,6 +31,7 @@ If something fails and cannot be fixed in this session, say so plainly and recor
 * `docs/porting/decisions.md`: full entries for new decisions; revisions keep the id and add a dated "Revised" line.
 * `docs/porting/sessions.md`: only if the scope of later sessions changed.
 * "Next session pickup" in the log entry: session id, exact first steps, anything the maintainer must prepare. A fresh session must not need chat history.
+* Write the entry as of the merge: status `done` (or `partial`), and a "Post-merge checks" line listing what must hold after the squash merge (for example "CI green on `main`", "required checks: ..."). The next session's `/session-start` verifies them. Do repository settings such as required checks before the merge, once the PR has run the new check names.
 
 ## 3. Commit, submit, merge (D-22)
 
@@ -41,7 +42,7 @@ If something fails and cannot be fixed in this session, say so plainly and recor
 5. Merge bottom-up with squash: `gh stack merge <pr number> --squash` (merges every PR below it too, atomically). GitHub then rebases the rest of the stack; run `gh stack sync` locally.
    A stack with a single open PR is not a stack on GitHub (it needs two or more PRs), and `gh stack merge` refuses it: use `gh pr merge <pr number> --squash` instead.
 6. Fallback without `gh stack`: `git push -u origin <branch>`, `gh pr create --base <branch below or main>`, `gh pr merge --squash --delete-branch`.
-7. After the merge: `git switch main && git pull --ff-only`, delete the local session branch, and do any post-merge steps of the session. Results that change the handoff go into a small follow-up PR in the same stack (`<session>-handoff`).
+7. After the merge: `git switch main && git pull --ff-only`, delete the local session branch, and do any post-merge steps of the session. No follow-up PR for the post-merge state: the next session verifies the "Post-merge checks" and records the result in its own entry.
 
 ## 4. Report
 

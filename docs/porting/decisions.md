@@ -254,6 +254,8 @@ Consequences:
 * Needs GitHub CLI 2.90.0 or later with the `gh-stack` extension. Stacked PRs were in public preview in mid-2026; check the status in S01. Fallback without the feature: plain PRs to `main`, one per session, same squash rule.
 * GitHub milestones M0 to M3 group the PRs for the progress view.
 
+Revised (2026-11-07, S02): no follow-up PR for the post-merge state. The log entry lists "Post-merge checks", and the next session's `/session-start` verifies them and records the result in its own entry.
+
 Not chosen: one PR per milestone (reviews of 10k lines or more, CI feedback only at the end, a long-lived branch like the one D-16 rejected).
 
 ## D-23 Claude Code is the agent tool {#d-23}
@@ -355,3 +357,21 @@ Decision:
 
 Consequences: `Directory.Build.props` and `.editorconfig` enforce the build-level parts; `CLAUDE.md` and `.claude/rules/` carry the rest.
 
+## D-32 Platforms: linux-x64 and linux-arm64, built natively {#d-32}
+
+Status: decided (2026-11-07, S02 follow-up).
+
+Context: Native AOT links for the build machine's architecture. On an x64 host the arm64 link fails without an arm64 cross toolchain and sysroot (seen in S02). All base images (`sdk:10.0-noble-aot`, `runtime-deps:10.0-noble-chiseled`, `valkey-bundle`, `eclipse-mosquitto`) are multi-arch.
+
+Decision: MicroDCS supports `linux-x64` and `linux-arm64`. CI builds and smoke-tests the AOT image natively on both: the `container` job is a matrix on `ubuntu-24.04` and `ubuntu-24.04-arm` (free for public repositories). No QEMU emulation (slow AOT compile) and no cross-compilation toolchain in the Dockerfile.
+
+Consequences:
+
+* `src/` projects restore both RIDs (`Directory.Build.props`), so lock files stay valid; the Dockerfile maps `TARGETARCH` to the RID.
+* Required checks are `container (linux-x64)` and `container (linux-arm64)`; a new matrix entry changes the protection.
+* Native dependencies must exist for both: zenoh-c (S04 checks the arm64 build, S25 ships it), anything else that brings a native library.
+* S22 publishes one multi-arch image (manifest list from the two native builds, `docker buildx imagetools create`), signed and attested per platform.
+* Local arm64 builds on an x64 machine need QEMU or are skipped; CI is the reference.
+* Unit and integration tests run on x64 only until a platform-specific code path appears; then add the arm64 runner to that job.
+
+Not chosen: x64 only (excludes arm64 edge devices and Graviton/Ampere hosts); QEMU in one job (slow, and emulation hides nothing the native runner would not show); cross-compilation (sysroot maintenance in the Dockerfile).
