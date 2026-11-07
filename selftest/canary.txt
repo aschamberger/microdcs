@@ -1,0 +1,2 @@
+# S03 gate self-test, never merged.
+api_token = "MICRODCS-CANARY-9F3A6C0B1D2E4F5A6B7C8D9E"
