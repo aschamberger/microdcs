@@ -1,0 +1,3 @@
+# Docs build dependencies. Regenerate docs/requirements.txt with:
+#   pip-compile --generate-hashes --strip-extras docs/requirements.in
+zensical
