@@ -38,6 +38,7 @@ nav = [
       {"Inspection and MCP" = "porting/research/inspection-mcp.md"},
       {"SFC core" = "porting/research/sfc-core.md"},
       {"Valkey findings" = "porting/research/valkey-findings.md"},
+      {"Library spike" = "porting/research/library-spike.md"},
       {"Review triage" = "porting/research/review-triage.md"},
       {"Python design decisions, sorted" = "porting/research/python-design-decisions.md"}
     ]}

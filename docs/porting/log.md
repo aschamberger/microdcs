@@ -107,3 +107,19 @@ Post-merge checks: `ci` and `security` green on `main` (gitleaks scans the full 
 Post-merge fix ([#44](https://github.com/aschamberger/microdcs/pull/44)): `docs` failed on `main` because `python-version: 3.x` resolved to CPython 3.15, for which `pyyaml` 6.0.3 has no wheel, and the S03 wheel-only install refuses to build it; the docs Python is now pinned to 3.14. `ci`, `security`, the Sonar gate on `main` and Dependabot coverage of `compose.scan.yaml` and `.config/dotnet-tools.json` were verified after the merge.
 Follow-up ([#45](https://github.com/aschamberger/microdcs/pull/45)): actionlint and zizmor in `scripts/scan workflows` and the required `security.yml` job `workflows`; `/session-end` unstacks merged single-PR stacks locally; optional SonarQube MCP setup documented.
 Next session pickup: S04. Run `/session-start S04`. M0 is complete, so start the M1 stack from `main`: `git switch main && git pull --ff-only && gh stack init s04-library-spike`. New packages now also pass the Sonar C# rules in the build; spike code under `spikes/` is excluded from the Sonar analysis but not from the build analyzers. Run `scripts/scan` before commits touching workflows, Docker or configuration. No maintainer preparation needed.
+
+## S04 Spike: library stack, AOT and Valkey behaviour (2026-11-07, branch `s04-library-spike`)
+
+Status: done (Zenoh `Get` crash unresolved, handed to S25). Previous session post-merge: verified (`ci`, `security`, `docs` green on `main`; the nine required checks are set).
+Done:
+
+* One AOT console project per library plus a combined one (`spikes/`, deleted at the end), run against a temporary compose stack with NATS, zenohd and Artemis.
+* Valkey: Lua string scripts, `TIME` then write, `XAUTOCLAIM` with deleted ids, stream id as event time, polling versus nudge latency, valkey-json/search versus hash plus sets, reconnect.
+* MQTTnet v5 features, NATS.Net (JetStream, KV, request/reply), Kestrel with MCP over HTTP, AMQPNetLite against Artemis, Zenoh-CS against zenohd.
+
+Findings ([library spike](research/library-spike.md)): Redis, MQTTnet, NATS.Net, Kestrel and MCP are AOT clean and work at runtime (24.3 MB together). AMQPNetLite has 13 warnings, all in `Amqp.Serialization`. Zenoh-CS: pub/sub with attachments works, `Session.Get` against a queryable crashes (`free(): invalid pointer`, AOT and JIT); suspected stale `ZGetOptions` struct, not verified because the sandbox denied building the cloned source. Nudge gives p50 1 ms against half the poll interval; no performance reason to drop valkey-json and valkey-search.
+Decisions: D-33 (answers Q-ARCH-1: AMQP in an optional package, Zenoh library open).
+Changed in the plan: index (status, library table, Q-ARCH-1, Q-DATA-1, Q-DATA-2, D-33), decisions, sessions (S24, S25), research/library-spike.md.
+Open questions: none new. Not covered: arm64 runs (CI is the reference), ZenohDotNet.
+Post-merge checks: `ci`, `security` and `docs` green on `main` (docs-only change).
+Next session pickup: S05 (OPC UA ISA-95 spike, no dependency on S04) or S06 (design, depends on S04). Run `/session-start S05` or `S06`. Start from `main` after the S04 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. Nothing to prepare for the maintainer; for S25 later, decide whether the Zenoh-CS fix goes upstream.
