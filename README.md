@@ -1,10 +1,19 @@
 # MicroDCS
 
+> [!WARNING]
+> **Port to .NET in progress.** `main` is being rewritten in C# (.NET 10, Native AOT) and is not a
+> working product until the parity gate. The Python implementation is archived on the
+> [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch; the
+> sections below from "Quickstart" on still describe it. Plan and progress:
+> [Port to .NET](https://aschamberger.github.io/microdcs/porting/) ([source](docs/porting/index.md)).
+>
+> Build the .NET solution: `dotnet build` and `dotnet test` (SDK pinned in `global.json`).
+
 MicroDCS: An Open-Standards-Based Framework for Distributed Sequence Control Applications.
 
 MicroDCS is a Python framework for building distributed sequence control applications for OT and manufacturing. It uses MQTT v5, CloudEvents, JSON Schema, OPC UA companion specifications, and OpenTelemetry to support event-driven control flows with typed data models, protocol abstraction, and open-standard interoperability.
 
-## Quickstart
+## Quickstart (Python, archived)
 
 Get the framework installed, run the unit tests, and start the example application:
 
@@ -34,7 +43,7 @@ uv run python -m app
 
 ## Usage
 
-### Initialize a new project
+### Initialize a new project (Python, archived)
 
 Create a new MicroDCS application with the `init` command. It scaffolds the project structure, pins Python 3.14, and prepares the dependencies needed to build a distributed sequence control application.
 
@@ -81,7 +90,8 @@ uv run microdcs dataclassgen dataclasses my-schema.schema.json
 MicroDCS is pre-1.0 (version 0.1.0): interfaces can still change between releases. It is maintained
 by a single maintainer on a best-effort basis, without a service-level agreement. Questions and bug
 reports go to the GitHub issue tracker. Security problems follow [SECURITY.md](SECURITY.md). The
-code is licensed under the GNU Lesser General Public License v2.1 (see [LICENSE](LICENSE)).
+code on `main` is licensed under the MIT licence (see [LICENSE](LICENSE)); the archived Python
+implementation on `python-archive` stays under the GNU Lesser General Public License v2.1.
 
 ## Additional Documentation
 

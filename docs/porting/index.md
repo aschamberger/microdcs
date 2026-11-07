@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S01**.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S02**.
 
 ## How to use these files
 
@@ -88,8 +88,13 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-24](decisions.md#d-24) | decided | MicroDCS is MIT licensed (Python archive stays LGPL-2.1) |
 | [D-25](decisions.md#d-25) | decided | The processor authoring experience is a primary goal |
 | [D-26](decisions.md#d-26) | decided | `valkey-bundle` is the Valkey image |
+| [D-27](decisions.md#d-27) | decided | Fail-fast startup (carried over from Python) |
+| [D-28](decisions.md#d-28) | decided | Explicit error on queue backpressure (carried over from Python) |
+| [D-29](decisions.md#d-29) | decided | No extra size limit on `custommetadata` (carried over from Python) |
+| [D-30](decisions.md#d-30) | decided | Comma-separated list values in configuration, if lists stay strings (carried over from Python) |
+| [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
 
-Next free id: **D-27**.
+Next free id: **D-32**.
 
 ## Open questions
 
@@ -127,7 +132,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
 | R-20 Multi-tenancy | NATS accounts in S14, the other transports and the key-prefix convention in S22 | S14, S22 |
 | R-21 Support model, zones/conduits | Language-independent documentation | S22 |
-| D-11 docs update | Update "Southbound Connectivity" in `docs/overall-design.md` for D-11 | S01 |
+| ~~D-11 docs update~~ | Done in S01 | — |
 | CloudEvents benchmark (R-18) | BenchmarkDotNet on the envelope once the pipeline hot path exists | S10, baseline in S23 |
 
 ## Sessions
@@ -137,7 +142,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | Session | Goal | Depends on | Status |
 |---|---|---|---|
 | **M0 Setup** | | | |
-| S01 | Repository reset: remove Python, scaffolding, Claude Code setup, WIP docs site | none | open |
+| S01 | Repository reset: remove Python, scaffolding, Claude Code setup, WIP docs site | none | done |
 | S02 | CI, container, compose harness, CloudEvents AOT measurement | S01 | open |
 | S03 | Security and quality scanning (D-20) | S02 | open |
 | **M1 Foundation** | | | |

@@ -1,5 +1,10 @@
 # Technical Standards
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 MicroDCS is built around open standards for messaging, payload modeling, observability, and industrial domain semantics. This page summarizes the main standards used by the framework and explains how they are applied in the current architecture.
 
 ## MQTT v5

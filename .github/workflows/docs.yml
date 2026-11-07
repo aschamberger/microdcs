@@ -1,32 +1,50 @@
-name: ci
+# Builds the docs site with the pinned zensical (docs/requirements.txt) and deploys it to
+# GitHub Pages through Actions (Pages source: GitHub Actions; no gh-pages branch).
+# Actions are pinned by commit SHA in S03.
+name: docs
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Configure Git Credentials
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: 3.x
-      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - run: echo "cache_id=$(date --utc '+%V')" >> "$GITHUB_ENV"
       - uses: actions/cache@v6
         with:
           key: zensical-${{ env.cache_id }}
           path: .cache
           restore-keys: |
             zensical-
-      - run: pip install zensical
+      - run: pip install --require-hashes -r docs/requirements.txt
       - run: zensical build
-      - uses: peaceiris/actions-gh-pages@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
+          path: ./site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

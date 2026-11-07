@@ -1,5 +1,10 @@
 # Security and Authorization
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 MicroDCS does not authenticate or authorize callers itself. Identity and access control are
 delegated to the transports: the MQTT broker (client identity and topic ACLs), the Redis
 server (ACL user and network access) and, for MessagePack-RPC, TLS and the network. This page

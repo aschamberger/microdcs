@@ -298,3 +298,58 @@ Status: decided (2026-11-07).
 Decision: the compose stacks and the deployment use `valkey/valkey-bundle` (pinned by digest), which includes valkey-json and valkey-search.
 
 Consequences: the modules are available, so S04 and S07 can choose freely how documents and indexes are stored (Q-DATA-1). Choosing plain-string documents for some data does not change the image.
+
+## D-27 Fail-fast startup {#d-27}
+
+Status: decided (2026-11-07, carried over from Python).
+
+Decision: if a component cannot start (configuration invalid, processor initialisation fails, transport cannot connect within its startup budget), the process exits with an error instead of running degraded.
+
+Consequences: no catch-all around host startup. Kubernetes restart policies and readiness probes handle recovery. Reconnects after a successful start are a transport concern (S13 and later), not covered by this rule.
+
+Background: [Python design decisions](research/python-design-decisions.md).
+
+## D-28 Explicit error on queue backpressure {#d-28}
+
+Status: decided (2026-11-07, carried over from Python).
+
+Decision: when a bounded internal queue is full, enqueueing fails with an explicit error (exception or failed result) instead of blocking silently.
+
+Consequences: overload becomes visible to the caller and in logs and metrics. S06 defines the error type and where it surfaces in the pipeline; bounded `System.Threading.Channels` with `BoundedChannelFullMode.Wait` are not used for these queues without a timeout that turns into the same error.
+
+Background: [Python design decisions](research/python-design-decisions.md).
+
+## D-29 No extra size limit on `custommetadata` {#d-29}
+
+Status: decided (2026-11-07, carried over from Python, R-12).
+
+Decision: the `custommetadata` extension attribute gets no size check of its own. The transport limits bound it (MQTT maximum packet size, NATS `max_payload`, AMQP maximum message size, Kestrel request limits).
+
+Consequences: S22 documents the per-transport limits (R-12). Reviews do not flag the missing check.
+
+Background: [Python design decisions](research/python-design-decisions.md).
+
+## D-30 Comma-separated list values in configuration {#d-30}
+
+Status: decided (2026-11-07, carried over from Python). Applies only if the configuration format keeps list values in single strings (Q-ARCH-3, S06).
+
+Decision: list values in a single configuration string (for example environment variables) are split on commas without escaping.
+
+Consequences: safe because the values are topic names, subjects or `name:value` pairs where a comma is not valid (MQTT topics cannot contain commas). If S06 moves to `IConfiguration` arrays (`APP__X__0`, `APP__X__1`), this decision is obsolete and is marked so.
+
+Background: [Python design decisions](research/python-design-decisions.md).
+
+## D-31 .NET conventions {#d-31}
+
+Status: decided (2026-11-07, S01 defaults).
+
+Decision:
+
+* Root namespace and package prefix `MicroDCS` (`MicroDCS.Core`, `MicroDCS.Mqtt`, ...).
+* Tests: xUnit v3 on `Microsoft.Testing.Platform` (package `xunit.v3.mtp-v2`, runner set in `global.json`), Shouldly for assertions, NSubstitute for test doubles (with its analyzers). No reflection-heavy mocking in AOT paths; test projects are not AOT-published.
+* Logging: `Microsoft.Extensions.Logging` with the `LoggerMessage` source generator; no string interpolation in log calls.
+* Dependency injection: `Microsoft.Extensions.DependencyInjection`, explicit registrations; no assembly scanning or runtime-reflection registration in AOT paths.
+* Style: file-scoped namespaces, `required` members and records where useful, `TimeProvider` for time, `CancellationToken` on every async API, `ConfigureAwait(false)` in library code. Formatting and analyzer rules are in `.editorconfig`; warnings are errors.
+
+Consequences: `Directory.Build.props` and `.editorconfig` enforce the build-level parts; `CLAUDE.md` and `.claude/rules/` carry the rest.
+

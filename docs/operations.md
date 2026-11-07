@@ -1,5 +1,10 @@
 # Operations
 
+!!! warning "Not yet ported"
+    This page describes the archived Python implementation on the
+    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
+    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+
 This page covers operational concerns for running MicroDCS in production:
 configuration reference, backpressure behaviour across the processing pipeline,
 graceful shutdown, observability, and capacity planning.

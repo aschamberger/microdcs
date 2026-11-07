@@ -1,11 +1,27 @@
 version: 2
 updates:
-  - package-ecosystem: "uv"
+  # .NET packages (Directory.Packages.props, lock files)
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      nuget-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Docs build (docs/requirements.txt, hashed)
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+
+  # Dockerfile (from S02) and digest-pinned images in compose files
+  - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
 
-  - package-ecosystem: "docker"
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -14,3 +30,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]

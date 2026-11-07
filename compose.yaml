@@ -1,14 +1,16 @@
 # Local development stack. Unauthenticated and plaintext - not for production.
 #
-#   docker compose up -d                  # MQTT broker, Redis, Aspire dashboard
-#   docker compose --profile app up -d --build   # additionally run the example app in a container
+#   docker compose up -d         # MQTT broker, Valkey, Aspire dashboard
+#   docker compose down -v       # stop and wipe the valkey-data volume
 #
-# Run the app on the host instead with `uv run python -m app` (see docs/development.md).
-# Redis data lives in the redis-data volume; `docker compose down -v` wipes it.
+# The .NET app runs on the host (`dotnet run`) against these ports. The integration
+# test harness is a separate file (compose.test.yaml, S02).
+# Images are pinned by digest; the tag in front of the digest is informational only.
+# Dependabot (docker ecosystem) proposes digest updates.
 
 services:
   mosquitto:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98
     command: mosquitto -c /mosquitto-no-auth.conf
     ports:
       - "1883:1883"
@@ -18,21 +20,23 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:8
-    command: redis-server --appendonly yes --appendfsync everysec
+  # valkey-bundle includes valkey-json, valkey-search and valkey-bloom (D-26).
+  # The image entrypoint loads the modules for any valkey-server command line.
+  valkey:
+    image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+    command: valkey-server --appendonly yes --appendfsync everysec
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest@sha256:55a5a9fb88ddcff91997d6889912a19a1627e3584bd41fa5141c9db5f8376754
     environment:
       ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
     ports:
@@ -40,39 +44,5 @@ services:
       - "4317:18889" # OTLP/gRPC
       - "4318:18890" # OTLP/HTTP
 
-  app:
-    profiles: ["app"]
-    build: .
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      aspire-dashboard:
-        condition: service_started
-    ports:
-      - "8888:8888" # MessagePack-RPC
-    environment:
-      APP_REDIS_HOSTNAME: redis
-      APP_MQTT_HOSTNAME: mosquitto
-      APP_MQTT_IDENTIFIER: app
-      APP_MSGPACK_HOSTNAME: 0.0.0.0
-      APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL: "10"
-      APP_PROCESSING_SHARED_SUBSCRIPTION_NAME: appsub
-      APP_PROCESSING_TOPIC_PREFIXES: greetings:app/greetings,machinery-jobs:app/jobs
-      APP_PROCESSING_TOPIC_WILDCARD_LEVELS: greetings:0,machinery-jobs:3
-      APP_PROCESSING_RESPONSE_TOPICS: greetings:app/greetings/responses,machinery-jobs:app/jobs/responses
-      APP_PROCESSING_CLOUDEVENT_SOURCE: https://aschamberger.github.com/microdcs/app
-      APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED: "true"
-      APP_LOGGING_LEVEL: DEBUG
-      OTEL_SERVICE_NAME: microdcs.app
-      OTEL_TRACES_EXPORTER: otlp
-      OTEL_METRICS_EXPORTER: otlp
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
-      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_PYTHON_LOG_CORRELATION: "true"
-      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
-
 volumes:
-  redis-data:
+  valkey-data:

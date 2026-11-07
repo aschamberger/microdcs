@@ -2,7 +2,9 @@
 
 ## Supported versions
 
-MicroDCS is pre-1.0. Only the latest release (and the `main` branch) receives security fixes.
+MicroDCS is pre-1.0. Only the latest release (and the `main` branch) receives security fixes. The
+archived Python implementation on the `python-archive` branch receives security fixes only, through
+pull requests into that branch.
 
 ## Reporting a vulnerability
 
@@ -10,8 +12,7 @@ Please do not open a public issue for a security problem.
 
 - Use GitHub's private vulnerability reporting: the **Security** tab of the repository, then
   **Report a vulnerability**.
-- If that is not available, email the maintainer at the address listed under `authors` in
-  [pyproject.toml](pyproject.toml).
+- If that is not available, email the maintainer at mail@andreass.net.
 
 Include the affected version or commit, what you observed, how to reproduce it, and the impact as
 you see it. A minimal reproduction (a message, a configuration, a command) helps most.
@@ -25,9 +26,9 @@ disclosing it publicly.
 
 ## Scope
 
-In scope: the `microdcs` package, its container image and the example deployment manifests.
+In scope: the MicroDCS packages, its container image and the example deployment manifests.
 
-Out of scope: vulnerabilities in the MQTT broker, Redis, Kubernetes or other components you deploy
+Out of scope: vulnerabilities in the MQTT broker, Valkey, Kubernetes or other components you deploy
 alongside it, and deployments that do not follow the hardening guidance. What the framework does and
 does not protect, and what the operator must configure (broker ACLs, TLS, secrets, network policy),
 is described in [docs/security.md](docs/security.md).

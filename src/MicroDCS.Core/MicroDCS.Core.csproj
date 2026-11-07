@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS core: CloudEvents processing, processor model and hosting for distributed sequence control applications.</Description>
+  </PropertyGroup>
+</Project>
