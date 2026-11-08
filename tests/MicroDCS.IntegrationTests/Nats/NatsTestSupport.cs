@@ -49,6 +49,9 @@ internal sealed class NatsTestClient : IAsyncDisposable
     {
         var subscription = await _connection.SubscribeCoreAsync(subject, serializer: NatsRawSerializer<byte[]>.Default, cancellationToken: ct);
         _subscriptions.Add(subscription);
+
+        // The subscribe command is only queued when SubscribeCoreAsync returns; a round trip makes sure the server knows it before anything is published.
+        await _connection.PingAsync(ct);
         _ = Task.Run(async () =>
         {
             await foreach (var message in subscription.Msgs.ReadAllAsync(CancellationToken.None))
