@@ -473,7 +473,8 @@ public class InterpreterTests
 
         SfcStepResult result = job.Tick(5_000);
 
-        result.Commands.ShouldBeEmpty();
+        result.Commands.OfType<StartWork>().ShouldBeEmpty();
+        result.Commands.OfType<CancelWork>().Single().Reason.ShouldBe("timeout");
         result.Continuation.ShouldBeOfType<SfcFault>().Code.ShouldBe("timeout");
     }
 

@@ -43,6 +43,10 @@ public sealed record StartWork : SfcCommand
     [JsonPropertyName("typeId")]
     public required string TypeId { get; init; }
 
+    /// <summary>Gets the pass through the step (loops enter a step again); the host echoes it in the response so that answers of an earlier pass are absorbed.</summary>
+    [JsonPropertyName("round")]
+    public required int Round { get; init; }
+
     /// <summary>Gets the attempt number, starting at 1.</summary>
     [JsonPropertyName("attempt")]
     public required int Attempt { get; init; }
@@ -59,7 +63,7 @@ public sealed record StartWork : SfcCommand
 /// <summary>Withdraw an attempt: re-dispatch, divergence teardown, fault or cancel.</summary>
 public sealed record CancelWork : SfcCommand
 {
-    /// <summary>Gets the reason: <c>redispatch</c>, <c>teardown</c> or the cancel reason.</summary>
+    /// <summary>Gets the reason: <c>redispatch</c>, <c>timeout</c>, <c>teardown</c> or the cancel reason.</summary>
     [JsonPropertyName("reason")]
     public required string Reason { get; init; }
 }

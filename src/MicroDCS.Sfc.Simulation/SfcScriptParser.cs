@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace MicroDCS.Sfc.Simulation;
@@ -60,32 +59,17 @@ public static class SfcScriptParser
     /// <summary>Builds a recipe for a dry run or an explanation: every feature is on and every outcome the recipe names is declared.</summary>
     /// <param name="recipe">The recipe JSON (UTF-8).</param>
     /// <returns>The graph or the build errors. Outcome typos cannot be found this way; a real station checks them against its processors.</returns>
-    public static SfcBuildResult BuildPermissive(ReadOnlyMemory<byte> recipe)
+    public static SfcBuildResult BuildPermissive(ReadOnlyMemory<byte> recipe) => SfcGraph.Build(recipe, Permissive);
+
+    private static SfcCapabilities Permissive(SfcRecipe parsed)
     {
-        SfcRecipe? parsed;
-        try
-        {
-            parsed = JsonSerializer.Deserialize(recipe.Span, SfcJsonContext.Default.SfcRecipe);
-        }
-        catch (JsonException ex)
-        {
-            return new SfcBuildResult(null, [new SfcBuildError("SFC000", $"The recipe is not a valid SFC recipe document (at '{ex.Path}').")]);
-        }
-
-        if (parsed is null)
-        {
-            return new SfcBuildResult(null, [new SfcBuildError("SFC000", "The recipe is empty.")]);
-        }
-
         HashSet<string> named = [.. parsed.Transitions.Select(static t => t.Condition).Where(static c => c != SfcOutcome.Default), "ok"];
-        var outcomes = parsed.Actions
-            .Select(static a => a.TypeId)
-            .Distinct(StringComparer.Ordinal)
-            .ToDictionary(static t => t, _ => (IReadOnlySet<string>)named, StringComparer.Ordinal);
-        var capabilities = new SfcCapabilities(
+        return new SfcCapabilities(
             SfcFeature.PushCommand | SfcFeature.PullEvent | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence,
-            outcomes);
-        return SfcGraph.Build(parsed, Convert.ToHexStringLower(SHA256.HashData(recipe.Span)), capabilities);
+            parsed.Actions
+                .Select(static a => a.TypeId)
+                .Distinct(StringComparer.Ordinal)
+                .ToDictionary(static t => t, _ => (IReadOnlySet<string>)named, StringComparer.Ordinal));
     }
 
     private static void ParseReplies(SfcScript script, JsonElement replies)

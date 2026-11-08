@@ -115,6 +115,16 @@ public sealed class SfcGraph
     public static SfcBuildResult Build(ReadOnlyMemory<byte> recipe, SfcCapabilities capabilities)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
+        return Build(recipe, _ => capabilities);
+    }
+
+    /// <summary>Validates a recipe document with capabilities that depend on the recipe (tools that accept any outcome the recipe names).</summary>
+    /// <param name="recipe">The recipe JSON (UTF-8).</param>
+    /// <param name="capabilities">Derives the capabilities from the parsed recipe.</param>
+    /// <returns>The graph, or the build errors.</returns>
+    public static SfcBuildResult Build(ReadOnlyMemory<byte> recipe, Func<SfcRecipe, SfcCapabilities> capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
         SfcRecipe? parsed;
         try
         {
@@ -130,7 +140,7 @@ public sealed class SfcGraph
             return Failed(new SfcBuildError("SFC000", "The recipe is empty."));
         }
 
-        return Build(parsed, Convert.ToHexStringLower(SHA256.HashData(recipe.Span)), capabilities);
+        return Build(parsed, Convert.ToHexStringLower(SHA256.HashData(recipe.Span)), capabilities(parsed));
     }
 
     /// <summary>Validates an already parsed recipe.</summary>
@@ -143,6 +153,11 @@ public sealed class SfcGraph
         ArgumentNullException.ThrowIfNull(recipe);
         ArgumentException.ThrowIfNullOrEmpty(recipeHash);
         ArgumentNullException.ThrowIfNull(capabilities);
+        if (SfcGraphValidator.ContainsNull(recipe))
+        {
+            return Failed(new SfcBuildError("SFC000", "The recipe has a null entry in a list."));
+        }
+
         List<SfcBuildError> errors = SfcGraphValidator.Validate(recipe, capabilities, out string? initial);
         return errors.Count > 0 || initial is null
             ? new SfcBuildResult(null, errors)

@@ -38,6 +38,10 @@ public sealed record SfcActionCompleted : SfcEvent
     /// <summary>Gets the type id of the response when known; a contradiction with the open action rejects the response.</summary>
     [JsonPropertyName("typeId")]
     public string? TypeId { get; init; }
+
+    /// <summary>Gets the round of the command this answers (<see cref="StartWork.Round"/>); a response of an earlier pass is absorbed. Absent means: match by action key only.</summary>
+    [JsonPropertyName("round")]
+    public int? Round { get; init; }
 }
 
 /// <summary>The response handler or the equipment reported a failure; the action ends with the reserved outcome <c>error</c>.</summary>
@@ -50,6 +54,10 @@ public sealed record SfcActionFailed : SfcEvent
     /// <summary>Gets the error text; kept as data on the action record.</summary>
     [JsonPropertyName("error")]
     public string? Error { get; init; }
+
+    /// <summary>Gets the round of the command this answers; absent means: match by action key only.</summary>
+    [JsonPropertyName("round")]
+    public int? Round { get; init; }
 }
 
 /// <summary>An incoming event for a pull-event action. The host picks the job (see <see cref="SfcState.IsWaitingFor"/>).</summary>

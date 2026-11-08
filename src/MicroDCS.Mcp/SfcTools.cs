@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using MicroDCS.Inspection;
 using MicroDCS.Sfc;
 using MicroDCS.Sfc.Simulation;
 using ModelContextProtocol;
@@ -25,9 +26,11 @@ internal sealed class SfcTools
     [McpServerTool(Name = "sfc_explain", ReadOnly = true, Destructive = false, Idempotent = true)]
     [Description("Explains an SFC recipe: steps, actions with timeouts and attempts, divergences, and the transitions with their outcome conditions. With a job state (the JSON document of 'valkey_document' kind sfcstate) it also says where the job is, what it waits for and when the next deadline is due. Refuses invalid recipes with the build errors. Pure; nothing is run.")]
     public static string SfcExplain(
+        InspectionService service,
         [Description("The recipe document as JSON text (the work master data).")] string recipe,
         [Description("Optional job state JSON to explain on this recipe.")] string? state = null)
     {
+        Admit(service, "sfc_explain");
         SfcGraph graph = Build(recipe);
         var text = new StringBuilder(SfcExplainer.Describe(graph));
         if (!string.IsNullOrWhiteSpace(state))
@@ -51,10 +54,12 @@ internal sealed class SfcTools
     [McpServerTool(Name = "sfc_dryrun", ReadOnly = true, Destructive = false, Idempotent = true)]
     [Description("Dry-runs an SFC recipe on a virtual clock with scripted equipment and returns the transcript of every evolution (event, commands, continuation). Without a script every action answers 'ok' at once. Script JSON: {\"default\":\"ok\",\"replies\":{\"actionName\":[\"ok\",\"error:text@500\",\"silent\",\"outcome@delayMs\"]},\"events\":[{\"atMs\":1000,\"typeId\":\"t\",\"outcome\":\"ok\"}]}. One reply per time the equipment is asked; the last repeats. 'silent' lets the deadline expire. Nothing is dispatched or stored; use it before accepting a recipe.")]
     public static string SfcDryRun(
+        InspectionService service,
         [Description("The recipe document as JSON text.")] string recipe,
         [Description("Optional script JSON, see the tool description.")] string? script = null,
         [Description("Virtual time limit in seconds, default 3600.")] int? maxVirtualSeconds = null)
     {
+        Admit(service, "sfc_dryrun");
         SfcGraph graph = Build(recipe);
         SfcScript parsed;
         try
@@ -77,6 +82,19 @@ internal sealed class SfcTools
             + (simulation.State.FaultCode is null ? string.Empty : $"; fault {simulation.State.FaultCode}")
             + "\n";
         return Cap(header + simulation.Transcript.ToText());
+    }
+
+    /// <summary>Applies the request rate limit and writes the audit line, as every other tool does.</summary>
+    private static void Admit(InspectionService service, string tool)
+    {
+        try
+        {
+            service.Admit("mcp", tool);
+        }
+        catch (InspectionRefusedException ex)
+        {
+            throw new McpException(ex.Message, ex);
+        }
     }
 
     private static SfcGraph Build(string recipe)

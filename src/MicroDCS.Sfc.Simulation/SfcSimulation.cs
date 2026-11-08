@@ -172,8 +172,8 @@ public sealed class SfcSimulation
 
                 SfcEvent response = (start.Work, reply.Kind) switch
                 {
-                    (SfcWorkKind.PushCommand, SfcReplyKind.Error) => new SfcActionFailed { At = 0, ActionKey = start.ActionKey, Error = reply.Error },
-                    (SfcWorkKind.PushCommand, _) => new SfcActionCompleted { At = 0, ActionKey = start.ActionKey, Outcome = reply.Outcome ?? "ok", TypeId = start.TypeId },
+                    (SfcWorkKind.PushCommand, SfcReplyKind.Error) => new SfcActionFailed { At = 0, ActionKey = start.ActionKey, Error = reply.Error, Round = start.Round },
+                    (SfcWorkKind.PushCommand, _) => new SfcActionCompleted { At = 0, ActionKey = start.ActionKey, Outcome = reply.Outcome ?? "ok", TypeId = start.TypeId, Round = start.Round },
                     (_, SfcReplyKind.Error) => new SfcEventReceived { At = 0, TypeId = start.TypeId, Outcome = SfcOutcome.Error },
                     _ => new SfcEventReceived { At = 0, TypeId = start.TypeId, Outcome = reply.Outcome ?? "ok" },
                 };

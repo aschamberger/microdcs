@@ -7,7 +7,8 @@ namespace MicroDCS.Sfc;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.Unspecified,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    UseStringEnumConverter = true)]
+    UseStringEnumConverter = true,
+    RespectNullableAnnotations = true)]
 [JsonSerializable(typeof(SfcRecipe))]
 [JsonSerializable(typeof(SfcState))]
 [JsonSerializable(typeof(SfcEvent))]

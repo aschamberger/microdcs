@@ -38,8 +38,8 @@ internal sealed class SfcEvolution
     internal SfcStepResult Run(SfcEvent input) => input switch
     {
         SfcStart => Start(),
-        SfcActionCompleted c => Respond(c.ActionKey, c.Outcome, null, c.TypeId),
-        SfcActionFailed f => Respond(f.ActionKey, SfcOutcome.Error, f.Error, null),
+        SfcActionCompleted c => Respond(c.ActionKey, c.Outcome, null, c.TypeId, c.Round),
+        SfcActionFailed f => Respond(f.ActionKey, SfcOutcome.Error, f.Error, null, f.Round),
         SfcEventReceived e => Receive(e),
         SfcTick t => Tick(t),
         SfcResume => Resume(),
@@ -61,7 +61,7 @@ internal sealed class SfcEvolution
         return Applied();
     }
 
-    private SfcStepResult Respond(string actionKey, string outcome, string? error, string? typeId)
+    private SfcStepResult Respond(string actionKey, string outcome, string? error, string? typeId, int? round)
     {
         if (!IsRunning)
         {
@@ -78,6 +78,11 @@ internal sealed class SfcEvolution
         if (typeId is not null && !string.Equals(typeId, action.TypeId, StringComparison.Ordinal))
         {
             return Refuse(SfcDisposition.Rejected, $"The response type contradicts action '{name}'.");
+        }
+
+        if (round is int answered && answered != action.Round)
+        {
+            return Refuse(SfcDisposition.Absorbed, $"The response belongs to an earlier pass through the step of action '{name}'.");
         }
 
         if (action.IsDone)
@@ -228,7 +233,7 @@ internal sealed class SfcEvolution
         _active.Add(step);
         foreach (SfcActionBlock assoc in _graph.ActionsOf(step))
         {
-            _actions[assoc.Name] = new SfcActionState { Name = assoc.Name, TypeId = assoc.TypeId };
+            _actions[assoc.Name] = new SfcActionState { Name = assoc.Name, TypeId = assoc.TypeId, Round = _actions[assoc.Name].Round + 1 };
             Begin(assoc, 0);
         }
     }
@@ -252,7 +257,7 @@ internal sealed class SfcEvolution
             }
             else if (_active.Count == 0)
             {
-                Converge(position.Divergence);
+                Converge(position.Divergence, position.Divergence.Kind == SfcNames.Selection ? position.Sequence : null);
             }
 
             return;
@@ -261,9 +266,14 @@ internal sealed class SfcEvolution
         Route(step, _graph.Outgoing(step), outcomes, failed);
     }
 
-    private void Converge(SfcDivergence divergence)
+    /// <summary>
+    /// Clears the transitions after the convergence. A selection divergence runs one sequence, so only its outcomes count: the
+    /// other sequences may hold the outcomes of an earlier pass of a loop.
+    /// </summary>
+    private void Converge(SfcDivergence divergence, int? takenSequence)
     {
-        (HashSet<string> outcomes, _) = Collect(divergence.Sequences.SelectMany(static p => p));
+        IEnumerable<string> steps = takenSequence is int taken ? divergence.Sequences[taken] : divergence.Sequences.SelectMany(static p => p);
+        (HashSet<string> outcomes, _) = Collect(steps);
         Route(divergence.Name, _graph.ConvergenceTransitions(divergence), outcomes, null);
     }
 
@@ -413,6 +423,7 @@ internal sealed class SfcEvolution
         Action = assoc.Name,
         TypeId = assoc.TypeId,
         Attempt = attempt,
+        Round = _actions[assoc.Name].Round,
         Deadline = deadline,
         Parameters = assoc.Parameters,
     };
@@ -427,6 +438,7 @@ internal sealed class SfcEvolution
         }
         else
         {
+            CancelExpired(assoc, action);
             Finish(action, SfcOutcome.Timeout, null);
         }
     }
@@ -435,6 +447,7 @@ internal sealed class SfcEvolution
     {
         if (action.Attempt >= MaxAttempts(assoc))
         {
+            CancelExpired(assoc, action);
             Finish(action, SfcOutcome.Timeout, null);
             return;
         }
@@ -447,6 +460,15 @@ internal sealed class SfcEvolution
         });
         Dispatch(assoc, action.Attempt + 1);
     }
+
+    /// <summary>The last attempt expired: withdraw it so the host drops the registration of the command or the awaited event.</summary>
+    private void CancelExpired(SfcActionBlock assoc, SfcActionState action) =>
+        _commands.Add(new CancelWork
+        {
+            ActionKey = ActionKey.Create(_original.JobId, assoc.Name),
+            CommandId = action.CommandId ?? string.Empty,
+            Reason = "timeout",
+        });
 
     private void Finish(SfcActionState action, string outcome, string? error)
     {

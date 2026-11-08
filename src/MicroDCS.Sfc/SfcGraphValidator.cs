@@ -3,19 +3,53 @@ namespace MicroDCS.Sfc;
 /// <summary>Build-time validation of a recipe (D-44). Messages name steps, actions and types, never parameter values.</summary>
 internal static class SfcGraphValidator
 {
+    /// <summary>The largest number of steps, transitions, actions or divergences accepted; bounds the work of a build.</summary>
+    internal const int MaxElements = 20_000;
+
+    /// <summary>The number of errors after which a validation phase stops reporting.</summary>
+    private const int MaxReportedErrors = 100;
+
+    /// <summary>
+    /// Tells whether a collection of the recipe holds a JSON <c>null</c> entry. The serializer checks members but not the elements of
+    /// lists, so this is the one place that turns such a document into a build error.
+    /// </summary>
+    internal static bool ContainsNull(SfcRecipe recipe) =>
+        Any(recipe.Steps) || Any(recipe.Transitions) || Any(recipe.Actions)
+        || (recipe.Divergences is { } divergences
+            && (Any(divergences) || divergences.Any(static d => Any(d.Sequences) || d.Sequences.Any(static s => Any(s)))));
+
+    private static bool Any<T>(IEnumerable<T?> items)
+        where T : class => items.Any(static i => i is null);
+
     internal static List<SfcBuildError> Validate(SfcRecipe recipe, SfcCapabilities caps, out string? initialStep)
     {
         var errors = new List<SfcBuildError>();
         initialStep = null;
         IReadOnlyList<SfcDivergence> divergences = recipe.Divergences ?? [];
 
-        // Names. Later phases index by name, so duplicates end the validation here.
+        if (recipe.Steps.Count > MaxElements || recipe.Transitions.Count > MaxElements || recipe.Actions.Count > MaxElements || divergences.Count > MaxElements)
+        {
+            errors.Add(new("SFC018", $"The recipe has more than {MaxElements} steps, transitions, actions or divergences."));
+            return errors;
+        }
+
+        // Names. Later phases index by name, so duplicates and empty names end the validation here.
         Duplicates(recipe.Steps.Select(static s => s.Name), "step", errors);
         Duplicates(divergences.Select(static b => b.Name), "divergence", errors);
         Duplicates(recipe.Actions.Select(static a => a.Name), "action", errors);
         foreach (string name in divergences.Select(static b => b.Name).Intersect(recipe.Steps.Select(static s => s.Name), StringComparer.Ordinal))
         {
             errors.Add(new("SFC002", $"'{name}' is both a step and a divergence."));
+        }
+
+        if (recipe.Steps.Any(static s => s.Name.Length == 0) || divergences.Any(static d => d.Name.Length == 0) || recipe.Actions.Any(static a => a.Name.Length == 0))
+        {
+            errors.Add(new("SFC017", "Step, divergence and action names must not be empty."));
+        }
+
+        foreach (SfcActionBlock action in recipe.Actions.Where(static a => a.Name.Contains(':', StringComparison.Ordinal)))
+        {
+            errors.Add(new("SFC017", $"Action name '{action.Name}' must not contain ':' (the action key is '{{jobId}}:{{action}}')."));
         }
 
         List<SfcStep> initial = [.. recipe.Steps.Where(static s => s.Initial)];
@@ -40,7 +74,7 @@ internal static class SfcGraphValidator
 
         foreach (SfcDivergence divergence in divergences)
         {
-            ValidateBranch(divergence, steps, sequenceSteps, errors);
+            ValidateDivergence(divergence, steps, sequenceSteps, errors);
         }
 
         foreach (SfcTransition t in recipe.Transitions)
@@ -58,11 +92,12 @@ internal static class SfcGraphValidator
             return errors;
         }
 
+        var index = new RecipeIndex(recipe, divergences);
         ValidateActions(recipe, caps, errors);
-        ValidateDecisions(recipe, divergences, caps, errors);
-        ValidateReachability(recipe, divergences, initial[0].Name, errors);
-        ValidateCycles(recipe, divergences, errors);
-        ValidateSelectors(recipe, divergences, errors);
+        ValidateDecisions(recipe, index, caps, errors);
+        ValidateReachability(recipe, index, initial[0].Name, errors);
+        ValidateCycles(recipe, index, errors);
+        ValidateSelectors(recipe, index, errors);
         initialStep = initial[0].Name;
         return errors;
     }
@@ -75,7 +110,7 @@ internal static class SfcGraphValidator
         }
     }
 
-    private static void ValidateBranch(SfcDivergence divergence, HashSet<string> steps, Dictionary<string, SfcDivergence> sequenceSteps, List<SfcBuildError> errors)
+    private static void ValidateDivergence(SfcDivergence divergence, HashSet<string> steps, Dictionary<string, SfcDivergence> sequenceSteps, List<SfcBuildError> errors)
     {
         if (divergence.Kind is not (SfcNames.Selection or SfcNames.Simultaneous))
         {
@@ -183,14 +218,12 @@ internal static class SfcGraphValidator
     }
 
     /// <summary>Priorities, defaults and outcome names of every decision point: a step, the exits of a divergence, the entries of a selection.</summary>
-    private static void ValidateDecisions(SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences, SfcCapabilities caps, List<SfcBuildError> errors)
+    private static void ValidateDecisions(SfcRecipe recipe, RecipeIndex index, SfcCapabilities caps, List<SfcBuildError> errors)
     {
-        var divergenceByName = divergences.ToDictionary(static b => b.Name, StringComparer.Ordinal);
-        var topLevel = recipe.Steps.Select(static s => s.Name).Concat(divergences.Select(static b => b.Name)).ToList();
-        foreach (string node in topLevel)
+        foreach (string node in recipe.Steps.Select(static s => s.Name).Concat(index.Divergences.Keys))
         {
-            List<SfcTransition> outgoing = [.. recipe.Transitions.Where(t => t.Source == node)];
-            if (divergenceByName.TryGetValue(node, out SfcDivergence? divergence))
+            List<SfcTransition> outgoing = [.. index.BySource[node]];
+            if (index.Divergences.TryGetValue(node, out SfcDivergence? divergence))
             {
                 List<SfcTransition> entries = [.. outgoing.Where(t => SfcGraph.IsFirstStep(divergence, t.Target))];
                 List<SfcTransition> exits = [.. outgoing.Where(t => !SfcGraph.IsFirstStep(divergence, t.Target))];
@@ -202,16 +235,16 @@ internal static class SfcGraphValidator
                         errors.Add(new("SFC007", $"Sequence starting with '{first}' of selection divergence '{node}' has no entry transition and is never taken."));
                     }
 
-                    CheckOutcomes(entries, recipe, divergences, caps, errors, entering: true);
+                    CheckOutcomes(entries, index, caps, errors, entering: true);
                 }
 
                 CheckDecision($"exit of divergence '{node}'", exits, requireDefault: exits.Count > 1, errors);
-                CheckOutcomes(exits, recipe, divergences, caps, errors, entering: false);
+                CheckOutcomes(exits, index, caps, errors, entering: false);
             }
             else
             {
                 CheckDecision($"step '{node}'", outgoing, requireDefault: outgoing.Count > 1, errors);
-                CheckOutcomes(outgoing, recipe, divergences, caps, errors, entering: false);
+                CheckOutcomes(outgoing, index, caps, errors, entering: false);
             }
         }
     }
@@ -234,13 +267,13 @@ internal static class SfcGraphValidator
         }
     }
 
-    private static void CheckOutcomes(List<SfcTransition> transitions, SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences, SfcCapabilities caps, List<SfcBuildError> errors, bool entering)
+    private static void CheckOutcomes(List<SfcTransition> transitions, RecipeIndex index, SfcCapabilities caps, List<SfcBuildError> errors, bool entering)
     {
         foreach (SfcTransition t in transitions.Where(static t => t.Condition != SfcOutcome.Default))
         {
             HashSet<string> types = entering
-                ? [.. recipe.Transitions.Where(p => p.Target == t.Source).SelectMany(p => TypesOf(p.Source, recipe, divergences))]
-                : [.. TypesOf(t.Source, recipe, divergences)];
+                ? [.. index.ByTarget[t.Source].SelectMany(p => index.TypesOf(p.Source))]
+                : [.. index.TypesOf(t.Source)];
             if (!types.Any(type => caps.IsOutcomeValid(type, t.Condition)))
             {
                 errors.Add(new("SFC016", $"Transition '{t.Source}' -> '{t.Target}' names the outcome '{t.Condition}', which no action type involved declares."));
@@ -248,24 +281,15 @@ internal static class SfcGraphValidator
         }
     }
 
-    /// <summary>The action types whose outcomes decide the transitions out of a step or divergence.</summary>
-    private static IEnumerable<string> TypesOf(string node, SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences)
-    {
-        SfcDivergence? divergence = divergences.FirstOrDefault(b => b.Name == node);
-        IEnumerable<string> steps = divergence is null ? [node] : divergence.Sequences.SelectMany(static p => p);
-        return recipe.Actions.Where(a => steps.Contains(a.Step)).Select(static a => a.TypeId);
-    }
-
-    private static void ValidateReachability(SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences, string initial, List<SfcBuildError> errors)
+    private static void ValidateReachability(SfcRecipe recipe, RecipeIndex index, string initial, List<SfcBuildError> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal) { initial };
         var queue = new Queue<string>([initial]);
         while (queue.Count > 0)
         {
             string node = queue.Dequeue();
-            IEnumerable<string> next = recipe.Transitions.Where(t => t.Source == node).Select(static t => t.Target);
-            SfcDivergence? divergence = divergences.FirstOrDefault(b => b.Name == node);
-            if (divergence is not null)
+            IEnumerable<string> next = index.BySource[node].Select(static t => t.Target);
+            if (index.Divergences.TryGetValue(node, out SfcDivergence? divergence))
             {
                 next = next.Concat(divergence.Sequences.SelectMany(static p => p));
             }
@@ -276,89 +300,145 @@ internal static class SfcGraphValidator
             }
         }
 
-        foreach (string name in recipe.Steps.Select(static s => s.Name).Concat(divergences.Select(static b => b.Name)).Where(n => !seen.Contains(n)))
+        foreach (string name in recipe.Steps.Select(static s => s.Name).Concat(index.Divergences.Keys).Where(n => !seen.Contains(n)).Take(MaxReportedErrors))
         {
             errors.Add(new("SFC012", $"'{name}' cannot be reached from the initial step."));
         }
     }
 
-    /// <summary>A cycle through steps without actions would spin inside one evolution, so it is refused ("a cycle must wait").</summary>
-    private static void ValidateCycles(SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences, List<SfcBuildError> errors)
+    /// <summary>
+    /// A cycle through steps without actions would spin inside one evolution, so it is refused ("a cycle must wait"). A selection
+    /// divergence counts as instant when any of its sequences has no action, because that one can be taken. The search is
+    /// iterative: a long chain of steps must not exhaust the stack.
+    /// </summary>
+    private static void ValidateCycles(SfcRecipe recipe, RecipeIndex index, List<SfcBuildError> errors)
     {
-        var instant = new HashSet<string>(StringComparer.Ordinal);
         var withActions = recipe.Actions.Select(static a => a.Step).ToHashSet(StringComparer.Ordinal);
+        var instant = new HashSet<string>(StringComparer.Ordinal);
         instant.UnionWith(recipe.Steps.Where(s => !withActions.Contains(s.Name)).Select(static s => s.Name));
-
-        instant.UnionWith(divergences.Where(b => b.Sequences.SelectMany(static p => p).All(s => !withActions.Contains(s))).Select(static b => b.Name));
+        foreach (SfcDivergence d in index.Divergences.Values)
+        {
+            bool Waits(IEnumerable<string> sequence) => sequence.Any(withActions.Contains);
+            if (d.Kind == SfcNames.Selection ? d.Sequences.Any(s => !Waits(s)) : !d.Sequences.Any(Waits))
+            {
+                instant.Add(d.Name);
+            }
+        }
 
         IEnumerable<string> Edges(string node)
         {
-            SfcDivergence? divergence = divergences.FirstOrDefault(b => b.Name == node);
-            return recipe.Transitions
-                .Where(t => t.Source == node && (divergence is null || !SfcGraph.IsFirstStep(divergence, t.Target)))
+            index.Divergences.TryGetValue(node, out SfcDivergence? divergence);
+            return index.BySource[node]
+                .Where(t => divergence is null || !SfcGraph.IsFirstStep(divergence, t.Target))
                 .Select(static t => t.Target)
                 .Where(instant.Contains);
         }
 
-        var onPath = new HashSet<string>(StringComparer.Ordinal);
-        var finished = new HashSet<string>(StringComparer.Ordinal);
-        bool Visit(string node)
+        var color = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string start in instant.Order(StringComparer.Ordinal).Where(n => !color.ContainsKey(n)))
         {
-            onPath.Add(node);
-            foreach (string next in Edges(node))
+            var stack = new Stack<(string Node, IEnumerator<string> Edges)>();
+            color[start] = 1;
+            stack.Push((start, Edges(start).GetEnumerator()));
+            while (stack.Count > 0)
             {
-                if (onPath.Contains(next) || (!finished.Contains(next) && Visit(next)))
+                (string node, IEnumerator<string> edges) = stack.Peek();
+                if (!edges.MoveNext())
                 {
-                    return true;
+                    color[node] = 2;
+                    stack.Pop();
+                    continue;
                 }
-            }
 
-            onPath.Remove(node);
-            finished.Add(node);
-            return false;
-        }
-
-        string? cyclic = instant.Order(StringComparer.Ordinal).Where(n => !finished.Contains(n)).FirstOrDefault(Visit);
-        if (cyclic is not null)
-        {
-            errors.Add(new("SFC013", $"A cycle through '{cyclic}' has no action to wait for and would spin."));
-        }
-    }
-
-    /// <summary>Two pull-event actions of one type that can wait at the same time and carry the same selector cannot be told apart (R-1).</summary>
-    private static void ValidateSelectors(SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences, List<SfcBuildError> errors)
-    {
-        List<SfcActionBlock> pulls = [.. recipe.Actions.Where(static a => a.Interaction == SfcNames.PullEvent)];
-        for (int i = 0; i < pulls.Count; i++)
-        {
-            for (int j = i + 1; j < pulls.Count; j++)
-            {
-                SfcActionBlock a = pulls[i], b = pulls[j];
-                if (a.TypeId == b.TypeId && SameSelector(a, b) && CanWaitTogether(a.Step, b.Step, divergences))
+                string next = edges.Current;
+                int state = color.GetValueOrDefault(next);
+                if (state == 1)
                 {
-                    errors.Add(new("SFC011", $"Pull-event actions '{a.Name}' and '{b.Name}' can wait at the same time for type '{a.TypeId}' with the same parameters; an event could not be matched."));
+                    errors.Add(new("SFC013", $"A cycle through '{next}' has no action to wait for and would spin."));
+                    return;
+                }
+
+                if (state == 0)
+                {
+                    color[next] = 1;
+                    stack.Push((next, Edges(next).GetEnumerator()));
                 }
             }
         }
     }
 
-    private static bool SameSelector(SfcActionBlock a, SfcActionBlock b)
+    /// <summary>
+    /// Two pull-event actions of one type that can wait at the same time cannot be told apart by the core (R-1): an event carries
+    /// the type only. Matching by parameters (a selector) comes with the host in S20.
+    /// </summary>
+    private static void ValidateSelectors(SfcRecipe recipe, RecipeIndex index, List<SfcBuildError> errors)
     {
-        string Key(SfcActionBlock x) => string.Join(
-            ';',
-            (x.Parameters ?? new Dictionary<string, System.Text.Json.JsonElement>()).OrderBy(static p => p.Key, StringComparer.Ordinal).Select(static p => p.Key + "=" + p.Value.GetRawText()));
-        return Key(a) == Key(b);
+        foreach (IGrouping<string, SfcActionBlock> sameType in recipe.Actions.Where(static a => a.Interaction == SfcNames.PullEvent).GroupBy(static a => a.TypeId, StringComparer.Ordinal))
+        {
+            List<SfcActionBlock> pulls = [.. sameType];
+            for (int i = 0; i < pulls.Count; i++)
+            {
+                for (int j = i + 1; j < pulls.Count; j++)
+                {
+                    if (errors.Count >= MaxReportedErrors)
+                    {
+                        return;
+                    }
+
+                    if (index.CanWaitTogether(pulls[i].Step, pulls[j].Step))
+                    {
+                        errors.Add(new("SFC011", $"Pull-event actions '{pulls[i].Name}' and '{pulls[j].Name}' can wait at the same time for type '{sameType.Key}'; an event could not be matched."));
+                    }
+                }
+            }
+        }
     }
 
-    private static bool CanWaitTogether(string stepA, string stepB, IReadOnlyList<SfcDivergence> divergences)
+    /// <summary>Lookups built once so that no phase scans the whole recipe per node.</summary>
+    private sealed class RecipeIndex
     {
-        if (stepA == stepB)
+        private readonly ILookup<string, SfcActionBlock> _actionsByStep;
+        private readonly Dictionary<string, (SfcDivergence Divergence, int Sequence)> _sequenceOf = new(StringComparer.Ordinal);
+
+        internal RecipeIndex(SfcRecipe recipe, IReadOnlyList<SfcDivergence> divergences)
         {
-            return true;
+            BySource = recipe.Transitions.ToLookup(static t => t.Source, StringComparer.Ordinal);
+            ByTarget = recipe.Transitions.ToLookup(static t => t.Target, StringComparer.Ordinal);
+            _actionsByStep = recipe.Actions.ToLookup(static a => a.Step, StringComparer.Ordinal);
+            Divergences = divergences.ToDictionary(static d => d.Name, StringComparer.Ordinal);
+            foreach (SfcDivergence divergence in divergences)
+            {
+                for (int s = 0; s < divergence.Sequences.Count; s++)
+                {
+                    foreach (string step in divergence.Sequences[s])
+                    {
+                        _sequenceOf[step] = (divergence, s);
+                    }
+                }
+            }
         }
 
-        return divergences.Any(b => b.Kind == SfcNames.Simultaneous
-            && b.Sequences.Select((sequence, index) => (sequence, index)).Any(x => x.sequence.Contains(stepA)
-                && b.Sequences.Select((sequence, index) => (sequence, index)).Any(y => y.index != x.index && y.sequence.Contains(stepB))));
+        internal ILookup<string, SfcTransition> BySource { get; }
+
+        internal ILookup<string, SfcTransition> ByTarget { get; }
+
+        internal Dictionary<string, SfcDivergence> Divergences { get; }
+
+        /// <summary>The action types whose outcomes decide the transitions out of a step or divergence.</summary>
+        internal IEnumerable<string> TypesOf(string node)
+        {
+            IEnumerable<string> steps = Divergences.TryGetValue(node, out SfcDivergence? divergence)
+                ? divergence.Sequences.SelectMany(static p => p)
+                : [node];
+            return steps.SelectMany(step => _actionsByStep[step]).Select(static a => a.TypeId);
+        }
+
+        internal bool CanWaitTogether(string stepA, string stepB) =>
+            stepA == stepB
+            || (_sequenceOf.TryGetValue(stepA, out (SfcDivergence Divergence, int Sequence) a)
+                && _sequenceOf.TryGetValue(stepB, out (SfcDivergence Divergence, int Sequence) b)
+                && a.Divergence == b.Divergence
+                && a.Divergence.Kind == SfcNames.Simultaneous
+                && a.Sequence != b.Sequence);
     }
 }

@@ -55,6 +55,10 @@ public sealed record SfcActionState
     [JsonPropertyName("status")]
     public SfcActionStatus Status { get; init; }
 
+    /// <summary>Gets the pass of the chart: counts how often the step of this action was entered (loops enter a step again).</summary>
+    [JsonPropertyName("round")]
+    public int Round { get; init; }
+
     /// <summary>Gets the number of dispatch attempts so far.</summary>
     [JsonPropertyName("attempt")]
     public int Attempt { get; init; }

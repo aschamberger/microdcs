@@ -121,9 +121,9 @@ New in .NET without a Python counterpart: outcomes and reserved outcomes, deadli
 ### S15 design details
 
 * **Failure and the default transition.** `true` matches only when no action of the step ended with `timeout` or `error`. Otherwise a recipe with a default path would silently continue after a failed action.
-* **Outcome set of a step.** The outcomes of all its actions. Of a branch: all actions of all its paths. A transition matches when its condition is in the set.
-* **Selection entry.** Evaluated with the outcomes of the step that led into the branch.
-* **Branch paths cannot route failures.** A path has no transitions; a failed action in a path is a fault and cancels the open work of the other paths.
-* **Pull-event ambiguity (R-1) at build time.** Two pull-event actions of one type that can wait together (same step, or different paths of a simultaneous branch) with equal `Parameters` are refused. Selector matching across jobs is S20.
+* **Outcome set of a step.** The outcomes of all its actions. Of a divergence: all actions of all its sequences (a selection divergence: the sequence taken). A transition matches when its condition is in the set.
+* **Selection entry.** Evaluated with the outcomes of the step that led into the divergence.
+* **Sequences cannot route failures.** A sequence has no transitions; a failed action in a sequence is a fault and cancels the open work of the other sequences.
+* **Pull-event ambiguity (R-1) at build time.** Two pull-event actions of one type that can wait together (same step, or different sequences of a simultaneous divergence) are refused whatever their `Parameters`, because an event carries only the type. Matching by selector, within one job and across jobs, is S20; relax SFC011 then.
 * **Wire names.** The D-44 text names `timeout_seconds` and `type_id`; the Python schema actually uses `TimeoutSeconds` and `TypeId` (PascalCase). The PascalCase names are kept so that existing recipes stay valid.
 * **Naming (S15, second pass).** The names follow IEC 61131-3 clause 6.6 where it has a word: divergence and sequence instead of branch and path, the full qualifier list (N, R, S, L, D, P, SD, DS, SL, P1, P0; Python knew only eight and no SD, DS, SL), and `Evolve` for the step function because the standard speaks of the evolution of the chart. Table in [SFC core in .NET](../../sfc-core.md#terms). Sources: PLCopen and vendor documents, since the standard itself is not freely readable.

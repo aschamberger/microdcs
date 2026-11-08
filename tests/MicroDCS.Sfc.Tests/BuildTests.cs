@@ -172,7 +172,8 @@ public class BuildTests
 
         Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e"), Pull("y", "A", type: "t.e")])).ShouldContain("SFC011");
         Codes(Recipe(steps, [To("A", "S")], [Pull("x", "P1", type: "t.e"), Pull("y", "P2", type: "t.e")], Sim("S", ["P1"], ["P2"]))).ShouldContain("SFC011");
-        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: "left"), Pull("y", "A", type: "t.e", selector: "right")])).ShouldBeEmpty();
+        // Parameters are not a selector yet (S20): an event carries only the type, so different parameters do not help.
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: "left"), Pull("y", "A", type: "t.e", selector: "right")])).ShouldContain("SFC011");
         Codes(Recipe([Step("A", true), Step("B")], [To("A", "B")], [Pull("x", "A", type: "t.e"), Pull("y", "B", type: "t.e")])).ShouldBeEmpty();
     }
 

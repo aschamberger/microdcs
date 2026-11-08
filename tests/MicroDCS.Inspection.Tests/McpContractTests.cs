@@ -51,6 +51,23 @@ public sealed class McpContractTests
     }
 
     [Fact]
+    public async Task SfcToolsShareTheRequestRateLimitOfTheOtherTools()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = await TestApp.StartAsync(new() { ["MicroDcs:Management:RequestsPerMinute"] = "2" }, ct);
+        await using var client = await ConnectAsync(app, ct);
+        var arguments = new Dictionary<string, object?> { ["recipe"] = Recipe };
+
+        var first = await client.CallToolAsync("sfc_explain", arguments, cancellationToken: ct);
+        var second = await client.CallToolAsync("sfc_dryrun", arguments, cancellationToken: ct);
+        var third = await client.CallToolAsync("sfc_explain", arguments, cancellationToken: ct);
+
+        first.IsError.ShouldNotBe(true);
+        second.IsError.ShouldNotBe(true);
+        third.IsError.ShouldBe(true);
+    }
+
+    [Fact]
     public async Task SfcToolsRefuseInvalidInputWithAReadableMessage()
     {
         var ct = TestContext.Current.CancellationToken;

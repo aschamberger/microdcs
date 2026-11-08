@@ -52,7 +52,7 @@ The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, 
 | `Actions[].Qualifier` | Short form of an IEC 61131-3 qualifier. Only `N` is supported; the others are known (`SfcActionQualifier`) and refused at build. |
 | `Actions[].TimeoutSeconds` | Deadline of one attempt. |
 | `Actions[].MaxAttempts` | Optional. Dispatch attempts of a push command; the host default (`Sfc:MaxAttempts`, 3) applies when absent. |
-| `Actions[].Parameters` | Handed to the command. For a pull event they are its selector. |
+| `Actions[].Parameters` | Handed to the command. They are not yet a selector for pull events (S20). |
 | `Branches[]` | A divergence: `Type` is `simultaneous` (all sequences) or `selection` (one sequence). `Branches` inside it lists the sequences, each a list of step names. |
 
 Existing Python recipes need one change: `Condition: "always"` becomes `true`, and a named condition must be an outcome that the action types declare.
@@ -65,14 +65,14 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 * **Simultaneous divergence.** The transition into the divergence activates the first step of every sequence. Steps in a sequence follow each other. When all sequences are done (the convergence), the transitions after it are cleared against the outcomes of the whole divergence. A failed action inside a divergence is a fault (a sequence has no transitions to route it); open work of the other sequences is cancelled.
 * **Selection divergence.** The selection transitions from the divergence to the first steps of its sequences choose the sequence, by priority and condition. A default one is required.
 * **No exit transition** completes the job.
-* **Loops** are allowed when they wait; a cycle through steps without actions is refused at build time. A step that is entered again starts with fresh action records.
+* **Loops** are allowed when they wait; a cycle through steps without actions is refused at build time (a selection divergence counts as action-free when one of its sequences is). A step that is entered again starts with fresh action records.
 
 ## Time, attempts and late responses
 
 * An attempt's deadline is `At + TimeoutSeconds`. `SfcState.NextDeadline` is the earliest open one; the host keeps one due-index entry from it and sends `SfcTick` when it passes.
-* A push command whose deadline passes is dispatched again (same action key, new command id, `CancelWork` for the old id) until `MaxAttempts`, then the outcome is `timeout`. A pull event times out at once.
+* A push command whose deadline passes is dispatched again (same action key, new command id, `CancelWork` for the old id) until `MaxAttempts`, then the outcome is `timeout`. A pull event times out at once. When the last attempt expires the core also emits `CancelWork` with reason `timeout`, so the host drops the registration of the command or the awaited event.
 * `SfcTick.OutageMs` above zero moves all open deadlines by that gap before expiry, so a platform outage does not abort running jobs.
-* A response is matched by the action key `{jobId}:{action}`. A response from an earlier attempt completes the action while it is open; every further response is absorbed. A response with an unknown key, another job or a contradicting type is rejected, never matched to a sibling.
+* A response is matched by the action key `{jobId}:{action}`. A response from an earlier attempt completes the action while it is open; every further response is absorbed. A loop enters a step again; each entry has a `Round` that the command carries and the host may echo in the response, and a response with an older `Round` is absorbed as belonging to an earlier pass. A response with an unknown key, another job or a contradicting type is rejected, never matched to a sibling.
 * `SfcResume` re-emits open work that `SfcSnapshot.LiveWork` does not contain. A re-dispatch uses up an attempt.
 * `SfcCancel` cancels open work and ends the job (`SfcCancelled`).
 
@@ -93,12 +93,14 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 | `SFC008` | Equal priorities among the transitions of one source. |
 | `SFC009` | Unknown interaction, `TimeoutSeconds` or `MaxAttempts` out of range. |
 | `SFC010` | Qualifier other than `N`. |
-| `SFC011` | Two pull-event actions of one type that can wait together with the same parameters (an event could not be matched). |
+| `SFC011` | Two pull-event actions of one type that can wait together (an event carries only the type and could not be matched; selector matching comes with S20). |
 | `SFC012` | A step that cannot be reached. |
 | `SFC013` | A cycle with nothing to wait for. |
 | `SFC014` | An action type that no processor of the station declares. |
 | `SFC015` | A feature the station does not support (push, pull, simultaneous divergence, selection divergence). |
 | `SFC016` | A condition names an outcome that no involved action type declares. |
+| `SFC017` | An empty step, divergence or action name, or an action name with `:` (the action key is `{jobId}:{action}`). |
+| `SFC018` | More than 20,000 steps, transitions, actions or divergences. |
 
 ## State and commands
 
@@ -128,4 +130,4 @@ Two read-only tools in the dev MCP server (see [Inspection and MCP](inspection.m
 | `sfc_explain` | Describes a recipe; with a job state it says where the job is, what it waits for and when the next deadline is due. Refuses invalid recipes with the build errors. |
 | `sfc_dryrun` | Runs a recipe on the virtual clock with a script and returns the transcript. |
 
-A script is JSON: `{"default":"ok","replies":{"tighten":["silent","ok@500"]},"events":[{"atMs":1000,"typeId":"t.qa","outcome":"ok"}]}`. A reply is `silent`, `error[:text][@delayMs]` or `outcome[@delayMs]`. Without a script every action answers `ok` at once. The tools accept any outcome name that the recipe itself uses, so they find structural errors but not outcome typos; a station checks outcomes against its processors at build time.
+A script is JSON: `{"default":"ok","replies":{"tighten":["silent","ok@500"]},"events":[{"atMs":1000,"typeId":"t.qa","outcome":"ok"}]}`. A reply is `silent`, `error[:text][@delayMs]` or `outcome[@delayMs]`. Without a script every action answers `ok` at once. The tools share the rate limit and the audit log of the other tools. They accept any outcome name that the recipe itself uses, so they find structural errors but not outcome typos; a station checks outcomes against its processors at build time.
