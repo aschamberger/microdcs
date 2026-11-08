@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S09** (Valkey layer), **S15** (SFC core) or **S16** (job models); S08 is done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S10** (pipeline), **S15** (SFC core) or **S16** (job models); S08 and S09 are done.
 
 ## How to use these files
 
@@ -133,7 +133,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-DATA-1~~ Documents and secondary indexes | → D-41, D-42: hash documents with explicit indexes, no valkey-json or valkey-search; analysis in [data layer](research/data-layer.md) | — |
 | ~~Q-DATA-2~~ Client library | → D-7, D-43: no blocking reads, pub/sub nudge plus 1 s fallback poll | — |
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
-| ~~Q-DATA-4~~ High availability | → D-12 (cluster mode out of scope, islands). Remaining: every write path idempotent under unknown outcome (R-4) | S09 |
+| ~~Q-DATA-4~~ High availability | → D-12 (cluster mode out of scope, islands); every write path is idempotent under unknown outcome through the operation id (R-4, S09) | — |
 | Q-OPS-1 HTTP surface | Listener layout decided in D-40 (one management listener, loopback default, `/health`, `/metrics`, `/api/v1`, `/mcp`). Open: job state query API and OpenAPI (R-19) | S21 |
 | Q-OPS-2 Container and Kubernetes | Chiseled/distroless AOT image, manifest, Zenoh native library in the image, hardening from `docs/security.md` | S22 |
 | Q-OPS-3 Security | Authn/z per transport (NATS accounts/NKeys, AMQP SASL, Zenoh ACLs), the level-0 scope rule (R-6) | S10, S22 |
@@ -164,7 +164,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | done |
 | S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | done |
 | S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | done |
-| S09 | Valkey layer | S07 (parallel to S08) | open |
+| S09 | Valkey layer | S07 (parallel to S08) | done |
 | S10 | Pipeline (A-1) | S08, S09 | open |
 | S11 | Inspection layer and MCP read tools | S09, S10 | open |
 | S12 | Maintenance tools with snapshot and restore | S11 | open |

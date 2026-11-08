@@ -90,3 +90,30 @@ SFC key details are completed by the SFC rules below.
 | R-30 | Unconsumed result of `XAUTOCLAIM` deleted ids discarded | `_autoclaim_orphaned` | changed: logged and counted (D-42) |
 
 SFC engine rows (`sfc_engine.py`, recipe model) are added below with the SFC rules.
+
+## S09 implementation status (2026-11-08)
+
+All rows R-1 to R-30 are implemented or confirmed dropped; none is open. Where the code and the tests are:
+
+| Rows | Implemented in | Test |
+|---|---|---|
+| R-1, R-2 | `KeySchema`, prefix option | `KeySchemaTests` |
+| R-3, R-4 | `ValkeyDedupeStore` (claim, mark done, lease remaining). `LeaseRemainingAsync` returns the TTL of whatever the key holds, as Python did | `DedupeAndLeaseTests` |
+| R-6 | `ValkeyStartLease` | `DedupeAndLeaseTests` |
+| R-8, R-9, R-10, R-11 | `JobOrderDao` | `DocumentTests` |
+| R-12 to R-15 | `JobResponseDao` (by-order string key, by-state set, state moves inside the script) | `DocumentTests` |
+| R-19, R-20, R-21 | `WorkMasterDao`, `ReferenceListDao`, `JobAcceptanceDao` | `DocumentTests` |
+| R-22, R-23 | change entry with `MAXLEN ~` and the scope registry inside the put scripts | `DocumentTests` |
+| R-25 | `ValkeyPoller` | `StreamsAndPollerTests` |
+| R-26, R-27, R-28 | `SfcStateDao.CompareAndSetAsync`, `ListActiveAsync` | `SfcAndIndexTests` |
+| R-29, R-30 | `ValkeyStreams` (group creation, no `MAXLEN`, acknowledged-only trim, autoclaim with lost-id count) | `StreamsAndPollerTests` |
+| R-24 | publisher cursor and `pubseq` keys exist in `KeySchema`; the DAO belongs to S18 | not in S09 |
+| R-5, R-7, R-16, R-17, R-18 | dropped | none |
+
+Design details found while building:
+
+* A script receives every key it touches in `KEYS`. The by-state index key depends on the old state, so the DAO reads the old state first, passes both keys and the script checks that the stored state still equals the old one; if not it returns "retry" and the DAO reads again.
+* Version `-1` in `ARGV` means overwrite unconditionally. The operation id is stored with every write and is the only thing the unknown-outcome check needs.
+* `SfcStateDao` and the other DAOs keep the document as text; the codec belongs to the caller (S16, S17, S19).
+* `RedisValue.TryParse` succeeds with 0 for a missing value; check `HasValue` first.
+* The index routine scans with `SCAN` on a primary; it is maintenance, not a hot path.

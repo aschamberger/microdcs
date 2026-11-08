@@ -19,6 +19,7 @@ nav = [
   {"Development" = [
     {"Overview" = "development.md"},
     {"Processors in .NET" = "processors-dotnet.md"},
+    {"Valkey layer in .NET" = "valkey-layer.md"},
     {"Persistence" = "persistence.md"}
   ]},
   {"Operations" = [

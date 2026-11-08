@@ -189,3 +189,22 @@ Changed in the plan: decisions, index (session table), core-contracts research, 
 Open questions: none new. Reply routing without a reply address (events intent) is revisited in S10.
 Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the job names (four new test projects are covered by `dotnet test`).
 Next session pickup: S09 (Valkey layer, depends on S07), S10 (pipeline, depends on S08 and S09), S15 (SFC core) and S16 (job models, depends on S05 and S08) can start; recommended next: S09, then S10. S10 replaces `MinimalPipeline` (keep the order of steps and `HostLifecycleTests`/`GreetingsTests` as regression tests) and takes over the outgoing queue, expiry timers, activity source and fault handling. `IDedupeStore` and `IStartLease` are the seams S09 implements. Start from `main` after the merge: `git switch main && git pull --ff-only && gh stack init <branch>`.
+
+## S09 Valkey layer (2026-11-08, branch `s09-valkey-layer`, stacked on `s08-core`)
+
+Status: done. Previous session post-merge: S08 (#51) is still open and stacked below; S07 verified (`ci`, `security`, `docs` green on `main` for #50).
+Done:
+
+* `MicroDCS.Valkey`: options (`MicroDcs:Valkey`) with validator, fail-fast connection, `ValkeyContext` with the unknown-outcome write protocol (R-4, operation id in the hash), health check, meter.
+* DAOs on hash documents with explicit indexes (D-41): job orders, job responses (by-order, by-state), work masters, reference lists, job acceptance. One put script per type; version guard, scope check, change entry, scope registry and nudge in one step.
+* `ValkeyDedupeStore` and `ValkeyStartLease` (replace the in-memory defaults in either registration order).
+* `ValkeyStreams` (no `MAXLEN`, acknowledged-only trim, autoclaim with lost-id log and counter), `ValkeyPoller` (nudge plus fallback poll, scope registry, `IStreamConsumer`, `IPollerTask`).
+* `SfcStateDao` with the generic compare-and-set script (D-44), due-index, active set, heartbeat, recipe store; `ValkeyIndexMaintenance` (verify against a scan, rebuild).
+* 22 integration tests against compose Valkey (including a killed connection, lost replies and nudge versus fallback) and unit tests for options and registration. Docs: [Valkey layer in .NET](../valkey-layer.md). Parity rows R-1 to R-30: [data layer](research/data-layer.md#s09-implementation-status-2026-11-08), none open.
+Findings: a script must get every key in `KEYS`, so the by-state key is built from a state read before the script and checked inside it; `RedisValue.TryParse` succeeds for a missing value; `CLIENT KILL` is a deterministic reconnect test. The Valkey library is not referenced by the App yet, so the AOT publish does not cover it; the AOT analyzers run on its build (`IsAotCompatible`), and the App gets the wiring in S10.
+Decisions: none new.
+Changed in the plan: index (session table), data-layer research (S09 status), new docs page and nav entry.
+Open questions: none new. Q-DATA-4 / R-4 is answered by the operation-id protocol.
+Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the job names; compose `tests` container exited with 0 including the new Valkey tests.
+Next session pickup: S10 (pipeline, depends on S08 and S09) once #51 and this PR are merged: `git switch main && git pull --ff-only && gh stack init s10-pipeline`. S10 replaces `MinimalPipeline` and wires `AddMicroDcsValkey` in the App. S15 (SFC core) and S16 (job models) are independent and can start in any order; S19 builds the SFC host on `SfcStateDao` and `IStreamConsumer`.
+
