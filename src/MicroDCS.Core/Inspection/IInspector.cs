@@ -29,7 +29,19 @@ public sealed record InspectionEntry(string Kind, string Key, IReadOnlyDictionar
 /// <param name="Key">Restrict to a key, or <see langword="null"/>.</param>
 /// <param name="Limit">Maximum entries (hard cap in the host).</param>
 /// <param name="Cursor">Continuation from a previous result.</param>
-public sealed record InspectionQuery(string? Kind = null, string? Key = null, int Limit = 50, string? Cursor = null);
+/// <param name="Arguments">Inspector specific arguments, for example <c>scope</c> or <c>id</c>; <see langword="null"/> for none.</param>
+public sealed record InspectionQuery(
+    string? Kind = null,
+    string? Key = null,
+    int Limit = 50,
+    string? Cursor = null,
+    IReadOnlyDictionary<string, string>? Arguments = null)
+{
+    /// <summary>Returns an argument or <see langword="null"/>.</summary>
+    /// <param name="name">The argument name.</param>
+    /// <returns>The value.</returns>
+    public string? Argument(string name) => Arguments is not null && Arguments.TryGetValue(name, out var value) ? value : null;
+}
 
 /// <summary>A page of entries.</summary>
 /// <param name="Entries">The entries.</param>

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using MicroDCS.Core.Authoring;
+using MicroDCS.Core.Inspection;
 using MicroDCS.Core.Messaging;
 using MicroDCS.Core.Transport;
 using Microsoft.Extensions.Configuration;
@@ -37,7 +38,11 @@ public static class MicroDcsServiceCollectionExtensions
         services.TryAddSingleton(static sp => new ProcessorRegistry(
             sp.GetServices<ProcessorRegistration>().Select(r => r.Descriptor),
             sp.GetServices<IPayloadDescriptor>()));
+        services.TryAddSingleton<PipelineDecisionLog>();
         services.TryAddSingleton<MessagePipeline>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, PipelineInspector>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, ProcessorsInspector>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, AppInspector>());
         services.TryAddSingleton<IInboundHandler>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.TryAddSingleton<IEventPublisher>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.AddHostedService<MicroDcsHostedService>();

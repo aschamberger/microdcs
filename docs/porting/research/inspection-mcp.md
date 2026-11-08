@@ -94,3 +94,14 @@ Purpose: while the tests and the new code are not stable, data gets into bad sta
 * S06: inspection abstractions as part of the contracts (ADR): inspector interface, redaction policy, management listener and port layout (together with Q-OPS-1), the read/write split and the enable flags.
 * S04: include `ModelContextProtocol.AspNetCore` in the library AOT spike (attribute-less registration), measure.
 * S11 and S12: first slice (see the session blocks).
+
+## S11 implementation findings (2026-11-08)
+
+* **AOT:** Kestrel (`WebApplication.CreateSlimBuilder`, own host inside the generic host) plus `ModelContextProtocol.AspNetCore` 2.4.0 publish without trim or AOT warnings; the binary is 23 MB (linux-x64). Tool discovery works with `WithTools<T>(JsonSerializerOptions)` and a source-generated context; the tool class cannot be `static` (generic argument), so it is `sealed` with a private constructor and static methods that take their services as parameters. `microdcs smoke` (`inspection-mcp`) runs initialize, tools/list, a read tool, the write tool and `pipeline_recent` against the AOT binary and the image.
+* **Routing in a library:** `MapGet` with a `Delegate` is `RequiresUnreferencedCode`/`RequiresDynamicCode` (analyzer IL2026/IL3050); the `RequestDelegate` overload is clean. Library code uses it.
+* **Tool parameters:** an optional MCP argument must have a C# default (`= null`); a nullable type alone is still "required" and the call fails with a generic error. Only `McpException` messages reach the client, so policy refusals are wrapped.
+* **Dedupe visibility:** the in-memory transport declares at-least-once, so injected events take a dedupe claim; with Valkey they show up in `dedupe_lookup`.
+* **Security checks built:** `Host` header must be loopback on loopback binds (421 otherwise), bearer token compared in constant time (SHA-256 of both sides), token of at least 16 characters, `/health/*` open for probes.
+* **Not built:** REST adapter (S21), `config_effective` for binding transport options (arrive with S13), rendered transport addresses in `processors_list` (the renderer belongs to each transport).
+* **Operations:** `scripts/aot-publish` restores with a RID and rewrites `src/MicroDCS.Generators/packages.lock.json`; discard that change (`git checkout`) or locked-mode restore fails in the Docker build.
+

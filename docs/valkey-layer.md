@@ -64,3 +64,7 @@ Indexes are derived data. `ValkeyIndexMaintenance.VerifyAsync` compares every in
 ## Tests
 
 The integration tests run against Valkey in compose ([development](development.md)).
+
+## Inspection
+
+`ValkeyInspector` (inspector `valkey`) reads keys by kind and scope, documents, dedupe state and streams through the key schema for the dev MCP tools; it has no raw command access. See [Inspection and MCP](inspection.md).

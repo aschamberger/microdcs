@@ -16,3 +16,4 @@ MDCS008 | MicroDCS | Error | Duplicate type id
 MDCS009 | MicroDCS | Error | Payload not in a JsonSerializerContext
 MDCS010 | MicroDCS | Error | Codec has no generated descriptor
 MDCS011 | MicroDCS | Error | Payload type not supported
+MDCS012 | MicroDCS | Error | Invalid [Processor] attribute

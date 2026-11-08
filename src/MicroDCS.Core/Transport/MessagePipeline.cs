@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using MicroDCS.Core.Authoring;
 using MicroDCS.Core.Hosting;
+using MicroDCS.Core.Inspection;
 using MicroDCS.Core.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -33,6 +34,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     private readonly ILogger _security;
     private readonly EnvelopeFactory _envelopes;
     private readonly ExpiryTracker _expiry;
+    private readonly PipelineDecisionLog? _decisions;
     private OutboundQueues? _queues;
     private int _inFlight;
 
@@ -46,6 +48,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     /// <param name="options">The options.</param>
     /// <param name="time">The clock.</param>
     /// <param name="loggerFactory">The logger factory.</param>
+    /// <param name="decisions">The inspection ring buffer, or <see langword="null"/> when inspection is not set up.</param>
     public MessagePipeline(
         ProcessorRegistry registry,
         IEnumerable<ITransport> transports,
@@ -55,7 +58,8 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         IServiceProvider services,
         IOptions<MicroDcsOptions> options,
         TimeProvider time,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        PipelineDecisionLog? decisions = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(loggerFactory);
@@ -71,6 +75,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         _security = loggerFactory.CreateLogger(PipelineTelemetry.SecurityCategory);
         _envelopes = new EnvelopeFactory(registry, options, time);
         _expiry = new ExpiryTracker(time);
+        _decisions = decisions;
     }
 
     /// <summary>The number of messages being processed. The host waits for zero during shutdown.</summary>
@@ -111,9 +116,11 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         ArgumentNullException.ThrowIfNull(message);
         Interlocked.Increment(ref _inFlight);
         using var activity = StartActivity(message);
+        var started = _time.GetTimestamp();
         try
         {
             var result = await ProcessAsync(message, cancellationToken).ConfigureAwait(false);
+            _decisions?.Record(message.BindingId, message.Envelope, result.ToString(), _time.GetElapsedTime(started), _time.GetUtcNow());
             PipelineTelemetry.Received.Add(1, new KeyValuePair<string, object?>("outcome", result.ToString()));
             if (result is Result.Dropped or Result.Faulted)
             {

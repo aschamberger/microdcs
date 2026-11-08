@@ -84,7 +84,7 @@ Configuration binds the `MicroDcs` section with source-generated binding. Enviro
 | `MicroDcs:Bindings:{id}:OutgoingQueueSize` | int | 0 | Size of the outgoing queue of the binding; 0 means `OutgoingQueueMaxSize`; a larger value ends the process at start. |
 | `MicroDcs:Bindings:{id}:OutgoingTypeFilter` | string | none | Comma separated event type ids or patterns (`*`, `?`) a binding may publish; empty allows all. |
 
-The remaining binding fields (`ReplyBase`, `SharedGroup`) are validated but used from S13 on.
+The remaining binding fields (`ReplyBase`, `SharedGroup`) are validated but used from S13 on. The `MicroDcs:Management:*` fields (inspection and MCP) are in [Inspection and MCP](inspection.md).
 
 ## Pipeline
 
@@ -141,3 +141,4 @@ The generator reports these errors while you type.
 | MDCS009 | Payload not listed in a `JsonSerializerContext` of the assembly. |
 | MDCS010 | Codec without a generated descriptor. |
 | MDCS011 | Payload type is generic, a value type or nested. |
+| MDCS012 | The `[Processor]` argument does not resolve (for example a missing `using` for `ProcessorBinding`). |
