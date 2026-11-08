@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
     <ProjectReference Include="../MicroDCS.Inspection/MicroDCS.Inspection.csproj" />
+    <ProjectReference Include="../MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
     <ProjectReference Include="../MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <ProjectReference Include="../MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
     <ProjectReference Include="../MicroDCS.Generators/MicroDCS.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

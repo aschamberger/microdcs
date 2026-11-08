@@ -138,6 +138,10 @@ public sealed class KeySchema
     /// <returns>The key.</returns>
     public string SfcRecipe(string hash) => Key("sfc:recipe:", hash);
 
+    /// <summary>Marker of a dev or test instance: holds the environment name. Read by the maintenance operations as a second guard (D-45).</summary>
+    /// <returns>The key.</returns>
+    public string EnvironmentMarker() => Key("env");
+
     /// <summary>Pub/sub channel that nudges the poller; the message is the scope (D-43).</summary>
     /// <param name="kind">The stream kind, for example <c>sfc</c> or <c>changes</c>.</param>
     /// <returns>The channel name.</returns>

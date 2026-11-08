@@ -220,7 +220,7 @@ Decision: in-process inspection services are the contract; REST and MCP are thin
 
 Consequences: first slice in S11, maintenance tools in S12; every stateful component ships its inspector afterwards (definition of done). MCP calls the services, not the REST API.
 
-Open: listener layout with Q-OPS-1 (S06), redaction policy (S06), snapshot retention and size defaults (S12). Configuration names are placeholders until Q-ARCH-3.
+Open: listener layout with Q-OPS-1 (S06), redaction policy (S06), snapshot retention and size defaults (S12, settled in [D-45](#d-45)). Configuration names are placeholders until Q-ARCH-3.
 
 Confirmed 2026-11-08 (S11): built as decided, with these refinements. The contract types (`IInspector`, `Sensitivity`, `Redaction`) stay in `MicroDCS.Core` because the pipeline and its inspectors live there; `MicroDCS.Inspection` holds the query service (`InspectionService`: result cap, redaction, rate limit, audit) and the management listener, `MicroDCS.Mcp` the adapter. The listener has its own small web host with `IManagementModule` as the extension point, so the framework core does not depend on ASP.NET. Flags: `Management:Enabled` (default off, opens no port and keeps no buffer), `McpEnabled`, `WriteEnabled`, `IncludePayloads`; combinations without `Enabled` fail at start. The REST adapter is not built in S11 (the listener serves health and MCP); it comes with the HTTP surface in S21. MCP tools are static methods registered with the generic `WithTools<T>(JsonSerializerOptions)` overload; this works in the AOT binary (Kestrel plus MCP, no trim warnings). [Findings](research/inspection-mcp.md#s11-implementation-findings-2026-11-08).
 
@@ -561,3 +561,21 @@ Decision:
 * **Atomic step:** one generic script compares the state version, stores the new state, appends the commands as work-stream entries, updates the due-index (`NextDeadline`) and the scope's active-job set. A host crash between state and execution is covered by redelivery of the entries (execution is idempotent by action key) and by the `Resume` event.
 
 Consequences: S15 builds the core and the in-memory host against these rules; S19 and S20 build the Valkey host. The outage test and the two-replica test in S20 are acceptance tests.
+
+## D-45 Maintenance operations: plan/apply, snapshots, guards {#d-45}
+
+Status: decided (2026-11-08, S12). Settles the open points of the maintenance design in [inspection and MCP](research/inspection-mcp.md#maintenance-tools-cleanup-delete-repair-mcp-only) under [D-19](#d-19).
+
+Decision:
+
+* **Project:** `MicroDCS.Maintenance` (`IMaintenanceOperations`, Valkey implementation) references Core and Valkey, not Inspection and not ASP.NET. `MicroDCS.Mcp` is the one adapter (`MaintenanceTools`); architecture tests fail if `MicroDCS.Inspection`, Core or Valkey reference it. The future REST adapter must not.
+* **Plan and apply:** `Plan…` returns targets, warnings, a 128-bit random single-use token (lifetime 5 min, 50 plans at most, in memory) and a digest over the stored state of every target. Apply recaptures the targets and refuses on a different digest, writes the snapshot, then runs one Lua script that deletes the keys, set members and hash fields; hash documents are deleted only when their `v` still equals the planned version (compare-and-delete). A plan token is spent even when the apply fails.
+* **Targets come from the key schema**, never from patterns: `purge_scope` follows the scope's lists and sets to the documents, the response indexes, the SFC state of active and due jobs, both streams, acceptance limit, reference lists, publisher cursor and registry entry. Shared recipe texts stay.
+* **Defaults:** item cap 100 (`allow_large` lifts it), snapshot retention 20, snapshot size cap 5 MiB, plan lifetime 5 min, marker key `{prefix}:env` kept as an optional second guard (`RequireEnvironmentMarker`, default off; compose profile `app` turns it on and writes it).
+* **Environment guard:** `Enabled` plus the host environment `Development` or `Test`. The options validator ends the start otherwise (D-27); every operation checks again, so direct API use outside these environments is refused too.
+* **Snapshots:** one JSON file per apply that deletes or overwrites, written and flushed (temp file, flush to disk, move) before the change; no snapshot, no change. Content is the stored text as written plus type, time to live and version. Restore writes the images back with their versions and index structures instead of going through the DAOs, because the snapshot already holds the derived structures; it refuses when a target exists with different content unless planned with `overwrite` (then the replaced content is snapshotted). Stream entries come back with new ids; consumer groups and pending entries are not restored. Broker state is out of scope; the publisher reset (S18) is the broker-side repair.
+* **Audit:** plan, apply and refusal are logged in the security category with caller, tool, arguments, counts, digest and snapshot id, no payloads.
+
+Consequences: later sessions add their tools as further operations on `IMaintenanceOperations` with a `Plan…` method, a case in the apply, and an integration round-trip test (S17/S18 `maint_job_delete`, `maint_retained_clear`, `maint_publisher_reset`; S19/S20 `maint_sfc_*`, `maint_stream_*`). The dev compose volume for snapshots is not used: the chiseled image runs non-root, so profile `app` writes to `/tmp`. S23 decides per tool whether it stays.
+
+Open: whether `maint_purge_scope` should also clear retained topics (needs the transport client; revisit with S18).

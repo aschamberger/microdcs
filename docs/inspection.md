@@ -73,4 +73,34 @@ All tools are read-only except `inject_event`. Results are compact JSON (`entrie
 * `Payload` values are replaced by a size marker unless `IncludePayloads` is on.
 * Every call is logged in the `MicroDCS.Security` category with caller, tool and arguments, never results.
 * `inject_event` goes through the pipeline (claim, scope check, dispatch), never directly into Valkey. Confirm it in the client.
-* Never enable it in production manifests. Maintenance tools (cleanup, repair) follow in S12 as a separate dev-only package.
+* Never enable it in production manifests. The maintenance tools below are a separate dev-only group.
+
+## Maintenance tools
+
+Data gets into bad states while the code is not stable: a stuck dedupe lease, a half-written scope. The maintenance group fixes that without `valkey-cli`. It is MCP only (never REST), lives in the separate package `MicroDCS.Maintenance`, and an architecture test keeps `MicroDCS.Inspection` from referencing it.
+
+Every change has two steps. A `*_plan` tool changes nothing and returns the targets, warnings and a single-use token. `maint_apply` runs exactly that plan. Apply fails when any target changed since the plan (digest over the stored state, plus the document version in the delete script), when the token expired (5 minutes), or when the snapshot cannot be written. These operations bypass the OPC UA state machine and the pipeline; nobody downstream is told.
+
+| Tool | Does |
+|---|---|
+| `maint_dedupe_release_plan` | Plans the release of one dedupe entry (lease or done marker) so the event can be processed again. |
+| `maint_purge_scope_plan` | Plans the removal of everything stored for a scope: documents, indexes, change and work streams, due-index, cursor and registry entry. Shared recipe texts stay. |
+| `maint_restore_plan` | Plans putting a snapshot back. Refuses when a target exists with different content unless `overwrite` is set; replaced content is snapshotted first. |
+| `maint_apply` | Runs a plan by its token. Writes a snapshot before it deletes or overwrites. |
+| `maint_snapshots_list` | Lists snapshots without their content. |
+
+Snapshots are JSON files with the stored text as written. They hold payload data, so the directory is git-ignored (`.microdcs/`) and not part of the image. Broker state (retained topics) and consumed messages are not covered. Stream entries are added again with new ids on restore; consumer groups and pending entries are not restored.
+
+Guards: the group needs `MicroDcs:Maintenance:Enabled` **and** the environment `Development` or `Test` (`DOTNET_ENVIRONMENT`); any other environment ends the start. Optionally `RequireEnvironmentMarker` demands the Valkey key `{prefix}:env` to hold the environment name, so a mis-pointed connection string cannot reach real data (compose profile `app` writes it with `valkey-marker`). A plan above `ItemCap` needs `allow_large`.
+
+| Setting (`MicroDcs:Maintenance:`) | Type | Default | Description |
+|---|---|---|---|
+| `Enabled` | bool | `false` | Registers the maintenance tools. Only in Development and Test. |
+| `SnapshotDirectory` | string | `.microdcs/snapshots` | Where snapshot files go (relative to the working directory). |
+| `ItemCap` | int | `100` | Largest plan without `allow_large`. |
+| `SnapshotRetention` | int | `20` | Snapshots kept; older ones are deleted after a new one. |
+| `SnapshotMaxBytes` | long | `5242880` | Largest snapshot file; a larger apply is refused. |
+| `PlanLifetime` | time span | `00:05:00` | How long a plan token works. |
+| `RequireEnvironmentMarker` | bool | `false` | Second guard through the marker key. |
+
+Tests use the same `IMaintenanceOperations` API directly. Audit lines go to the `MicroDCS.Security` category: caller, tool, arguments, counts, digest, snapshot id, never payloads.

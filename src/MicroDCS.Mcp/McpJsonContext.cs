@@ -8,6 +8,7 @@ namespace MicroDCS.Mcp;
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
+[JsonSerializable(typeof(bool))]
 internal sealed partial class McpJsonContext : JsonSerializerContext
 {
     /// <summary>The serializer options handed to the tool registration.</summary>

@@ -68,7 +68,7 @@ internal sealed class TestApp : IAsyncDisposable
 
     public Uri? McpEndpoint { get; private set; }
 
-    public static async Task<TestApp> StartAsync(Dictionary<string, string?> settings, CancellationToken cancellationToken)
+    public static async Task<TestApp> StartAsync(Dictionary<string, string?> settings, CancellationToken cancellationToken, Action<IServiceCollection>? configure = null)
     {
         var values = new Dictionary<string, string?>
         {
@@ -90,6 +90,7 @@ internal sealed class TestApp : IAsyncDisposable
         services.AddLogging();
         services.AddMicroDcs(configuration).AddInMemoryTransport().AddProcessor<PingProcessor>();
         services.AddMicroDcsManagement().AddMicroDcsMcp();
+        configure?.Invoke(services);
         var app = new TestApp(services.BuildServiceProvider());
         foreach (var service in app._provider.GetServices<IHostedService>())
         {

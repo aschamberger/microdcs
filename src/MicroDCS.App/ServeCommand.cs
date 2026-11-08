@@ -1,6 +1,7 @@
 using MicroDCS.App.Greetings;
 using MicroDCS.Core.Hosting;
 using MicroDCS.Inspection;
+using MicroDCS.Maintenance;
 using MicroDCS.Mcp;
 using MicroDCS.Valkey;
 using Microsoft.Extensions.Configuration;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 namespace MicroDCS.App;
 
 /// <summary>
-/// <c>microdcs serve</c>: the greetings demo processor on the in-memory transport, with Valkey when
+/// <c>microdcs serve</c>: the greetings demo processor on the in-memory transport, with Valkey (and the maintenance operations) when
 /// <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
 /// It exists so the inspection tools have a running application until the real transports arrive (S13). Configuration comes from
 /// environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
@@ -27,6 +28,9 @@ internal static class ServeCommand
         if (!string.IsNullOrEmpty(builder.Configuration["MicroDcs:Valkey:ConnectionString"]))
         {
             builder.Services.AddMicroDcsValkey(builder.Configuration);
+
+            // The maintenance operations work on Valkey state and start only in Development or Test (D-45).
+            builder.Services.AddMicroDcsMaintenance(builder.Configuration);
         }
 
         builder.Services.AddMicroDcsManagement().AddMicroDcsMcp();

@@ -46,3 +46,6 @@ __pycache__/
 .coverage
 .benchmarks/
 .venv-docs/
+
+# Maintenance snapshots (payload data of the dev machine, D-45)
+.microdcs/

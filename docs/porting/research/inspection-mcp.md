@@ -73,7 +73,7 @@ Purpose: while the tests and the new code are not stable, data gets into bad sta
 
 **Lifecycle.** This group is explicitly temporary scaffolding: at the parity gate (S23) decide per tool whether it stays as a dev-profile tool (likely: repair tools, scope purge) or is removed. Added as a checklist item to S23. It never becomes part of the public REST contract.
 
-**Open points:** the item cap default; the snapshot retention default (20) and per-snapshot size cap; whether the marker-key guard is worth the extra moving part; whether `maint_purge_scope` should also be offered for the brokers (clearing retained topics under a prefix is the broker-side half of a scope reset, and is only possible through the transport's own client).
+**Settled in S12 (D-45):** item cap 100, retention 20, size cap 5 MiB, marker key kept as an optional guard, broker-side purge left for S18. Original open points: the item cap default; the snapshot retention default (20) and per-snapshot size cap; whether the marker-key guard is worth the extra moving part; whether `maint_purge_scope` should also be offered for the brokers (clearing retained topics under a prefix is the broker-side half of a scope reset, and is only possible through the transport's own client).
 
 ## How it supports the development workflow
 
@@ -105,3 +105,13 @@ Purpose: while the tests and the new code are not stable, data gets into bad sta
 * **Not built:** REST adapter (S21), `config_effective` for binding transport options (arrive with S13), rendered transport addresses in `processors_list` (the renderer belongs to each transport).
 * **Operations:** `scripts/aot-publish` restores with a RID and rewrites `src/MicroDCS.Generators/packages.lock.json`; discard that change (`git checkout`) or locked-mode restore fails in the Docker build.
 
+## S12 implementation findings (2026-11-08)
+
+* **Python parity:** none. Python has no maintenance tooling, so the parity list is empty.
+* **Shape:** targets are `(key, optional part)`: a whole key, or one set member or hash field of a shared key (scope registry, publisher cursors). `KeyImage` captures type, text as stored, time to live and the hash `v`; a canonical text (length-prefixed, TTL left out) gives the digest.
+* **Atomic delete:** one Lua script, three ARGV values per key (operation, argument, expected version). It checks every expected version first and removes nothing on a mismatch. Strings and streams have no version; the digest covers them between plan and apply, the script only the documents.
+* **Restore is a MULTI transaction** of delete plus write per key. Stream entries get new ids. A publisher cursor from before a purge then points before the re-added change entries, so the publisher reads them again (stated in the plan warnings).
+* **Tool parameters:** `bool` tool arguments need `[JsonSerializable(typeof(bool))]` in `McpJsonContext`; without it `WithTools<T>` fails with a missing `JsonTypeInfo` at the first list call, not at build time. The contract test caught it.
+* **Hosting:** `HostingEnvironment` is internal in `Microsoft.Extensions.Hosting`; the AOT smoke check carries its own `IHostEnvironment`.
+* **Compose:** the chiseled non-root image has no writable volume path, so profile `app` writes snapshots to `/tmp/microdcs-snapshots`; a one-shot `valkey-marker` service writes `microdcs:env`.
+* **Not built:** `maint_*` tools for jobs, SFC jobs, streams and the publisher (their data layers come in S17 to S20), broker-side purge.

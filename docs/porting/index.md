@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S12** (maintenance tools), **S13** (MQTT transport), **S15** (SFC core) or **S16** (job models); S08 to S11 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S13** (MQTT transport), **S15** (SFC core) or **S16** (job models); S08 to S12 are done.
 
 ## How to use these files
 
@@ -106,8 +106,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-42](decisions.md#d-42) | decided | Key schema, job identity by id alone (no hash tags), scope registry, version-guarded idempotent writes, stream trimming rule |
 | [D-43](decisions.md#d-43) | decided | Stream consumption: pub/sub nudge plus 1 s fallback poll, one poller per instance |
 | [D-44](decisions.md#d-44) | decided | SFC core rules: work identity, schema direction, recipe pinning, capabilities, only qualifier N, routable `timeout`/`error`, build-time validation, time source, sweep, retry and scope-discovery values |
+| [D-45](decisions.md#d-45) | decided | Maintenance operations: plan/apply with digest and compare-and-delete, snapshots before every change, environment guard and optional marker key, defaults |
 
-Next free id: **D-45**.
+Next free id: **D-46**.
 
 ## Open questions
 
@@ -167,7 +168,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S09 | Valkey layer | S07 (parallel to S08) | done |
 | S10 | Pipeline (A-1) | S08, S09 | done |
 | S11 | Inspection layer and MCP read tools | S09, S10 | done |
-| S12 | Maintenance tools with snapshot and restore | S11 | open |
+| S12 | Maintenance tools with snapshot and restore | S11 | done |
 | S13 | MQTT transport | S10 | open |
 | S14 | NATS transport (abstraction check) | S13 | open |
 | S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | open |
@@ -193,7 +194,7 @@ Session ids were renumbered on 2026-11-07; the mapping from the old ids is in th
 * **Size rule:** one coherent area, roughly up to 1.5k lines of new code including tests, or a spike whose output is only findings. If a session turns out too large, stop at a clean boundary and write the remainder into the handoff.
 * **Branches and PRs (D-22):** one milestone is one GitHub stack (`gh stack`); each session is one PR in that stack, on a branch named after the session (for example `s04-library-spike`), with the session id in the PR title. A PR targets the branch of the PR below it; the bottom PR targets `main`. Merge bottom-up with **squash**, as soon as a session is done and its checks are green, so `main` gets one commit per session and the stack stays short. Parallel sessions go into the stack in the order they are started. A session that needs a second PR adds it to the stack on top of its first one. The session's `log.md` entry and status change are part of its own PR. Each PR is also assigned to the GitHub milestone (M0 to M3) for the progress view.
 * **Start:** read this file, the own block in `sessions.md`, the last `log.md` entry, and the research files and decisions the block links to. `CLAUDE.md` and the path rules load by themselves. Do not re-research settled decisions; if one is wrong, record the change as a revision in `decisions.md` instead of silently deviating.
-* **Definition of done (code sessions):** build with zero warnings (warnings as errors), unit tests green, AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects, compose integration tests green for touched transports, public API has XML docs, no secrets or payloads in logs; once S03 exists the scanners are green (Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code; waivers only with reason and expiry, D-20); every new stateful component ships its read-only inspector (D-19, S11 is done).
+* **Definition of done (code sessions):** build with zero warnings (warnings as errors), unit tests green, AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects, compose integration tests green for touched transports, public API has XML docs, no secrets or payloads in logs; once S03 exists the scanners are green (Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code; waivers only with reason and expiry, D-20); every new stateful component ships its read-only inspector (D-19, S11 is done); maintenance tools of a component follow D-45.
 * **End (mandatory, last task of every session):** append a `log.md` entry (with "Post-merge checks" that the next session verifies; no follow-up PR), set the session's status in the table above, update the affected decisions and open questions, and write the "Next session pickup" so that a fresh session needs nothing from chat history.
 * **Python cross-check (design and port sessions):** before replacing Python behaviour, read the matching sources and tests on `python-archive` and keep a parity list (behaviour, file, disposition `kept`/`changed`/`dropped`/`open`) in the session's research file. No row stays `open` at the end of the session; the plan documents and memory are not a substitute for reading the code. The session blocks name the files, and `/session-start` and `/session-end` check it.
 * **Decisions:** new ones take the next free id (above) and get a full entry in `decisions.md` plus a row here. A revision keeps the id and adds a dated "Revised" line.
