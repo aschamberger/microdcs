@@ -48,8 +48,9 @@ src/MicroDCS.Sfc/           SFC core: pure, dependency-free sequence logic `(gra
 src/MicroDCS.Sfc.Simulation/ in-memory SFC host: virtual clock, scripted equipment, transcript, explainer (tests, dry runs)
 src/MicroDCS.Generators/    Roslyn source generator and MDCS diagnostics for processors and payloads (netstandard2.0)
 src/MicroDCS.Testing/       ProcessorHarness: drives a processor in memory with a fake clock
-src/MicroDCS.App/           AOT application (`microdcs`); until the transports arrive: smoke checks and the greetings demo processor
-tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, Maintenance, Sfc, Valkey)
+src/MicroDCS.Transport.Mqtt/ MQTT 5 transport on MQTTnet: addresses, mapping, reply topic, state topics, reconnect (D-46)
+src/MicroDCS.App/           AOT application (`microdcs`); smoke checks and the greetings demo processor (`serve`, on MQTT or in memory)
+tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, Maintenance, Sfc, Valkey, Transport.Mqtt)
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
 scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI

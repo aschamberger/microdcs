@@ -50,9 +50,11 @@ services:
     command: ["serve"]
     environment:
       APP_MicroDcs__CloudEventSource: urn:microdcs:dev
-      APP_MicroDcs__Bindings__greetings__Transport: memory
+      APP_MicroDcs__Bindings__greetings__Transport: mqtt
       APP_MicroDcs__Bindings__greetings__Prefix: dev
       APP_MicroDcs__Bindings__greetings__ScopeLevels: "2"
+      APP_MicroDcs__Bindings__greetings__ReplyBase: dev-reply
+      APP_MicroDcs__Mqtt__Hostname: mosquitto
       APP_MicroDcs__Valkey__ConnectionString: valkey:6379
       APP_MicroDcs__Valkey__KeyPrefix: microdcs
       APP_MicroDcs__Management__Enabled: "true"
@@ -71,6 +73,8 @@ services:
       - mcp_token
     depends_on:
       valkey:
+        condition: service_healthy
+      mosquitto:
         condition: service_healthy
       valkey-marker:
         condition: service_completed_successfully

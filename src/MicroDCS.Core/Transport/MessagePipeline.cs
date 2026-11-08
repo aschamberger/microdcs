@@ -486,7 +486,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         }
     }
 
-    private static async ValueTask SendReplyAsync(InboundMessage request, ITransport transport, EventEnvelope envelope, bool retain, CancellationToken cancellationToken)
+    private async ValueTask SendReplyAsync(InboundMessage request, ITransport transport, EventEnvelope envelope, bool retain, CancellationToken cancellationToken)
     {
         var outbound = new OutboundMessage
         {
@@ -496,6 +496,14 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
             Address = request.ReplyTo is null && request.Address is { } address ? address with { Intent = Intent.Event } : null,
             Retain = retain,
         };
+        if (outbound.SendTo is null && outbound.Address is null)
+        {
+            // A reply to a response has no reply address and the transport reports no address for it (Python: "No topic specified",
+            // logged and dropped). Faulting here would stop the host over a message the handler already processed.
+            Log.ReplyHasNoDestination(_logger, envelope.Id, request.BindingId);
+            return;
+        }
+
         await transport.PublishAsync(outbound, cancellationToken).ConfigureAwait(false);
         PipelineTelemetry.Published.Add(1);
     }

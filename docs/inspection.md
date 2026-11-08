@@ -9,6 +9,7 @@ The inspection layer shows the live state of a running application: processors, 
 | Contract | `MicroDCS.Core` | `IInspector`, `InspectionEntry`, `Sensitivity`, `Redaction`; inspectors for `app`, `processors` and `pipeline`. |
 | Service and listener | `MicroDCS.Inspection` | `InspectionService` (result cap, redaction, rate limit, audit), the management listener, `/health/live`, `/health/ready`. |
 | Valkey inspector | `MicroDCS.Valkey` | `valkey` inspector: keys by kind and scope, documents, dedupe state, streams. No raw commands. |
+| MQTT inspector | `MicroDCS.Transport.Mqtt` | `transport.mqtt` inspector: connection state, counters, subscriptions ([MQTT transport](mqtt-transport.md)). Read it with the tool `inspect`. |
 | MCP adapter | `MicroDCS.Mcp` | Tools under `/mcp` (optional; production applications do not reference it). |
 
 Every stateful component registers its own `IInspector`; the MCP tools call `InspectionService`, never the REST API.
@@ -26,7 +27,7 @@ APP_MicroDcs__Management__WriteEnabled=true \
 dotnet run --project src/MicroDCS.App -- serve
 ```
 
-`microdcs serve` runs the greetings demo on the in-memory transport, with Valkey when `MicroDcs:Valkey:ConnectionString` is set. The repository's `.mcp.json` points Claude Code at `http://127.0.0.1:8081/mcp`.
+`microdcs serve` runs the greetings demo on the transport its binding names (`mqtt` or `memory`), with Valkey when `MicroDcs:Valkey:ConnectionString` is set. The repository's `.mcp.json` points Claude Code at `http://127.0.0.1:8081/mcp`.
 
 In compose, profile `app` runs the image with Valkey and the write tools. The port is published on `127.0.0.1` only and needs the bearer token:
 

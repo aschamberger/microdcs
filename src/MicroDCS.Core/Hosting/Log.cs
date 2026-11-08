@@ -49,4 +49,7 @@ internal static partial class Log
 
     [LoggerMessage(EventId = 16, Level = LogLevel.Warning, Message = "Follow-up events of the expired command {CommandId} were not published: the outgoing queues are closed")]
     public static partial void ExpiryFollowUpDropped(ILogger logger, string commandId);
+
+    [LoggerMessage(EventId = 17, Level = LogLevel.Warning, Message = "Reply {EventId} on binding {Binding} not published: the request has no reply address and no address to answer on")]
+    public static partial void ReplyHasNoDestination(ILogger logger, string eventId, string binding);
 }

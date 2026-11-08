@@ -581,3 +581,23 @@ Decision:
 Consequences: later sessions add their tools as further operations on `IMaintenanceOperations` with a `Plan…` method, a case in the apply, and an integration round-trip test (S17/S18 `maint_job_delete`, `maint_retained_clear`, `maint_publisher_reset`; S19/S20 `maint_sfc_*`, `maint_stream_*`). The dev compose volume for snapshots is not used: the chiseled image runs non-root, so profile `app` writes to `/tmp`. S23 decides per tool whether it stays.
 
 Open: whether `maint_purge_scope` should also clear retained topics (needs the transport client; revisit with S18).
+
+## D-46 MQTT transport: connection, QoS, session and acknowledgement {#d-46}
+
+Status: decided (2026-11-08, S13). Details for D-9, D-10, D-37 and D-38. Findings and the parity list: [MQTT transport](research/mqtt-transport.md).
+
+Decision:
+
+* **One connection per instance** carries the subscriptions of all MQTT bindings, the reply subscription and the retained publishes (Python used two clients). Client id `microdcs-{instance id}` unless `MicroDcs:Mqtt:ClientId` is set; two instances must not share one.
+* **QoS 1 end to end:** subscriptions and publishes use QoS 1 (`PublishQos` may be 0), so the delivery profile is `AtLeastOnce` and the dedupe claim applies (D-37). Python subscribed and published events at QoS 0.
+* **Persistent session** (`CleanStart` false) with `SessionExpiry` 1 hour by default (Python: never). A generated instance id changes on restart, so a never-expiring session would leak and, in a shared group, keep queueing messages for a consumer that is gone. A deployment with stable ids (StatefulSet, `POD_ID`) raises it.
+* **Manual acknowledgement after the pipeline:** a worker takes a message from a bounded inbox (`MessageWorkers` workers), calls the pipeline once per matching binding and acknowledges when none returned `Fault`. `Drop` and `Ack` acknowledge, an undecodable message or a topic without matching subscription is dropped and acknowledged by the transport (counted, `MQTT dropped`), a fault leaves it unacknowledged and the pipeline ends the host (`CanRedeliver` false, D-27); the session redelivers after the restart.
+* **Reply topic:** `{ReplyBase}/{instance id}`, subscribed unshared; commands carry it as the MQTT response topic and the id of the command (or the causation id of a response) as correlation data (UTF-8). A binding that publishes commands over MQTT needs `ReplyBase` (checked at start).
+* **Addresses:** `MqttAddressRenderer` renders `prefix/scope/discriminator/intent`, `+` per scope level and `$share/{group}/` natively. A received topic is parsed with the binding's discriminator; a topic with an invalid scope segment is dropped so the scope check cannot be skipped.
+* **State topics** (`IStateTopicPort`): retained, QoS 1, message expiry = time to live, topic = address + `/` + name (segments follow the segment rule); delete is a zero-byte retained message.
+* **Reconnect:** a lost connection starts a loop on the `TimeProvider` (delay doubles from 1 s to 30 s); publishing waits meanwhile and sends again after the reconnect; subscriptions are made again. A broker that is not reachable at start ends the process (D-27).
+* **Configuration:** section `MicroDcs:Mqtt` (host, port, client id, user, password or password file, SAT token file, CA file, require TLS, client certificate and key, session expiry, keep-alive, operation timeout, reconnect delays, publish QoS), validated at start. Transport name `mqtt` in `MicroDcs:Bindings:{id}:Transport`.
+
+Consequences: `MicroDCS.Transport.Mqtt` (MQTTnet 5.2, AOT clean) with `AddMqttTransport`; the `transport.mqtt` inspector; compose profile `app` runs the greetings demo over Mosquitto. The NATS session (S14) checks `ITransport` against this implementation for MQTT leaks.
+
+Open: duplicate handling while the first delivery is still in flight waits for the full lease (T-20); a poll cap is a candidate for S19.
