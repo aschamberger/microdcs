@@ -26,7 +26,7 @@ public sealed record PublishOptions
     /// <summary>The method hint (<c>PUT</c> or <c>DELETE</c>).</summary>
     public string? Method { get; init; }
 
-    /// <summary>Keep as last value where the transport supports it (state topic).</summary>
+    /// <summary>Keep as last value where the transport has a per-message retain flag (MQTT). Other transports ignore it with a warning; use <c>IStateTopicPort</c> for durable last values (D-47).</summary>
     public bool Retain { get; init; }
 }
 

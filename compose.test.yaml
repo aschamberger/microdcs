@@ -5,6 +5,7 @@
 #
 # Host mode for fast iteration: `docker compose -f compose.test.yaml up -d valkey mosquitto`, then
 # `dotnet test` with MICRODCS_TEST_VALKEY=localhost:6380 and MICRODCS_TEST_MQTT=localhost:1884
+# (add `nats` and MICRODCS_TEST_NATS=localhost:4223 for the NATS tests)
 # (ports offset from the dev stack in compose.yaml so both can run at once).
 #
 # No named volumes: every run starts empty. Images are pinned by digest (Dependabot docker-compose).
@@ -35,6 +36,20 @@ services:
       timeout: 5s
       retries: 15
 
+  nats:
+    # JetStream with per-message TTL needs 2.11 or later (D-47). Two accounts (tenant-a, tenant-b) test tenancy (R-20).
+    image: nats:2.15-alpine@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f
+    command: ["-c", "/etc/nats/nats-test.conf"]
+    volumes:
+      - ./tests/MicroDCS.IntegrationTests/Nats/nats-test.conf:/etc/nats/nats-test.conf:ro
+    ports:
+      - "127.0.0.1:4223:4222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   # The application image joins as the system under test once it has a long-running host (S08,
   # S13). A one-shot service cannot be part of this file: any container exit triggers
   # --abort-on-container-exit before the tests run, and compose then still exits 0. The AOT smoke
@@ -48,8 +63,11 @@ services:
     environment:
       MICRODCS_TEST_VALKEY: valkey:6379
       MICRODCS_TEST_MQTT: mosquitto:1883
+      MICRODCS_TEST_NATS: nats:4222
     depends_on:
       valkey:
         condition: service_healthy
       mosquitto:
+        condition: service_healthy
+      nats:
         condition: service_healthy

@@ -601,3 +601,25 @@ Decision:
 Consequences: `MicroDCS.Transport.Mqtt` (MQTTnet 5.2, AOT clean) with `AddMqttTransport`; the `transport.mqtt` inspector; compose profile `app` runs the greetings demo over Mosquitto. The NATS session (S14) checks `ITransport` against this implementation for MQTT leaks.
 
 Open: duplicate handling while the first delivery is still in flight waits for the full lease (T-20); a poll cap is a candidate for S19.
+
+## D-47 NATS transport: JetStream requests, inbox replies, KV state topics {#d-47}
+
+Status: decided (2026-11-08, S14). Details for D-9, D-10, D-37 and D-38. Findings and the leak list: [NATS transport](research/nats-transport.md).
+
+Decision:
+
+* **Requests through JetStream:** a stream per binding prefix (`{StreamPrefix}_{prefix}`, subjects `{prefix}.>`, `AllowMsgTTL`), a durable pull consumer per binding with explicit acknowledgement after the pipeline, `DeliverPolicy.New`, `MaxDeliver` 5, `AckWait` 30 s, `InactiveThreshold` 1 h. The delivery profile is `AtLeastOnce` with `CanRedeliver` true, so the dedupe claim applies and a fault does not end the host.
+* **Shared group = shared consumer:** with `SharedGroup` the consumer is named `{binding}-{group}` and the instances compete on it; without a group each instance has its own consumer and sees every message.
+* **Responses are plain messages** on `{ReplyBase}.{instance token}` (core subscription, no queue group). A lost response is recovered by re-dispatch (D-9). The reply address of a command travels in the header `Mdcs-Reply-To`.
+* **Mapping:** binary mode, attributes as headers under their own names, `Content-Type`, `Nats-TTL` from the expiry interval, `Nats-Msg-Id` for publisher-side duplicate detection.
+* **Outcome mapping:** `Ack` to ack, `Drop` to terminate, `Fault` to nak with `NakDelay`; from the `MaxDeliver`-th failed delivery on the message is terminated, logged and counted (`microdcs.nats.poisoned`) instead of vanishing in the server.
+* **State topics** are keys of a KV bucket (`StateBucket`); a put is a stream publish with `Nats-TTL` (native time to live), a delete is a KV delete.
+* **Reconnect** is the client library's; the transport restarts the consume loop after each reconnect. A server that is not reachable at start ends the process (D-27).
+* **Addresses:** `prefix.scope.scope.discriminator.intent`, `*` per scope level; `/` in a configured prefix or reply base is rendered as `.`. The instance id is mapped to a subject token.
+* **Tenancy (R-20):** one NATS account per tenant, chosen by the connection credentials (creds file, NKey, user and password, token); no tenant logic in the code.
+* **`Retain` is a hint (core, applies to MQTT too):** `OutboundMessage.Retain` and `PublishOptions.Retain` map to the MQTT retain flag only; other transports ignore it with a warning. Last values that must outlive the publisher use `IStateTopicPort`. This changes the XML docs only.
+* **Configuration:** section `MicroDcs:Nats` (URL list, client name, credentials and TLS as files, JetStream domain, stream prefix and max age, replicas, consumer inactive threshold, ack wait, max deliver, nak delay, state bucket, operation timeout, reconnect delays), validated at start together with the NATS bindings. Transport name `nats`.
+
+Consequences: `MicroDCS.Transport.Nats` (NATS.Net 3.3.2, AOT clean) with `AddNatsTransport`; the `transport.nats` inspector; compose service `nats` in the dev stack and the test harness (digest-pinned `nats:2.15-alpine`, server 2.11 or later needed). The core interfaces `ITransport`, `IStateTopicPort`, `InboundMessage` and `OutboundMessage` needed no change.
+
+Open: a faulted message is redelivered while its dedupe claim is still held, so the redelivery waits for the lease (30 s). S19 releases the claim on a fault and caps the wait (finding L-7).

@@ -24,6 +24,7 @@
     <ProjectReference Include="../MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
     <ProjectReference Include="../MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <ProjectReference Include="../MicroDCS.Transport.Mqtt/MicroDCS.Transport.Mqtt.csproj" />
+    <ProjectReference Include="../MicroDCS.Transport.Nats/MicroDCS.Transport.Nats.csproj" />
     <ProjectReference Include="../MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
     <ProjectReference Include="../MicroDCS.Generators/MicroDCS.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
