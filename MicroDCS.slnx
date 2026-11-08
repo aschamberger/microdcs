@@ -2,9 +2,13 @@
   <Folder Name="/src/">
     <Project Path="src/MicroDCS.App/MicroDCS.App.csproj" />
     <Project Path="src/MicroDCS.Core/MicroDCS.Core.csproj" />
+    <Project Path="src/MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
+    <Project Path="src/MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/MicroDCS.Core.Tests/MicroDCS.Core.Tests.csproj" />
     <Project Path="tests/MicroDCS.IntegrationTests/MicroDCS.IntegrationTests.csproj" />
+    <Project Path="tests/MicroDCS.Sfc.Tests/MicroDCS.Sfc.Tests.csproj" />
+    <Project Path="tests/MicroDCS.Valkey.Tests/MicroDCS.Valkey.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS SFC core: pure, dependency-free sequential function chart semantics (D-17, D-44).</Description>
+  </PropertyGroup>
+</Project>

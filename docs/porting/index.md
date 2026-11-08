@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S07** (design: data layer and SFC rules; S06 is done).
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S08** (core) or **S09** (Valkey layer) or **S15** (SFC core); S07 is done.
 
 ## How to use these files
 
@@ -73,13 +73,13 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-9](decisions.md#d-9) | decided | Push-command response routing stays instance-affine; persist the dispatch deadline |
 | [D-10](decisions.md#d-10) | decided | Each protocol's native features, no lowest-common-denominator emulation |
 | [D-11](decisions.md#d-11) | decided | Zenoh is a full CloudEvents transport binding |
-| [D-12](decisions.md#d-12) | decided | HA is a deployment concern, later |
+| [D-12](decisions.md#d-12) | revised | HA is a deployment concern; cluster mode is out of scope, resilience through independent island deployments |
 | [D-13](decisions.md#d-13) | decided | Dedupe-key trust comes from transport access control |
 | [D-14](decisions.md#d-14) | revised | CloudEvents: upstream SDK, AOT-ready, fork late only if blocked |
 | [D-15](decisions.md#d-15) | decided | Docker Compose integration tests, identical locally and in CI |
 | [D-16](decisions.md#d-16) | revised | Python preserved on `python-archive`; the port continues on `main` |
-| [D-17](decisions.md#d-17) | proposal | SFC semantics as a pure, dependency-free core library; late-response rule and outcome-based transition conditions decided |
-| [D-18](decisions.md#d-18) | proposal | SFC time model: timestamped events, absolute deadlines, shared due-index; outage grace and recipe timeout decided |
+| [D-17](decisions.md#d-17) | decided | SFC semantics as a pure, dependency-free core library; late-response rule and outcome-based transition conditions decided |
+| [D-18](decisions.md#d-18) | decided | SFC time model: timestamped events, absolute deadlines, shared due-index; outage grace and recipe timeout decided |
 | [D-19](decisions.md#d-19) | proposal | Inspection layer plus optional dev MCP server, built early |
 | [D-20](decisions.md#d-20) | decided | Gitleaks, Trivy and SonarQube Cloud in CI; scanners as pinned containers; Sonar C# rules in every build (confirmed S03) |
 | [D-21](decisions.md#d-21) | decided | OPC UA .NET stack 2.x is MIT licensed; no licence constraint from driver 1 |
@@ -102,8 +102,12 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-38](decisions.md#d-38) | decided | Logical address with one segment rule for all transports, scope check, level-0 rejected by default, state-topic port |
 | [D-39](decisions.md#d-39) | decided | Generic Host, `MicroDcs` options section, `APP_` + `__` environment names, binding sections, instance roles |
 | [D-40](decisions.md#d-40) | decided | Inspection contracts with sensitivity-based redaction, one management listener on loopback |
+| [D-41](decisions.md#d-41) | decided | Documents are versioned hashes with explicit indexes; no valkey-json or valkey-search |
+| [D-42](decisions.md#d-42) | decided | Key schema, job identity by id alone (no hash tags), scope registry, version-guarded idempotent writes, stream trimming rule |
+| [D-43](decisions.md#d-43) | decided | Stream consumption: pub/sub nudge plus 1 s fallback poll, one poller per instance |
+| [D-44](decisions.md#d-44) | decided | SFC core rules: work identity, schema direction, recipe pinning, capabilities, only qualifier N, routable `timeout`/`error`, build-time validation, time source, sweep, retry and scope-discovery values |
 
-Next free id: **D-41**.
+Next free id: **D-45**.
 
 ## Open questions
 
@@ -123,13 +127,13 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-ARCH-5~~ OPC UA server | → D-4 | — |
 | ~~Q-ARCH-6~~ Abstraction fit | → D-37, D-38 (A-1 to A-8 decided, see [core contracts](research/core-contracts.md)) | — |
 | ~~Q-ARCH-7~~ Delivery semantics | → D-37: dedupe claim for `AtLeastOnce` profiles only; commands over at-most-once paths rely on SFC re-dispatch with `mdcsactionkey` (D-9). Zenoh mapping stays with S25 | — |
-| Q-ARCH-8 SFC multi-instance model | How the CAS scripts relate to the pure transition; scope discovery, retry limit, stream trimming, key identity ([SFC core](research/sfc-core.md)) | S07 |
+| ~~Q-ARCH-8~~ SFC multi-instance model | → D-44 (generic CAS script, scope registry, retry limit, trimming rule D-42, id-only identity D-42) | — |
 | Q-ARCH-9 Deployment modes | Keep the processor/publisher split and single-container mode? Effect of the in-process HTTP surface | S18 |
 | ~~Q-ARCH-10~~ Southbound | → D-11. Remaining: CloudEvents-over-Zenoh mapping (attachment vs. structured), Zenoh query/reply for commands, router vs. peer mode | S25 |
-| Q-DATA-1 Documents and secondary indexes | Today: valkey-json for documents (`JSON.SET` whole-document writes from Python; partial path updates only inside the four SFC Lua CAS scripts) and valkey-search (`FT.CREATE ... ON JSON` with TAG fields `$.JobOrderID`, `$._normalized_state`, `$._scope`; `FT.INFO`; two `FT.SEARCH` queries). Call sites: Lua 9 `JSON.SET`, 4 `JSON.GET`, 1 `JSON.TYPE`; Python 4 whole-document sets, 7 reads. Options: (a) plain strings in a hash `{v, doc}` with explicit secondary indexes (sets/sorted sets per scope and state) written in the same atomic script, no modules, plain `valkey/valkey` image; (b) keep valkey-json and valkey-search through raw `Execute`, with the Valkey-specific `FT.SEARCH` reply parser ([Valkey findings](research/valkey-findings.md)). The image is `valkey-bundle` either way (D-26). With D-17 (whole versioned state document, CAS on the version) partial path updates are not needed, and Lua can decode JSON with the built-in `cjson` where a script must read a field | S04 measured ([library spike](research/library-spike.md#stackexchangeredis-d-7-q-data-1-q-data-2): no performance reason to drop the modules), S07 decides |
-| ~~Q-DATA-2~~ Client library | → D-7. Remaining: no blocking reads (poll, poll plus pub/sub nudge, or raw `BLOCK` on a dedicated multiplexer); consumer groups, `XAUTOCLAIM`, Lua `EVAL`, reconnect behaviour | S04 measured (nudge plus slow fallback poll recommended, [library spike](research/library-spike.md)), S07 decides |
+| ~~Q-DATA-1~~ Documents and secondary indexes | → D-41, D-42: hash documents with explicit indexes, no valkey-json or valkey-search; analysis in [data layer](research/data-layer.md) | — |
+| ~~Q-DATA-2~~ Client library | → D-7, D-43: no blocking reads, pub/sub nudge plus 1 s fallback poll | — |
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
-| ~~Q-DATA-4~~ High availability | → D-12. Remaining: every write path idempotent under unknown outcome (R-4) | S09 |
+| ~~Q-DATA-4~~ High availability | → D-12 (cluster mode out of scope, islands). Remaining: every write path idempotent under unknown outcome (R-4) | S09 |
 | Q-OPS-1 HTTP surface | Listener layout decided in D-40 (one management listener, loopback default, `/health`, `/metrics`, `/api/v1`, `/mcp`). Open: job state query API and OpenAPI (R-19) | S21 |
 | Q-OPS-2 Container and Kubernetes | Chiseled/distroless AOT image, manifest, Zenoh native library in the image, hardening from `docs/security.md` | S22 |
 | Q-OPS-3 Security | Authn/z per transport (NATS accounts/NKeys, AMQP SASL, Zenoh ACLs), the level-0 scope rule (R-6) | S10, S22 |
@@ -158,7 +162,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S04 | Spike: library stack, AOT and Valkey behaviour | S02 | done |
 | S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | done |
 | S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | done |
-| S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | open |
+| S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | done |
 | S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | open |
 | S09 | Valkey layer | S07 (parallel to S08) | open |
 | S10 | Pipeline (A-1) | S08, S09 | open |

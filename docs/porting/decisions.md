@@ -119,6 +119,8 @@ Decision: code targets a single Valkey endpoint; no Sentinel or cluster work in 
 
 Consequences: every write path stays idempotent under unknown outcome, because StackExchange.Redis reconnects on its own (S09).
 
+Revised 2026-11-08 (S07): Valkey **cluster mode is out of scope for good**, not only deferred. Resilience comes from islands: a plant is split into several independent deployments (separate Kubernetes instances, each with its own Valkey) per area, not one large deployment per site. Consequences: no hash tags, no `CROSSSLOT` concerns, no `(scope, id)` identity (D-42); replication or Sentinel failover needs no code changes. Cross-island aggregation is a northbound concern.
+
 ## D-13 Dedupe-key trust comes from the transport {#d-13}
 
 Status: decided. Answers R-7.
@@ -172,7 +174,7 @@ Background: [porting approach](research/branching.md).
 
 ## D-17 SFC semantics as a pure core library {#d-17}
 
-Status: proposal. Details settled in S07.
+Status: decided (2026-11-08, S07; open points settled in [D-44](#d-44)).
 
 Decision: `(graph, state, snapshot, event) -> (next state, continuation, commands)`, in a separate dependency-free project in this repository (not a separate product). Fixed already:
 
@@ -195,7 +197,7 @@ Background: [SFC core library](research/sfc-core.md).
 
 ## D-18 SFC time model {#d-18}
 
-Status: proposal. Details settled in S07.
+Status: decided (2026-11-08, S07; open points settled in [D-44](#d-44)). Hash tags are not needed (D-12, D-42).
 
 Decision: the core reads no clock. Events carry timestamps from Valkey server time (proposal: taken from the work item's stream entry id); the state holds absolute deadlines and exposes `NextDeadline`; the host keeps one due-index entry per job; all replicas sweep it without a leader.
 
@@ -486,3 +488,64 @@ Status: decided (2026-11-08, S06). Details for D-19 (which stays a proposal unti
 Decision: `IInspector` (name, `InspectAsync(InspectionQuery)` returning a capped page with cursor) is the contract; entries are `Kind`, `Key` and fields whose values carry a `Sensitivity` (`Public`, `Identifier`, `Payload`) set at the source. `Redaction.Apply` drops `Payload` values unless `include_payloads` is on, and adapters call it before output. Inspectors use fixed-size buffers and cost nothing when inspection is off. **One management listener** (Kestrel), loopback `127.0.0.1:8081` by default, serving `/health/live`, `/health/ready`, `/metrics`, the versioned REST API under `/api/v1` and, when the optional package is referenced and enabled, MCP under `/mcp`. Non-loopback binds need bearer authentication (R-8); Kubernetes uses the pod address with a NetworkPolicy and probes on the same port. Read, write and maintenance tool groups, plan/apply and snapshot design are as in D-19.
 
 Consequences: `MicroDCS.Core/Inspection` holds the abstractions; S11 builds the adapters and the first inspectors. Open: probes on a separate port if a deployment needs them; S21 refines the REST contract.
+
+## D-41 Documents are versioned hashes with explicit indexes {#d-41}
+
+Status: decided (2026-11-08, S07). Answers Q-DATA-1. Background: [data layer](research/data-layer.md).
+
+Decision: every document (job order, job response, work master, SFC state) is a Valkey hash with the fields `v` (integer version), `scope`, `doc` (the serialized document as a string) and the indexed attributes as own fields (for example `state`, `order`). A write is one Lua script per document type that checks the expected version, stores the hash, maintains the secondary indexes (sets, sorted sets, id keys) and appends the change or work entry, atomically. Secondary indexes are derived data and can be rebuilt by a scan. valkey-json and valkey-search are not used: no `JSON.*`, no `FT.*`, no reply parser. The Python TAG queries become `GET jobresponse:byorder:{orderId}` and `SMEMBERS`/`SSCAN` on `jobresponse:bystate:{scope}:{state}`.
+
+Consequences:
+
+* No hard dependency on modules; the compose image stays `valkey-bundle` (D-26), the code runs on plain Valkey.
+* Index and document are consistent after every write (no asynchronous indexing), so read-after-write holds.
+* We own index consistency: one `put` script per document type, an index-rebuild routine, and a test that compares each index with a full scan.
+* Free-form queries are not available; a new query is a new index in the script plus a rebuild.
+* Scripts read fields from the hash, not from JSON, so `cjson` is only needed where a script must look inside `doc`.
+* Revisit if operators need ad hoc queries across scopes.
+
+## D-42 Key schema, job identity and write idempotency {#d-42}
+
+Status: decided (2026-11-08, S07). Answers the key-schema part of S07, R-4 and the `(scope, id)` review point.
+
+Decision:
+
+* **Prefix and names:** `{KeyPrefix}:` (configuration, default `microdcs`) in front of the names in [data layer](research/data-layer.md#key-schema). One generic `ref:{kind}:{scope}` set replaces the five reference-list key families of Python. All keys come from one `KeySchema` class and every script receives every key it touches in `KEYS`.
+* **Identity:** a job is identified by its id alone, as in Python. There are **no hash tags** and no `(scope, id)` pairs in APIs. REST, MCP and MES lookups take the id.
+* **Scope registry:** a persistent set `scopes`, written by the script that stores the first document of a scope; replaces the global change stream of Python as the discovery mechanism for the publisher and the SFC host.
+* **Write idempotency (R-4):** every write is a full overwrite guarded by the version. A retry after an unknown outcome reads the hash: if `v` has advanced and the field `op` equals the operation id of the retry, the write already happened and counts as success; otherwise the CAS failed and the caller re-evaluates.
+* **Streams:** work and outbox streams have no `MAXLEN`; entries are trimmed only after acknowledgement (`XTRIM MINID` below the lowest pending id of the group). Ids that `XAUTOCLAIM` reports as deleted are logged and counted. Change streams read by cursor keep `MAXLEN ~ 5000`; the publisher republishes the state index at start.
+* **Dedupe keys** keep the Python semantics (lease, token, `done`, `ttl`), with a 16-byte SHA-256 prefix of `source:id` instead of Blake2b (not in the BCL).
+
+Consequences: `MicroDCS.Valkey` (S09) holds `KeySchema`, the scripts and the DAOs. Key names and the wire format are a clean break (D-2). Dropped from Python: `TransactionDedupeDAO` and `CounterDAO` (unused, already in D-37 parity list), the global change stream.
+
+## D-43 Stream consumption: nudge plus slow fallback poll {#d-43}
+
+Status: decided (2026-11-08, S07). Answers Q-DATA-2.
+
+Decision: one poller component per instance reads all work and change streams. A script that appends to a stream also `PUBLISH`es `scope` on the channel `{KeyPrefix}:nudge:{kind}`; the poller subscribes once per instance and reads the stream named by the nudge at once. Pub/sub can lose messages, so the poller also reads every stream on a fallback interval (default 1 s, `MicroDcs:Valkey:PollInterval`). No blocking commands (D-7). The same poller runs the due-index sweep (S07 time model). After a read that returned entries it reads again at once; it sleeps only when a read returns nothing. Consumer groups are created when a scope is discovered (scope registry), not on every iteration.
+
+Consequences: S04 measured p50 about 1 ms with nudge against 125 ms for a 250 ms poll, with 503 server commands per 100 messages (including 100 `PUBLISH`) against 238 for the 250 ms poll and 362 for the 50 ms poll. Idle cost is one read per stream per second per consumer. Python's loop shape (sleep after every iteration, group creation every iteration) is dropped.
+
+## D-44 SFC core rules, time and retry values {#d-44}
+
+Status: decided (2026-11-08, S07). Settles the open points of [D-17](#d-17) and [D-18](#d-18), which become decided. Background: [SFC rules](research/sfc-rules.md).
+
+Decision:
+
+* **Project and interface:** `MicroDCS.Sfc`, no reference to any other MicroDCS project or external package (architecture test in S15). `IRecipeInterpreter` has `DataSchema`, `Build(recipe, capabilities)` returning a graph or build errors, and `Step(graph, state, snapshot, event)` returning `(state, continuation, commands)`. The SFC interpreter is the first implementation.
+* **Work identity:** the action key `{jobId}:{actionName}` is the work token id. Each attempt has its own command event id; a response is matched by the action key, never by the instance-local command id. A response whose action key or type contradicts the open action is rejected, not matched to a sibling. Late responses follow D-17.
+* **Schema direction:** the C# model is the source. The JSON Schema for recipe and state is generated at build time, checked in, and a test regenerates and compares it; every serialized property has an explicit wire name. Recipe wire names stay as in the Python schema (`timeout_seconds`, `type_id`, ...), so existing recipes stay valid. The recipe `dataschema` URI carries the version; the state document carries a `format` number (additive changes bump the minor).
+* **Recipe pinning:** a job stores the recipe by content hash; the recipe text is written once to `sfc:recipe:{hash}` when a job starts. A changed work master does not change running jobs (Python reloaded the work master at every step).
+* **Capabilities:** the station supplies flags (`PushCommand`, `PullEvent`, `SimultaneousBranch`, `SelectionBranch`, qualifier `N`) and, per `type_id`, the outcome names its processor declares. `Build` refuses a recipe that needs more; the same check is the job acceptability check.
+* **Qualifiers:** only `N` is accepted. P, S, R, L and D are rejected at build with a clear error. Python never read the qualifier (parity row S-23); they can be added later as capabilities without a format change.
+* **Outcomes:** an action completes with a named outcome. The processor declares the outcomes of a response type and returns one from its typed `[OnResponse]` handler; the recipe only names them. `SfcTransition.condition` names an outcome or `"true"` (D-17). Reserved outcomes `timeout` (attempts exhausted) and `error` (the response handler reports failure) are routable; if no transition of the step matches, the continuation is `Fault` and the host aborts the job.
+* **Build-time validation:** exactly one initial step; unknown steps in transitions, actions or branches; branch without paths; selection divergence needs a `"true"` default and unique priorities; outcome names must exist for the action types involved (plus the reserved ones); two pull-event selectors that cannot be told apart (R-1); a cycle with no wait; unreachable steps; duplicate names. Hard limit of 10,000 dispatches per evaluation returns `Fault`.
+* **Time:** the core reads no clock. `At` of an event is the millisecond part of the work item's stream entry id (ticks included); events that do not pass through the stream (push responses handled by the sending instance) use one Valkey `TIME` call. Action deadlines are `At + timeout_seconds` (the recipe field, required); the wire expiry is the deadline minus `Sfc:ExpiryGrace` (default 2 s).
+* **Sweep:** every instance sweeps the due-index of every known scope each `Sfc:SweepInterval` (default 1 s, start jitter up to 250 ms), in the poller of D-43. The sweep writes `sfc:heartbeat`. If the gap since the last heartbeat exceeds `Sfc:OutageThreshold` (default 30 s) the tick is marked `afterOutage` and the core extends open deadlines by the gap.
+* **Retry:** `max_attempts` is an optional recipe field per action association with a host default `Sfc:MaxAttempts` (default 3). An expired deadline re-dispatches with the same action key until the attempts are used, then the outcome is `timeout`. No backoff in the first version. `error` is not retried.
+* **Scope discovery:** the `scopes` registry (D-42) is read at start and every `Sfc:ScopeRefreshInterval` (default 5 s) by every instance, which then creates the consumer group and sweeps that scope. A scope is never removed automatically (scopes are few); the maintenance tools (S12) can remove one.
+* **Poison work items:** a handler exception leaves the item pending; after `Sfc:MaxDeliveries` (default 5) deliveries it moves to `sfc:dead:{scope}` with the reason and is acknowledged (Python acknowledged every failed item, S-6).
+* **Atomic step:** one generic script compares the state version, stores the new state, appends the commands as work-stream entries, updates the due-index (`NextDeadline`) and the scope's active-job set. A host crash between state and execution is covered by redelivery of the entries (execution is idempotent by action key) and by the `Resume` event.
+
+Consequences: S15 builds the core and the in-memory host against these rules; S19 and S20 build the Valkey host. The outage test and the two-replica test in S20 are acceptance tests.

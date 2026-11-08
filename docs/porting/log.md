@@ -155,3 +155,20 @@ Changed in the plan: index (decisions, Q-STRAT-4, Q-ARCH-2/3/6/7, Q-OPS-1, sessi
 Open questions: none new. Not designed here on purpose: generator internals and the diagnostic list (S08), the publisher (S18), per-transport renderers (S13, S14), the OPC UA payload codec (S16).
 Post-merge checks: `ci`, `security` and `docs` green on `main` (the docs build covers the new nav entry and the table fix in the decisions summary).
 Next session pickup: S07 (design: data layer and SFC rules, depends on S04 and S06, both done). Run `/session-start S07`. Start from `main` after the S06 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. Read the Python cross-check rule first: S07 needs a parity list for `redis.py` (key schema, Lua scripts, DAOs) and `sfc_engine.py` before any decision; S06's list covers only dedupe, the post-start lock and the push-command dispatch. `IDedupeStore` and `IStateTopicPort` (D-37, D-38) are the contracts the Valkey layer (S09) implements. S08 and S07 can run in parallel.
+
+## S07 Design: data layer and SFC rules (2026-11-08, branch `s07-data-sfc-rules`)
+
+Status: done. Previous session post-merge: verified (`ci`, `security`, `docs` green on `main` for #49).
+Done:
+
+* Python cross-check of `redis.py`, `sfc_engine.py`, the recipe model and the publisher's stream use: 30 plus 40 parity rows, none open ([data layer](research/data-layer.md), [SFC rules](research/sfc-rules.md)).
+* Data layer decided with a written comparison: hash documents with explicit indexes, no valkey-json or valkey-search; key schema, id-only identity, scope registry, version-guarded idempotent writes, stream trimming rule, nudge plus fallback poll.
+* Maintainer decision: Valkey cluster mode is out of scope for good; resilience through independent island deployments (D-12 revised), so no hash tags.
+* SFC open points of D-17 and D-18 settled in D-44; both are now decided.
+* Compiling stubs: `MicroDCS.Sfc` (`ActionKey`, `SfcOutcome`, `SfcCapabilities`, `IRecipeInterpreter`) and `MicroDCS.Valkey` (`KeySchema`) with two test projects.
+Findings: the Python engine never reads `qualifier`, `timeout_seconds`, `condition` or `recovery_idle_threshold_s`; it reloads the work master at every step (a changed work master changes running jobs); it acks failed work items; the finish script breaks JSON on a quote in the error text.
+Decisions: D-41 to D-44; D-12 revised; D-17, D-18 decided.
+Changed in the plan: index (decisions, Q-DATA-1/2/4, Q-ARCH-8, session table), sessions (S09 block), decisions, two new research pages, zensical nav.
+Open questions: none new.
+Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the workflow job names (new test projects are covered by `dotnet test`).
+Next session pickup: S08 (core, depends on S06), S09 (Valkey layer, depends on S07) and S15 (SFC core, depends on S07) can start in any order. Run `/session-start <id>`. Start from `main` after the S07 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. S09 starts from `KeySchema` and the key table in the data layer page; S15 from `MicroDCS.Sfc` and D-44 (architecture test: no references); read the parity rows named in each block.
