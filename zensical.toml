@@ -40,6 +40,7 @@ nav = [
       {"Valkey findings" = "porting/research/valkey-findings.md"},
       {"Library spike" = "porting/research/library-spike.md"},
       {"OPC UA spike" = "porting/research/opcua-spike.md"},
+      {"Core contracts" = "porting/research/core-contracts.md"},
       {"Review triage" = "porting/research/review-triage.md"},
       {"Python design decisions, sorted" = "porting/research/python-design-decisions.md"}
     ]}

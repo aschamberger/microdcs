@@ -20,6 +20,7 @@ Run and report the real results:
 * Public API has XML docs; no secrets or payloads in logs.
 * From S03: scanners green (`scripts/scan` for changes to workflows, Dockerfiles or configuration; Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code). Use SonarQube analysis tools when available. Waivers only with reason and expiry (D-20).
 * From S11: every new stateful component ships its read-only inspector (D-19).
+* Python parity list (design and port sessions): every row has a disposition, none is `open`, rows are in the session's research file.
 * Docs changed with the code (configuration tables, "Not yet ported" notices).
 
 If something fails and cannot be fixed in this session, say so plainly and record it as `partial`.

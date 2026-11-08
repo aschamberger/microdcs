@@ -87,6 +87,8 @@ Use `Opc.Ua.ISA95*` without a server: can the Common Model and Job Control V1/V2
 
 Read: [abstraction mapping](research/abstraction.md), [inspection and MCP](research/inspection-mcp.md), [review triage](research/review-triage.md), D-3, D-9, D-10, D-14, D-19.
 
+Python sources to read first (parity list in [core contracts](research/core-contracts.md)): `common.py`, `core.py`, `dataclass.py`, `mqtt.py`, `__init__.py`, `processors/`, `publishers/`, and the unit tests `test_common.py`, `test_mqtt.py`, `test_core.py`, `test_*_processor.py`, `test_payload_logging.py`.
+
 Little code: decisions and compiling interface stubs in `MicroDCS.Core`.
 
 * The `CloudEvent` usage behind one envelope-codec seam (D-14: typed `mdcs*` extension attributes, transport context, no `object Data` in own types).
@@ -112,7 +114,9 @@ Little code: decisions and compiling stubs in `MicroDCS.Valkey` and `MicroDCS.Sf
 
 ### S08 Core
 
-Envelope and extension attributes, processor base and handler registration (source generated), hosting and configuration with validation, in-memory transport, processor test harness (R-15, `MicroDCS.Testing`), the greetings processor as the demo and first end-to-end test. Start `docs/` pages for the .NET API as the code lands. CloudEvents checkpoint (D-14).
+Read: [core contracts](research/core-contracts.md) (parity list, stubs in `MicroDCS.Core`), D-35 to D-39.
+
+Implement the S06 contracts: `IEnvelopeCodec` on upstream CloudEvents (carrier, collision guard, error context text), `IPayloadDescriptor` implementations, the source generator for `[CloudEventType]`, `[Processor]` and handlers with the `MDCS0xx` analyzers (D-35), hosting and options validation with source-generated binding (D-39), the in-memory transport (`ITransport`, `IStateTopicPort`, `IDedupeStore` in memory), processor test harness (R-15, `MicroDCS.Testing`), the greetings processor as the demo and first end-to-end test. The pipeline itself is S10; S08 may contain a minimal dispatcher for the harness. Start `docs/` pages for the .NET API as the code lands. CloudEvents checkpoint (D-14). Python parity rows E-3, E-4, E-5, P-3 to P-6, P-10, P-14, P-15, L-1 are acceptance tests.
 
 ### S09 Valkey layer (parallel to S08)
 
