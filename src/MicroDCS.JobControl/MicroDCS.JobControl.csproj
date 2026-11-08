@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS job models: version-neutral ISA-95 Job Control records, V1 and V2 conversions, the OPC UA JSON codec and the pure job order state machine (D-34).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.ISA95" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Core.Schema" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.SourceGeneration" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The Work Master extension model; the SDK source generator emits its types at build time (D-34). -->
+    <AdditionalFiles Include="NodeSets/MicroDcs.JobControl.NodeSet2.xml" ModelSourceGeneratorModelUri="urn:microdcs:jobcontrol" ModelSourceGeneratorPrefix="MicroDCS.JobControl.Extension" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MicroDCS.JobControl.Tests" />
+  </ItemGroup>
+</Project>

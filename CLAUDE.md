@@ -42,6 +42,7 @@ stacked-PR steps. The handoff is part of the session's own PR.
 ```
 src/MicroDCS.Core/          core library: envelope and codec, processor API, hosting, minimal pipeline, in-memory transport
 src/MicroDCS.Inspection/    inspection service (cap, redaction, rate limit, audit) and the management listener (D-19, D-40)
+src/MicroDCS.JobControl/    job models: neutral ISA-95 records, V1/V2 conversions, OPC UA JSON codec, Work Master extension, pure job state machine (D-34)
 src/MicroDCS.Maintenance/   maintenance operations: plan/apply, snapshots, restore over Valkey (dev and test only, D-45)
 src/MicroDCS.Mcp/           MCP adapter with the inspection and maintenance tools (dev and test only; the framework does not depend on it)
 src/MicroDCS.Sfc/           SFC core: pure, dependency-free sequence logic `(graph, state, snapshot, event) -> (state, continuation, commands)` (D-17, D-44)
@@ -51,8 +52,9 @@ src/MicroDCS.Testing/       ProcessorHarness: drives a processor in memory with 
 src/MicroDCS.Transport.Mqtt/ MQTT 5 transport on MQTTnet: addresses, mapping, reply topic, state topics, reconnect (D-46)
 src/MicroDCS.Transport.Nats/ NATS transport on NATS.Net: JetStream consumers, inbox replies, KV state topics (D-47)
 src/MicroDCS.App/           AOT application (`microdcs`); smoke checks and the greetings demo processor (`serve`, on MQTT, NATS or in memory)
-tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, Maintenance, Sfc, Valkey, Transport.Mqtt, Transport.Nats)
+tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, JobControl, Maintenance, Sfc, Valkey, Transport.Mqtt, Transport.Nats)
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
+tools/                      build-time tools: the Job Control transition table generator (D-34)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
 scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI
 compose.scan.yaml           digest-pinned scanner containers; configs in .gitleaks.toml, trivy.yaml, .trivyignore.yaml

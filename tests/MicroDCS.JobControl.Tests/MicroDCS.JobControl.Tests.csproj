@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MicroDCS.JobControl/MicroDCS.JobControl.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The drift test runs the generator of the tool against the vendored NodeSet (D-34). -->
+    <Compile Include="../../tools/MicroDCS.JobControl.TableGen/TransitionTableGenerator.cs" Link="TableGen/TransitionTableGenerator.cs" />
+    <Content Include="../../src/MicroDCS.JobControl/NodeSets/*.xml" Link="NodeSets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/MicroDCS.JobControl/StateMachine/JobControlV2Transitions.g.cs" Link="NodeSets/JobControlV2Transitions.g.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+</Project>

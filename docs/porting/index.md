@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S16** (job models); S08 to S15 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S17** (Machinery Jobs processor); S08 to S16 are done.
 
 ## How to use these files
 
@@ -95,7 +95,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
 | [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
 | [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP via AMQPNetLite.Core (clean), Zenoh library open (Zenoh-CS `Get` crash) |
-| [D-34](decisions.md#d-34) | decided | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
+| [D-34](decisions.md#d-34) | revised | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
 | [D-35](decisions.md#d-35) | decided | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
 | [D-36](decisions.md#d-36) | decided | Own `EventEnvelope`; CloudEvents SDK only behind `IEnvelopeCodec`; `IPayloadDescriptor` with Json, OpcUaJson, Binary codecs |
 | [D-37](decisions.md#d-37) | decided | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model, shutdown phases |
@@ -177,7 +177,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S14 | NATS transport (abstraction check) | S13 | done |
 | S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | done |
 | **M2 Parity gate** | | | |
-| S16 | Job models and state machine | S05, S08 | open |
+| S16 | Job models and state machine | S05, S08 | done |
 | S17 | Machinery Jobs processor and job DAOs | S10, S16 | open |
 | S18 | Job order publisher and state topics | S13, S17 | open |
 | S19 | SFC Valkey host: work stream, outbox, due-index, push commands | S09, S15, S17 | open |

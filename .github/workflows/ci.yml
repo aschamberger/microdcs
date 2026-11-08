@@ -66,8 +66,8 @@ jobs:
           /d:sonar.cs.vscoveragexml.reportsPaths=TestResults/*.xml
           /d:sonar.cs.vstest.reportsPaths=TestResults/*.trx
           /d:sonar.exclusions="docs/**,spikes/**,**/*.g.cs"
-          /d:sonar.coverage.exclusions="tests/**,bench/**"
-          /d:sonar.cpd.exclusions="tests/**,bench/**"
+          /d:sonar.coverage.exclusions="tests/**,bench/**,tools/**"
+          /d:sonar.cpd.exclusions="tests/**,bench/**,tools/**,src/MicroDCS.JobControl/Conversions/JobControlConversions.cs"
           /d:sonar.cs.roslyn.ignoreIssues=true
       - run: dotnet build --no-restore --no-incremental -c Release
       # The Valkey layer and the MQTT transport are covered by integration tests (D-15). Starting only the harness
