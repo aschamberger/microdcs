@@ -68,7 +68,7 @@ The envelope travels in binary content mode: attributes are MQTT user properties
 * A message that cannot be decoded, or that matches no subscription, is dropped, counted and acknowledged. A duplicate is acknowledged.
 * A handler fault leaves the message unacknowledged and ends the host, because MQTT cannot redeliver inside a session ([D-37](porting/decisions.md#d-37)). The session redelivers after the restart.
 * Publishing waits while the transport reconnects and sends again afterwards. A message is sent at most 5 times; a message that makes the broker drop the connection every time (an ACL with disconnect, a packet above the broker's limit) then fails, and the host ends ([D-27](porting/decisions.md#d-27)). Waiting for the reconnect does not count as an attempt.
-* Every reconnect attempt reads the password file and the SAT token again, so rotated secrets are used. A failed subscribe after a reconnect closes the connection and tries again.
+* Every reconnect attempt reads the password file and the SAT token again, so rotated secrets are used; a credential the broker rejects does not end the attempts ([D-49](porting/decisions.md#d-49)). A failed subscribe after a reconnect closes the connection and tries again.
 * A response topic from a peer is checked before the reply is published there ([D-48](porting/decisions.md#d-48)): `$` topics, wildcards and topics below a binding prefix of this instance are rejected, and the message is dropped.
 
 ## State topics

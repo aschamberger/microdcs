@@ -315,6 +315,32 @@ public sealed class NatsTransportTests
     }
 
     [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV17_a_rotated_password_file_is_read_on_every_reconnect_attempt()
+    {
+        var file = Path.GetTempFileName();
+        await File.WriteAllTextAsync(file, "a\n", Ct);
+        try
+        {
+            await using var proxy = new NatsTestProxy();
+            await using var host = await NatsTestHost.StartAsync(url: proxy.Url, extra: new() { ["MicroDcs:Nats:Username"] = "a", ["MicroDcs:Nats:PasswordFile"] = file }, ct: Ct);
+
+            // A file that no longer matches must fail the reconnect; a cached password would still get through.
+            await File.WriteAllTextAsync(file, "not-the-password\n", Ct);
+            proxy.CloseConnections();
+            await EventuallyAsync(() => !host.Transport.IsConnected);
+            await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+            host.Transport.IsConnected.ShouldBeFalse("the password in the file is wrong now");
+
+            await File.WriteAllTextAsync(file, "a\n", Ct);
+            await EventuallyAsync(() => host.Transport.Status.Reconnects >= 1 && host.Transport.IsConnected);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
     public async Task RV18_a_reply_address_in_the_jetstream_api_is_rejected_and_nothing_is_published_there()
     {
         await using var host = await NatsTestHost.StartAsync(ct: Ct);

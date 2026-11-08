@@ -40,6 +40,32 @@ public sealed class MqttTransportTests
     }
 
     [Fact(SkipUnless = nameof(TestEndpoints.MqttConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV17_a_rotated_password_file_is_read_on_every_reconnect_attempt()
+    {
+        var file = Path.GetTempFileName();
+        await File.WriteAllTextAsync(file, "test-secret\n", Ct);
+        try
+        {
+            await using var host = await MqttTestHost.StartAsync(extra: new() { ["MicroDcs:Mqtt:Username"] = "rotate", ["MicroDcs:Mqtt:PasswordFile"] = file }, ct: Ct);
+
+            // A file that no longer matches must fail the reconnect; a cached password would still get through.
+            await File.WriteAllTextAsync(file, "not-the-password\n", Ct);
+            var intruder = await MqttTestClient.ConnectAsync(host.Transport.Status.ClientId, Ct, cleanStart: false);
+            await intruder.DisposeAsync();
+            await EventuallyAsync(() => !host.Transport.IsConnected);
+            await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+            host.Transport.IsConnected.ShouldBeFalse("the password in the file is wrong now");
+
+            await File.WriteAllTextAsync(file, "test-secret\n", Ct);
+            await EventuallyAsync(() => host.Transport.Status.Reconnects >= 1 && host.Transport.IsConnected);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.MqttConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
     public async Task Hello_over_mqtt_is_answered_on_the_response_topic()
     {
         await using var host = await MqttTestHost.StartAsync(ct: Ct);
@@ -194,8 +220,8 @@ public sealed class MqttTransportTests
     public async Task Shared_subscriptions_split_the_load_between_instances()
     {
         var prefix = "it" + Guid.NewGuid().ToString("N")[..10];
-        await using var one = await MqttTestHost.StartAsync(prefix, "workers", Ct);
-        await using var two = await MqttTestHost.StartAsync(prefix, "workers", Ct);
+        await using var one = await MqttTestHost.StartAsync(prefix, "workers", ct: Ct);
+        await using var two = await MqttTestHost.StartAsync(prefix, "workers", ct: Ct);
         await using var client = await MqttTestClient.ConnectAsync(null, Ct);
         var reply = $"{prefix}-test/replies";
         await client.SubscribeAsync(reply, Ct);

@@ -1,3 +1,4 @@
+using MicroDCS.Core.Transport;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
 
@@ -54,6 +55,10 @@ internal static class NatsClientOptionsFactory
             ReconnectWaitMin = options.ReconnectMinDelay,
             ReconnectWaitMax = options.ReconnectMaxDelay,
             MaxReconnectRetry = -1,
+
+            // The default gives up for good after the same authentication error twice, while the process stays up. A secret being
+            // rotated can be out of step for a moment, so keep trying, as the MQTT transport does (D-49).
+            IgnoreAuthErrorAbort = true,
             RetryOnInitialConnect = false,
             LoggerFactory = loggerFactory,
         };
@@ -66,27 +71,16 @@ internal static class NatsClientOptionsFactory
     {
         if (options.Username is not null)
         {
-            return NatsAuthCred.FromUserInfo(options.Username, options.PasswordFile is { } file ? ReadSecret(file) : options.Password ?? string.Empty);
+            return NatsAuthCred.FromUserInfo(options.Username, options.PasswordFile is { } file ? SecretFile.Read(file) : options.Password ?? string.Empty);
         }
 
         if (options.TokenFile is { } tokenFile)
         {
-            return NatsAuthCred.FromToken(ReadSecret(tokenFile));
+            return NatsAuthCred.FromToken(SecretFile.Read(tokenFile));
         }
 
         return options.CredsFile is { } creds
             ? NatsAuthCred.FromCredsFile(creds)
             : NatsAuthCred.FromNkeyFile(options.NKeyFile!);
-    }
-
-    private static string ReadSecret(string path)
-    {
-        var text = File.ReadAllText(path);
-        if (text.EndsWith("\r\n", StringComparison.Ordinal))
-        {
-            return text[..^2];
-        }
-
-        return text.EndsWith('\n') ? text[..^1] : text;
     }
 }

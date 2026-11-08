@@ -1,12 +1,15 @@
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
+using MicroDCS.Core.Transport;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Formatter;
 
 namespace MicroDCS.Transport.Mqtt;
 
-/// <summary>Builds the MQTT client options from <see cref="MqttOptions"/>: credentials, enhanced authentication, TLS and client certificate.</summary>
+/// <summary>
+/// Builds the MQTT client options from <see cref="MqttOptions"/>: credentials, enhanced authentication, TLS and client certificate.
+/// The transport builds them for every connect attempt, so rotated files are used (D-49).
+/// </summary>
 internal static class MqttClientOptionsFactory
 {
     private const string SatMethod = "K8S-SAT";
@@ -69,17 +72,6 @@ internal static class MqttClientOptionsFactory
     /// <summary>The password from <see cref="MqttOptions.PasswordFile"/> (one trailing line break removed) or <see cref="MqttOptions.Password"/>.</summary>
     public static string? ResolvePassword(MqttOptions options)
     {
-        if (options.PasswordFile is not { } file)
-        {
-            return options.Password;
-        }
-
-        var text = File.ReadAllText(file, Encoding.UTF8);
-        if (text.EndsWith("\r\n", StringComparison.Ordinal))
-        {
-            return text[..^2];
-        }
-
-        return text.EndsWith('\n') ? text[..^1] : text;
+        return options.PasswordFile is { } file ? SecretFile.Read(file) : options.Password;
     }
 }

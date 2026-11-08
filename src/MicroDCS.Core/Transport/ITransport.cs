@@ -111,6 +111,8 @@ public interface IInboundHandler
 /// <summary>
 /// A transport binding. It subscribes, decodes into <see cref="InboundMessage"/>, publishes
 /// <see cref="OutboundMessage"/> and owns its connection and reconnect handling. Everything else is the pipeline.
+/// Credentials from files are read on every connect attempt (<see cref="SecretFile"/>, D-49), and a reply address from a peer goes
+/// through <see cref="ReplyAddressPolicy"/> (D-48).
 /// </summary>
 public interface ITransport
 {

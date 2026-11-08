@@ -51,3 +51,33 @@ public sealed class ReplyAddressPolicyTests
         ReplyAddressPolicy.Check("dcs/reply/i1", _mqtt, binding).ShouldBeNull();
     }
 }
+
+/// <summary>D-49: a credential file as it is at the moment of the connect.</summary>
+public sealed class SecretFileTests : IDisposable
+{
+    private readonly string _file = Path.GetTempFileName();
+
+    public void Dispose() => File.Delete(_file);
+
+    [Theory]
+    [InlineData("secret", "secret")]
+    [InlineData("secret\n", "secret")]
+    [InlineData("secret\r\n", "secret")]
+    [InlineData("secret\n\n", "secret\n")]
+    public async Task One_trailing_line_break_is_removed(string content, string expected)
+    {
+        await File.WriteAllTextAsync(_file, content, TestContext.Current.CancellationToken);
+
+        SecretFile.Read(_file).ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task Every_read_sees_the_current_content()
+    {
+        await File.WriteAllTextAsync(_file, "first", TestContext.Current.CancellationToken);
+        SecretFile.Read(_file).ShouldBe("first");
+
+        await File.WriteAllTextAsync(_file, "rotated", TestContext.Current.CancellationToken);
+        SecretFile.Read(_file).ShouldBe("rotated");
+    }
+}

@@ -110,8 +110,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-46](decisions.md#d-46) | revised | MQTT transport: one connection, QoS 1 end to end, persistent session with 1 h expiry, acknowledgement after the pipeline, per-instance reply topic, retained state topics, reconnect loop |
 | [D-47](decisions.md#d-47) | revised | NATS transport: JetStream requests with shared durable consumers (name with a filter hash), plain inbox replies, KV state topics with message TTL, nak and poison handling, `AckProgress` while queued; `Retain` is an MQTT-only hint; tenancy by account |
 | [D-48](decisions.md#d-48) | decided | Reply addresses from peers are checked before the instance publishes to them (no `$`, no wildcards, not below an own prefix, optional allow list) |
+| [D-49](decisions.md#d-49) | decided | Credential files are read on every connect attempt; a rejected credential does not end the retries; one shared compose test per transport |
 
-Next free id: **D-49**.
+Next free id: **D-50**.
 
 ## Open questions
 

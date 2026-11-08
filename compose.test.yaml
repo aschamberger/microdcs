@@ -27,7 +27,11 @@ services:
 
   mosquitto:
     image: eclipse-mosquitto:2@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98
-    command: mosquitto -c /mosquitto-no-auth.conf
+    # Anonymous clients are accepted; a client that names a user must know its password (secret rotation test, D-49).
+    command: mosquitto -c /etc/mosquitto/mosquitto-test.conf
+    volumes:
+      - ./tests/MicroDCS.IntegrationTests/Mqtt/mosquitto-test.conf:/etc/mosquitto/mosquitto-test.conf:ro
+      - ./tests/MicroDCS.IntegrationTests/Mqtt/mosquitto-test.passwd:/etc/mosquitto/mosquitto-test.passwd:ro
     ports:
       - "127.0.0.1:1884:1883"
     healthcheck:

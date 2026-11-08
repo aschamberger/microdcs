@@ -31,6 +31,7 @@ public sealed class NatsClientOptionsFactoryTests : IDisposable
         opts.Name.ShouldBe("client-1");
         opts.TlsOpts.Mode.ShouldBe(TlsMode.Disable);
         opts.MaxReconnectRetry.ShouldBe(-1);
+        opts.IgnoreAuthErrorAbort.ShouldBeTrue();
         opts.RetryOnInitialConnect.ShouldBeFalse();
     }
 

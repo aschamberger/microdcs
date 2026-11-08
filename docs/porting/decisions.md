@@ -647,3 +647,18 @@ A message with a rejected reply address is dropped before the pipeline (acknowle
 
 Consequences: the AMQP and Zenoh transports (S24, S25) apply the same policy with their separators and wildcards. Broker ACLs stay the first line of defence; the policy covers the gap between what a peer may send and what the instance may write.
 
+## D-49 Credential files are read on every connect, and a rejected credential does not end the retries {#d-49}
+
+Status: decided (2026-11-08, M1 review, RV-17). Applies to every transport.
+
+Context: mounted secrets rotate in place (Kubernetes projected service account tokens expire after about an hour, operators replace password and token files). A transport that reads them once at start can no longer reconnect after a rotation, and the process stays up without doing any work. The file can also be out of step for a moment during a rotation, so a rejected credential is not final.
+
+Decision:
+
+* A transport reads credential files on **every connect attempt**, through its native mechanism (D-10): MQTT builds the client options per attempt, NATS uses the auth callback. Password and token files go through `SecretFile.Read`.
+* A credential the server rejects does **not** end the reconnect attempts; they go on with the usual backoff. On NATS this needs `IgnoreAuthErrorAbort`, because NATS.Net by default stops for good after the same authentication error twice.
+* The start stays fail-fast (D-27): a credential that is rejected at start ends the process.
+* Every transport has the same compose test (`RV17_a_rotated_password_file_is_read_on_every_reconnect_attempt`): the host connects, the file changes to a wrong password, the connection is cut, the transport must stay disconnected; the file is corrected and the transport must reconnect. A cached credential fails the first check, giving up fails the second.
+
+Consequences: S24 and S25 implement this and carry the same test. The harness Mosquitto has a password file with the user `rotate`; anonymous clients stay allowed. TLS client certificates are out of the rule's test: MQTT reloads them with the options, on NATS loading them is the library's matter and is not verified.
+
