@@ -83,3 +83,47 @@ All other SFC keys are in the [data layer](data-layer.md#key-schema).
 | `MaxDeliveries` | int | 5 | Deliveries before a work item goes to the dead stream |
 
 The documentation pages for these fields are written with the code (S19, S20).
+
+## S15 test parity: `test_sfc_engine.py` (57) and `test_sfc_recipe.py` (19)
+
+Bodies read in S15 (2026-11-08). The Python tests mock the DAOs, so most of them check host mechanics (CAS, work stream, pending map). Those belong to S19 and S20 and are listed as `host`. No row is open.
+
+| Python tests | Behaviour | Disposition |
+|---|---|---|
+| `TestSfcEngineConstruction` (1) | Engine takes DAOs and processor lookup | dropped: construction of the Python engine; the host comes in S19 |
+| `StartRecipe` creates state, idempotent | Start activates the initial step, a second start changes nothing | kept: `Start_*` tests |
+| `StartRecipe` job not found, wrong dataschema | Skipped by the host | host (S19); the dataschema selects the interpreter (`DataSchema`), a state pinned to another recipe hash is rejected |
+| `DispatchAction` CAS and callback, key stable across re-dispatch, skips completed job | Push command with stable action key; completed job is not dispatched again | kept: `Redispatch_KeepsTheActionKey...`, absorbed late responses |
+| `DispatchAction` CAS already handled, pending-command registration, old id cleared on re-dispatch, registered even if callback raises | Instance-local routing map and CAS | host (S19); the core emits `CancelWork` with the old command id so the host can clear its entry |
+| `ActionCompletion` CAS dispatched to completed, skips completed, no SFC state | Response completes the action once | kept: `Response_*`, `ADuplicateResponseIsAbsorbed`; missing state is host |
+| `ActionCompletion` unknown command id, stale command id | Responses matched by command id are ignored | changed (D-44): matched by action key; unknown key or another job is rejected |
+| `ActionCompletion` cascade to an action-free step | Steps without actions pass at once | kept: `AStepWithoutActionsIsPassedThrough` |
+| `ActionCompletion` `fail_action` fails the job | Failure ends the job | changed (D-44): outcome `error`, routable; no matching transition gives `Fault` |
+| `WorkItemDispatch` (4) | Work item routing and acking | host (S19) |
+| `Recovery` scan for active jobs, skips completed | Startup scan enqueues `resume` | host (S20); the core side is the `Resume` event |
+| `Recovery` resume re-dispatches dispatched push command | Re-dispatch after a crash | kept: `Resume_Redispatches...`, now limited by attempts and live work |
+| `PullCompletion` pull dispatch is not a pending command, resume does not re-register routing | A wait is not routed by command id | kept: wait is state; `Resume_AnnouncesAWaitAgain...` keeps the same command id |
+| `PullCompletion` command id passed to CAS, CAS fails, CAS completes waiting action | CAS of the wait | changed (S-15): the wait is state with a deadline; completion is `EventReceived` |
+| `PullCompletion` unknown type id ignored | No action waits for the type | kept: `PullEvent_OfAnUnknownTypeIsAbsorbed` |
+| `PullCompletion` no active jobs, race tries next candidate | Choosing the job | host (S20); the core offers `SfcState.IsWaitingFor` |
+| `Helpers` initial step, none, find action, evaluate transitions | Lookups | kept as graph indexes; no initial step is build error `SFC001`; transitions evaluate by outcome and priority |
+| `Helpers` scope from job, find processor, register scope | Host wiring | host (S19), `register_scope` dropped (scope registry, D-42) |
+| `BranchHelpers` (6) | Branch lookups, path selection | kept as `PathOf`, `Entries`, `Exits`; selection changed (D-17): by condition and priority, default required |
+| `SimultaneousBranch` (5) | Enter all paths, advance in path, last step leaves, converge, converge without exit completes | kept: `Simultaneous_*` tests |
+| `SelectionBranch` (2) | Priority path, convergence | kept: `Selection_*` tests |
+| `BranchResume` (1) | Resume re-dispatches all active branch steps | kept: `Resume_RedispatchesEveryActiveBranchStep` |
+| `test_sfc_recipe` dataclass round trips, enums, minimal and full recipe | Recipe wire format | kept: `RecipeModelTests` with the same PascalCase names |
+| `test_sfc_recipe` msgpack round trips, benchmark fixtures | MessagePack path | dropped (driver 4) |
+| `test_sfc_recipe` `Config.type_id` and `type_schema` | mashumaro config | dropped: the recipe is identified by `dataschema` |
+
+New in .NET without a Python counterpart: outcomes and reserved outcomes, deadlines and attempts, outage extension, late responses by action key, cancel, propagation limit, build validation, state determinism, schema tests.
+
+### S15 design details
+
+* **Failure and the default transition.** `true` matches only when no action of the step ended with `timeout` or `error`. Otherwise a recipe with a default path would silently continue after a failed action.
+* **Outcome set of a step.** The outcomes of all its actions. Of a branch: all actions of all its paths. A transition matches when its condition is in the set.
+* **Selection entry.** Evaluated with the outcomes of the step that led into the branch.
+* **Branch paths cannot route failures.** A path has no transitions; a failed action in a path is a fault and cancels the open work of the other paths.
+* **Pull-event ambiguity (R-1) at build time.** Two pull-event actions of one type that can wait together (same step, or different paths of a simultaneous branch) with equal `Parameters` are refused. Selector matching across jobs is S20.
+* **Wire names.** The D-44 text names `timeout_seconds` and `type_id`; the Python schema actually uses `TimeoutSeconds` and `TypeId` (PascalCase). The PascalCase names are kept so that existing recipes stay valid.
+* **Naming (S15, second pass).** The names follow IEC 61131-3 clause 6.6 where it has a word: divergence and sequence instead of branch and path, the full qualifier list (N, R, S, L, D, P, SD, DS, SL, P1, P0; Python knew only eight and no SD, DS, SL), and `Evolve` for the step function because the standard speaks of the evolution of the chart. Table in [SFC core in .NET](../../sfc-core.md#terms). Sources: PLCopen and vendor documents, since the standard itself is not freely readable.

@@ -13,11 +13,11 @@ public enum SfcFeature
     /// <summary>Pull-event actions.</summary>
     PullEvent = 2,
 
-    /// <summary>Simultaneous branches.</summary>
-    SimultaneousBranch = 4,
+    /// <summary>Simultaneous divergences.</summary>
+    SimultaneousDivergence = 4,
 
-    /// <summary>Selection branches.</summary>
-    SelectionBranch = 8,
+    /// <summary>Selection divergences.</summary>
+    SelectionDivergence = 8,
 }
 
 /// <summary>What a station can run: features, accepted qualifiers and the outcomes its processors declare.</summary>
@@ -29,6 +29,11 @@ public sealed record SfcCapabilities(
 {
     /// <summary>The only accepted action qualifier (non-stored, D-44).</summary>
     public const string AcceptedQualifier = "N";
+
+    /// <summary>Tells whether a qualifier is supported.</summary>
+    /// <param name="qualifier">The qualifier.</param>
+    /// <returns><see langword="true"/> for <see cref="SfcActionQualifier.NonStored"/> only.</returns>
+    public static bool Supports(SfcActionQualifier qualifier) => qualifier == SfcActionQualifier.NonStored;
 
     /// <summary>Tells whether a qualifier is accepted.</summary>
     /// <param name="qualifier">The qualifier from the recipe.</param>

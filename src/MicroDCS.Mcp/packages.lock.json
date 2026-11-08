@@ -127,6 +127,15 @@
           "StackExchange.Redis": "[3.4.31, )"
         }
       },
+      "microdcs.sfc": {
+        "type": "Project"
+      },
+      "microdcs.sfc.simulation": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Sfc": "[1.0.0, )"
+        }
+      },
       "microdcs.valkey": {
         "type": "Project",
         "dependencies": {

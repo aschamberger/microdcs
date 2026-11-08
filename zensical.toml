@@ -20,6 +20,7 @@ nav = [
     {"Overview" = "development.md"},
     {"Processors in .NET" = "processors-dotnet.md"},
     {"Valkey layer in .NET" = "valkey-layer.md"},
+    {"SFC core in .NET" = "sfc-core.md"},
     {"Inspection and MCP" = "inspection.md"},
     {"Persistence" = "persistence.md"}
   ]},

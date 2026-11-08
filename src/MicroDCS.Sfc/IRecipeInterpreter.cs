@@ -8,15 +8,15 @@ public sealed record SfcBuildError(string Code, string Message);
 /// <summary>The result of building a recipe: a graph or the errors that refuse it.</summary>
 /// <param name="Graph">The compiled graph, or <see langword="null"/> when there are errors.</param>
 /// <param name="Errors">The build errors; empty when the graph was built.</param>
-public sealed record SfcBuildResult(object? Graph, IReadOnlyList<SfcBuildError> Errors)
+public sealed record SfcBuildResult(SfcGraph? Graph, IReadOnlyList<SfcBuildError> Errors)
 {
     /// <summary>Tells whether the recipe was accepted.</summary>
     public bool Succeeded => Graph is not null && Errors.Count == 0;
 }
 
 /// <summary>
-/// Interprets one recipe format, selected by the work master's <c>dataschema</c> URI (D-17). The step function
-/// <c>(graph, state, snapshot, event) -> (state, continuation, commands)</c> is added with the core in S15.
+/// Interprets one recipe format, selected by the work master's <c>dataschema</c> URI (D-17). The step function is
+/// <c>(graph, state, snapshot, event) -> (state, continuation, commands)</c>: pure, no clock, no I/O.
 /// </summary>
 public interface IRecipeInterpreter
 {
@@ -28,4 +28,12 @@ public interface IRecipeInterpreter
     /// <param name="capabilities">The station's capabilities.</param>
     /// <returns>The graph or the build errors.</returns>
     SfcBuildResult Build(ReadOnlyMemory<byte> recipe, SfcCapabilities capabilities);
+
+    /// <summary>Evolves the chart of a job by one event: transitions are cleared, steps become active or inactive, work is started or cancelled.</summary>
+    /// <param name="graph">The graph the job's recipe hash names.</param>
+    /// <param name="state">The state the host loaded.</param>
+    /// <param name="snapshot">The host's view (attempt default, live work).</param>
+    /// <param name="input">The event.</param>
+    /// <returns>The next state, the continuation and the commands to apply in order.</returns>
+    SfcStepResult Evolve(SfcGraph graph, SfcState state, SfcSnapshot snapshot, SfcEvent input);
 }
