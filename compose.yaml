@@ -5,6 +5,15 @@
 #
 # The .NET app runs on the host (`dotnet run`) against these ports. The integration
 # test harness is a separate file (compose.test.yaml, S02).
+#
+# Profile `app` also runs the application image (`microdcs serve`: greetings demo on the in-memory
+# transport, Valkey, and the management listener with MCP and the write tools, S11):
+#
+#   export MICRODCS_MCP_TOKEN=$(openssl rand -hex 16)
+#   docker compose --profile app up -d --build --wait
+#
+# The management port is published on 127.0.0.1 only and needs the bearer token (D-19, R-8).
+# Dev and test only: never enable the write tools or the MCP server in production.
 # Images are pinned by digest; the tag in front of the digest is informational only.
 # Dependabot (docker ecosystem) proposes digest updates.
 
@@ -35,6 +44,30 @@ services:
       timeout: 3s
       retries: 5
 
+  app:
+    profiles: ["app"]
+    build: .
+    command: ["serve"]
+    environment:
+      APP_MicroDcs__CloudEventSource: urn:microdcs:dev
+      APP_MicroDcs__Bindings__greetings__Transport: memory
+      APP_MicroDcs__Bindings__greetings__Prefix: dev
+      APP_MicroDcs__Bindings__greetings__ScopeLevels: "2"
+      APP_MicroDcs__Valkey__ConnectionString: valkey:6379
+      APP_MicroDcs__Valkey__KeyPrefix: microdcs
+      APP_MicroDcs__Management__Enabled: "true"
+      APP_MicroDcs__Management__McpEnabled: "true"
+      APP_MicroDcs__Management__WriteEnabled: "true"
+      APP_MicroDcs__Management__Url: http://0.0.0.0:8081
+      APP_MicroDcs__Management__BearerTokenFile: /run/secrets/mcp_token
+    ports:
+      - "127.0.0.1:8081:8081"
+    secrets:
+      - mcp_token
+    depends_on:
+      valkey:
+        condition: service_healthy
+
   aspire-dashboard:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:latest@sha256:55a5a9fb88ddcff91997d6889912a19a1627e3584bd41fa5141c9db5f8376754
     environment:
@@ -43,6 +76,10 @@ services:
       - "18888:18888" # dashboard UI
       - "4317:18889" # OTLP/gRPC
       - "4318:18890" # OTLP/HTTP
+
+secrets:
+  mcp_token:
+    environment: MICRODCS_MCP_TOKEN
 
 volumes:
   valkey-data:

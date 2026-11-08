@@ -29,6 +29,8 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor PayloadNotSupported = Error("MDCS011", "Payload type not supported", "Payload '{0}' must be a non-generic reference type declared in this assembly");
 
+    public static readonly DiagnosticDescriptor InvalidProcessorAttribute = Error("MDCS012", "Invalid [Processor] attribute", "The [Processor] attribute of '{0}' needs a resolvable ProcessorBinding argument");
+
     private static DiagnosticDescriptor Error(string id, string title, string message) =>
         new(id, title, message, Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

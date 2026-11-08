@@ -31,6 +31,13 @@ internal static class ProcessorEmitter
             return null;
         }
 
+        // An argument that does not resolve (for example a missing using) leaves the constructor arguments empty.
+        if (PayloadAnalyzer.Find(type, Names.Processor) is not { ConstructorArguments.Length: > 0 } processorAttribute || processorAttribute.ConstructorArguments[0].Value is not int)
+        {
+            report(Diagnostic.Create(Diagnostics.InvalidProcessorAttribute, location, type.Name));
+            return null;
+        }
+
         var failed = false;
         var replyFields = new SortedSet<string>(StringComparer.Ordinal);
         var handlers = new List<string>();

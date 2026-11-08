@@ -22,4 +22,15 @@ public sealed class SmokeTests
 
         result.ShouldBe(0);
     }
+
+    [Fact]
+    public async Task Inspection_smoke_check_passes()
+    {
+        var output = new StringWriter();
+
+        var result = await InspectionSmoke.RunAsync(output);
+
+        result.ShouldBe(0);
+        output.ToString().ShouldContain("ok   inspection-mcp");
+    }
 }

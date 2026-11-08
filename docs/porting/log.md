@@ -226,3 +226,22 @@ Open questions: none new. Dedupe lease versus slowest handler stays a configurat
 Verified (CI fixes included: Sonar rules in `dotnet format` and new-code coverage 76 % to above 80 %, `bench/` excluded from coverage): build 0 warnings, tests green (22 skipped on the host), format clean, `CI=true dotnet restore`, AOT publish and `docker run` smoke, compose integration tests (`tests` exited 0), `scripts/scan` clean. The Sonar quality gate runs on the PR.
 Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the job names; the Docker image builds with the `bench/` restore inputs; expiry tests stay stable in CI (no sleeps, fake clock).
 Next session pickup: S11 (inspection, depends on S09 and S10) or S13 (MQTT transport, depends on S10). Merge #51, #52 and this PR first (`gh stack merge`), then `git switch main && git pull --ff-only && gh stack init <branch>`. S13 implements `ITransport` including `GetReplyAddress`, `CanRedeliver` (false: MQTT cannot nack in-session), message workers, subscription names and the `$share/` renderer. Small fix to take along: the generator crash on an unresolved `[Processor]` argument should report a diagnostic (add a test in `MicroDCS.Generators.Tests`).
+
+## S11 Inspection layer and MCP read tools (2026-11-08, branch `s11-inspection`)
+
+Status: done. Previous session post-merge: verified for #54 (`ci`, `security`, `docs` green on `main`; the nine required checks match the job names). Image build with the `bench/` restore inputs is exercised by this session's Docker build.
+Done:
+
+* `MicroDCS.Inspection`: `InspectionService` (result cap, redaction, rate limit, audit line), the management listener (own Kestrel host, off by default, loopback `Host` check, bearer token off loopback, `/health/*`), `IManagementModule`, `EventInjector` (write group through the pipeline).
+* Core: `PipelineDecisionLog` ring buffer (zero size while off), inspectors `app`, `processors`, `pipeline`, `Management:*` options with start-time validation. `ValkeyInspector` in `MicroDCS.Valkey`.
+* `MicroDCS.Mcp`: ten read tools and `inject_event`, generic `WithTools<T>` registration; AOT clean. `microdcs serve`, smoke check `inspection-mcp`, compose profile `app` (token secret), `.mcp.json`, `CLAUDE.md` section, [Inspection and MCP](../inspection.md).
+* Generator: unresolved `[Processor]` argument reports MDCS012 (pickup item from S10).
+* 25 new tests (service, listener, MCP contract against the in-memory host, options, ring buffer, Valkey inspector in compose). No Python behaviour replaced; `log_payloads` stays dropped (C-5).
+Findings: [S11 implementation findings](research/inspection-mcp.md#s11-implementation-findings-2026-11-08) (AOT result, `RequestDelegate` overload in libraries, optional MCP arguments need `= null`, `aot-publish` rewrites the Generators lock file).
+Decisions: D-19 decided (refinements in its entry); D-40 note.
+Changed in the plan: decisions, index, inspection research, docs (new page, nav, diagnostics table), `CLAUDE.md`, compose.
+Open questions: REST adapter moved to S21 (Q-OPS-1).
+Verified: build 0 warnings, 206 tests green (24 integration skipped on host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke` and `docker run`, compose integration tests (24 passed, `tests` exited 0), `scripts/scan` clean, `zensical build`. The Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; `docker compose --profile app up --wait` still starts with `MICRODCS_MCP_TOKEN` set.
+Next session pickup: S12 (maintenance tools, depends on S11) or S13 (MQTT transport). Run `git switch main && git pull --ff-only && gh stack init <branch>`. S12 adds `MicroDCS.Maintenance` as an `IManagementModule`-style dev-only package (plan/apply tokens, environment guard, snapshots; an architecture test keeps it out of `MicroDCS.Inspection`). S13 implements `ITransport` (`GetReplyAddress`, `CanRedeliver` false) and registers a transport inspector (`transport.mqtt`). After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
+

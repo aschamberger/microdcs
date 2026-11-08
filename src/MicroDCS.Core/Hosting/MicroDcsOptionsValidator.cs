@@ -20,6 +20,8 @@ public sealed class MicroDcsOptionsValidator : IValidateOptions<MicroDcsOptions>
         Require(errors, options.DedupeRetention >= options.DedupeLease, "MicroDcs:DedupeRetention must not be shorter than DedupeLease.");
         Require(errors, options.MessageExpiry is null || options.MessageExpiry >= TimeSpan.Zero, "MicroDcs:MessageExpiry must not be negative.");
 
+        ValidateManagement(errors, options.Management);
+
         var seen = new HashSet<(string, string?)>();
         foreach (var (id, binding) in options.Bindings)
         {
@@ -29,6 +31,28 @@ public sealed class MicroDcsOptionsValidator : IValidateOptions<MicroDcsOptions>
         }
 
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+    }
+
+    private static void ValidateManagement(List<string> errors, ManagementOptions management)
+    {
+        var path = "MicroDcs:Management";
+        Require(errors, management.MaxResults > 0, $"{path}:MaxResults must be positive.");
+        Require(errors, management.RequestsPerMinute > 0, $"{path}:RequestsPerMinute must be positive.");
+        Require(errors, management.DecisionBufferSize >= 0, $"{path}:DecisionBufferSize must not be negative.");
+        if (!management.Enabled)
+        {
+            Require(errors, !management.McpEnabled && !management.WriteEnabled && !management.IncludePayloads, $"{path}: McpEnabled, WriteEnabled and IncludePayloads need Enabled.");
+            return;
+        }
+
+        Require(errors, !management.WriteEnabled || management.McpEnabled, $"{path}:WriteEnabled needs McpEnabled.");
+        if (!Uri.TryCreate(management.Url, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
+        {
+            errors.Add($"{path}:Url must be an absolute http or https URL.");
+            return;
+        }
+
+        Require(errors, url.IsLoopback || !string.IsNullOrWhiteSpace(management.BearerTokenFile), $"{path}:BearerTokenFile is required when Url is not a loopback address (R-8).");
     }
 
     private static void ValidateBinding(List<string> errors, string path, BindingOptions binding, MicroDcsOptions options)

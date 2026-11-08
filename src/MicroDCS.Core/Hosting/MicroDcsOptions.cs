@@ -99,12 +99,33 @@ public sealed class BindingOptions
     public Level0Subjects Level0Subjects { get; set; } = Level0Subjects.Reject;
 }
 
-/// <summary>The management listener. Loopback by default; anything else needs authentication (D-19, R-8).</summary>
+/// <summary>The management listener. Loopback by default; anything else needs authentication (D-19, R-8). Off by default.</summary>
 public sealed class ManagementOptions
 {
+    /// <summary>Starts the management listener. Without it no port is opened and no inspection buffer is kept.</summary>
+    public bool Enabled { get; set; }
+
     /// <summary>The listen URL.</summary>
     public string Url { get; set; } = "http://127.0.0.1:8081";
 
     /// <summary>Serve the read-only inspection tools over MCP (optional package, dev and test only).</summary>
     public bool McpEnabled { get; set; }
+
+    /// <summary>Also register the write tool group (<c>inject_event</c>); every call goes through the pipeline.</summary>
+    public bool WriteEnabled { get; set; }
+
+    /// <summary>Show <c>Payload</c> values in tool results (D-40). Off by default because events can carry production data.</summary>
+    public bool IncludePayloads { get; set; }
+
+    /// <summary>File holding the bearer token. Required when <see cref="Url"/> is not a loopback address.</summary>
+    public string? BearerTokenFile { get; set; }
+
+    /// <summary>Hard cap of entries per tool result.</summary>
+    public int MaxResults { get; set; } = 100;
+
+    /// <summary>Tool calls allowed per minute; further calls are refused.</summary>
+    public int RequestsPerMinute { get; set; } = 120;
+
+    /// <summary>Number of pipeline decisions kept in the ring buffer (only while <see cref="Enabled"/>).</summary>
+    public int DecisionBufferSize { get; set; } = 200;
 }

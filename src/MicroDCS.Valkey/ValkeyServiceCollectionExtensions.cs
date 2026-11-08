@@ -1,4 +1,5 @@
 using MicroDCS.Core.Hosting;
+using MicroDCS.Core.Inspection;
 using MicroDCS.Core.Transport;
 using MicroDCS.Valkey.Documents;
 using MicroDCS.Valkey.Sfc;
@@ -58,6 +59,7 @@ public static class ValkeyServiceCollectionExtensions
         services.TryAddSingleton<ValkeyStreams>();
         services.TryAddSingleton<ValkeyIndexMaintenance>();
         services.TryAddSingleton<ValkeyHealthCheck>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, ValkeyInspector>());
         services.TryAddSingleton<ValkeyPoller>();
         services.AddHostedService(static sp => sp.GetRequiredService<ValkeyPoller>());
 

@@ -20,6 +20,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+    <ProjectReference Include="../MicroDCS.Inspection/MicroDCS.Inspection.csproj" />
+    <ProjectReference Include="../MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <ProjectReference Include="../MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
     <ProjectReference Include="../MicroDCS.Generators/MicroDCS.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
@@ -28,6 +30,7 @@
     <PackageReference Include="CloudNative.CloudEvents.SystemTextJson" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>

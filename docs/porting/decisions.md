@@ -214,13 +214,15 @@ Background: [SFC core library, time model](research/sfc-core.md#time-model-and-t
 
 ## D-19 Inspection layer plus optional dev MCP server {#d-19}
 
-Status: proposal.
+Status: decided (2026-11-08, S11, first slice built; maintenance group follows in S12).
 
 Decision: in-process inspection services are the contract; REST and MCP are thin adapters on a separate management listener. MCP is an optional package, default off, read-only, loopback only, payloads redacted, with a separate write group. A separate maintenance group (cleanup, delete, repair) is MCP-only and never exposed over REST: dev-only project, environment guard, plan/apply, snapshot and restore.
 
 Consequences: first slice in S11, maintenance tools in S12; every stateful component ships its inspector afterwards (definition of done). MCP calls the services, not the REST API.
 
 Open: listener layout with Q-OPS-1 (S06), redaction policy (S06), snapshot retention and size defaults (S12). Configuration names are placeholders until Q-ARCH-3.
+
+Confirmed 2026-11-08 (S11): built as decided, with these refinements. The contract types (`IInspector`, `Sensitivity`, `Redaction`) stay in `MicroDCS.Core` because the pipeline and its inspectors live there; `MicroDCS.Inspection` holds the query service (`InspectionService`: result cap, redaction, rate limit, audit) and the management listener, `MicroDCS.Mcp` the adapter. The listener has its own small web host with `IManagementModule` as the extension point, so the framework core does not depend on ASP.NET. Flags: `Management:Enabled` (default off, opens no port and keeps no buffer), `McpEnabled`, `WriteEnabled`, `IncludePayloads`; combinations without `Enabled` fail at start. The REST adapter is not built in S11 (the listener serves health and MCP); it comes with the HTTP surface in S21. MCP tools are static methods registered with the generic `WithTools<T>(JsonSerializerOptions)` overload; this works in the AOT binary (Kestrel plus MCP, no trim warnings). [Findings](research/inspection-mcp.md#s11-implementation-findings-2026-11-08).
 
 Background: [inspection layer and MCP server](research/inspection-mcp.md).
 
@@ -493,7 +495,7 @@ Revised 2026-11-08 (S08): `ProcessorDescriptor` carries `ReplyPayloads` (descrip
 
 ## D-40 Inspection contracts and management listener {#d-40}
 
-Status: decided (2026-11-08, S06). Details for D-19 (which stays a proposal until S11 delivers the first slice). Answers the S06 part of Q-OPS-1.
+Status: decided (2026-11-08, S06). Details for D-19 (decided in S11). Answers the S06 part of Q-OPS-1.
 
 Decision: `IInspector` (name, `InspectAsync(InspectionQuery)` returning a capped page with cursor) is the contract; entries are `Kind`, `Key` and fields whose values carry a `Sensitivity` (`Public`, `Identifier`, `Payload`) set at the source. `Redaction.Apply` drops `Payload` values unless `include_payloads` is on, and adapters call it before output. Inspectors use fixed-size buffers and cost nothing when inspection is off. **One management listener** (Kestrel), loopback `127.0.0.1:8081` by default, serving `/health/live`, `/health/ready`, `/metrics`, the versioned REST API under `/api/v1` and, when the optional package is referenced and enabled, MCP under `/mcp`. Non-loopback binds need bearer authentication (R-8); Kubernetes uses the pod address with a NetworkPolicy and probes on the same port. Read, write and maintenance tool groups, plan/apply and snapshot design are as in D-19.
 

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS inspection: the query service over component inspectors and the management listener (health, extension point for REST and MCP adapters, D-19, D-40).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+  </ItemGroup>
+</Project>

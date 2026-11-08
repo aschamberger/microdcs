@@ -40,6 +40,10 @@ public sealed class DiagnosticTests
         Ids("[Processor(ProcessorBinding.Southbound)] public partial class P { [Incoming] public A On(A a) => a; }").ShouldBeEmpty();
 
     [Fact]
+    public void Unresolved_processor_argument_is_a_diagnostic_not_a_crash() =>
+        Ids("[Processor(NoSuchBinding.Southbound)] public partial class P { [Incoming] public A On(A a) => a; }").ShouldContain("MDCS012");
+
+    [Fact]
     public void Processor_must_be_partial() =>
         Ids("[Processor(ProcessorBinding.Southbound)] public class P { [Incoming] public A On(A a) => a; }").ShouldBe(["MDCS001"]);
 
