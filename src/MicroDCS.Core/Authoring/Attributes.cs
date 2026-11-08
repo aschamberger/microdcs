@@ -25,11 +25,11 @@ public sealed class CloudEventTypeAttribute : Attribute
 
 /// <summary>A payload property that is not part of the data but travels as a CloudEvent extension attribute (E-4) and is restored on the response.</summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
-public sealed class CarriedAsAttributeAttribute : Attribute
+public sealed class CarriedAsAttribute : Attribute
 {
     /// <summary>Creates the attribute.</summary>
     /// <param name="name">The attribute name; lowercase letters, digits and hyphens.</param>
-    public CarriedAsAttributeAttribute(string name) => Name = name;
+    public CarriedAsAttribute(string name) => Name = name;
 
     /// <summary>The attribute name.</summary>
     public string Name { get; }
