@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S06** (S04 and S05 are done, M0 is complete).
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S07** (design: data layer and SFC rules; S06 is done).
 
 ## How to use these files
 
@@ -93,12 +93,17 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-29](decisions.md#d-29) | decided | No extra size limit on `custommetadata` (carried over from Python) |
 | [D-30](decisions.md#d-30) | decided | Comma-separated list values in configuration, if lists stay strings (carried over from Python) |
 | [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
-
 | [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
 | [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP via AMQPNetLite.Core (clean), Zenoh library open (Zenoh-CS `Get` crash) |
 | [D-34](decisions.md#d-34) | decided | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
+| [D-35](decisions.md#d-35) | decided | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
+| [D-36](decisions.md#d-36) | decided | Own `EventEnvelope`; CloudEvents SDK only behind `IEnvelopeCodec`; `IPayloadDescriptor` with Json, OpcUaJson, Binary codecs |
+| [D-37](decisions.md#d-37) | decided | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model, shutdown phases |
+| [D-38](decisions.md#d-38) | decided | Logical address with one segment rule for all transports, scope check, level-0 rejected by default, state-topic port |
+| [D-39](decisions.md#d-39) | decided | Generic Host, `MicroDcs` options section, `APP_` + `__` environment names, binding sections, instance roles |
+| [D-40](decisions.md#d-40) | decided | Inspection contracts with sensitivity-based redaction, one management listener on loopback |
 
-Next free id: **D-35**.
+Next free id: **D-41**.
 
 ## Open questions
 
@@ -109,15 +114,15 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-STRAT-1~~ Migration style | → D-1 | — |
 | ~~Q-STRAT-2~~ Python's future | → D-1, D-5, D-16: archived on `python-archive`, security fixes only | — |
 | ~~Q-STRAT-3~~ Port goal | → D-3 | — |
-| Q-STRAT-4 Public API | Goal decided: a polished authoring experience (D-25). Open: the concrete .NET shape of `@incoming`/`@outgoing` handlers and dataclasses (attributes plus source generators, analyzers) | S06 |
+| ~~Q-STRAT-4~~ Public API | → D-35: attributes plus source generator, explicit registration underneath. Generator and analyzers are built in S08 | S08 |
 | Q-STRAT-5 Packaging and release | NuGet package split (core, MQTT, NATS, AMQP, Zenoh, OPC UA models, SFC), semver, `dotnet new` templates replacing the Python scaffolder. Publishing needs a released upstream CloudEvents package (D-14). Licence: MIT (D-24), OPC UA dependency fine (D-21) | S26 |
 | ~~Q-ARCH-1~~ Native AOT | → D-33: core stack AOT-clean incl. AMQPNetLite.Core, Zenoh library open until S25 | — |
-| ~~Q-ARCH-2~~ Serialization | → D-34 for job models: OPC UA JSON verbose through `JsonEncoder`/`JsonDecoder`. Remaining: envelope and other payloads (System.Text.Json source generation) | S06 |
-| Q-ARCH-3 Hosting and configuration | `Microsoft.Extensions.Hosting` as replacement for `MicroDCS`/`SystemEventTaskGroup`/`AdditionalTask`; keep `APP_*` names or move to `IConfiguration` conventions (`APP__MQTT__HOSTNAME`) | S06 |
+| ~~Q-ARCH-2~~ Serialization | → D-34 for job models (OPC UA JSON verbose), D-36 for the envelope and other payloads (System.Text.Json source generation behind `IPayloadDescriptor`) | — |
+| ~~Q-ARCH-3~~ Hosting and configuration | → D-39: Generic Host, `MicroDcs` section, `APP_` prefix with `__`, binding sections. Wiring in S08 | — |
 | ~~Q-ARCH-4~~ State machine | → D-34: transition table generated from the V2 NodeSet, own pure transition function (S16); the stack's engine is internal and not persistence-ready | — |
 | ~~Q-ARCH-5~~ OPC UA server | → D-4 | — |
-| Q-ARCH-6 Abstraction fit | Extension points exist, the transport-neutral pipeline does not. Decide A-1 to A-8 ([abstraction mapping](research/abstraction.md)) | S06 |
-| Q-ARCH-7 Delivery semantics | Which transports need the Valkey dedupe claim (everything with redelivery), and what the Zenoh command path relies on (SFC re-dispatch, D-9) | S06 |
+| ~~Q-ARCH-6~~ Abstraction fit | → D-37, D-38 (A-1 to A-8 decided, see [core contracts](research/core-contracts.md)) | — |
+| ~~Q-ARCH-7~~ Delivery semantics | → D-37: dedupe claim for `AtLeastOnce` profiles only; commands over at-most-once paths rely on SFC re-dispatch with `mdcsactionkey` (D-9). Zenoh mapping stays with S25 | — |
 | Q-ARCH-8 SFC multi-instance model | How the CAS scripts relate to the pure transition; scope discovery, retry limit, stream trimming, key identity ([SFC core](research/sfc-core.md)) | S07 |
 | Q-ARCH-9 Deployment modes | Keep the processor/publisher split and single-container mode? Effect of the in-process HTTP surface | S18 |
 | ~~Q-ARCH-10~~ Southbound | → D-11. Remaining: CloudEvents-over-Zenoh mapping (attachment vs. structured), Zenoh query/reply for commands, router vs. peer mode | S25 |
@@ -125,7 +130,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-DATA-2~~ Client library | → D-7. Remaining: no blocking reads (poll, poll plus pub/sub nudge, or raw `BLOCK` on a dedicated multiplexer); consumer groups, `XAUTOCLAIM`, Lua `EVAL`, reconnect behaviour | S04 measured (nudge plus slow fallback poll recommended, [library spike](research/library-spike.md)), S07 decides |
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
 | ~~Q-DATA-4~~ High availability | → D-12. Remaining: every write path idempotent under unknown outcome (R-4) | S09 |
-| Q-OPS-1 HTTP surface | Liveness/readiness, metrics, job state query API (R-19), OpenAPI; listener layout shared with inspection and MCP (D-19) | S06 layout, S21 |
+| Q-OPS-1 HTTP surface | Listener layout decided in D-40 (one management listener, loopback default, `/health`, `/metrics`, `/api/v1`, `/mcp`). Open: job state query API and OpenAPI (R-19) | S21 |
 | Q-OPS-2 Container and Kubernetes | Chiseled/distroless AOT image, manifest, Zenoh native library in the image, hardening from `docs/security.md` | S22 |
 | Q-OPS-3 Security | Authn/z per transport (NATS accounts/NKeys, AMQP SASL, Zenoh ACLs), the level-0 scope rule (R-6) | S10, S22 |
 | Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
@@ -152,7 +157,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | **M1 Foundation** | | | |
 | S04 | Spike: library stack, AOT and Valkey behaviour | S02 | done |
 | S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | done |
-| S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | open |
+| S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | done |
 | S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | open |
 | S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | open |
 | S09 | Valkey layer | S07 (parallel to S08) | open |
@@ -175,7 +180,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S24 | AMQP transport | S14 | open |
 | S25 | Zenoh transport and CloudEvents-over-Zenoh mapping | S14 | open |
 | S26 | Packaging, NuGet release, `dotnet new` templates | released upstream CloudEvents package | open |
-| Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S06, S08, S26 (D-14); S02: open, 2.9.0 latest |
+| Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S08, S26 (D-14); S06 (2026-11-08): PR #381 still open, 2.9.0 latest |
 
 Session ids were renumbered on 2026-11-07; the mapping from the old ids is in the [log](log.md).
 
@@ -186,6 +191,7 @@ Session ids were renumbered on 2026-11-07; the mapping from the old ids is in th
 * **Start:** read this file, the own block in `sessions.md`, the last `log.md` entry, and the research files and decisions the block links to. `CLAUDE.md` and the path rules load by themselves. Do not re-research settled decisions; if one is wrong, record the change as a revision in `decisions.md` instead of silently deviating.
 * **Definition of done (code sessions):** build with zero warnings (warnings as errors), unit tests green, AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects, compose integration tests green for touched transports, public API has XML docs, no secrets or payloads in logs; once S03 exists the scanners are green (Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code; waivers only with reason and expiry, D-20); once S11 exists every new stateful component ships its read-only inspector (D-19).
 * **End (mandatory, last task of every session):** append a `log.md` entry (with "Post-merge checks" that the next session verifies; no follow-up PR), set the session's status in the table above, update the affected decisions and open questions, and write the "Next session pickup" so that a fresh session needs nothing from chat history.
+* **Python cross-check (design and port sessions):** before replacing Python behaviour, read the matching sources and tests on `python-archive` and keep a parity list (behaviour, file, disposition `kept`/`changed`/`dropped`/`open`) in the session's research file. No row stays `open` at the end of the session; the plan documents and memory are not a substitute for reading the code. The session blocks name the files, and `/session-start` and `/session-end` check it.
 * **Decisions:** new ones take the next free id (above) and get a full entry in `decisions.md` plus a row here. A revision keeps the id and adds a dated "Revised" line.
 * **Keep the plan small:** log entries stay short (about 15 lines); findings and analysis go to `research/` or the regular docs.
 

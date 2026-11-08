@@ -18,6 +18,10 @@ Session: $ARGUMENTS (if empty, take the first session with status `open` whose d
 
 Do not re-research settled decisions. If a decision looks wrong, say so and record a dated revision instead of deviating silently.
 
+### Python cross-check (mandatory for design and port sessions)
+
+The Python code on `python-archive` holds behaviour that no document records. Before designing or writing anything that replaces Python behaviour, read the matching sources (`git show python-archive:<path>`, tests under `tests/` there are the specification) and keep a **Python parity list** in the session's research file or log entry: one row per Python behaviour, feature or edge case found, with the file and function, and the disposition (`kept`, `changed` with the decision id, `dropped` with the reason). The session's exit check includes that no row is open. Do not rely on the plan documents or memory for what Python does. The session block in `sessions.md` names the files to read; add more when you find them.
+
 ## 2. Check prerequisites
 
 * Dependencies of the session are `done` (or merged far enough) in the session table.

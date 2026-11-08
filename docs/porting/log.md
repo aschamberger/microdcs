@@ -140,3 +140,18 @@ Changed in the plan: index (status, OPC UA row, Q-ARCH-2, Q-ARCH-4, ISA-95 row, 
 Open questions: none new. Maintainer action: ask upstream (UA-.NETStandard) whether the neutral job model, conversions and rules can be public, and whether the Work Master NodeSet2 is welcome. Not covered: binary/XML encodings, arm64, line-by-line rules comparison (S16), V1 to V2 field conversions, schema validation of incoming payloads.
 Post-merge checks: `ci`, `security` and `docs` green on `main` (docs-only change).
 Next session pickup: S06 (design: core contracts, depends on S04, done). Run `/session-start S06`. Start from `main` after the S05 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. S06 records OPC UA JSON verbose as the job order payload in the envelope contract (D-34). The upstream question is the maintainer's; it does not block S06.
+
+## S06 Design: core contracts (2026-11-08, branch `s06-core-contracts`)
+
+Status: done. Previous session post-merge: verified (`ci`, `security`, `docs` green on `main` for #48; nine required checks set). CloudEvents checkpoint (D-14): PR #381 still open, 2.9.0 latest.
+Done:
+
+* Python cross-check made part of the workflow (maintainer request): `/session-start` and `/session-end` and the working rules require a parity list; S06 has about 75 rows, none open ([core contracts](research/core-contracts.md)).
+* Authoring API drafted as three example processors and confirmed at a checkpoint with the maintainer (D-35); `[Outgoing]` kept after reading `sfc_engine.py` (the SFC dispatches push commands by type id).
+* Compiling stubs in `MicroDCS.Core` (`Authoring`, `Messaging`, `Transport`, `Inspection`, `Hosting`), 14 unit tests for the pure rules; build, format, `dotnet test`, locked restore and AOT publish with smoke run are clean.
+Findings: hidden payload fields (`_x` travel as CloudEvent attributes), the misnamed pre/post hooks, ack of duplicates, singleton `post_start` lease, five-phase shutdown and the SFC observer hooks were in no plan document; all have a disposition. `TransactionDedupeDAO` and `CounterDAO` are unused in Python and dropped.
+Decisions: D-35 authoring API, D-36 envelope and payload codec seam, D-37 pipeline, transport contract, delivery and error model, D-38 address model, scope rule (level-0 rejected by default, R-6), state-topic port, D-39 hosting and configuration (`APP_` + `__`), D-40 inspection contracts and management listener.
+Changed in the plan: index (decisions, Q-STRAT-4, Q-ARCH-2/3/6/7, Q-OPS-1, session table, working rule), sessions (S06 reading list, S08 block), decisions, research/core-contracts.md, zensical.toml nav, both session skills.
+Open questions: none new. Not designed here on purpose: generator internals and the diagnostic list (S08), the publisher (S18), per-transport renderers (S13, S14), the OPC UA payload codec (S16).
+Post-merge checks: `ci`, `security` and `docs` green on `main` (the docs build covers the new nav entry and the table fix in the decisions summary).
+Next session pickup: S07 (design: data layer and SFC rules, depends on S04 and S06, both done). Run `/session-start S07`. Start from `main` after the S06 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. Read the Python cross-check rule first: S07 needs a parity list for `redis.py` (key schema, Lua scripts, DAOs) and `sfc_engine.py` before any decision; S06's list covers only dedupe, the post-start lock and the push-command dispatch. `IDedupeStore` and `IStateTopicPort` (D-37, D-38) are the contracts the Valkey layer (S09) implements. S08 and S07 can run in parallel.

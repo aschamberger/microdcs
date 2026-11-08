@@ -419,3 +419,70 @@ Decision:
 Consequences: S16 builds the neutral model, conversions, codec, state machine and the NodeSet2 extension project on these packages; the `Directory.Packages.props` entries (ISA95, Core.Schema, SourceGeneration 2.0.1) arrive with S16. Job order payloads are OPC UA JSON verbose (S06 records this in the envelope contract). Open for S16: V1/V2 field mapping where the models diverge (V1 single-string description, `Loaded` and `Error` states), the persisted job document format (S07), and the wire names against `schemas/machinery_jobs.schema.json` (D-2 allows a break).
 
 Not chosen: System.Text.Json on the generated types (unusable output); hand-written POCOs mirroring the spec (loses spec-conformant types and schemas); a hand-coded transition table (the spec data is machine readable and the Python port already generated it); using the server package's engine (internal, entangled with locks and subscriptions, no persistence); a `[DataType]` attribute class for the Work Master extension (works, but not publishable as an OPC UA model); V2 only (V1 is cheap with the neutral model).
+
+## D-35 Processor authoring API: attributes, a source generator, explicit registration underneath {#d-35}
+
+Status: decided (2026-11-08, S06; checkpoint with the maintainer on the example processors). Answers Q-STRAT-4 and refines D-25.
+
+Decision: a processor is a `partial` class marked `[Processor(binding, Id = ...)]` with constructor injection and no base class. Handlers are methods: `[Incoming]` (payload type is the first parameter), `[Outgoing(typeof(T))]` (type-id keyed payload factory, P-13), `[OnResponse]`, `[OnExpired]`, `[Fallback]`, and lifecycle methods `[OnInitialize]`, `[OnStarted(Singleton = true)]`, `[OnShutdown]`. Payloads are records with `[CloudEventType(id, Schema, Codec)]`; properties marked `[CarriedAs(name)]` travel as CloudEvent attributes and are restored on the response (E-4). Parameters are bound at build time: the payload, `EventContext`, `[Scope]`, `[SubjectPart(i)]`, `CancellationToken`, services. Return values: a payload, enumerables, `Replies`, `Task`/`ValueTask` of those, `void`, `null`. A source generator (S08) emits the `ProcessorDescriptor` and the payload descriptors; building the descriptor by hand stays possible. Analyzers report wrong signatures with `MDCS0xx` diagnostics (class not partial, no payload parameter, duplicate type id, unsupported parameter or return type, payload without `[CloudEventType]`).
+
+* `[Incoming]` and `[Outgoing]` name the direction; the message intent (data, event, command, meta) is a separate dimension. `[Command]` was rejected because incoming handlers also receive commands.
+* `[Outgoing]` stays because the SFC dispatches push commands by type id and free-form parameters (`sfc_engine.py`), without a compile-time payload type. The factory receives a `CommandRequest` (scope, job, action key, command id, correlation id, parameters) and returns the payload; `IOutgoingCommands.DispatchAsync(typeId, request)` replaces the engine's processor and payload-class lookup. Application-initiated events use `IEventPublisher`. `trigger_outgoing_event` is dropped.
+* The Python pre/post callback hooks become `IProcessorFilter`, registered explicitly. The SFC hooks (`register_*_handler`) become `IActionSink`. Python's `response()`/`takeover` is replaced by constructors/`with` and the pipeline's copy of carried attributes.
+* The test harness (`MicroDCS.Testing`, S08) drives a processor without broker or Valkey.
+
+Consequences: stubs in `MicroDCS.Core/Authoring`; the generator and analyzers are S08. Python parity rows P-1 to P-19 in [core contracts](research/core-contracts.md). Open for S08: the exact `MDCS` diagnostic list and the generator's incremental design.
+
+## D-36 Envelope and payload codec seam {#d-36}
+
+Status: decided (2026-11-08, S06). Applies D-14, D-34.
+
+Decision: `EventEnvelope` is a plain record (typed attributes, `ReadOnlyMemory<byte>` data, string extensions, `EnvelopeError`). The CloudEvents SDK is used only behind `IEnvelopeCodec` (carrier of string attributes + content type + data, binary content mode) and later structured mode; each transport builds its carrier. The codec owns attribute names, parsing, the collision guard (extensions named like standard attributes are dropped, E-3) and the `mdcserrorcontext` text form (`k=v,k=v`, D-30). Payloads are described by `IPayloadDescriptor` (type id, schema, content type, decode, encode with carried attributes). Codecs: `Json` (System.Text.Json with generated `JsonTypeInfo`), `OpcUaJson` verbose for job models (D-34), `Binary`. MessagePack is gone. Event ids are free strings (no UUID requirement, A-6). Decode errors name fields, never values (`PayloadException`).
+
+Consequences: `IEnvelopeCodec` and `IPayloadDescriptor` in `MicroDCS.Core/Messaging`; implementations in S08 (codec on upstream CloudEvents) and S16 (OPC UA codec). Wire attribute names may differ from Python (D-2).
+
+## D-37 Pipeline, transport contract, delivery semantics and error model {#d-37}
+
+Status: decided (2026-11-08, S06). Answers A-1, A-2, A-5, A-6, Q-ARCH-7.
+
+Decision:
+
+* **One pipeline** (A-1) owns: claim, expiry-timer cancel, scope check, dispatch, reply publishing, expiry timers, mark done, ack outcome, the single `ActivitySource` (W3C context from `traceparent`/`tracestate`), and the inspection ring buffer. Order as Python (T-1): claim (waiting for a lease holder), cancel expiry timer, scope check, dispatch, publish replies, `mark_done`, then ack.
+* **A transport** (`ITransport`) supplies: connection and reconnect, subscriptions from `IAddressRenderer`, decoding to `InboundMessage` (binding id, request or response kind, envelope, parsed address, `ReplyAddress`, redelivered flag), `PublishAsync(OutboundMessage)`, and a declared `DeliveryProfile`. It calls `IInboundHandler.HandleAsync` and acts on the `DeliveryOutcome`. Metadata is typed (`ReplyAddress`, `Retain`, parsed address); no `dict[str, Any]` and no transport name reaches processors (A-2).
+* **Dispatch by subscription:** a subscription belongs to one binding, the transport reports it, the pipeline calls that binding's processor only (P-16).
+* **Delivery (Q-ARCH-7):** the dedupe claim (`IDedupeStore`) applies when the profile is `AtLeastOnce` (MQTT QoS 1, JetStream, AMQP); not for `AtMostOnce` (Zenoh, NATS core, MQTT QoS 0). Commands over an at-most-once path rely on SFC re-dispatch with the stable `mdcsactionkey` (D-9) and equipment that deduplicates on it. Duplicates are acknowledged.
+* **Request/response (A-6):** the model carries `correlationid`, `causationid`, `mdcsactionkey`; the reply address is a transport-native `ReplyAddress`, per instance (D-9). The local expiry timer (key: causation id or id) lives in the pipeline, is cancelled by the response, and calls `[OnExpired]`.
+* **Error model:** `DeliveryOutcome.Ack` (processed or duplicate), `Drop` (permanent: undecodable, unknown type without fallback, scope rejected; acknowledged so it is not redelivered; logged with ids and sizes, counted, visible in inspection; a request with a reply address gets an error event with `mdcserrorkind`), `Fault` (the handler threw: no `mark_done`, no ack; the lease lapses and the message is redelivered). A fault stops the host unless the transport can nack and redeliver (D-27; MQTT cannot redeliver in-session, so the process ends and the session redelivers on reconnect).
+* **Publishing:** bounded queue per binding (size from configuration, capped by the maximum); a full queue throws `OutboundQueueFullException` (D-28). Publishing waits while the transport reconnects (until shutdown); readiness is false meanwhile.
+* **Shutdown contract:** (1) `StopReceivingAsync` on every transport, (2) in-flight messages finish (not cancelled), (3) outgoing queues drain, (4) transports stop, (5) expiry timers are awaited until the grace period ends, then cancelled, (6) processors' `[OnShutdown]`, (7) shared infrastructure closes. The grace period is the host shutdown timeout.
+
+Consequences: contracts in `MicroDCS.Core/Transport`. S08 builds the pipeline against an in-memory transport; S10 completes it with the Valkey dedupe store; S13 and S14 implement `ITransport`. Open: dedupe lease versus slowest handler (configuration, validated at start).
+
+## D-38 Address model, scope rule, state-topic port {#d-38}
+
+Status: decided (2026-11-08, S06). Answers A-3, A-4, A-7, R-6.
+
+Decision:
+
+* **Logical address:** `Prefix`, `ScopePath` (segments), optional `Discriminator`, `Intent`. One renderer per transport (MQTT and Zenoh `/`, NATS `.`, AMQP broker address). Subscriptions are rendered per scope depth from 0 to `ScopeLevels` as in Python, with the shared group rendered natively.
+* **Segment rule for all transports:** a segment is non-empty and uses only `A-Z a-z 0-9 _ -`. This excludes every separator and wildcard of the four protocols, so no escaping exists. The scope path comes from the scope part of the subject (`scope[/resource]`, scope dotted); the resource part never forms address levels (T-24). An invalid scope segment makes the message unpublishable or, on receipt, rejected.
+* **Scope check (A-7):** `ScopeCheck.Enforce` (default) compares the subject's scope path with the address scope path; mismatch is a drop. **Level-0 rule (R-6):** a subject on an address without scope path is rejected by default (`Level0Subjects.Reject`); a binding can declare `Accept` and then relies on transport ACLs, documented per transport (S22). This is stricter than Python, which accepted (D-8 allows it).
+* **State-topic port (A-4):** `IStateTopicPort.PublishAsync/DeleteAsync` implemented natively (MQTT retained with expiry and zero-byte delete, NATS KV or last-per-subject stream, Zenoh storage). AMQP reports `StateTopics = false`. The job order publisher (S18) depends on the port.
+
+Consequences: `LogicalAddress`, `AddressPattern`, `IAddressRenderer`, `ScopePolicy`, `IStateTopicPort` in `MicroDCS.Core/Transport`, with unit tests for the pure rules. Open for S13: the exact MQTT renderer including `$share/`.
+
+## D-39 Hosting and configuration {#d-39}
+
+Status: decided (2026-11-08, S06). Answers Q-ARCH-3.
+
+Decision: `Microsoft.Extensions.Hosting` (Generic Host) replaces `MicroDCS`, `SystemEventTaskGroup` and `AdditionalTask`; the host shutdown timeout is the grace period. Registration is explicit: `AddMicroDcs()`, `AddProcessor<T>()`, `AddMqttTransport()` and so on, with the generated descriptors. Configuration binds the `MicroDcs` section with source-generated binding (AOT); environment variables use the prefix `APP_` and `__` as section separator (`APP_MicroDcs__Processing__...`), a deliberate break from `APP_SECTION_FIELD` (D-2). Lists stay comma separated strings (D-30). Bindings are `MicroDcs:Bindings:{id}` sections (prefix, scope levels, discriminator, reply base, shared group, queue size, type filter, scope policy); a processor names its id in `[Processor(Id = ...)]`. Instance roles are flags (Processor, Publisher; default both); the instance id is `POD_ID` or generated. Options are validated at start and every error ends the process (D-27): missing prefix, duplicate prefix + discriminator, unknown transport, lease shorter than handler budget, missing files. Hosted services are the lifecycle: transports, publishers and the expiry tracker are `BackgroundService` or `IHostedService`; the `isinstance(MQTTPublisher)` role check disappears. Payload logging has no switch (CLAUDE.md).
+
+Consequences: `MicroDcsOptions`, `BindingOptions`, `ManagementOptions`, `InstanceRoles` in `MicroDCS.Core/Hosting`; the host wiring is S08. Q-ARCH-9 (deployment split) stays with S18.
+
+## D-40 Inspection contracts and management listener {#d-40}
+
+Status: decided (2026-11-08, S06). Details for D-19 (which stays a proposal until S11 delivers the first slice). Answers the S06 part of Q-OPS-1.
+
+Decision: `IInspector` (name, `InspectAsync(InspectionQuery)` returning a capped page with cursor) is the contract; entries are `Kind`, `Key` and fields whose values carry a `Sensitivity` (`Public`, `Identifier`, `Payload`) set at the source. `Redaction.Apply` drops `Payload` values unless `include_payloads` is on, and adapters call it before output. Inspectors use fixed-size buffers and cost nothing when inspection is off. **One management listener** (Kestrel), loopback `127.0.0.1:8081` by default, serving `/health/live`, `/health/ready`, `/metrics`, the versioned REST API under `/api/v1` and, when the optional package is referenced and enabled, MCP under `/mcp`. Non-loopback binds need bearer authentication (R-8); Kubernetes uses the pod address with a NetworkPolicy and probes on the same port. Read, write and maintenance tool groups, plan/apply and snapshot design are as in D-19.
+
+Consequences: `MicroDCS.Core/Inspection` holds the abstractions; S11 builds the adapters and the first inspectors. Open: probes on a separate port if a deployment needs them; S21 refines the REST contract.
