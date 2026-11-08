@@ -27,11 +27,12 @@ public sealed partial class ExpiringProcessor(ILog log)
 }
 
 [Processor(ProcessorBinding.Southbound, Id = "chatty")]
-public sealed partial class ChattyResponseProcessor
+public sealed partial class ChattyResponseProcessor(ILog log)
 {
     [OnResponse]
-    public static IEnumerable<ByeAck> OnAck(ByeAck ack)
+    public IEnumerable<ByeAck> OnAck(ByeAck ack)
     {
+        log.Add("chatty:" + ack.Name);
         yield return new ByeAck(ack.Name + "!");
     }
 }
