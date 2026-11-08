@@ -78,6 +78,7 @@ The envelope travels in binary content mode: attributes are NATS headers under t
 * Requests are delivered by JetStream and acknowledged after the pipeline finished them (dedupe `mark done` first). A crash in between means redelivery and the dedupe claim answers the duplicate.
 * A message that cannot be decoded, or whose subject has an invalid scope segment, is terminated, counted and logged. A duplicate is acknowledged.
 * A handler fault sends a negative acknowledgement and the server redelivers after `NakDelay`. NATS can redeliver inside the session, so the host keeps running ([D-37](porting/decisions.md#d-37)). After `MaxDeliver` failed deliveries the message is terminated, logged and counted (`microdcs.nats.poisoned`). Known limit: the redelivery waits until the dedupe lease of the failed attempt ends (30 s by default), finding L-7 in the research file.
+* After a connection loss a message that the server handed to the pull request of the lost connection is redelivered only after `AckWait`, so recovery can take up to that long.
 * Responses are plain messages and are not stored. A response that arrives while the instance is gone is lost; the SFC re-dispatches the command ([D-9](porting/decisions.md#d-9)).
 * Publishing to a stream waits for the server's acknowledgement, and waits and retries while the connection is down.
 * `Retain` on an event is ignored with a warning (NATS has no per-message retain); use state topics.

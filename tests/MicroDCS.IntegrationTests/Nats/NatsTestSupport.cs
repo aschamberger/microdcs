@@ -259,6 +259,9 @@ internal sealed class NatsTestHost : IAsyncDisposable
             ["MicroDcs:Nats:TlsCaFile"] = "/nonexistent/ca.crt",
             ["MicroDcs:Nats:ReconnectMinDelay"] = "00:00:00.200",
             ["MicroDcs:Nats:NakDelay"] = "00:00:00.200",
+
+            // A message that the server hands to the pull request of a lost connection is redelivered after AckWait; keep it short so a reconnect test recovers quickly.
+            ["MicroDcs:Nats:AckWait"] = "00:00:02",
             ["MicroDcs:Nats:StateBucket"] = "it-state-" + prefix,
         };
         if (login is { } l)
