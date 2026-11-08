@@ -110,9 +110,7 @@ public sealed class DocumentTests
         var dao = new JobOrderDao(env.Context);
         (await dao.SaveAsync("j", "s", "v1", 0, "Create", cancellationToken: ct)).Written.ShouldBeTrue();
 
-        // Close every client connection (including ours) from the server side.
-        var server = env.Multiplexer.GetServers()[0];
-        await server.ExecuteAsync("CLIENT", "KILL", "TYPE", "normal", "SKIPME", "no");
+        await env.KillOwnConnectionsAsync();
 
         (await dao.SaveAsync("j", "s", "v2", 0, "Update", cancellationToken: ct)).Written.ShouldBeTrue();
         var stored = (await dao.GetAsync("j", ct)).ShouldNotBeNull();
