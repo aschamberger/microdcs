@@ -1,5 +1,6 @@
 using MicroDCS.Core.Hosting;
 using MicroDCS.Inspection;
+using MicroDCS.Maintenance;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,9 +25,19 @@ internal sealed class McpManagementModule : IManagementModule
             management.AddSingleton(application.GetRequiredService<EventInjector>());
             builder.WithTools<WriteTools>(McpJsonContext.ToolOptions);
         }
+
+        if (MaintenanceEnabled(application))
+        {
+            // Resolved here so that a missing registration ends the start (D-27).
+            management.AddSingleton(application.GetRequiredService<IMaintenanceOperations>());
+            builder.WithTools<MaintenanceTools>(McpJsonContext.ToolOptions);
+        }
     }
 
     public void Map(IEndpointRouteBuilder endpoints) => endpoints.MapMcp("/mcp");
+
+    private static bool MaintenanceEnabled(IServiceProvider application) =>
+        application.GetService<IOptions<MaintenanceOptions>>()?.Value.Enabled == true;
 }
 
 /// <summary>Registration of the MCP adapter (explicit, D-39). Dev and test applications only.</summary>

@@ -13,7 +13,7 @@ public class KeySchemaTests
             _keys.CloudEventDedupe("s", "i"), _keys.PostStartLock("c"), _keys.JobOrder("j"), _keys.JobOrderList("sc"),
             _keys.JobResponse("r"), _keys.JobResponseList("sc"), _keys.JobResponseByOrder("j"),
             _keys.JobResponseByState("sc", "Ended_Completed"), _keys.WorkMaster("w"), _keys.WorkMasterList("sc"),
-            _keys.Reference("equipment", "sc"), _keys.JobAcceptance("sc"), _keys.Scopes(), _keys.Changes("sc"),
+            _keys.Reference("equipment", "sc"), _keys.JobAcceptance("sc"), _keys.Scopes(), _keys.EnvironmentMarker(), _keys.Changes("sc"),
             _keys.PublishSequence("sc"), _keys.PublisherCursors(), _keys.SfcState("j"), _keys.SfcWork("sc"),
             _keys.SfcDead("sc"), _keys.SfcActive("sc"), _keys.SfcDue("sc"), _keys.SfcHeartbeat(), _keys.SfcRecipe("h"),
             _keys.Nudge("sfc"),
@@ -31,6 +31,7 @@ public class KeySchemaTests
         _keys.Reference("equipment", "line1").ShouldBe("mdcs:ref:equipment:line1");
         _keys.SfcWork("line1").ShouldBe("mdcs:sfc:work:line1");
         _keys.Scopes().ShouldBe("mdcs:scopes");
+        _keys.EnvironmentMarker().ShouldBe("mdcs:env");
     }
 
     [Fact]

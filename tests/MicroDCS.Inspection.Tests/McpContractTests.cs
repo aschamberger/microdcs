@@ -1,5 +1,9 @@
+using MicroDCS.Maintenance;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using NSubstitute;
 
 namespace MicroDCS.Inspection.Tests;
 
@@ -104,5 +108,57 @@ public sealed class McpContractTests
         await using var app = await TestApp.StartAsync(new() { ["MicroDcs:Management:Enabled"] = "false", ["MicroDcs:Management:McpEnabled"] = "false" }, ct);
 
         app.McpEndpoint.ShouldBeNull();
+    }
+
+    private static Task<TestApp> StartWithMaintenanceAsync(IMaintenanceOperations operations, CancellationToken ct) =>
+        TestApp.StartAsync([], ct, services =>
+        {
+            services.AddSingleton(operations);
+            services.AddSingleton<IOptions<MaintenanceOptions>>(Options.Create(new MaintenanceOptions { Enabled = true }));
+        });
+
+    [Fact]
+    public async Task MaintenanceToolsAreOffUnlessEnabled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = await TestApp.StartAsync([], ct);
+        await using var client = await ConnectAsync(app, ct);
+
+        (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ShouldNotContain(static n => n.StartsWith("maint_", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MaintenanceToolsAppearWhenEnabledAndPlansShowTheTokenAndWarnings()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var operations = Substitute.For<IMaintenanceOperations>();
+        operations.PlanPurgeScopeAsync("mcp", "plant.a", false, Arg.Any<CancellationToken>()).Returns(new MaintenancePlan(
+            "tok123", "maint_purge_scope", "scope=plant.a", "Removes everything.",
+            [new PlanItem("joborder", "joborder:o1", "delete", "hash, 5 fields, version 1")], ["Bypasses the state machine."], "dig", DateTimeOffset.UnixEpoch));
+        await using var app = await StartWithMaintenanceAsync(operations, ct);
+        await using var client = await ConnectAsync(app, ct);
+
+        var names = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).Where(static n => n.StartsWith("maint_", StringComparison.Ordinal)).ToList();
+        var text = Text(await client.CallToolAsync("maint_purge_scope_plan", new Dictionary<string, object?> { ["scope"] = "plant.a" }, cancellationToken: ct));
+
+        names.ShouldBe(["maint_apply", "maint_dedupe_release_plan", "maint_purge_scope_plan", "maint_restore_plan", "maint_snapshots_list"], ignoreOrder: true);
+        text.ShouldContain("tok123");
+        text.ShouldContain("WARNING: Bypasses the state machine.");
+        text.ShouldContain("Nothing has changed yet");
+    }
+
+    [Fact]
+    public async Task ARefusedMaintenanceCallIsAToolErrorWithTheReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var operations = Substitute.For<IMaintenanceOperations>();
+        operations.ApplyAsync("mcp", "bad", Arg.Any<CancellationToken>()).Returns<MaintenanceResult>(_ => throw new MaintenanceRefusedException("Unknown or already used plan token."));
+        await using var app = await StartWithMaintenanceAsync(operations, ct);
+        await using var client = await ConnectAsync(app, ct);
+
+        var result = await client.CallToolAsync("maint_apply", new Dictionary<string, object?> { ["token"] = "bad" }, cancellationToken: ct);
+
+        result.IsError.ShouldBe(true);
+        Text(result).ShouldContain("already used");
     }
 }

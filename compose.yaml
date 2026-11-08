@@ -60,10 +60,27 @@ services:
       APP_MicroDcs__Management__WriteEnabled: "true"
       APP_MicroDcs__Management__Url: http://0.0.0.0:8081
       APP_MicroDcs__Management__BearerTokenFile: /run/secrets/mcp_token
+      # Maintenance tools (D-45): Development only, second guard through the marker key written by `valkey-marker`.
+      DOTNET_ENVIRONMENT: Development
+      APP_MicroDcs__Maintenance__Enabled: "true"
+      APP_MicroDcs__Maintenance__RequireEnvironmentMarker: "true"
+      APP_MicroDcs__Maintenance__SnapshotDirectory: /tmp/microdcs-snapshots
     ports:
       - "127.0.0.1:8081:8081"
     secrets:
       - mcp_token
+    depends_on:
+      valkey:
+        condition: service_healthy
+      valkey-marker:
+        condition: service_completed_successfully
+
+  # Marks this Valkey as a dev instance for the maintenance guard (D-45): `{prefix}:env` holds the environment name.
+  valkey-marker:
+    profiles: ["app"]
+    image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+    entrypoint: ["valkey-cli", "-h", "valkey", "SET", "microdcs:env", "Development"]
+    restart: "no"
     depends_on:
       valkey:
         condition: service_healthy

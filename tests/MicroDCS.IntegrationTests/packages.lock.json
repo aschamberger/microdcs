@@ -243,6 +243,20 @@
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
         }
       },
+      "microdcs.maintenance": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.Valkey": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.14, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )",
+          "Microsoft.Extensions.Options": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )",
+          "StackExchange.Redis": "[3.4.31, )"
+        }
+      },
       "microdcs.valkey": {
         "type": "Project",
         "dependencies": {

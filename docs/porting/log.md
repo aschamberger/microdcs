@@ -245,3 +245,19 @@ Verified: build 0 warnings, 206 tests green (24 integration skipped on host), fo
 Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; `docker compose --profile app up --wait` still starts with `MICRODCS_MCP_TOKEN` set.
 Next session pickup: S12 (maintenance tools, depends on S11) or S13 (MQTT transport). Run `git switch main && git pull --ff-only && gh stack init <branch>`. S12 adds `MicroDCS.Maintenance` as an `IManagementModule`-style dev-only package (plan/apply tokens, environment guard, snapshots; an architecture test keeps it out of `MicroDCS.Inspection`). S13 implements `ITransport` (`GetReplyAddress`, `CanRedeliver` false) and registers a transport inspector (`transport.mqtt`). After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
 
+
+## S12 Maintenance tools with snapshot and restore (2026-11-08, branch `s12-maintenance`, stacked on `s11-inspection`)
+
+Status: done. Previous session post-merge: not verifiable yet, #55 (S11) was still open with green checks when S12 started; the next session checks `ci`, `security` and `docs` on `main` for both.
+Done:
+
+* `MicroDCS.Maintenance`: `IMaintenanceOperations` (plan dedupe release, plan scope purge, plan restore, apply, list snapshots), `ValkeyMaintenance`, `KeyImage` (exact stored text, digest), `SnapshotStore` (flushed JSON files, retention, size cap), `PlanStore` (single-use tokens), options with the environment guard at start, optional `{prefix}:env` marker (`KeySchema.EnvironmentMarker`).
+* Apply: digest recheck, snapshot first (no snapshot, no change), one Lua script with compare-and-delete on document versions; restore as one transaction, refuses on differing content unless `overwrite`.
+* `MicroDCS.Mcp`: `maint_dedupe_release_plan`, `maint_purge_scope_plan`, `maint_restore_plan`, `maint_apply`, `maint_snapshots_list`, registered only with `MicroDcs:Maintenance:Enabled`. Compose profile `app`: Development, marker service, snapshots in `/tmp`. `.microdcs/` git- and docker-ignored.
+* Tests: 34 unit (guard refusal outside Development/Test, options, plan store, snapshot write/list/retention/size cap/unwritable/path ids, digest, architecture), 3 MCP contract, 8 compose integration (round trips with exact state equality, version mismatch, conflict and overwrite, cap, unwritable directory, marker).
+Findings: [S12 implementation findings](research/inspection-mcp.md#s12-implementation-findings-2026-11-08) (`bool` tool arguments need the JSON context entry; `HostingEnvironment` is internal). Python parity: none, Python has no maintenance tooling.
+Decisions: D-45 (new). Open: broker-side purge (S18).
+Changed in the plan: decisions, index, inspection research, `docs/inspection.md` (maintenance section and settings table), `CLAUDE.md`, compose.
+Verified: build 0 warnings, 251 tests (32 integration skipped on host), compose integration 32 passed 0 skipped, format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, image with profile `app` run end to end (plan, apply, snapshot list over MCP), `scripts/scan` clean, `zensical build`. Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; `docker compose --profile app up --wait` starts with `MICRODCS_MCP_TOKEN` set (the `valkey-marker` service must exit 0).
+Next session pickup: S13 (MQTT transport, depends on S10) or S15/S16. Run `git switch main && git pull --ff-only && gh stack init <branch>` once S11 and S12 are merged; otherwise `gh stack checkout s12-maintenance` and `gh stack add <branch>`. S13 implements `ITransport` (`GetReplyAddress`, `CanRedeliver` false) and registers a transport inspector (`transport.mqtt`). Later sessions add their `maint_*` tools as operations on `IMaintenanceOperations` with an integration round trip (D-45). After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
