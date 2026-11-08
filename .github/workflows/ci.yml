@@ -70,9 +70,16 @@ jobs:
           /d:sonar.cpd.exclusions="tests/**"
           /d:sonar.cs.roslyn.ignoreIssues=true
       - run: dotnet build --no-restore --no-incremental -c Release
+      # The Valkey layer is covered by integration tests (D-15). Starting only the harness Valkey here lets
+      # them run in this job too, so the coverage reaches SonarQube Cloud; the full run stays in the
+      # "integration" job.
+      - name: Start Valkey for coverage
+        run: docker compose -f compose.test.yaml up -d --wait valkey
       - run: >-
           dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx
           --coverage --coverage-output-format xml
+        env:
+          MICRODCS_TEST_VALKEY: localhost:6380
       - name: SonarQube Cloud end
         if: steps.sonar.outputs.enabled == 'true'
         env:
