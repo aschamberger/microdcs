@@ -31,6 +31,9 @@ public interface IPayloadDescriptor
     /// <summary>The payload CLR type.</summary>
     Type PayloadType { get; }
 
+    /// <summary>Names of the extension attributes this payload carries (E-4). The pipeline copies them from a request to the response when the handler left them unset (E-5).</summary>
+    IReadOnlyCollection<string> CarriedNames { get; }
+
     /// <summary>Decodes the payload. Throws <see cref="PayloadException"/> without echoing values.</summary>
     /// <param name="data">The data.</param>
     /// <param name="extensions">Extension attributes carrying payload fields (E-4).</param>

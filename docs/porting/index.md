@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S08** (core) or **S09** (Valkey layer) or **S15** (SFC core); S07 is done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S09** (Valkey layer), **S15** (SFC core) or **S16** (job models); S08 is done.
 
 ## How to use these files
 
@@ -118,7 +118,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-STRAT-1~~ Migration style | → D-1 | — |
 | ~~Q-STRAT-2~~ Python's future | → D-1, D-5, D-16: archived on `python-archive`, security fixes only | — |
 | ~~Q-STRAT-3~~ Port goal | → D-3 | — |
-| ~~Q-STRAT-4~~ Public API | → D-35: attributes plus source generator, explicit registration underneath. Generator and analyzers are built in S08 | S08 |
+| ~~Q-STRAT-4~~ Public API | → D-35: attributes plus source generator, explicit registration underneath. Built in S08 | — |
 | Q-STRAT-5 Packaging and release | NuGet package split (core, MQTT, NATS, AMQP, Zenoh, OPC UA models, SFC), semver, `dotnet new` templates replacing the Python scaffolder. Publishing needs a released upstream CloudEvents package (D-14). Licence: MIT (D-24), OPC UA dependency fine (D-21) | S26 |
 | ~~Q-ARCH-1~~ Native AOT | → D-33: core stack AOT-clean incl. AMQPNetLite.Core, Zenoh library open until S25 | — |
 | ~~Q-ARCH-2~~ Serialization | → D-34 for job models (OPC UA JSON verbose), D-36 for the envelope and other payloads (System.Text.Json source generation behind `IPayloadDescriptor`) | — |
@@ -163,7 +163,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S05 | Spike: OPC UA ISA-95 for models only | S02 (parallel to S04) | done |
 | S06 | Design: core contracts (envelope, processor API, hosting, pipeline, transports, inspection) | S04 | done |
 | S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | done |
-| S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | open |
+| S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | done |
 | S09 | Valkey layer | S07 (parallel to S08) | open |
 | S10 | Pipeline (A-1) | S08, S09 | open |
 | S11 | Inspection layer and MCP read tools | S09, S10 | open |

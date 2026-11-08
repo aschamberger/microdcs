@@ -435,6 +435,8 @@ Decision: a processor is a `partial` class marked `[Processor(binding, Id = ...)
 
 Consequences: stubs in `MicroDCS.Core/Authoring`; the generator and analyzers are S08. Python parity rows P-1 to P-19 in [core contracts](research/core-contracts.md). Open for S08: the exact `MDCS` diagnostic list and the generator's incremental design.
 
+Revised 2026-11-08 (S08): (1) A Roslyn generator cannot read another generator's output, so it cannot add the `[JsonSerializable]` entry to a `JsonSerializerContext`. The application declares one `JsonSerializerContext` for its payloads; the generator uses its `.Default.<Type>` property (MDCS009 reports a payload that is missing). (2) `[CarriedAs]` needs `[JsonIgnore]` on the same property, otherwise the value also lands in the JSON body (found by a test); MDCS007 enforces it. Names are lowercase letters and digits, at most 20 characters (CloudEvents extension attribute rule), so `x-hidden-str` became `hiddenstr` (allowed by D-2). (3) Registration without reflection: the generator implements `IDescribedProcessor` (static abstract `Describe()`) on the processor, so `AddProcessor<T>()` needs no scanning. Handlers may be `static`. (4) Only the `Json` codec gets a generated descriptor; `Binary` and `OpcUaJson` payloads use handwritten descriptors (MDCS010). (5) A `[Fallback]` handler may return a prebuilt `EventEnvelope` (the raw echo, P-10). (6) The diagnostics are reported by the generator itself (MDCS001 to MDCS011, list in [Processors in .NET](../processors-dotnet.md)), not by a separate analyzer.
+
 ## D-36 Envelope and payload codec seam {#d-36}
 
 Status: decided (2026-11-08, S06). Applies D-14, D-34.
@@ -442,6 +444,8 @@ Status: decided (2026-11-08, S06). Applies D-14, D-34.
 Decision: `EventEnvelope` is a plain record (typed attributes, `ReadOnlyMemory<byte>` data, string extensions, `EnvelopeError`). The CloudEvents SDK is used only behind `IEnvelopeCodec` (carrier of string attributes + content type + data, binary content mode) and later structured mode; each transport builds its carrier. The codec owns attribute names, parsing, the collision guard (extensions named like standard attributes are dropped, E-3) and the `mdcserrorcontext` text form (`k=v,k=v`, D-30). Payloads are described by `IPayloadDescriptor` (type id, schema, content type, decode, encode with carried attributes). Codecs: `Json` (System.Text.Json with generated `JsonTypeInfo`), `OpcUaJson` verbose for job models (D-34), `Binary`. MessagePack is gone. Event ids are free strings (no UUID requirement, A-6). Decode errors name fields, never values (`PayloadException`).
 
 Consequences: `IEnvelopeCodec` and `IPayloadDescriptor` in `MicroDCS.Core/Messaging`; implementations in S08 (codec on upstream CloudEvents) and S16 (OPC UA codec). Wire attribute names may differ from Python (D-2).
+
+Revised 2026-11-08 (S08): `IPayloadDescriptor` gained `CarriedNames`, so the pipeline can copy a request's carried attributes to a response whose type declares the same name (E-5). `CloudEventsEnvelopeCodec` uses the SDK for the standard attributes (id, source, type, time, subject, data content type, data schema) and handles the MicroDCS attributes as string extensions; `expiryinterval` is whole seconds.
 
 ## D-37 Pipeline, transport contract, delivery semantics and error model {#d-37}
 
@@ -459,6 +463,8 @@ Decision:
 * **Shutdown contract:** (1) `StopReceivingAsync` on every transport, (2) in-flight messages finish (not cancelled), (3) outgoing queues drain, (4) transports stop, (5) expiry timers are awaited until the grace period ends, then cancelled, (6) processors' `[OnShutdown]`, (7) shared infrastructure closes. The grace period is the host shutdown timeout.
 
 Consequences: contracts in `MicroDCS.Core/Transport`. S08 builds the pipeline against an in-memory transport; S10 completes it with the Valkey dedupe store; S13 and S14 implement `ITransport`. Open: dedupe lease versus slowest handler (configuration, validated at start).
+
+Revised 2026-11-08 (S08): `MinimalPipeline` implements the order claim, scope check, decode, filters and handler, replies, `mark_done` with the in-memory dedupe store; outgoing queues, expiry timers, the activity source and inspection are S10. Replies go to the request's `ReplyTo`; without one they go to the request's address with the `events` intent (revisit in S10 with the publisher design). A handler exception returns `Fault` and is logged; stopping the host on a fault (D-27) is S10.
 
 ## D-38 Address model, scope rule, state-topic port {#d-38}
 
@@ -480,6 +486,8 @@ Status: decided (2026-11-08, S06). Answers Q-ARCH-3.
 Decision: `Microsoft.Extensions.Hosting` (Generic Host) replaces `MicroDCS`, `SystemEventTaskGroup` and `AdditionalTask`; the host shutdown timeout is the grace period. Registration is explicit: `AddMicroDcs()`, `AddProcessor<T>()`, `AddMqttTransport()` and so on, with the generated descriptors. Configuration binds the `MicroDcs` section with source-generated binding (AOT); environment variables use the prefix `APP_` and `__` as section separator (`APP_MicroDcs__Processing__...`), a deliberate break from `APP_SECTION_FIELD` (D-2). Lists stay comma separated strings (D-30). Bindings are `MicroDcs:Bindings:{id}` sections (prefix, scope levels, discriminator, reply base, shared group, queue size, type filter, scope policy); a processor names its id in `[Processor(Id = ...)]`. Instance roles are flags (Processor, Publisher; default both); the instance id is `POD_ID` or generated. Options are validated at start and every error ends the process (D-27): missing prefix, duplicate prefix + discriminator, unknown transport, lease shorter than handler budget, missing files. Hosted services are the lifecycle: transports, publishers and the expiry tracker are `BackgroundService` or `IHostedService`; the `isinstance(MQTTPublisher)` role check disappears. Payload logging has no switch (CLAUDE.md).
 
 Consequences: `MicroDcsOptions`, `BindingOptions`, `ManagementOptions`, `InstanceRoles` in `MicroDCS.Core/Hosting`; the host wiring is S08. Q-ARCH-9 (deployment split) stays with S18.
+
+Revised 2026-11-08 (S08): `ProcessorDescriptor` carries `ReplyPayloads` (descriptors of the payload types handlers return). Options are validated by `MicroDcsOptionsValidator` when the hosted service starts (`IOptions.Value` throws), not with `ValidateOnStart`. The singleton start hook goes through `IStartLease` (always granted in memory; the Valkey layer replaces it).
 
 ## D-40 Inspection contracts and management listener {#d-40}
 

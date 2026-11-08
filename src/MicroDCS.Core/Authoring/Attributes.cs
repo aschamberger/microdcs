@@ -28,7 +28,7 @@ public sealed class CloudEventTypeAttribute : Attribute
 public sealed class CarriedAsAttribute : Attribute
 {
     /// <summary>Creates the attribute.</summary>
-    /// <param name="name">The attribute name; lowercase letters, digits and hyphens.</param>
+    /// <param name="name">The attribute name; lowercase letters and digits, at most 20 characters (CloudEvents extension attribute rule).</param>
     public CarriedAsAttribute(string name) => Name = name;
 
     /// <summary>The attribute name.</summary>

@@ -40,9 +40,11 @@ stacked-PR steps. The handoff is part of the session's own PR.
 ## Structure
 
 ```
-src/MicroDCS.Core/          core library (contracts arrive in S06)
-src/MicroDCS.App/           AOT application (`microdcs`); until S08 only the CloudEvents AOT smoke check
-tests/MicroDCS.Core.Tests/  unit tests
+src/MicroDCS.Core/          core library: envelope and codec, processor API, hosting, minimal pipeline, in-memory transport
+src/MicroDCS.Generators/    Roslyn source generator and MDCS diagnostics for processors and payloads (netstandard2.0)
+src/MicroDCS.Testing/       ProcessorHarness: drives a processor in memory with a fake clock
+src/MicroDCS.App/           AOT application (`microdcs`); until the transports arrive: smoke checks and the greetings demo processor
+tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Sfc, Valkey)
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
 scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI
