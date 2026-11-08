@@ -18,12 +18,14 @@ public enum DeliveryGuarantee
 /// <param name="NativeExpiry">The broker drops expired messages.</param>
 /// <param name="StateTopics">The transport supports last-value state topics (A-4).</param>
 /// <param name="SharedConsumption">The transport supports competing consumers.</param>
+/// <param name="CanRedeliver">The transport can nack a delivery and have the broker redeliver it in the same session. When it cannot, a handler fault ends the process and the session redelivers on reconnect (D-27, D-37).</param>
 public sealed record DeliveryProfile(
     DeliveryGuarantee Guarantee,
     bool NativeReply,
     bool NativeExpiry,
     bool StateTopics,
-    bool SharedConsumption);
+    bool SharedConsumption,
+    bool CanRedeliver = false);
 
 /// <summary>What the pipeline tells a transport to do with a received message.</summary>
 public enum DeliveryOutcome
@@ -123,6 +125,12 @@ public interface ITransport
 
     /// <summary>Whether the transport is connected and can publish. Feeds readiness.</summary>
     bool IsConnected { get; }
+
+    /// <summary>The address on which this instance receives responses to the commands of a binding (D-9), or <see langword="null"/> when the transport has no native reply mechanism.</summary>
+    /// <param name="bindingId">The binding.</param>
+    /// <param name="instanceId">The instance id.</param>
+    /// <returns>The reply address in the transport's own form.</returns>
+    ReplyAddress? GetReplyAddress(string bindingId, string instanceId);
 
     /// <summary>Connects and subscribes. A failure ends the process (D-27).</summary>
     /// <param name="handler">The pipeline.</param>

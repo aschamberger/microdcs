@@ -19,6 +19,7 @@ WORKDIR /src
 COPY --parents global.json nuget.config Directory.Build.props Directory.Packages.props MicroDCS.slnx \
      src/*/*.csproj src/*/packages.lock.json \
      tests/*/*.csproj tests/*/packages.lock.json \
+     bench/*/*.csproj bench/*/packages.lock.json \
      ./
 RUN dotnet restore MicroDCS.slnx
 COPY . .

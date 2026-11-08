@@ -233,3 +233,32 @@ Rows the S08 block named as acceptance tests, and where they are covered.
 | L-1 lifecycle order and failures | `HostLifecycleTests.Hooks_run_in_order_*`, `Invalid_options_*` |
 
 Not covered in S08 and owned later: expiry timers (P-12) and the outgoing queue (T-6, T-22, T-7) in S10; `post_start` lock in Valkey in S09; `max_length`/`min_length` validation of the greeting name (Python validated on decode) with the schema work in S23. The `hidden_obj` field of the Python greeting is dropped; the string field covers the demonstration.
+
+## S10 pipeline: Python parity and tests
+
+Read in S10: `mqtt.py` (`_process_message`, `_publish_message`, `_claim_message`, `_outgoing_message_publisher`, `task`), `common.py` (`ProtocolBinding`, `publish_event`, `handle_cloudevent_expiration`). Python tests read: `tests/unit/test_mqtt.py` (`TestMQTTHandler`, `TestMQTTHandlerShutdown`, the queue tests of `TestRegisterMQTTProcessor`); the scenarios are ported, not the code, and the MQTT-specific ones (topic matching, client options, `$share`, QoS, user properties) stay with S13. No row is open.
+
+| # | Python behaviour | Disposition | Test |
+|---|---|---|---|
+| T-1 | Order: claim, expiry cancel, scope check and dispatch, publish responses, `mark_done`, ack | kept, one order in `MessagePipeline.ProcessAsync` | `Steps_run_in_the_order_claim_handler_publish_done` |
+| T-2 | Duplicate is acknowledged | kept | `HostLifecycleTests.Duplicate_event_*` |
+| T-3, T-18 | `mark_done` before ack; a failed message stays claimed and is redelivered after the lease | kept | `Fault_leaves_the_event_claimed_and_a_redelivery_after_the_lease_succeeds` |
+| T-4 | Scope check happens after the claim, per binding, and the message is still marked done | kept: a dropped message is claimed, answered, marked done and acknowledged | `Scope_mismatch_is_dropped_and_answered_with_permission_denied` |
+| T-5 | Outgoing type filter with `fnmatch` patterns | kept: comma separated, `*` and `?` through `FileSystemName.MatchesSimpleExpression` (D-30); an event without a type cannot exist (`type` is required in the envelope) | `Event_the_type_filter_rejects_is_not_published`, `Event_is_queued_and_published_*` |
+| T-6, T-22 | Bounded queue per binding, size 0 means the maximum, larger is capped with a warning, a full queue raises | kept (D-28); changed for a size above the maximum: the options validator rejects it at start (D-27) instead of capping with a warning | `Full_queue_fails_the_enqueue_instead_of_blocking`, `MicroDcsOptionsValidator` |
+| T-7 | Publish waits for the connection and retries | kept in the transport contract: `PublishAsync` waits while reconnecting; a pump that gets an exception logs it and ends the host (D-27) | transport tests in S13 |
+| T-9 | Commands carry the per-instance response topic; responses carry it too | changed: only commands carry the reply address (`GetReplyAddress`); a response never expects a response, so no timer starts for it (D-9) | `Event_is_queued_and_published_with_the_instance_reply_address_for_commands` |
+| T-11 | `message_workers` parallel workers, in-flight work is shielded from cancellation | the pipeline is re-entrant and counts in-flight messages; the worker count and the shield belong to the transport (S13) | `Shutdown_drains_the_outgoing_queue` |
+| T-12 | Five shutdown phases, forced cancel after the grace period | kept: stop receiving, in-flight, drain queues, stop transports, expiry timers, processor hooks | `Shutdown_waits_for_a_pending_expiry_timer`, `Shutdown_cancels_a_pending_timer_when_the_grace_period_ends` |
+| T-19 | A worker or handler crash ends the application | kept: a fault stops the host unless `DeliveryProfile.CanRedeliver` | `Fault_stops_the_host_when_the_transport_cannot_redeliver`, `Fault_keeps_the_host_running_when_the_transport_can_redeliver` |
+| T-20 | Claim waits for the lease holder, at least 100 ms | kept (S08, `TimeProvider`) | `InMemoryTests` |
+| T-23 | Publishing an intent the processor does not publish falls back to the bare prefix | changed (S06): an error | `Publishing_an_intent_no_processor_declares_throws` |
+| P-12 | Timer starts after the publish of a command with a response topic and an expiry interval; the response cancels it by `causationid`; the key is the command's `causationid` or else its `id` | changed: Python keys the timer by the command's `causationid` when set (`test_publish_message_expiry_uses_causationid_when_set`), which a response that names the command id cannot cancel; here the key is always the command id, so the response (`causationid` = command id) always finds it; the timer starts before the publish so that a fast response cannot be missed; cancelled again when the publish throws | `Expired_command_calls_the_handler_*`, `Response_cancels_the_expiry_timer`, `Command_without_an_expiry_interval_starts_no_timer` (Python: no timer without interval, with interval 0, or without a response topic) |
+| P-12b | The expiry handler's result is computed and then discarded | changed: the events it returns are published as `events` | `Expired_command_calls_the_handler_and_publishes_the_follow_up_event` |
+| P-12c | A failing expiry task is logged | kept | none (logging only) |
+| P-18 | Pull completion after the handler | kept (S08) | `HostLifecycleTests` |
+| OTEL-1 | Two handler classes (plain and OTEL) set `messaging.destination.subscription.name` after processing | dropped: one pipeline, one activity source; the binding id is a tag. The subscription name is a transport detail (S13) | `Trace_context_of_the_message_continues_in_the_processing_activity` |
+| new | Error event to the reply address when a request is dropped (D-37) | new: kinds `PayloadInvalid`, `UnknownPayloadType`, `PermissionDenied`; fixed text, no payload | `Undecodable_request_with_a_reply_address_gets_an_error_event` |
+| new | Reply without a reply address goes to the `events` address of the request | kept from S08 (open point of D-37 closed: the answer is "keep") | `GreetingsTests` |
+
+Benchmark baseline (R-18, BenchmarkDotNet ShortRun, Intel Core Ultra 7 258V, .NET 10.0.14, no-op dedupe store, null transport): decode envelope 1.4 µs and 2.3 KB, encode envelope 0.8 µs and 2.2 KB, handle a hello end to end 1.5 µs and 2.0 KB. Indicative only; the CI baseline comes with S23.

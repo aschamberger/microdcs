@@ -20,6 +20,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+    <ProjectReference Include="../MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
     <ProjectReference Include="../MicroDCS.Generators/MicroDCS.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>

@@ -208,3 +208,21 @@ Open questions: none new. Q-DATA-4 / R-4 is answered by the operation-id protoco
 Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the job names; compose `tests` container exited with 0 including the new Valkey tests.
 Next session pickup: S10 (pipeline, depends on S08 and S09) once #51 and this PR are merged: `git switch main && git pull --ff-only && gh stack init s10-pipeline`. S10 replaces `MinimalPipeline` and wires `AddMicroDcsValkey` in the App. S15 (SFC core) and S16 (job models) are independent and can start in any order; S19 builds the SFC host on `SfcStateDao` and `IStreamConsumer`.
 
+
+## S10 Pipeline (2026-11-08, branch `s10-pipeline`, stacked on `s09-valkey-layer`)
+
+Status: done. Previous session post-merge: S08 (#51) and S09 (#52) are still open and stacked below; S07 verified (`ci`, `security`, `docs` green on `main` for #50, nine required checks set).
+Done:
+
+* `MessagePipeline` replaces `MinimalPipeline`: claim, expiry cancel, scope check, dispatch, replies, mark done; outcomes `Ack`/`Drop`/`Fault`; error event to the reply address on a drop; a fault stops the host unless `DeliveryProfile.CanRedeliver`.
+* Outgoing events: `IEventPublisher` on the pipeline, bounded queue and pump per binding (D-28), type filter, commands carry the instance reply address (`ITransport.GetReplyAddress`).
+* Expiry timers (P-12) with `[OnExpired]`, shutdown phases 3 and 5, one `ActivitySource` and `Meter` named `MicroDCS` with W3C context, `MicroDCS.Security` log category.
+* App references `MicroDCS.Valkey`; `microdcs smoke` has `valkey-registration`; AOT publish clean with StackExchange.Redis.
+* `bench/MicroDCS.Benchmarks` (R-18); 25 pipeline tests, App smoke tests; docs: pipeline section in [Processors in .NET](../processors-dotnet.md). Parity list S10: [core contracts](research/core-contracts.md#s10-pipeline-python-parity-and-tests), none open.
+Findings: Python keys the expiry timer by the command's `causationid` when set, so a response cannot cancel it (changed, keyed by command id). A timer whose clock delay is created after a yield misses a fake-clock advance (fixed: create it synchronously). An `ActivityListener` is process wide, so tests filter by trace id. A subject with an invalid scope segment silently became an address without scope when publishing (fixed, D-38 says unpublishable); the options validator already rejects a queue size above the maximum, so no capping exists. The generator throws `IndexOutOfRangeException` instead of a diagnostic when the `[Processor]` argument does not resolve (not fixed, see pickup).
+Decisions: revision of D-37 (no new id).
+Changed in the plan: decisions (D-37), index (status, OpenTelemetry and R-18 rows), core-contracts research, docs page, `.editorconfig` (`bench/`), Dockerfile (restore inputs for `bench/`), solution.
+Open questions: none new. Dedupe lease versus slowest handler stays a configuration check for S13.
+Verified (CI fixes included: Sonar rules in `dotnet format` and new-code coverage 76 % to above 80 %, `bench/` excluded from coverage): build 0 warnings, tests green (22 skipped on the host), format clean, `CI=true dotnet restore`, AOT publish and `docker run` smoke, compose integration tests (`tests` exited 0), `scripts/scan` clean. The Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the job names; the Docker image builds with the `bench/` restore inputs; expiry tests stay stable in CI (no sleeps, fake clock).
+Next session pickup: S11 (inspection, depends on S09 and S10) or S13 (MQTT transport, depends on S10). Merge #51, #52 and this PR first (`gh stack merge`), then `git switch main && git pull --ff-only && gh stack init <branch>`. S13 implements `ITransport` including `GetReplyAddress`, `CanRedeliver` (false: MQTT cannot nack in-session), message workers, subscription names and the `$share/` renderer. Small fix to take along: the generator crash on an unresolved `[Processor]` argument should report a diagnostic (add a test in `MicroDCS.Generators.Tests`).

@@ -66,3 +66,7 @@ dotnet_diagnostic.IDE0005.severity = warning
 dotnet_diagnostic.CA2007.severity = none
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.IDE0005.severity = suggestion
+
+[bench/**.cs]
+# Benchmarks: not a shipped API, no XML docs project-wide, so unused usings are only a suggestion.
+dotnet_diagnostic.IDE0005.severity = suggestion

@@ -17,6 +17,9 @@ public sealed record PublishOptions
     /// <summary>Stable key of a logical command.</summary>
     public string? ActionKey { get; init; }
 
+    /// <summary>Publishes on this binding only. By default the event goes to every binding whose processor publishes the intent and whose outgoing type filter accepts the type.</summary>
+    public string? BindingId { get; init; }
+
     /// <summary>Overrides the event id (stable command id for re-dispatch, D-9).</summary>
     public string? EventId { get; init; }
 
