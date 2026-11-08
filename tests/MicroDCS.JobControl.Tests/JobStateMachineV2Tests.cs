@@ -161,6 +161,18 @@ public sealed class JobStateMachineV2Tests
     public void Operations_on_an_unknown_order_report_the_unknown_id(JobOrderOperation operation) =>
         Apply(Initial, operation).Status.ShouldBe(JobReturnStatus.UnknownJobOrderId);
 
+    [Theory]
+    [InlineData(Held)]
+    [InlineData(Suspended)]
+    [InlineData(Running)]
+    public void Begin_execution_only_starts_an_allowed_order(JobOrderState state)
+    {
+        var result = Apply(state, BeginExecution);
+
+        result.Status.ShouldBe(JobReturnStatus.InvalidStatus);
+        result.State.ShouldBe(state);
+    }
+
     [Fact]
     public void Store_on_a_removed_order_is_refused() => Apply(Removed, Store).Status.ShouldBe(JobReturnStatus.UnableToAccept);
 

@@ -11,6 +11,8 @@
 | Schema | `JobControlSchemas.GenerateJson<T>()` | JSON Schema for `dataschema`, generated at runtime |
 | State machine | `JobStateMachine.Apply(version, state, operation)` | Pure function, no I/O |
 
+The codec sets no size limits of its own; the transport bounds a message. It keeps the OPC UA nesting limit, and an over-deep payload is a `PayloadException`.
+
 ## State machine
 
 `Apply` returns a `JobTransition`: the `ReturnStatus` bitmap, the new state and the effect. A rejected operation is a result, not an exception, and leaves the state unchanged.

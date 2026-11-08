@@ -80,7 +80,8 @@ public static class JobStateMachine
         {
             JobOrderOperation.Cancel => Remove(state, IsPrepare(state)),
             JobOrderOperation.Clear => Remove(state, state is JobOrderState.Completed or JobOrderState.Closed or JobOrderState.Aborted),
-            JobOrderOperation.BeginExecution => Receive(state, operation, Running),
+            // Only the cause-less row: Interrupted to Running is Resume, not the start of execution.
+            JobOrderOperation.BeginExecution => Top(state) == AllowedToStart ? Receive(state, operation, Running) : Reject(state, JobReturnStatus.InvalidStatus),
             JobOrderOperation.Hold => Receive(state, operation, InterruptedState),
             JobOrderOperation.Complete => Receive(state, operation, EndedState),
             JobOrderOperation.Close => Sub(state, Ended, "Closed", JobOrderState.Closed),
@@ -127,7 +128,7 @@ public static class JobStateMachine
             _ => state,
         };
 
-        return target == state ? Reject(state, JobReturnStatus.InvalidStatus) : Sub(state, Prepare, to, target);
+        return Sub(state, Prepare, to, target);
     }
 
     private static JobOrderState Target(JobOrderState state, JobOrderOperation operation, string to) => to switch

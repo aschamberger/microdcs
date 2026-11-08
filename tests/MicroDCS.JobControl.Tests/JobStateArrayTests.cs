@@ -1,3 +1,4 @@
+using MicroDCS.JobControl.Codec;
 using MicroDCS.JobControl.Conversions;
 using MicroDCS.JobControl.StateMachine;
 using Opc.Ua;
@@ -88,6 +89,42 @@ public sealed class JobStateArrayTests
 
         JobStateArray.Matches(JobOrderState.Suspended, query).ShouldBeTrue();
         JobStateArray.Matches(JobOrderState.Held, query).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Query_with_a_sub_state_of_another_parent_matches_nothing()
+    {
+        var query = JobStateArray.ToV2(JobOrderState.Held);
+        query[0].StateNumber = 1;
+
+        JobStateArray.Matches(JobOrderState.Held, query).ShouldBeFalse();
+        JobStateArray.Matches(JobOrderState.NotAllowedToStartReady, query).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Query_with_an_unknown_sub_state_matches_nothing()
+    {
+        var query = JobStateArray.ToV2(JobOrderState.Held);
+        query[1].StateNumber = 99;
+
+        JobStateArray.Matches(JobOrderState.Held, query).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Array_with_mismatched_entries_falls_back_to_the_top_level_state()
+    {
+        var state = JobStateArray.ToV2(JobOrderState.Held);
+        state[0].StateNumber = 1;
+
+        JobStateArray.FromV2(state).ShouldBe(JobOrderState.NotAllowedToStartReady);
+    }
+
+    [Fact]
+    public void Sub_state_browse_names_carry_the_v2_namespace()
+    {
+        var target = JobStateArray.ToV2(JobOrderState.Held)[1].BrowsePath.Elements[0].TargetName;
+
+        target.NamespaceIndex.ShouldBe((ushort)JobControlContext.Shared.NamespaceUris.GetIndex(V2.Namespaces.ISA95JobControlV2));
     }
 
     [Fact]

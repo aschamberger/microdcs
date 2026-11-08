@@ -136,6 +136,7 @@ public static class JobControlConversions
 
         return new JobWorkMaster
         {
+            V2EncodingMask = workMaster.EncodingMask,
             Id = workMaster.ID,
             Description = FromLocalizedTextDescription(workMaster.Description),
             Parameters = FromV2Parameters(workMaster.Parameters),
@@ -160,6 +161,16 @@ public static class JobControlConversions
             Data = workMaster.Data,
         };
         uint mask = 0;
+        if (workMaster.Description.Count > 0)
+        {
+            mask |= (uint)V2.ISA95WorkMasterDataTypeFields.Description;
+        }
+
+        if (workMaster.Parameters.Count > 0)
+        {
+            mask |= (uint)V2.ISA95WorkMasterDataTypeFields.Parameters;
+        }
+
         if (workMaster.DataSchema is not null)
         {
             mask |= (uint)ISA95WorkMasterExtDataTypeFields.DataSchema;
@@ -170,7 +181,7 @@ public static class JobControlConversions
             mask |= (uint)ISA95WorkMasterExtDataTypeFields.Data;
         }
 
-        result.EncodingMask = mask;
+        result.EncodingMask = mask | (workMaster.V2EncodingMask ?? 0);
         return result;
     }
 
@@ -202,6 +213,7 @@ public static class JobControlConversions
     {
         return new JobOrder
         {
+            V2EncodingMask = order.EncodingMask,
             Id = order.JobOrderID ?? string.Empty,
             Description = order.Description,
             WorkMasters = FromV2WorkMasters(order.WorkMasterID),
@@ -248,6 +260,7 @@ public static class JobControlConversions
     {
         return new JobResponse
         {
+            V2EncodingMask = response.EncodingMask,
             Id = response.JobResponseID ?? string.Empty,
             JobOrderId = response.JobOrderID ?? string.Empty,
             Description = FromLocalizedTextDescription(response.Description),
@@ -335,7 +348,7 @@ public static class JobControlConversions
         {
             mask |= (uint)V2.ISA95JobResponseDataTypeFields.MaterialActuals;
         }
-        result.EncodingMask = mask;
+        result.EncodingMask = mask | (response.V2EncodingMask ?? 0);
         return result;
     }
 
@@ -399,7 +412,7 @@ public static class JobControlConversions
         {
             mask |= (uint)V2.ISA95JobOrderDataTypeFields.MaterialRequirements;
         }
-        result.EncodingMask = mask;
+        result.EncodingMask = mask | (order.V2EncodingMask ?? 0);
         return result;
     }
 
@@ -456,6 +469,7 @@ public static class JobControlConversions
         {
             result.Add(new JobParameter
             {
+                V2EncodingMask = parameter.EncodingMask,
                 Id = parameter.ID,
                 Value = parameter.Value,
                 Description = parameter.Description,
@@ -516,7 +530,7 @@ public static class JobControlConversions
                 Description = parameter.Description,
                 EngineeringUnits = ToV2Unit(parameter.EngineeringUnits),
                 Subparameters = ToV2Parameters(parameter.Subparameters),
-                EncodingMask = mask
+                EncodingMask = mask | (parameter.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();
@@ -554,6 +568,7 @@ public static class JobControlConversions
         {
             result.Add(new JobProperty
             {
+                V2EncodingMask = property.EncodingMask,
                 Id = property.ID,
                 Value = property.Value,
                 Description = property.Description,
@@ -614,7 +629,7 @@ public static class JobControlConversions
                 Description = property.Description,
                 EngineeringUnits = ToV2Unit(property.EngineeringUnits),
                 Subproperties = ToV2Properties(property.Subproperties),
-                EncodingMask = mask
+                EncodingMask = mask | (property.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();
@@ -650,6 +665,7 @@ public static class JobControlConversions
         {
             result.Add(new JobWorkMaster
             {
+                V2EncodingMask = workMaster.EncodingMask,
                 Id = workMaster.ID,
                 Description = FromLocalizedTextDescription(workMaster.Description),
                 Parameters = FromV2Parameters(workMaster.Parameters)
@@ -700,7 +716,7 @@ public static class JobControlConversions
                 ID = workMaster.Id,
                 Description = FirstLocalizedText(workMaster.Description),
                 Parameters = ToV2Parameters(workMaster.Parameters),
-                EncodingMask = mask
+                EncodingMask = mask | (workMaster.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();
@@ -739,6 +755,7 @@ public static class JobControlConversions
         {
             result.Add(new JobResource
             {
+                V2EncodingMask = resource.EncodingMask,
                 Id = resource.ID,
                 Description = resource.Description,
                 Use = resource.PersonnelUse,
@@ -810,7 +827,7 @@ public static class JobControlConversions
                 Quantity = resource.Quantity,
                 EngineeringUnits = ToV2Unit(resource.EngineeringUnits),
                 Properties = ToV2Properties(resource.Properties),
-                EncodingMask = mask
+                EncodingMask = mask | (resource.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();
@@ -849,6 +866,7 @@ public static class JobControlConversions
         {
             result.Add(new JobResource
             {
+                V2EncodingMask = resource.EncodingMask,
                 Id = resource.ID,
                 Description = resource.Description,
                 Use = resource.EquipmentUse,
@@ -920,7 +938,7 @@ public static class JobControlConversions
                 Quantity = resource.Quantity,
                 EngineeringUnits = ToV2Unit(resource.EngineeringUnits),
                 Properties = ToV2Properties(resource.Properties),
-                EncodingMask = mask
+                EncodingMask = mask | (resource.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();
@@ -961,6 +979,7 @@ public static class JobControlConversions
         {
             result.Add(new JobResource
             {
+                V2EncodingMask = resource.EncodingMask,
                 Id = resource.ID,
                 Description = resource.Description,
                 Use = resource.PhysicalAssetUse,
@@ -1034,7 +1053,7 @@ public static class JobControlConversions
                 Quantity = resource.Quantity,
                 EngineeringUnits = ToV2Unit(resource.EngineeringUnits),
                 Properties = ToV2Properties(resource.Properties),
-                EncodingMask = mask
+                EncodingMask = mask | (resource.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();
@@ -1076,6 +1095,7 @@ public static class JobControlConversions
         {
             result.Add(new JobMaterial
             {
+                V2EncodingMask = material.EncodingMask,
                 MaterialClassId = material.MaterialClassID,
                 MaterialDefinitionId = material.MaterialDefinitionID,
                 MaterialLotId = material.MaterialLotID,
@@ -1172,7 +1192,7 @@ public static class JobControlConversions
                 Quantity = material.Quantity,
                 EngineeringUnits = ToV2Unit(material.EngineeringUnits),
                 Properties = ToV2Properties(material.Properties),
-                EncodingMask = mask
+                EncodingMask = mask | (material.V2EncodingMask ?? 0)
             });
         }
         return result.ToArrayOf();

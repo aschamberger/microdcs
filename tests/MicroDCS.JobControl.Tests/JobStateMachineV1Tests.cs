@@ -78,5 +78,9 @@ public sealed class JobStateMachineV1Tests
         Apply(state, operation).Status.ShouldBe(JobReturnStatus.InvalidCommand);
 
     [Fact]
+    public void Begin_execution_does_not_restart_a_held_order() =>
+        Apply(Held, BeginExecution).Status.ShouldBe(JobReturnStatus.InvalidCommand);
+
+    [Fact]
     public void Store_twice_is_unable_to_accept() => Apply(NotAllowedToStartReady, Store).Status.ShouldBe(JobReturnStatus.UnableToAccept);
 }

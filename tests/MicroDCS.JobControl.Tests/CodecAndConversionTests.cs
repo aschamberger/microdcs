@@ -249,6 +249,60 @@ public sealed class CodecAndConversionTests
     }
 
     [Fact]
+    public void Extended_work_master_keeps_the_inherited_fields()
+    {
+        var ext = JobControlConversions.ToWorkMasterExt(new JobWorkMaster { Id = "wm1", Description = [new LocalizedText("en", "plan")], Parameters = [new JobParameter { Id = "p" }], Data = "d" });
+
+        var neutral = JobControlConversions.FromWorkMasterExt(OpcUaJsonCodec.Decode<ISA95WorkMasterExtDataType>(OpcUaJsonCodec.Encode(ext)));
+
+        neutral.Description[0].Text.ShouldBe("plan");
+        neutral.Parameters[0].Id.ShouldBe("p");
+    }
+
+    [Fact]
+    public void Recipe_content_over_the_stack_default_limit_round_trips()
+    {
+        var data = new string('x', 1024 * 1024);
+        var ext = JobControlConversions.ToWorkMasterExt(new JobWorkMaster { Id = "wm1", Data = data });
+
+        OpcUaJsonCodec.Decode<ISA95WorkMasterExtDataType>(OpcUaJsonCodec.Encode(ext)).Data.ShouldBe(data);
+    }
+
+    [Fact]
+    public void Arrays_over_the_stack_default_limit_round_trip()
+    {
+        var order = JobControlConversions.ToV2Order(new JobOrder { Id = "a", Parameters = [.. Enumerable.Range(0, 70_000).Select(i => new JobParameter { Id = "p" })] });
+
+        OpcUaJsonCodec.Decode<V2.ISA95JobOrderDataType>(OpcUaJsonCodec.Encode(order)).JobOrderParameters.Count.ShouldBe(70_000);
+    }
+
+    [Fact]
+    public void Encode_errors_are_payload_errors()
+    {
+        var parameter = new JobParameter { Id = "p" };
+        for (var depth = 0; depth < 400; depth++)
+        {
+            parameter = new JobParameter { Id = "p", Subparameters = [parameter] };
+        }
+
+        var order = JobControlConversions.ToV2Order(new JobOrder { Id = "a", Parameters = [parameter] });
+
+        Should.Throw<PayloadException>(() => OpcUaJsonCodec.Encode(order));
+    }
+
+    [Fact]
+    public void A_field_sent_with_its_default_value_stays_present()
+    {
+        var encoded = """{"JobOrderID":"a","Priority":0,"JobOrderParameters":[{"ID":"p","Value":null,"Description":[]}]}"""u8.ToArray();
+
+        var back = JobControlConversions.ToV2Order(JobControlConversions.FromV2Order(OpcUaJsonCodec.Decode<V2.ISA95JobOrderDataType>(encoded)));
+        var json = Canonical(OpcUaJsonCodec.Encode(back));
+
+        json.ShouldContain("\"Priority\":0");
+        json.ShouldContain("\"Description\":[]");
+    }
+
+    [Fact]
     public void Plain_work_master_has_no_extension_fields()
     {
         var ext = JobControlConversions.ToWorkMasterExt(new JobWorkMaster { Id = "wm1" });

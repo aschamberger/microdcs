@@ -17,18 +17,26 @@ public static class OpcUaJsonCodec
     /// <typeparam name="T">The generated type.</typeparam>
     /// <param name="value">The value.</param>
     /// <returns>The UTF-8 JSON.</returns>
+    /// <exception cref="PayloadException">The value cannot be encoded; the message holds no payload values.</exception>
     public static byte[] Encode<T>(T value)
         where T : class, IEncodeable
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var encoder = new JsonEncoder(buffer, JobControlContext.Shared, JsonEncoderOptions.Verbose))
+        try
         {
-            value.Encode(encoder);
-        }
+            var buffer = new ArrayBufferWriter<byte>();
+            using (var encoder = new JsonEncoder(buffer, JobControlContext.Shared, JsonEncoderOptions.Verbose))
+            {
+                value.Encode(encoder);
+            }
 
-        return buffer.WrittenSpan.ToArray();
+            return buffer.WrittenSpan.ToArray();
+        }
+        catch (ServiceResultException)
+        {
+            throw new PayloadException($"Payload of type '{typeof(T).Name}' cannot be encoded as OPC UA JSON.");
+        }
     }
 
     /// <summary>Decodes a value. Unknown fields are ignored; missing fields keep their defaults.</summary>

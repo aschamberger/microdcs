@@ -74,4 +74,10 @@ public sealed record JobResource
     /// The properties of the resource.
     /// </summary>
     public ArrayOf<JobProperty> Properties { get; init; } = [];
+
+    /// <summary>
+    /// The V2 optional-field mask as received, so a field sent with its default value stays present on a same-version round trip.
+    /// <see langword="null"/> for content that did not come from V2.
+    /// </summary>
+    public uint? V2EncodingMask { get; init; }
 }

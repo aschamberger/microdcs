@@ -20,6 +20,13 @@ public static class JobControlContext
         context.NamespaceUris.GetIndexOrAppend(Opc.Ua.ISA95.JobControl.V2.Namespaces.ISA95JobControlV2);
         context.NamespaceUris.GetIndexOrAppend(Extension.Namespaces.jobcontrol);
 
+        // No message limits of our own: recipes are opaque and can be large, and the transport bounds a message (as D-29).
+        // The nesting limit stays, it protects the recursive decoder.
+        context.MaxStringLength = 0;
+        context.MaxByteStringLength = 0;
+        context.MaxArrayLength = 0;
+        context.MaxMessageSize = 0;
+
         var builder = context.Factory.Builder;
         builder.AddOpcUaISA95();
         builder.AddOpcUaISA95JobControlV1();
