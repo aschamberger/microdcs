@@ -16,7 +16,8 @@ namespace MicroDCS.Inspection;
 /// <summary>
 /// The management listener (D-40): one Kestrel host with <c>/health/live</c>, <c>/health/ready</c> and the endpoints of the
 /// registered modules. Off by default: when <c>MicroDcs:Management:Enabled</c> is false no port is opened. On loopback it checks
-/// the <c>Host</c> header (DNS rebinding); on any other address every request except health needs the bearer token (R-8).
+/// the <c>Host</c> header (DNS rebinding) and the <c>Origin</c> header of browser requests; on any other address every request
+/// except health needs the bearer token (R-8).
 /// A listener that cannot start ends the process (D-27).
 /// </summary>
 public sealed class ManagementServer : IHostedService, IAsyncDisposable
@@ -111,6 +112,22 @@ public sealed class ManagementServer : IHostedService, IAsyncDisposable
     private static bool IsLoopbackHost(HostString host) =>
         host.Host is "localhost" or "[::1]" or "::1" || (IPAddress.TryParse(host.Host, out var address) && IPAddress.IsLoopback(address));
 
+    /// <summary>
+    /// A browser request carries <c>Origin</c>; on loopback only a loopback origin is accepted (MCP Streamable HTTP: servers must
+    /// validate <c>Origin</c>). Clients that are not browsers send none and pass.
+    /// </summary>
+    internal static bool IsAllowedOrigin(string? origin)
+    {
+        if (string.IsNullOrEmpty(origin))
+        {
+            return true;
+        }
+
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && (uri.IsLoopback || uri.Host == "localhost");
+    }
+
     private static bool BearerMatches(string? header, byte[] expected)
     {
         if (header is null || !header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
@@ -145,6 +162,13 @@ public sealed class ManagementServer : IHostedService, IAsyncDisposable
         {
             Log.RequestRejected(_logger, "host header is not a loopback name");
             context.Response.StatusCode = StatusCodes.Status421MisdirectedRequest;
+            return;
+        }
+
+        if (loopback && !IsAllowedOrigin(context.Request.Headers.Origin.ToString()))
+        {
+            Log.RequestRejected(_logger, "origin is not a loopback origin");
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 

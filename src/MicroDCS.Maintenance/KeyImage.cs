@@ -104,6 +104,55 @@ internal sealed class KeyImage
         return text.ToString();
     }
 
+    /// <summary>
+    /// The check the delete script runs against the live key before it removes anything (RV-21): one letter for the kind of
+    /// check and the expected value. Hash documents compare their version; other whole keys compare the string value, the
+    /// length, or for a stream the length and the last entry id; parts compare presence or the field value. A member swapped
+    /// for another at the same length is not seen; adding or removing one is.
+    /// </summary>
+    public string Fingerprint() => Type switch
+    {
+        "string" => "S" + Value,
+        "hash" => Version is { } version ? "v" + version.ToString(CultureInfo.InvariantCulture) : "h" + (Pairs?.Count ?? 0).ToString(CultureInfo.InvariantCulture),
+        "set" => "s" + (Members?.Count ?? 0).ToString(CultureInfo.InvariantCulture),
+        "zset" => "z" + (Scored?.Count ?? 0).ToString(CultureInfo.InvariantCulture),
+        "stream" => "x" + (Entries?.Count ?? 0).ToString(CultureInfo.InvariantCulture) + "|" + (Entries is { Count: > 0 } entries ? entries[^1].Id : string.Empty),
+        "setmember" => "m",
+        "hashfield" => "f" + Value,
+        _ => throw new MaintenanceRefusedException($"The image holds the unknown type '{Type}'."),
+    };
+
+    /// <summary>
+    /// The condition a restore transaction carries for this target (RV-22): the live state must still be what the plan saw, or the
+    /// transaction writes nothing. <paramref name="current"/> is the image at the digest recheck, <see langword="null"/> when absent.
+    /// </summary>
+    public static Condition ConditionFor(Target target, KeyImage? current)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (current is null)
+        {
+            return target.PartKind switch
+            {
+                "setmember" => Condition.SetNotContains(target.Key, target.Part),
+                "hashfield" => Condition.HashNotExists(target.Key, target.Part),
+                _ => Condition.KeyNotExists(target.Key),
+            };
+        }
+
+        return current.Type switch
+        {
+            "string" => Condition.StringEqual(current.Key, current.Value),
+            "hash" when current.Version is { } version => Condition.HashEqual(current.Key, "v", version.ToString(CultureInfo.InvariantCulture)),
+            "hash" => Condition.HashLengthEqual(current.Key, current.Pairs?.Count ?? 0),
+            "set" => Condition.SetLengthEqual(current.Key, current.Members?.Count ?? 0),
+            "zset" => Condition.SortedSetLengthEqual(current.Key, current.Scored?.Count ?? 0),
+            "stream" => Condition.StreamLengthEqual(current.Key, current.Entries?.Count ?? 0),
+            "setmember" => Condition.SetContains(current.Key, current.Part),
+            "hashfield" => Condition.HashEqual(current.Key, current.Part, current.Value),
+            _ => throw new MaintenanceRefusedException($"The image holds the unknown type '{current.Type}'."),
+        };
+    }
+
     /// <summary>Hash over the images of an ordered target list; a missing target counts as such.</summary>
     public static string Digest(IEnumerable<KeyImage?> images)
     {

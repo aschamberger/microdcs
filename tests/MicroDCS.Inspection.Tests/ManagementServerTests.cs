@@ -63,6 +63,48 @@ public sealed class ManagementServerTests
     }
 
     [Fact]
+    public async Task RV24LoopbackRejectsBrowserRequestsFromForeignOrigins()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var server = Create(m =>
+        {
+            m.Enabled = true;
+            m.Url = "http://127.0.0.1:0";
+        });
+        await server.StartAsync(ct);
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(server.GetAddresses()[0]) };
+
+            using var foreign = new HttpRequestMessage(HttpMethod.Get, "/ping");
+            foreign.Headers.Add("Origin", "https://evil.example");
+            (await client.SendAsync(foreign, ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+            using var opaque = new HttpRequestMessage(HttpMethod.Get, "/ping");
+            opaque.Headers.Add("Origin", "null");
+            (await client.SendAsync(opaque, ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+            using var local = new HttpRequestMessage(HttpMethod.Get, "/ping");
+            local.Headers.Add("Origin", "http://localhost:6274");
+            (await client.SendAsync(local, ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await server.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("http://127.0.0.1:3000", true)]
+    [InlineData("http://[::1]:3000", true)]
+    [InlineData("http://localhost", true)]
+    [InlineData("https://localhost.evil.example", false)]
+    [InlineData("file://", false)]
+    [InlineData("null", false)]
+    public void RV24OriginRule(string? origin, bool allowed) => ManagementServer.IsAllowedOrigin(origin).ShouldBe(allowed);
+
+    [Fact]
     public async Task NonLoopbackNeedsTheBearerTokenExceptForHealth()
     {
         var ct = TestContext.Current.CancellationToken;

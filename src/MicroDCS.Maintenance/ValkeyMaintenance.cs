@@ -1,4 +1,3 @@
-using System.Globalization;
 using MicroDCS.Core.Transport;
 using MicroDCS.Valkey;
 using MicroDCS.Valkey.Documents;
@@ -20,14 +19,30 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     private const string PurgeTool = "maint_purge_scope";
     private const string RestoreTool = "maint_restore";
 
-    // Removes the targets in one step. ARGV holds three values per key: operation, argument, expected version (or empty).
-    // Nothing is removed when a version differs.
+    // Removes the targets in one step. ARGV holds three values per key: operation, argument (set member or hash field) and the
+    // fingerprint of the plan image (KeyImage.Fingerprint). Nothing is removed when any target differs from its fingerprint (RV-21).
+    // redis.pcall: a key whose type changed returns an error table, which compares unequal.
     private const string DeleteScript = """
-        for i = 1, #KEYS do
-          local expected = ARGV[i * 3]
-          if expected ~= '' then
-            if redis.call('HGET', KEYS[i], 'v') ~= expected then return {0, i} end
+        local function matches(key, arg, e)
+          local c = string.sub(e, 1, 1)
+          local p = string.sub(e, 2)
+          if c == 'v' then return redis.pcall('HGET', key, 'v') == p
+          elseif c == 'S' then return redis.pcall('GET', key) == p
+          elseif c == 'h' then return tostring(redis.pcall('HLEN', key)) == p
+          elseif c == 's' then return tostring(redis.pcall('SCARD', key)) == p
+          elseif c == 'z' then return tostring(redis.pcall('ZCARD', key)) == p
+          elseif c == 'x' then
+            local last = redis.pcall('XREVRANGE', key, '+', '-', 'COUNT', 1)
+            local id = ''
+            if type(last) == 'table' and last[1] then id = last[1][1] end
+            return (tostring(redis.pcall('XLEN', key)) .. '|' .. id) == p
+          elseif c == 'm' then return redis.pcall('SISMEMBER', key, arg) == 1
+          elseif c == 'f' then return redis.pcall('HGET', key, arg) == p
           end
+          return false
+        end
+        for i = 1, #KEYS do
+          if not matches(KEYS[i], ARGV[i * 3 - 1], ARGV[i * 3]) then return {0, i} end
         end
         local removed = 0
         for i = 1, #KEYS do
@@ -71,6 +86,9 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     }
 
     private IDatabase Database => _context.Multiplexer.GetDatabase();
+
+    /// <summary>Test seam: runs after the snapshot is written and before the change, where a concurrent write is the race of RV-21/RV-22.</summary>
+    internal Func<Task>? BeforeChange { get; set; }
 
     /// <inheritdoc />
     public async ValueTask<MaintenancePlan> PlanDedupeReleaseAsync(string caller, string source, string id, CancellationToken cancellationToken)
@@ -247,6 +265,11 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             throw Refuse(caller, plan.Tool, ex.Message);
         }
 
+        if (BeforeChange is { } beforeDelete)
+        {
+            await beforeDelete().ConfigureAwait(false);
+        }
+
         var keys = new RedisKey[removals.Count];
         var values = new RedisValue[removals.Count * 3];
         for (var i = 0; i < removals.Count; i++)
@@ -255,7 +278,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             keys[i] = target.Key;
             values[(i * 3)] = target.PartKind switch { "setmember" => "srem", "hashfield" => "hdel", _ => "del" };
             values[(i * 3) + 1] = target.Part ?? string.Empty;
-            values[(i * 3) + 2] = target.PartKind is null && image.Version is { } version ? version.ToString(CultureInfo.InvariantCulture) : string.Empty;
+            values[(i * 3) + 2] = image.Fingerprint();
         }
 
         var reply = (RedisResult[]?)await Database.ScriptEvaluateAsync(DeleteScript, keys, values).WaitAsync(cancellationToken).ConfigureAwait(false)
@@ -303,7 +326,21 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             }
         }
 
+        if (BeforeChange is { } beforeRestore)
+        {
+            await beforeRestore().ConfigureAwait(false);
+        }
+
         var transaction = Database.CreateTransaction();
+        for (var i = 0; i < items.Count; i++)
+        {
+            // RV-22: the live state must still be what the recheck saw, or nothing is written (a running instance wrote in between).
+            if (current[i] is null || current[i]!.Canonical() != items[i].Canonical())
+            {
+                transaction.AddCondition(KeyImage.ConditionFor(pending.Targets[i], current[i]));
+            }
+        }
+
         var tasks = new List<Task>();
         var readded = 0;
         foreach (var image in write)
@@ -313,7 +350,8 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
 
         if (!await transaction.ExecuteAsync().WaitAsync(cancellationToken).ConfigureAwait(false))
         {
-            throw Refuse(caller, plan.Tool, "The restore transaction was not executed. Nothing was written.");
+            var kept = snapshotId is null ? string.Empty : $" The snapshot {snapshotId} was written anyway.";
+            throw Refuse(caller, plan.Tool, "A target changed between the check and the restore (a running instance wrote it). Nothing was written." + kept + " Plan again.");
         }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
