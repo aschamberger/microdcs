@@ -1,6 +1,6 @@
 # Local development stack. Unauthenticated and plaintext - not for production.
 #
-#   docker compose up -d         # MQTT broker, Valkey, Aspire dashboard
+#   docker compose up -d         # MQTT broker, NATS, Valkey, Aspire dashboard
 #   docker compose down -v       # stop and wipe the valkey-data volume
 #
 # The .NET app runs on the host (`dotnet run`) against these ports. The integration
@@ -27,6 +27,20 @@ services:
       test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  # NATS with JetStream for the NATS transport (D-47). Set APP_MicroDcs__Bindings__greetings__Transport=nats and
+  # APP_MicroDcs__Nats__Url=nats://localhost:4222 to run the greetings demo on it.
+  nats:
+    image: nats:2.15-alpine@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
       retries: 5
 
   # valkey-bundle includes valkey-json, valkey-search and valkey-bloom (D-26).

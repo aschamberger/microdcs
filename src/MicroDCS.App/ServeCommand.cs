@@ -4,6 +4,7 @@ using MicroDCS.Inspection;
 using MicroDCS.Maintenance;
 using MicroDCS.Mcp;
 using MicroDCS.Transport.Mqtt;
+using MicroDCS.Transport.Nats;
 using MicroDCS.Valkey;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.Hosting;
 namespace MicroDCS.App;
 
 /// <summary>
-/// <c>microdcs serve</c>: the greetings demo processor on the transport its binding names (<c>mqtt</c> or <c>memory</c>), with Valkey (and the maintenance operations) when
+/// <c>microdcs serve</c>: the greetings demo processor on the transport its binding names (<c>mqtt</c>, <c>nats</c> or <c>memory</c>), with Valkey (and the maintenance operations) when
 /// <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
 /// It exists so the inspection tools and the end-to-end tests have a running application until the real processors arrive (S17). Configuration comes from
 /// environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
@@ -33,6 +34,11 @@ internal static class ServeCommand
         if (transports.Contains(MqttOptions.TransportName))
         {
             builder.Services.AddMqttTransport(builder.Configuration);
+        }
+
+        if (transports.Contains(NatsOptions.TransportName))
+        {
+            builder.Services.AddNatsTransport(builder.Configuration);
         }
 
         if (transports.Contains("memory") || transports.Count == 0)

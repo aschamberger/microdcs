@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S14** (NATS transport) or **S16** (job models); S08 to S13 and S15 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S16** (job models); S08 to S15 are done.
 
 ## How to use these files
 
@@ -108,8 +108,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-44](decisions.md#d-44) | decided | SFC core rules: work identity, schema direction, recipe pinning, capabilities, only qualifier N, routable `timeout`/`error`, build-time validation, time source, sweep, retry and scope-discovery values |
 | [D-45](decisions.md#d-45) | decided | Maintenance operations: plan/apply with digest and compare-and-delete, snapshots before every change, environment guard and optional marker key, defaults |
 | [D-46](decisions.md#d-46) | decided | MQTT transport: one connection, QoS 1 end to end, persistent session with 1 h expiry, acknowledgement after the pipeline, per-instance reply topic, retained state topics, reconnect loop |
+| [D-47](decisions.md#d-47) | decided | NATS transport: JetStream requests with shared durable consumers, plain inbox replies, KV state topics with message TTL, nak and poison handling; `Retain` is an MQTT-only hint; tenancy by account |
 
-Next free id: **D-47**.
+Next free id: **D-48**.
 
 ## Open questions
 
@@ -142,10 +143,10 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
 | Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
 | ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
-| OpenTelemetry coverage | Pipeline side answered in S10: one `ActivitySource`/`Meter` named `MicroDCS`, the OTEL handler variants of Python are gone (D-37 revision). MQTTnet has no instrumentation of its own; the transport adds the counters `microdcs.mqtt.dropped` and `microdcs.mqtt.reconnects` on the same meter (S13). Open: NATS.Net and StackExchange.Redis | S14 |
+| OpenTelemetry coverage | Pipeline side answered in S10: one `ActivitySource`/`Meter` named `MicroDCS`, the OTEL handler variants of Python are gone (D-37 revision). MQTTnet has no instrumentation of its own; the transport adds the counters `microdcs.mqtt.dropped` and `microdcs.mqtt.reconnects` on the same meter (S13). NATS.Net has its own `ActivitySource` and `Meter` named `NATS.Net`; the NATS transport adds `microdcs.nats.*` counters (S14, D-47). Open: StackExchange.Redis | S21 |
 | ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
 | R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
-| R-20 Multi-tenancy | NATS accounts in S14, the other transports and the key-prefix convention in S22 | S14, S22 |
+| R-20 Multi-tenancy | NATS: one account per tenant, chosen by the credentials, tested in S14 (D-47). The other transports and the key-prefix convention in S22 | S22 |
 | R-21 Support model, zones/conduits | Language-independent documentation | S22 |
 | ~~D-11 docs update~~ | Done in S01 | — |
 | CloudEvents benchmark (R-18) | Benchmark project `bench/MicroDCS.Benchmarks` exists since S10 (baseline in [core contracts](research/core-contracts.md#s10-pipeline-python-parity-and-tests)); CI baseline and comparison in S23 | S23 |
@@ -171,7 +172,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S11 | Inspection layer and MCP read tools | S09, S10 | done |
 | S12 | Maintenance tools with snapshot and restore | S11 | done |
 | S13 | MQTT transport | S10 | done |
-| S14 | NATS transport (abstraction check) | S13 | open |
+| S14 | NATS transport (abstraction check) | S13 | done |
 | S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | done |
 | **M2 Parity gate** | | | |
 | S16 | Job models and state machine | S05, S08 | open |

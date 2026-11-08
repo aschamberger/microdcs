@@ -1,0 +1,672 @@
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Threading.Channels;
+using MicroDCS.Core.Hosting;
+using MicroDCS.Core.Messaging;
+using MicroDCS.Core.Transport;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NATS.Client.Core;
+using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
+using NATS.Client.KeyValueStore;
+
+namespace MicroDCS.Transport.Nats;
+
+/// <summary>
+/// The NATS transport (D-37, D-38, D-47). Requests (events, commands, data, metadata) travel through JetStream: a stream per binding prefix,
+/// a durable consumer per binding with explicit acknowledgement after the pipeline. Responses use the native inbox pattern: a plain
+/// subject per instance (D-9). State topics (<see cref="IStateTopicPort"/>) are keys in a key-value bucket with a per-message time to live.
+/// The client library reconnects and resumes consumers by itself (D-10), so the transport has no reconnect loop of its own.
+/// </summary>
+public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposable
+{
+    private static readonly NatsAddressRenderer _renderer = new();
+    private static readonly INatsSerialize<ReadOnlyMemory<byte>> _outSerializer = NatsRawSerializer<ReadOnlyMemory<byte>>.Default;
+    private static readonly INatsDeserialize<byte[]> _inSerializer = NatsRawSerializer<byte[]>.Default;
+
+    private readonly NatsOptions _options;
+    private readonly MicroDcsOptions _core;
+    private readonly ProcessorRegistry _registry;
+    private readonly IEnvelopeCodec _codec;
+    private readonly TimeProvider _time;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<NatsTransport> _logger;
+    private readonly ILogger _security;
+    private readonly CancellationTokenSource _stopping = new();
+    private readonly CancellationTokenSource _receivingStop = new();
+    private CancellationTokenSource _consumeCycle = new();
+    private readonly ConcurrentDictionary<string, byte> _retainWarned = new(StringComparer.Ordinal);
+    private readonly string _clientName;
+
+    private NatsConnection? _connection;
+    private NatsJSContext? _js;
+    private INatsKVStore? _state;
+    private IInboundHandler? _handler;
+    private Channel<NatsDelivery>? _inbox;
+    private Task[] _workers = [];
+    private Task[] _readers = [];
+    private ImmutableArray<NatsConsumerInfo> _consumers = [];
+    private volatile bool _stopped;
+    private volatile bool _receiving;
+    private int _opened;
+    private long _received;
+    private long _acknowledged;
+    private long _nacked;
+    private long _poisoned;
+    private long _dropped;
+    private long _published;
+    private long _reconnects;
+
+    /// <summary>Initializes a new instance of the <see cref="NatsTransport"/> class.</summary>
+    /// <param name="options">The NATS options.</param>
+    /// <param name="core">The core options (bindings, instance id).</param>
+    /// <param name="registry">The processors, for the subscribed intents.</param>
+    /// <param name="codec">The envelope codec.</param>
+    /// <param name="time">The clock.</param>
+    /// <param name="loggerFactory">The logger factory.</param>
+    public NatsTransport(
+        IOptions<NatsOptions> options,
+        IOptions<MicroDcsOptions> core,
+        ProcessorRegistry registry,
+        IEnvelopeCodec codec,
+        TimeProvider time,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(core);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+        _options = options.Value;
+        _core = core.Value;
+        _registry = registry;
+        _codec = codec;
+        _time = time;
+        _loggerFactory = loggerFactory;
+        _logger = loggerFactory.CreateLogger<NatsTransport>();
+        _security = loggerFactory.CreateLogger(PipelineTelemetry.SecurityCategory);
+        _clientName = string.IsNullOrWhiteSpace(_options.ClientName) ? "microdcs-" + _core.InstanceId : _options.ClientName;
+        Profile = new DeliveryProfile(
+            DeliveryGuarantee.AtLeastOnce,
+            NativeReply: true,
+            NativeExpiry: true,
+            StateTopics: true,
+            SharedConsumption: true,
+            CanRedeliver: true);
+    }
+
+    /// <inheritdoc />
+    public string Name => NatsOptions.TransportName;
+
+    /// <inheritdoc />
+    public DeliveryProfile Profile { get; }
+
+    /// <inheritdoc />
+    public IAddressRenderer Addresses => _renderer;
+
+    /// <inheritdoc />
+    public bool IsConnected => !_stopped && _connection?.ConnectionState == NatsConnectionState.Open;
+
+    internal NatsStatus Status => new(
+        _options.Url,
+        _clientName,
+        IsConnected,
+        _receiving,
+        Interlocked.Read(ref _received),
+        Interlocked.Read(ref _acknowledged),
+        Interlocked.Read(ref _nacked),
+        Interlocked.Read(ref _poisoned),
+        Interlocked.Read(ref _dropped),
+        Interlocked.Read(ref _published),
+        Interlocked.Read(ref _reconnects),
+        _consumers);
+
+    /// <inheritdoc />
+    public ReplyAddress? GetReplyAddress(string bindingId, string instanceId)
+    {
+        ArgumentNullException.ThrowIfNull(bindingId);
+        ArgumentNullException.ThrowIfNull(instanceId);
+        return _core.Bindings.TryGetValue(bindingId, out var binding) && !string.IsNullOrEmpty(binding.ReplyBase)
+            ? new ReplyAddress(NatsAddressRenderer.NormalizePrefix(binding.ReplyBase) + "." + NatsAddressRenderer.InstanceToken(instanceId))
+            : null;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask StartAsync(IInboundHandler handler, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _handler = handler;
+        var plan = BuildPlan();
+
+        var connection = new NatsConnection(NatsClientOptionsFactory.Build(_options, _clientName, _loggerFactory, _logger));
+        _connection = connection;
+        connection.ConnectionOpened += OnOpenedAsync;
+        connection.ConnectionDisconnected += OnDisconnectedAsync;
+
+        // A server that is not reachable at start ends the process (D-27); only later losses are retried by the client.
+        await connection.ConnectAsync().AsTask().WaitAsync(_options.OperationTimeout, _time, cancellationToken).ConfigureAwait(false);
+        Log.Connected(_logger, _options.Url, _clientName);
+
+        var js = new NatsJSContext(connection, new NatsJSOpts(connection.Opts, domain: _options.JetStreamDomain));
+        _js = js;
+        var kv = new NatsKVContext(js);
+        _state = await kv.CreateOrUpdateStoreAsync(
+            new NatsKVConfig(_options.StateBucket)
+            {
+                History = 1,
+                NumberOfReplicas = _options.Replicas,
+                LimitMarkerTTL = TimeSpan.FromSeconds(1),
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var stream in plan.Streams)
+        {
+            await js.CreateOrUpdateStreamAsync(
+                new StreamConfig(stream.Name, [stream.Subject])
+                {
+                    MaxAge = _options.StreamMaxAge,
+                    NumReplicas = _options.Replicas,
+                    AllowMsgTTL = true,
+                    Retention = StreamConfigRetention.Limits,
+                    DuplicateWindow = TimeSpan.FromMinutes(2),
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        _inbox = Channel.CreateBounded<NatsDelivery>(new BoundedChannelOptions(Math.Max(1, _core.MessageWorkers) * 2)
+        {
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
+        _workers = [.. Enumerable.Range(0, Math.Max(1, _core.MessageWorkers)).Select(_ => Task.Run(() => WorkAsync(_inbox.Reader), CancellationToken.None))];
+
+        var readers = new List<Task>();
+        var consumers = new List<NatsConsumerInfo>();
+        foreach (var consumer in plan.Consumers)
+        {
+            var created = await js.CreateOrUpdateConsumerAsync(
+                consumer.Stream,
+                new ConsumerConfig(consumer.Name)
+                {
+                    DurableName = consumer.Name,
+                    AckPolicy = ConsumerConfigAckPolicy.Explicit,
+                    AckWait = _options.AckWait,
+                    MaxDeliver = _options.MaxDeliver,
+                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+                    ReplayPolicy = ConsumerConfigReplayPolicy.Instant,
+                    FilterSubjects = [.. consumer.Filters],
+                    InactiveThreshold = _options.ConsumerInactiveThreshold,
+                    NumReplicas = _options.Replicas,
+                },
+                cancellationToken).ConfigureAwait(false);
+            var info = new NatsConsumerInfo(consumer.Stream, consumer.Name, consumer.BindingId, InboundKind.Request, string.Join(' ', consumer.Filters));
+            consumers.Add(info);
+            Log.ConsumerReady(_logger, info.Consumer, info.Stream, info.BindingId, info.Kind, info.Filters);
+            readers.Add(Task.Run(() => ReadConsumerAsync(created, info), CancellationToken.None));
+        }
+
+        foreach (var reply in plan.Replies)
+        {
+            var subscription = await connection.SubscribeCoreAsync(reply.Subject, serializer: _inSerializer, cancellationToken: cancellationToken).ConfigureAwait(false);
+            consumers.Add(new NatsConsumerInfo(string.Empty, reply.Subject, reply.BindingId, InboundKind.Response, reply.Subject));
+            Log.ReplySubscribed(_logger, reply.Subject, reply.BindingId);
+            readers.Add(Task.Run(() => ReadReplyAsync(subscription, reply.BindingId), CancellationToken.None));
+        }
+
+        _consumers = [.. consumers];
+        _readers = [.. readers];
+        _receiving = true;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask StopReceivingAsync(CancellationToken cancellationToken)
+    {
+        _receiving = false;
+        await _receivingStop.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            await Task.WhenAll(_readers).WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            // In-flight messages finish (D-37 phase 2); the workers end once the inbox is empty.
+            _inbox?.Writer.TryComplete();
+            await Task.WhenAll(_workers).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The grace period ended; StopAsync cancels what is left.
+            await _stopping.CancelAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask PublishAsync(OutboundMessage message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (message.Retain && _retainWarned.TryAdd(message.BindingId, 0))
+        {
+            Log.RetainIgnored(_logger, message.BindingId);
+        }
+
+        if (message.SendTo is { } reply)
+        {
+            // A response goes to the inbox of the requesting instance as a plain message (D-9).
+            var (replyHeaders, replyData) = NatsMessageMapper.ToNats(_codec, message, reply.Value, durable: false);
+            await PublishCoreAsync(reply.Value, replyData, replyHeaders, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var subject = message.Address is { } address
+            ? _renderer.RenderPublish(address)
+            : throw new ArgumentException("An outbound message needs an address or a reply address.", nameof(message));
+        var (headers, data) = NatsMessageMapper.ToNats(_codec, message, subject, durable: true);
+        await PublishStreamAsync(subject, data, headers, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask PublishAsync(LogicalAddress address, string name, ReadOnlyMemory<byte> payload, TimeSpan timeToLive, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeToLive, TimeSpan.Zero);
+
+        // A key-value bucket is a stream: a put is a publish to $KV.{bucket}.{key}, so the per-message time to live applies (Nats-TTL).
+        var headers = new NatsHeaders { [NatsMessageMapper.TtlHeader] = NatsMessageMapper.ToSeconds(timeToLive).ToString(CultureInfo.InvariantCulture) };
+        await PublishStreamAsync("$KV." + _options.StateBucket + "." + StateKey(address, name), payload, headers, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DeleteAsync(LogicalAddress address, string name, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        var key = StateKey(address, name);
+        await WhenConnectedAsync(
+            async () => await _state!.DeleteAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false),
+            "$KV." + _options.StateBucket + "." + key,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        _stopped = true;
+        _receiving = false;
+        await _stopping.CancelAsync().ConfigureAwait(false);
+        if (_connection is { } connection)
+        {
+            try
+            {
+                await connection.DisposeAsync().AsTask().WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The grace period ended; the connection closes with the process.
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        _stopped = true;
+        _stopping.Dispose();
+        _receivingStop.Dispose();
+        _consumeCycle.Dispose();
+        if (_connection is { } connection)
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static string StateKey(LogicalAddress address, string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        if (!name.Split('/').All(LogicalAddress.IsValidSegment))
+        {
+            throw new ArgumentException("A state topic name may only use segments of letters, digits, '_' and '-'.", nameof(name));
+        }
+
+        return _renderer.RenderPublish(address) + "." + name.Replace('/', '.');
+    }
+
+    private NatsPlan BuildPlan()
+    {
+        var streams = new Dictionary<string, NatsStreamPlan>(StringComparer.Ordinal);
+        var consumers = new List<NatsConsumerPlan>();
+        var replies = new List<NatsReplyPlan>();
+        var instance = NatsAddressRenderer.InstanceToken(_core.InstanceId ?? string.Empty);
+        foreach (var processor in _registry.Processors)
+        {
+            var binding = _core.Bindings[processor.BindingId];
+            if (!string.Equals(binding.Transport, Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var prefix = NatsAddressRenderer.NormalizePrefix(binding.Prefix!);
+            var streamName = _options.StreamPrefix + "_" + prefix.Replace('.', '_');
+            streams.TryAdd(streamName, new NatsStreamPlan(streamName, prefix + ".>"));
+
+            var filters = processor.SubscribeIntents
+                .SelectMany(intent => _renderer.RenderSubscriptions(new AddressPattern(binding.Prefix!, binding.ScopeLevels, binding.Discriminator, intent, binding.SharedGroup)))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (filters.Count > 0)
+            {
+                // A shared group is one durable consumer that the instances compete on; without a group each instance has its own and sees every message (D-10).
+                var owner = binding.SharedGroup is { } group ? group : instance;
+                consumers.Add(new NatsConsumerPlan(streamName, NatsAddressRenderer.InstanceToken(processor.BindingId + "-" + owner), processor.BindingId, filters));
+            }
+
+            if (GetReplyAddress(processor.BindingId, _core.InstanceId ?? string.Empty) is { } reply)
+            {
+                // The inbox is exclusive to this instance: a plain subject, no queue group (D-9).
+                replies.Add(new NatsReplyPlan(reply.Value, processor.BindingId));
+            }
+            else if (!processor.PublishIntents.IsDefaultOrEmpty && processor.PublishIntents.Contains(Intent.Command))
+            {
+                throw new InvalidOperationException($"Binding '{processor.BindingId}' publishes commands over NATS and needs MicroDcs:Bindings:{processor.BindingId}:ReplyBase (D-9).");
+            }
+        }
+
+        return new NatsPlan([.. streams.Values], consumers, replies);
+    }
+
+    private async Task ReadConsumerAsync(INatsJSConsumer consumer, NatsConsumerInfo info)
+    {
+        var token = _receivingStop.Token;
+        while (!token.IsCancellationRequested)
+        {
+            // A reconnect ends the cycle: the pull request of the old connection is gone and the library would notice only after its idle heartbeat timeout.
+            using var cycle = CancellationTokenSource.CreateLinkedTokenSource(token, Volatile.Read(ref _consumeCycle).Token);
+            try
+            {
+                await foreach (var message in consumer.ConsumeAsync(_inSerializer, new NatsJSConsumeOpts { MaxMsgs = Math.Max(1, _core.MessageWorkers) * 2 }, cycle.Token).ConfigureAwait(false))
+                {
+                    Interlocked.Increment(ref _received);
+                    var delivery = new NatsDelivery(info.BindingId, InboundKind.Request, message.Subject, message.Headers, message.Data, (long)(message.Metadata?.NumDelivered ?? 1), message);
+                    await _inbox!.Writer.WriteAsync(delivery, token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Receiving stopped.
+            }
+            catch (OperationCanceledException)
+            {
+                // Reconnected: pull again on the new connection.
+            }
+            catch (ChannelClosedException)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is NatsException or InvalidOperationException)
+            {
+                // The consumer vanished (server restart without persistence, inactive threshold): create it again and go on.
+                Log.ConsumeFailed(_logger, ex, info.Consumer);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), _time, token).ConfigureAwait(false);
+                    consumer = await _js!.GetConsumerAsync(info.Stream, info.Consumer, token).ConfigureAwait(false);
+                }
+                catch (Exception inner) when (inner is OperationCanceledException or NatsException)
+                {
+                    // Try again in the next round, unless receiving stopped.
+                }
+            }
+        }
+    }
+
+    private async Task ReadReplyAsync(INatsSub<byte[]> subscription, string bindingId)
+    {
+        var token = _receivingStop.Token;
+        try
+        {
+            await foreach (var message in subscription.Msgs.ReadAllAsync(token).ConfigureAwait(false))
+            {
+                Interlocked.Increment(ref _received);
+                await _inbox!.Writer.WriteAsync(new NatsDelivery(bindingId, InboundKind.Response, message.Subject, message.Headers, message.Data, 1, null), token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Receiving stopped.
+        }
+        finally
+        {
+            await subscription.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task WorkAsync(ChannelReader<NatsDelivery> reader)
+    {
+        await foreach (var delivery in reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
+        {
+            try
+            {
+                var disposition = await ProcessAsync(delivery).ConfigureAwait(false);
+                await SettleAsync(delivery, disposition).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The pipeline reports handler faults as an outcome; anything else is a bug in the transport. Do not acknowledge: the server redelivers.
+                Log.WorkerFaulted(_logger, ex, delivery.Subject);
+            }
+        }
+    }
+
+    private async Task<Disposition> ProcessAsync(NatsDelivery delivery)
+    {
+        var size = delivery.Data?.Length ?? 0;
+        var binding = _core.Bindings[delivery.BindingId];
+        if (!_codec.TryDecode(NatsMessageMapper.ToCarrier(delivery.Headers, delivery.Data), out var decoded, out var failure))
+        {
+            return DropBeforePipeline(delivery.Subject, size, "undecodable: " + failure!.Kind);
+        }
+
+        LogicalAddress? address = null;
+        if (delivery.Kind == InboundKind.Request && !NatsAddressRenderer.TryParse(binding.Prefix!, binding.Discriminator, delivery.Subject, out address!))
+        {
+            // A subject that matched the filter but has an invalid scope segment must not skip the scope check (R-11).
+            Log.InvalidSubjectRejected(_security, delivery.BindingId);
+            return DropBeforePipeline(delivery.Subject, size, "invalid subject segment");
+        }
+
+        var inbound = new InboundMessage
+        {
+            BindingId = delivery.BindingId,
+            Kind = delivery.Kind,
+            Envelope = NatsMessageMapper.WithNatsExpiry(decoded, delivery.Headers),
+            Address = address,
+            ReplyTo = NatsMessageMapper.GetReplyTo(delivery.Headers),
+            Redelivered = delivery.NumDelivered > 1,
+        };
+        var outcome = await _handler!.HandleAsync(inbound, _stopping.Token).ConfigureAwait(false);
+        return outcome switch
+        {
+            DeliveryOutcome.Fault => Disposition.Nak,
+            DeliveryOutcome.Drop => Disposition.Terminate,
+            _ => Disposition.Ack,
+        };
+    }
+
+    private Disposition DropBeforePipeline(string subject, int size, string reason)
+    {
+        Interlocked.Increment(ref _dropped);
+        NatsTelemetry.Dropped.Add(1);
+        Log.Dropped(_logger, subject, size, reason);
+        return Disposition.Terminate;
+    }
+
+    private async Task SettleAsync(NatsDelivery delivery, Disposition disposition)
+    {
+        if (delivery.Message is not { } message)
+        {
+            // A plain message (response) has nothing to acknowledge.
+            return;
+        }
+
+        try
+        {
+            switch (disposition)
+            {
+                case Disposition.Ack:
+                    await message.AckAsync(cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    Interlocked.Increment(ref _acknowledged);
+                    break;
+                case Disposition.Terminate:
+                    await message.AckTerminateAsync(cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    Interlocked.Increment(ref _acknowledged);
+                    break;
+                default:
+                    if (delivery.NumDelivered >= _options.MaxDeliver)
+                    {
+                        // The last attempt failed: the server would drop it silently, so end it here where it is counted and logged.
+                        Interlocked.Increment(ref _poisoned);
+                        NatsTelemetry.DeadLettered.Add(1);
+                        Log.Poisoned(_logger, delivery.Subject, delivery.NumDelivered);
+                        await message.AckTerminateAsync(cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        Interlocked.Increment(ref _nacked);
+                        Log.Nacked(_logger, delivery.Subject, delivery.NumDelivered, _options.MaxDeliver);
+                        await message.NakAsync(new AckOpts { NakDelay = _options.NakDelay }, CancellationToken.None).ConfigureAwait(false);
+                    }
+
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is NatsException or InvalidOperationException)
+        {
+            // The connection dropped before the ack: the server redelivers after AckWait and the dedupe store answers the duplicate.
+            Log.AcknowledgeFailed(_logger, ex, delivery.Subject);
+        }
+    }
+
+    private async ValueTask PublishCoreAsync(string subject, ReadOnlyMemory<byte> data, NatsHeaders headers, CancellationToken cancellationToken)
+    {
+        await WhenConnectedAsync(
+            async () => await _connection!.PublishAsync(subject, data, headers, serializer: _outSerializer, cancellationToken: cancellationToken).ConfigureAwait(false),
+            subject,
+            cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _published);
+        Log.Published(_logger, subject, data.Length, "core");
+    }
+
+    private async ValueTask PublishStreamAsync(string subject, ReadOnlyMemory<byte> data, NatsHeaders headers, CancellationToken cancellationToken)
+    {
+        await WhenConnectedAsync(
+            async () =>
+            {
+                var ack = await _js!.PublishAsync(subject, data, _outSerializer, headers: headers, cancellationToken: cancellationToken).ConfigureAwait(false);
+                ack.EnsureSuccess();
+            },
+            subject,
+            cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _published);
+        Log.Published(_logger, subject, data.Length, "jetstream");
+    }
+
+    /// <summary>Runs an operation and, while the connection is down, runs it again after a short wait (Python parity: publishing waits for the reconnect). The message id makes a repeated stream publish idempotent.</summary>
+    private async ValueTask WhenConnectedAsync(Func<Task> operation, string subject, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            if (_stopped)
+            {
+                throw new InvalidOperationException("The transport is stopped.");
+            }
+
+            try
+            {
+                await operation().ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (ex is NatsException && !cancellationToken.IsCancellationRequested && !IsConnected && !_stopped)
+            {
+                Log.PublishWaiting(_logger, subject);
+                await Task.Delay(TimeSpan.FromMilliseconds(100), _time, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private ValueTask OnOpenedAsync(object? sender, NatsEventArgs args)
+    {
+        // The first open is the start; every later one is a reconnect.
+        if (Interlocked.Increment(ref _opened) > 1)
+        {
+            Interlocked.Increment(ref _reconnects);
+            NatsTelemetry.Reconnects.Add(1);
+            Log.Reconnected(_logger);
+            Interlocked.Exchange(ref _consumeCycle, new CancellationTokenSource()).Cancel();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private ValueTask OnDisconnectedAsync(object? sender, NatsEventArgs args)
+    {
+        if (!_stopped)
+        {
+            Log.ConnectionLost(_logger);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>What to do with a delivery once the pipeline is done.</summary>
+internal enum Disposition
+{
+    Ack,
+    Terminate,
+    Nak,
+}
+
+/// <summary>One message taken from a consumer or the reply subscription, on its way to a worker.</summary>
+/// <param name="BindingId">The binding.</param>
+/// <param name="Kind">Request consumer or the instance's reply subscription.</param>
+/// <param name="Subject">The subject the message was published to.</param>
+/// <param name="Headers">The headers.</param>
+/// <param name="Data">The payload.</param>
+/// <param name="NumDelivered">How often the server delivered the message (1 for plain messages).</param>
+/// <param name="Message">The JetStream message to acknowledge, or <see langword="null"/> for a plain message.</param>
+internal sealed record NatsDelivery(
+    string BindingId,
+    InboundKind Kind,
+    string Subject,
+    NatsHeaders? Headers,
+    byte[]? Data,
+    long NumDelivered,
+    INatsJSMsg<byte[]>? Message);
+
+internal sealed record NatsStreamPlan(string Name, string Subject);
+
+internal sealed record NatsConsumerPlan(string Stream, string Name, string BindingId, IReadOnlyList<string> Filters);
+
+internal sealed record NatsReplyPlan(string Subject, string BindingId);
+
+internal sealed record NatsPlan(ImmutableArray<NatsStreamPlan> Streams, IReadOnlyList<NatsConsumerPlan> Consumers, IReadOnlyList<NatsReplyPlan> Replies);
+
+/// <summary>A consumer or reply subscription of the transport, for the inspector.</summary>
+/// <param name="Stream">The stream, empty for a reply subscription.</param>
+/// <param name="Consumer">The durable consumer name or the reply subject.</param>
+/// <param name="BindingId">The binding.</param>
+/// <param name="Kind">Request or response.</param>
+/// <param name="Filters">The filter subjects.</param>
+internal sealed record NatsConsumerInfo(string Stream, string Consumer, string BindingId, InboundKind Kind, string Filters);
+
+/// <summary>A snapshot of the transport for the inspector.</summary>
+internal sealed record NatsStatus(
+    string Url,
+    string ClientName,
+    bool Connected,
+    bool Receiving,
+    long Received,
+    long Acknowledged,
+    long Nacked,
+    long Poisoned,
+    long Dropped,
+    long Published,
+    long Reconnects,
+    ImmutableArray<NatsConsumerInfo> Consumers);

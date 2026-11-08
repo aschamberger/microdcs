@@ -94,7 +94,7 @@ public sealed record OutboundMessage
     /// <summary>The address on which the sender expects a response (this instance's, D-9).</summary>
     public ReplyAddress? ReplyTo { get; init; }
 
-    /// <summary>Keep as last value (state topic) where the transport supports it.</summary>
+    /// <summary>A hint to keep the message as last value where the transport has a per-message retain flag (MQTT). Other transports ignore it and log a warning; durable last values go through <see cref="IStateTopicPort"/> (D-47).</summary>
     public bool Retain { get; init; }
 }
 

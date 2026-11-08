@@ -49,19 +49,20 @@ src/MicroDCS.Sfc.Simulation/ in-memory SFC host: virtual clock, scripted equipme
 src/MicroDCS.Generators/    Roslyn source generator and MDCS diagnostics for processors and payloads (netstandard2.0)
 src/MicroDCS.Testing/       ProcessorHarness: drives a processor in memory with a fake clock
 src/MicroDCS.Transport.Mqtt/ MQTT 5 transport on MQTTnet: addresses, mapping, reply topic, state topics, reconnect (D-46)
-src/MicroDCS.App/           AOT application (`microdcs`); smoke checks and the greetings demo processor (`serve`, on MQTT or in memory)
-tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, Maintenance, Sfc, Valkey, Transport.Mqtt)
+src/MicroDCS.Transport.Nats/ NATS transport on NATS.Net: JetStream consumers, inbox replies, KV state topics (D-47)
+src/MicroDCS.App/           AOT application (`microdcs`); smoke checks and the greetings demo processor (`serve`, on MQTT, NATS or in memory)
+tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, Maintenance, Sfc, Valkey, Transport.Mqtt, Transport.Nats)
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
 scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI
 compose.scan.yaml           digest-pinned scanner containers; configs in .gitleaks.toml, trivy.yaml, .trivyignore.yaml
 .github/workflows/          ci.yml (build, tests, Sonar, AOT image, integration), security.yml (scanners), docs.yml
 Dockerfile                  AOT publish into chiseled runtime-deps (non-root, no shell; linux-x64 and linux-arm64, D-32); `tests` target for compose
-compose.test.yaml           integration harness (D-15): Valkey, Mosquitto, tests container
+compose.test.yaml           integration harness (D-15): Valkey, Mosquitto, NATS, tests container
 docs/                       docs site; docs/porting/ is the port plan
 schemas/                    JSON Schemas (greetings, machinery jobs, SFC recipe, IJT)
 deploy/                     Kubernetes manifest (Python era, ported in S22)
-compose.yaml                local dev stack: Mosquitto, Valkey (valkey-bundle), Aspire dashboard; profile `app` also runs the image with the dev MCP server
+compose.yaml                local dev stack: Mosquitto, NATS, Valkey (valkey-bundle), Aspire dashboard; profile `app` also runs the image with the dev MCP server
 overrides/                  Zensical template overrides (WIP announcement bar)
 .claude/                    rules, skills, hooks and shared settings for Claude Code
 ```
