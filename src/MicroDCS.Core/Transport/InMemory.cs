@@ -159,6 +159,7 @@ public sealed class InMemoryDedupeStore : IDedupeStore
     private readonly TimeProvider _time;
     private readonly TimeSpan _lease;
     private readonly TimeSpan _retention;
+    private DateTimeOffset _nextSweep;
 
     /// <summary>Creates the store.</summary>
     /// <param name="time">The clock.</param>
@@ -171,12 +172,25 @@ public sealed class InMemoryDedupeStore : IDedupeStore
         _retention = retention;
     }
 
+    /// <summary>The number of entries held, including expired ones not swept yet.</summary>
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _entries.Count;
+            }
+        }
+    }
+
     /// <inheritdoc />
     public ValueTask<ClaimState> ClaimAsync(string source, string id, string token, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         lock (_gate)
         {
+            Sweep(now);
             if (_entries.TryGetValue((source, id), out var entry) && entry.Until > now)
             {
                 if (entry.Done)
@@ -207,6 +221,20 @@ public sealed class InMemoryDedupeStore : IDedupeStore
     }
 
     /// <inheritdoc />
+    public ValueTask ReleaseAsync(string source, string id, string token, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (_entries.TryGetValue((source, id), out var entry) && !entry.Done && entry.Token == token)
+            {
+                _entries.Remove((source, id));
+            }
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
     public ValueTask<TimeSpan> LeaseRemainingAsync(string source, string id, CancellationToken cancellationToken)
     {
         lock (_gate)
@@ -215,6 +243,21 @@ public sealed class InMemoryDedupeStore : IDedupeStore
                 ? entry.Until - _time.GetUtcNow()
                 : TimeSpan.Zero;
             return ValueTask.FromResult(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+        }
+    }
+
+    // Expired leases and done entries past their retention are removed, at most once per lease time so a claim stays cheap.
+    private void Sweep(DateTimeOffset now)
+    {
+        if (now < _nextSweep)
+        {
+            return;
+        }
+
+        _nextSweep = now + _lease;
+        foreach (var key in _entries.Where(e => e.Value.Until <= now).Select(static e => e.Key).ToList())
+        {
+            _entries.Remove(key);
         }
     }
 

@@ -52,4 +52,10 @@ internal static partial class Log
 
     [LoggerMessage(EventId = 17, Level = LogLevel.Warning, Message = "Reply {EventId} on binding {Binding} not published: the request has no reply address and no address to answer on")]
     public static partial void ReplyHasNoDestination(ILogger logger, string eventId, string binding);
+
+    [LoggerMessage(EventId = 18, Level = LogLevel.Warning, Message = "Releasing the dedupe lease of event {EventId} failed; it lapses by itself")]
+    public static partial void ReleaseFailed(ILogger logger, Exception exception, string eventId);
+
+    [LoggerMessage(EventId = 19, Level = LogLevel.Warning, Message = "Shutdown phase {Phase}: the grace period ended, the remaining phases run without waiting")]
+    public static partial void GracePeriodEnded(ILogger logger, string phase);
 }

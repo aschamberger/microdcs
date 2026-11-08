@@ -202,8 +202,7 @@ public sealed class HostLifecycleTests
 
         (await harness.SendEnvelopeAsync(envelope, TestContext.Current.CancellationToken)).Outcome.ShouldBe(DeliveryOutcome.Fault);
 
-        // Not marked done: after the lease lapses the redelivery is claimed again, not treated as a duplicate (T-18).
-        harness.Time.Advance(TimeSpan.FromMinutes(1));
+        // Not marked done, and the lease is released (L-7): the redelivery is claimed at once, not treated as a duplicate (T-18).
         var store = harness.Services.GetRequiredService<IDedupeStore>();
         (await store.ClaimAsync("urn:x", "boom", "t", TestContext.Current.CancellationToken)).ShouldBe(ClaimState.Claimed);
     }

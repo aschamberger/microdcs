@@ -35,6 +35,9 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     private readonly EnvelopeFactory _envelopes;
     private readonly ExpiryTracker _expiry;
     private readonly PipelineDecisionLog? _decisions;
+    private static readonly TimeSpan _minClaimPoll = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan _maxClaimPoll = TimeSpan.FromSeconds(1);
+
     private OutboundQueues? _queues;
     private int _inFlight;
 
@@ -84,12 +87,18 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     /// <summary>The number of commands waiting for a response or their expiry.</summary>
     public int PendingExpiries => _expiry.Pending;
 
-    /// <summary>Starts the outgoing queues and their pumps. Called once, after the transports started.</summary>
+    /// <summary>
+    /// Opens the outgoing queues so that events can be published. Called once, before the first transport starts: a message that
+    /// arrives while the transports start may already publish (the queues hold it until the pumps run).
+    /// </summary>
+    public void OpenPublishing() =>
+        _queues ??= new OutboundQueues(_options, _registry.Processors.Select(p => p.BindingId));
+
+    /// <summary>Starts the pumps of the outgoing queues (opening them if needed). Called once, after the transports started.</summary>
     public void StartPublishing()
     {
-        var queues = new OutboundQueues(_options, _registry.Processors.Select(p => p.BindingId));
-        queues.Start(PublishQueuedAsync, OnPumpFault);
-        _queues = queues;
+        OpenPublishing();
+        _queues!.Start(PublishQueuedAsync, OnPumpFault);
     }
 
     /// <summary>Shutdown phase 3: waits until the outgoing queues are empty. New events are refused afterwards.</summary>
@@ -158,6 +167,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         }
 
         var envelope = _envelopes.Build(payload, options, request: null);
+        var messages = new List<OutboundMessage>(targets.Count);
         foreach (var target in targets)
         {
             if (!queues.Accepts(target, envelope.Type))
@@ -166,9 +176,11 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
                 continue;
             }
 
-            queues.Enqueue(target, CreateOutbound(target, envelope, intent, options?.Retain ?? false));
+            messages.Add(CreateOutbound(target, envelope, intent, options?.Retain ?? false));
         }
 
+        // All or nothing (D-28 revised): a full queue on one binding must not leave the event on the others.
+        queues.EnqueueAll(messages);
         return ValueTask.CompletedTask;
     }
 
@@ -202,9 +214,11 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         var expires = message.ReplyTo is not null && envelope.ExpiryInterval is { } interval && interval > TimeSpan.Zero;
 
         // The timer starts before the publish: a fast response must find it and cancel it.
+        // One envelope can go to several bindings: each binding has its own timer, and a response ends only the one of its binding.
+        var key = ExpiryKey(message.BindingId, envelope.Id);
         if (expires)
         {
-            _expiry.Start(envelope.Id, envelope.ExpiryInterval!.Value, ct => HandleExpiredAsync(message, ct));
+            _expiry.Start(key, envelope.ExpiryInterval!.Value, ct => HandleExpiredAsync(message, ct));
         }
 
         try
@@ -215,7 +229,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         {
             if (expires)
             {
-                _expiry.Cancel(envelope.Id);
+                _expiry.Cancel(key);
             }
 
             throw;
@@ -255,15 +269,17 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
                 }
 
                 var follow = _envelopes.Build(reply.Payload, reply.Options, envelope);
-                _queues?.Enqueue(command.BindingId, CreateOutbound(command.BindingId, follow, Intent.Event, reply.Options?.Retain ?? false));
+                _queues.Enqueue(command.BindingId, CreateOutbound(command.BindingId, follow, Intent.Event, reply.Options?.Retain ?? false));
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            // As in Python (P-12): a failing expiry handler is logged; it does not end the host.
+            // As in Python (P-12): a failing expiry handler is logged; it does not end the host. A timeout inside the handler is a failure too.
             Log.ExpiryFaulted(_logger, ex, envelope.Id);
         }
     }
+
+    private static string ExpiryKey(string bindingId, string eventId) => bindingId + "\n" + eventId;
 
     private void OnPumpFault(string bindingId, Exception exception)
     {
@@ -303,16 +319,21 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
 
         var transport = _transports.GetValueOrDefault(binding.Transport);
         var dedupe = transport?.Profile.Guarantee == DeliveryGuarantee.AtLeastOnce;
-        if (dedupe && await ClaimAsync(envelope, cancellationToken).ConfigureAwait(false) == ClaimState.Done)
+        var claim = string.Empty;
+        if (dedupe)
         {
-            Log.DuplicateAcknowledged(_logger, envelope.Id, message.BindingId);
-            return Result.Duplicate;
+            claim = _options.InstanceId + ":" + Guid.NewGuid().ToString("N");
+            if (await ClaimAsync(envelope, claim, cancellationToken).ConfigureAwait(false) == ClaimState.Done)
+            {
+                Log.DuplicateAcknowledged(_logger, envelope.Id, message.BindingId);
+                return Result.Duplicate;
+            }
         }
 
-        // A response (or anything that names a pending command as its cause) ends that command's timer (T-1).
+        // A response (or anything that names a pending command as its cause) ends that command's timer on this binding (T-1).
         if (envelope.CausationId is { } causation)
         {
-            _expiry.Cancel(causation);
+            _expiry.Cancel(ExpiryKey(message.BindingId, causation));
         }
 
         Step step;
@@ -333,6 +354,12 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
 
         if (step.Result == Result.Faulted)
         {
+            if (dedupe)
+            {
+                // L-7: give the lease back so the redelivery is processed at once instead of after the lease time.
+                await ReleaseClaimAsync(envelope, claim).ConfigureAwait(false);
+            }
+
             StopUnlessRedeliverable(message.BindingId, transport);
             return Result.Faulted;
         }
@@ -358,9 +385,8 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         _services.GetService<IHostApplicationLifetime>()?.StopApplication();
     }
 
-    private async ValueTask<ClaimState> ClaimAsync(EventEnvelope envelope, CancellationToken cancellationToken)
+    private async ValueTask<ClaimState> ClaimAsync(EventEnvelope envelope, string token, CancellationToken cancellationToken)
     {
-        var token = _options.InstanceId + ":" + Guid.NewGuid().ToString("N");
         while (true)
         {
             var state = await _dedupe.ClaimAsync(envelope.Source, envelope.Id, token, cancellationToken).ConfigureAwait(false);
@@ -369,10 +395,25 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
                 return state;
             }
 
-            // Another worker holds the lease; wait for it to finish or lapse, at least 100 ms (T-20).
+            // Another worker holds the lease (T-20): poll until it is done, released or lapsed, between 100 ms and 1 s, so a
+            // duplicate does not sleep through a lease that ends early.
             var remaining = await _dedupe.LeaseRemainingAsync(envelope.Source, envelope.Id, cancellationToken).ConfigureAwait(false);
-            var wait = remaining > TimeSpan.FromMilliseconds(100) ? remaining : TimeSpan.FromMilliseconds(100);
+            var wait = TimeSpan.FromTicks(Math.Clamp(remaining.Ticks, _minClaimPoll.Ticks, _maxClaimPoll.Ticks));
             await Task.Delay(wait, _time, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask ReleaseClaimAsync(EventEnvelope envelope, string token)
+    {
+        try
+        {
+            // Not the message's token: the release also runs when the handler failed through a cancellation of its own.
+            await _dedupe.ReleaseAsync(envelope.Source, envelope.Id, token, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Best effort: the lease lapses by itself.
+            Log.ReleaseFailed(_logger, ex, envelope.Id);
         }
     }
 
@@ -407,8 +448,9 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
             await PublishRepliesAsync(message, replies, transport, cancellationToken).ConfigureAwait(false);
             return new Step(Result.Processed);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            // A cancellation the pipeline did not ask for (a timeout inside the handler) is a fault like any other exception.
             Log.HandlerFaulted(_logger, ex, envelope.Id, envelope.Type, message.BindingId);
             return new Step(Result.Faulted);
         }
@@ -480,7 +522,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         {
             await SendReplyAsync(request, transport, envelope, retain: false, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             Log.PublishFaulted(_logger, ex, request.BindingId);
         }

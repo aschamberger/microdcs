@@ -14,6 +14,7 @@ internal sealed class OutboundQueues : IDisposable
 {
     private readonly Dictionary<string, Queue> _queues = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _abort = new();
+    private readonly Lock _enqueue = new();
     private Task[] _pumps = [];
     private volatile bool _closed;
 
@@ -29,7 +30,7 @@ internal sealed class OutboundQueues : IDisposable
                 SingleReader = true,
                 FullMode = BoundedChannelFullMode.Wait,
             });
-            _queues[id] = new Queue(channel, ParseFilter(binding.OutgoingTypeFilter));
+            _queues[id] = new Queue(channel, size, ParseFilter(binding.OutgoingTypeFilter));
         }
     }
 
@@ -44,12 +45,34 @@ internal sealed class OutboundQueues : IDisposable
     public bool IsClosed => _closed;
 
     /// <summary>Adds a message. Throws when the queue is full instead of blocking (D-28).</summary>
-    public void Enqueue(string bindingId, OutboundMessage message)
+    public void Enqueue(string bindingId, OutboundMessage message) => EnqueueAll([message]);
+
+    /// <summary>
+    /// Adds one message per binding, all or nothing (D-28 revised): when any target queue is full, nothing is added and
+    /// <see cref="OutboundQueueFullException"/> names that binding. Only the pumps take messages out, so the capacity checked
+    /// under the lock cannot shrink before the writes.
+    /// </summary>
+    public void EnqueueAll(IReadOnlyList<OutboundMessage> messages)
     {
-        if (!_queues[bindingId].Channel.Writer.TryWrite(message))
+        lock (_enqueue)
         {
-            PipelineTelemetry.QueueRejected.Add(1);
-            throw new OutboundQueueFullException(bindingId);
+            foreach (var group in messages.GroupBy(static m => m.BindingId, StringComparer.Ordinal))
+            {
+                var queue = _queues[group.Key];
+                if (queue.Channel.Reader.Count + group.Count() > queue.Capacity)
+                {
+                    PipelineTelemetry.QueueRejected.Add(1);
+                    throw new OutboundQueueFullException(group.Key);
+                }
+            }
+
+            // TryWrite fails only after DrainAsync completed the writer: the shutdown refuses everything from here on.
+            var refused = messages.FirstOrDefault(m => !_queues[m.BindingId].Channel.Writer.TryWrite(m));
+            if (refused is not null)
+            {
+                PipelineTelemetry.QueueRejected.Add(1);
+                throw new OutboundQueueFullException(refused.BindingId);
+            }
         }
     }
 
@@ -90,12 +113,13 @@ internal sealed class OutboundQueues : IDisposable
                 await publish(message, cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // The grace period ended: whatever is left is lost, the same as in Python after a forced cancel.
         }
         catch (Exception ex)
         {
+            // Also a cancellation the pump did not ask for (a timeout inside the transport): never end the pump silently (D-27).
             onFault(bindingId, ex);
         }
     }
@@ -103,5 +127,5 @@ internal sealed class OutboundQueues : IDisposable
     private static string[] ParseFilter(string? filter) =>
         string.IsNullOrWhiteSpace(filter) ? [] : [.. filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
-    private sealed record Queue(Channel<OutboundMessage> Channel, string[] Filter);
+    private sealed record Queue(Channel<OutboundMessage> Channel, int Capacity, string[] Filter);
 }

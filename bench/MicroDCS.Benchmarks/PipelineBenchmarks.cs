@@ -97,6 +97,8 @@ public class PipelineBenchmarks
 
         public ValueTask MarkDoneAsync(string source, string id, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
+        public ValueTask ReleaseAsync(string source, string id, string token, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
         public ValueTask<TimeSpan> LeaseRemainingAsync(string source, string id, CancellationToken cancellationToken) => ValueTask.FromResult(TimeSpan.Zero);
     }
 

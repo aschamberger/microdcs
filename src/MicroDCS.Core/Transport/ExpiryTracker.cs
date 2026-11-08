@@ -6,6 +6,9 @@ namespace MicroDCS.Core.Transport;
 /// </summary>
 internal sealed class ExpiryTracker : IDisposable
 {
+    /// <summary>The longest interval a timer supports (<c>Task.Delay</c> limit, about 49.7 days); longer intervals are clamped.</summary>
+    public static readonly TimeSpan MaxInterval = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Timer> _timers = new(StringComparer.Ordinal);
     private readonly TimeProvider _time;
@@ -35,7 +38,7 @@ internal sealed class ExpiryTracker : IDisposable
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
 
         // The clock timer is created here, synchronously: when Start returns, advancing the clock fires it.
-        var delay = Task.Delay(interval, _time, cancellation.Token);
+        var delay = Task.Delay(interval > MaxInterval ? MaxInterval : interval, _time, cancellation.Token);
         lock (_gate)
         {
             if (_timers.Remove(key, out var previous))
@@ -51,17 +54,17 @@ internal sealed class ExpiryTracker : IDisposable
     /// <summary>Cancels the timer for a command, if one is pending. Returns whether there was one.</summary>
     public bool Cancel(string key)
     {
-        Timer timer;
+        // Inside the lock, as in Start: RunAsync disposes the source only after it took the lock and found its entry gone.
         lock (_gate)
         {
-            if (!_timers.Remove(key, out timer))
+            if (!_timers.Remove(key, out var timer))
             {
                 return false;
             }
-        }
 
-        timer.Cancellation.Cancel();
-        return true;
+            timer.Cancellation.Cancel();
+            return true;
+        }
     }
 
     /// <summary>Waits until every pending timer fired or was cancelled. When <paramref name="cancellationToken"/> is cancelled the rest is cancelled.</summary>
@@ -92,7 +95,7 @@ internal sealed class ExpiryTracker : IDisposable
             await delay.ConfigureAwait(false);
             await onExpired(_stop.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
             // Cancelled by a response or by the end of the grace period.
         }

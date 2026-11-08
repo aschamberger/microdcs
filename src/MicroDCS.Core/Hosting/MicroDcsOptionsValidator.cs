@@ -19,6 +19,7 @@ public sealed class MicroDcsOptionsValidator : IValidateOptions<MicroDcsOptions>
         Require(errors, options.DedupeLease > TimeSpan.Zero, "MicroDcs:DedupeLease must be positive.");
         Require(errors, options.DedupeRetention >= options.DedupeLease, "MicroDcs:DedupeRetention must not be shorter than DedupeLease.");
         Require(errors, options.MessageExpiry is null || options.MessageExpiry >= TimeSpan.Zero, "MicroDcs:MessageExpiry must not be negative.");
+        Require(errors, options.MessageExpiry is null || options.MessageExpiry <= ExpiryTracker.MaxInterval, $"MicroDcs:MessageExpiry must not be longer than {ExpiryTracker.MaxInterval} (the longest timer).");
 
         ValidateManagement(errors, options.Management);
 

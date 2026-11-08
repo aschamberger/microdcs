@@ -45,10 +45,7 @@ internal sealed class EnvelopeFactory
             };
         }
 
-        if (!_registry.TryGetDescriptor(payload.GetType(), out var descriptor))
-        {
-            throw new InvalidOperationException($"No payload descriptor for type '{payload.GetType().Name}'. Register it with AddPayloads.");
-        }
+        var descriptor = _registry.GetDescriptor(payload.GetType());
 
         var carried = new Dictionary<string, string>(StringComparer.Ordinal);
         var data = descriptor.Encode(payload, carried);
