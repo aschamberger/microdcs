@@ -120,9 +120,9 @@ Implement the S06 contracts: `IEnvelopeCodec` on upstream CloudEvents (carrier, 
 
 ### S09 Valkey layer (parallel to S08)
 
-Read: the S07 key-schema decisions, [Valkey findings](research/valkey-findings.md), R-4.
+Read: [data layer](research/data-layer.md) (key table, parity rows R-1 to R-30), [SFC rules](research/sfc-rules.md) (configuration table), D-41 to D-44, R-4.
 
-Key schema (D-2, S07), connection setup and options, DAO base with idempotent writes under unknown outcome (R-4), dedupe lease DAO with the Python semantics (claim, done, lease remaining), Streams and Lua helpers with the trimming rule (trim only acknowledged entries; log and count the deleted ids `XAUTOCLAIM` returns), the poller component from S07, secondary indexes as decided (or the Valkey-specific `FT.SEARCH` parser with an integration test), health check. Tests against compose Valkey, including reconnect during an operation.
+Key schema (D-2, S07), connection setup and options, DAO base with idempotent writes under unknown outcome (R-4), dedupe lease DAO with the Python semantics (claim, done, lease remaining), Streams and Lua helpers with the trimming rule (trim only acknowledged entries; log and count the deleted ids `XAUTOCLAIM` returns), the poller component from S07, documents as hashes with explicit indexes in the put scripts (D-41, no `FT.SEARCH`), the scope registry and the `KeySchema` stub already in `MicroDCS.Valkey` (D-42), the nudge poller (D-43), the generic SFC CAS script (D-44), an index-rebuild routine with a test comparing each index with a scan, health check. Tests against compose Valkey, including reconnect during an operation.
 
 ### S10 Pipeline (A-1)
 

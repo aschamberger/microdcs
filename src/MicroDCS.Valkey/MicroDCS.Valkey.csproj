@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS Valkey layer: key schema, documents with explicit indexes, streams and dedupe (D-41 to D-43).</Description>
+  </PropertyGroup>
+</Project>
