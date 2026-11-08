@@ -7,7 +7,8 @@ switch (args)
     case ["smoke"]:
         var cloudEvents = CloudEventsSmoke.Run(Console.Out);
         var host = await HostSmoke.RunAsync(Console.Out).ConfigureAwait(false);
-        return cloudEvents + host == 0 ? 0 : 1;
+        var valkey = await ValkeySmoke.RunAsync(Console.Out).ConfigureAwait(false);
+        return cloudEvents + host + valkey == 0 ? 0 : 1;
     default:
         await Console.Error.WriteLineAsync("usage: microdcs smoke").ConfigureAwait(false);
         return 2;

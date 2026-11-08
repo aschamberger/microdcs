@@ -1,6 +1,6 @@
 # Processors in .NET
 
-This page describes the processor model of the .NET core (decisions D-35 to D-39). The pipeline here is the minimal one of S08; queues, expiry timers and the real transports follow in later sessions.
+This page describes the processor model of the .NET core (decisions D-35 to D-39). The pipeline section below describes what happens to a message; the real transports follow in later sessions.
 
 ## A payload
 
@@ -68,7 +68,7 @@ Configuration binds the `MicroDcs` section with source-generated binding. Enviro
 | `MicroDcs:CloudEventSource` | string | none, required | `source` of events this application creates. |
 | `MicroDcs:InstanceId` | string | `POD_ID` or a generated id | Instance id; part of the dedupe token. |
 | `MicroDcs:Roles` | `Processor`, `Publisher`, `All` | `All` | Which parts this instance runs. |
-| `MicroDcs:MessageExpiry` | time span | none | Expiry interval for created events. |
+| `MicroDcs:MessageExpiry` | time span | none | Expiry interval for created events. A command with an expiry interval starts a local timer that `[OnExpired]` answers. |
 | `MicroDcs:ShutdownGracePeriod` | time span | 30 s | Time for in-flight work on shutdown. |
 | `MicroDcs:OutgoingQueueMaxSize` | int | 1000 | Upper bound of any outgoing queue (D-28). |
 | `MicroDcs:MessageWorkers` | int | 5 | Parallel workers per transport. |
@@ -81,8 +81,37 @@ Configuration binds the `MicroDcs` section with source-generated binding. Enviro
 | `MicroDcs:Bindings:{id}:Discriminator` | string | none | Separates processors that share a prefix; the pair must be unique. |
 | `MicroDcs:Bindings:{id}:ScopeCheck` | `Enforce`, `Off` | `Enforce` | Compare subject scope and address scope. |
 | `MicroDcs:Bindings:{id}:Level0Subjects` | `Reject`, `Accept` | `Reject` | Subjects on addresses without a scope. |
+| `MicroDcs:Bindings:{id}:OutgoingQueueSize` | int | 0 | Size of the outgoing queue of the binding; 0 means `OutgoingQueueMaxSize`, larger values are capped to it. |
+| `MicroDcs:Bindings:{id}:OutgoingTypeFilter` | string | none | Comma separated event type ids or patterns (`*`, `?`) a binding may publish; empty allows all. |
 
-The remaining binding fields (`ReplyBase`, `SharedGroup`, `OutgoingQueueSize`, `OutgoingTypeFilter`) are validated but used from S10 and S13 on.
+The remaining binding fields (`ReplyBase`, `SharedGroup`) are validated but used from S13 on.
+
+## Pipeline
+
+One pipeline serves every transport. For a received message the steps run in this order:
+
+1. Claim the event id (only on transports with at-least-once delivery). A claim held by another worker is awaited; a processed event is a duplicate and is acknowledged without running the handler.
+2. Cancel the expiry timer of the command the message answers (`causationid`).
+3. Check the scope of the subject against the address (D-38). A mismatch is dropped and logged in the `MicroDCS.Security` category.
+4. Decode the payload, run the filters and the handler, run the action sink.
+5. Publish the replies, to the reply address of the request or to the `events` address.
+6. Mark the event done, then the transport acknowledges.
+
+The pipeline returns one of three outcomes to the transport:
+
+| Outcome | When | Transport action |
+|---|---|---|
+| `Ack` | Processed, or a duplicate. | Acknowledge. |
+| `Drop` | Undecodable, no handler for the type, scope rejected. | Acknowledge; the message is not redelivered. A request with a reply address gets an error event of type `io.microdcs.error.v1` with the error kind and a fixed message, never the payload. |
+| `Fault` | The handler threw. | Do not acknowledge. The claim is not marked done, so the broker redelivers after the lease. A transport that cannot redeliver in the same session ends the host (D-27). |
+
+**Publishing events.** Inject `IEventPublisher`. An event goes to a bounded queue per binding and a pump hands it to the transport, in order; the transport waits while it reconnects. A full queue throws `OutboundQueueFullException` (D-28). The event goes to every binding whose processor declares the intent and whose type filter accepts the type; `PublishOptions.BindingId` selects one binding. An intent no processor declares throws. A command carries this instance's reply address.
+
+**Expiry.** A command with an expiry interval and a reply address starts a timer in this instance when it is published. The response (an event whose `causationid` is the command id) cancels it. When it fires, the `[OnExpired]` handler of the processor runs with the original payload and the events it returns are published. A failing expiry handler is logged and does not end the host. Timers are local to the instance (D-9).
+
+**Shutdown.** Receiving stops, in-flight messages finish, the outgoing queues drain, the transports stop, pending expiry timers are awaited, then the processors' `[OnShutdown]` hooks run. When the grace period ends the rest is cancelled. Events returned by an `[OnExpired]` handler during shutdown are not published, because the queues are closed by then.
+
+**Telemetry.** The activity source and the meter are both named `MicroDCS`. A message with `traceparent` and `tracestate` continues that trace in a consumer activity `process {type}`; events created while it runs carry the context. Counters: `microdcs.messages.received` (tag `outcome`), `microdcs.messages.published`, `microdcs.outbound.rejected`, `microdcs.commands.expired`. Logs carry ids and sizes, never payloads.
 
 ## Testing a processor
 

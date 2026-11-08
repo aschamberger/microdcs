@@ -37,8 +37,9 @@ public static class MicroDcsServiceCollectionExtensions
         services.TryAddSingleton(static sp => new ProcessorRegistry(
             sp.GetServices<ProcessorRegistration>().Select(r => r.Descriptor),
             sp.GetServices<IPayloadDescriptor>()));
-        services.TryAddSingleton<MinimalPipeline>();
-        services.TryAddSingleton<IInboundHandler>(static sp => sp.GetRequiredService<MinimalPipeline>());
+        services.TryAddSingleton<MessagePipeline>();
+        services.TryAddSingleton<IInboundHandler>(static sp => sp.GetRequiredService<MessagePipeline>());
+        services.TryAddSingleton<IEventPublisher>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.AddHostedService<MicroDcsHostedService>();
         return services;
     }

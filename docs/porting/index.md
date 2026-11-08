@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S10** (pipeline), **S15** (SFC core) or **S16** (job models); S08 and S09 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S11** (inspection) or **S13** (MQTT transport), **S15** (SFC core) or **S16** (job models); S08, S09 and S10 are done.
 
 ## How to use these files
 
@@ -140,13 +140,13 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
 | Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
 | ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
-| OpenTelemetry coverage | What .NET, MQTTnet, NATS.Net and StackExchange.Redis give out of the box; which custom handler variants disappear | S04, S10 |
+| OpenTelemetry coverage | Pipeline side answered in S10: one `ActivitySource`/`Meter` named `MicroDCS`, the OTEL handler variants of Python are gone (D-37 revision). Open: what MQTTnet, NATS.Net and StackExchange.Redis give out of the box | S13, S14 |
 | ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
 | R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
 | R-20 Multi-tenancy | NATS accounts in S14, the other transports and the key-prefix convention in S22 | S14, S22 |
 | R-21 Support model, zones/conduits | Language-independent documentation | S22 |
 | ~~D-11 docs update~~ | Done in S01 | — |
-| CloudEvents benchmark (R-18) | BenchmarkDotNet on the envelope once the pipeline hot path exists | S10, baseline in S23 |
+| CloudEvents benchmark (R-18) | Benchmark project `bench/MicroDCS.Benchmarks` exists since S10 (baseline in [core contracts](research/core-contracts.md#s10-pipeline-python-parity-and-tests)); CI baseline and comparison in S23 | S23 |
 
 ## Sessions
 
@@ -165,7 +165,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S07 | Design: data layer and SFC rules (key schema, stream consumption, SFC core, time, retries) | S04, S06 | done |
 | S08 | Core: envelope, processor API, hosting, in-memory transport, test harness | S06 | done |
 | S09 | Valkey layer | S07 (parallel to S08) | done |
-| S10 | Pipeline (A-1) | S08, S09 | open |
+| S10 | Pipeline (A-1) | S08, S09 | done |
 | S11 | Inspection layer and MCP read tools | S09, S10 | open |
 | S12 | Maintenance tools with snapshot and restore | S11 | open |
 | S13 | MQTT transport | S10 | open |

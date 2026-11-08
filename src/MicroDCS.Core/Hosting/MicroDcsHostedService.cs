@@ -14,7 +14,7 @@ public sealed class MicroDcsHostedService : IHostedService
 {
     private readonly ProcessorRegistry _registry;
     private readonly IReadOnlyList<ITransport> _transports;
-    private readonly MinimalPipeline _pipeline;
+    private readonly MessagePipeline _pipeline;
     private readonly IStartLease _lease;
     private readonly IServiceProvider _services;
     private readonly IOptions<MicroDcsOptions> _options;
@@ -33,7 +33,7 @@ public sealed class MicroDcsHostedService : IHostedService
     public MicroDcsHostedService(
         ProcessorRegistry registry,
         IEnumerable<ITransport> transports,
-        MinimalPipeline pipeline,
+        MessagePipeline pipeline,
         IStartLease lease,
         IServiceProvider services,
         IOptions<MicroDcsOptions> options,
@@ -82,6 +82,8 @@ public sealed class MicroDcsHostedService : IHostedService
                 Log.TransportStarted(_logger, transport.Name);
             }
 
+            _pipeline.StartPublishing();
+
             foreach (var processor in _registry.Processors)
             {
                 await RunStartedAsync(processor, options, cancellationToken).ConfigureAwait(false);
@@ -92,8 +94,9 @@ public sealed class MicroDcsHostedService : IHostedService
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        // 1. stop receiving, 2. let in-flight messages finish, 3. (outgoing queues drain: S10), 4. stop transports,
-        // 5. (expiry timers: S10), 6. processor shutdown hooks, 7. (shared infrastructure closes with the host).
+        // 1. stop receiving, 2. let in-flight messages finish, 3. drain the outgoing queues, 4. stop transports,
+        // 5. wait for the expiry timers until the grace period ends, 6. processor shutdown hooks,
+        // 7. shared infrastructure closes with the host.
         Log.ShutdownPhase(_logger, "stop-receiving");
         foreach (var transport in _transports)
         {
@@ -106,11 +109,17 @@ public sealed class MicroDcsHostedService : IHostedService
             await Task.Delay(TimeSpan.FromMilliseconds(10), _time, cancellationToken).ConfigureAwait(false);
         }
 
+        Log.ShutdownPhase(_logger, "drain-outgoing");
+        await _pipeline.DrainOutgoingAsync(cancellationToken).ConfigureAwait(false);
+
         Log.ShutdownPhase(_logger, "stop-transports");
         foreach (var transport in _transports)
         {
             await transport.StopAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        Log.ShutdownPhase(_logger, "expiries");
+        await _pipeline.WaitForExpiriesAsync(cancellationToken).ConfigureAwait(false);
 
         Log.ShutdownPhase(_logger, "processors");
         foreach (var processor in _registry.Processors)

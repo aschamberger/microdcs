@@ -94,6 +94,9 @@ public sealed class InMemoryTransport : ITransport
     /// <inheritdoc />
     public bool IsConnected { get; private set; }
 
+    /// <inheritdoc />
+    public ReplyAddress? GetReplyAddress(string bindingId, string instanceId) => new ReplyAddress("reply/" + bindingId + "/" + instanceId);
+
     /// <summary>Everything published so far, oldest first.</summary>
     public ImmutableArray<OutboundMessage> Published => [.. _published];
 
