@@ -26,9 +26,6 @@ internal static partial class Log
     [LoggerMessage(EventId = 7, Level = LogLevel.Information, Message = "Singleton start hook skipped: another instance holds the lease")]
     public static partial void StartLeaseHeldElsewhere(ILogger logger);
 
-    [LoggerMessage(EventId = 8, Level = LogLevel.Warning, Message = "Outgoing queue size {Size} of binding {Binding} exceeds the maximum {Maximum}; capped")]
-    public static partial void QueueSizeCapped(ILogger logger, string binding, int size, int maximum);
-
     [LoggerMessage(EventId = 9, Level = LogLevel.Error, Message = "Publishing failed on binding {Binding}")]
     public static partial void PublishFaulted(ILogger logger, Exception exception, string binding);
 

@@ -82,7 +82,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     /// <summary>Starts the outgoing queues and their pumps. Called once, after the transports started.</summary>
     public void StartPublishing()
     {
-        var queues = new OutboundQueues(_options, _registry.Processors.Select(p => p.BindingId), _logger);
+        var queues = new OutboundQueues(_options, _registry.Processors.Select(p => p.BindingId));
         queues.Start(PublishQueuedAsync, OnPumpFault);
         _queues = queues;
     }
@@ -168,9 +168,10 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     private OutboundMessage CreateOutbound(string bindingId, EventEnvelope envelope, Intent intent, bool retain)
     {
         var binding = _options.Bindings[bindingId];
-        var scope = envelope.Subject is not null && LogicalAddress.TryGetScopePath(envelope.Subject, out var path) ? path : [];
-        if (!scope.All(LogicalAddress.IsValidSegment))
+        var scope = ImmutableArray<string>.Empty;
+        if (envelope.Subject is not null && !LogicalAddress.TryGetScopePath(envelope.Subject, out scope))
         {
+            // D-38: an invalid scope segment makes the event unpublishable; it never falls back to an address without scope.
             throw new InvalidOperationException($"The subject of event '{envelope.Id}' has a scope segment that is not valid in an address (D-38).");
         }
 

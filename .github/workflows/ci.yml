@@ -66,8 +66,8 @@ jobs:
           /d:sonar.cs.vscoveragexml.reportsPaths=TestResults/*.xml
           /d:sonar.cs.vstest.reportsPaths=TestResults/*.trx
           /d:sonar.exclusions="docs/**,spikes/**,**/*.g.cs"
-          /d:sonar.coverage.exclusions="tests/**"
-          /d:sonar.cpd.exclusions="tests/**"
+          /d:sonar.coverage.exclusions="tests/**,bench/**"
+          /d:sonar.cpd.exclusions="tests/**,bench/**"
           /d:sonar.cs.roslyn.ignoreIssues=true
       - run: dotnet build --no-restore --no-incremental -c Release
       # The Valkey layer is covered by integration tests (D-15). Starting only the harness Valkey here lets

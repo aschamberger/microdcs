@@ -2,7 +2,6 @@ using System.IO.Enumeration;
 using System.Threading.Channels;
 using MicroDCS.Core.Authoring;
 using MicroDCS.Core.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace MicroDCS.Core.Transport;
 
@@ -18,18 +17,13 @@ internal sealed class OutboundQueues : IDisposable
     private Task[] _pumps = [];
     private volatile bool _closed;
 
-    public OutboundQueues(MicroDcsOptions options, IEnumerable<string> bindingIds, ILogger logger)
+    public OutboundQueues(MicroDcsOptions options, IEnumerable<string> bindingIds)
     {
         foreach (var id in bindingIds)
         {
             var binding = options.Bindings[id];
             var size = binding.OutgoingQueueSize > 0 ? binding.OutgoingQueueSize : options.OutgoingQueueMaxSize;
-            if (size > options.OutgoingQueueMaxSize)
-            {
-                Log.QueueSizeCapped(logger, id, size, options.OutgoingQueueMaxSize);
-                size = options.OutgoingQueueMaxSize;
-            }
-
+            // The options validator rejects a binding size above the maximum at start (D-27), so no capping is needed here.
             var channel = Channel.CreateBounded<OutboundMessage>(new BoundedChannelOptions(size)
             {
                 SingleReader = true,

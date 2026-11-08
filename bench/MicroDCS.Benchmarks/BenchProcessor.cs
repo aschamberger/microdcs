@@ -13,6 +13,12 @@ internal sealed partial class BenchJsonContext : JsonSerializerContext;
 [Processor(ProcessorBinding.Southbound, Id = "bench")]
 public sealed partial class BenchProcessor
 {
+    private int _handled;
+
     [Incoming]
-    public static Hello OnHello(Hello hello) => hello with { };
+    public Hello OnHello(Hello hello)
+    {
+        Interlocked.Increment(ref _handled);
+        return hello with { };
+    }
 }

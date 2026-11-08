@@ -81,7 +81,7 @@ Configuration binds the `MicroDcs` section with source-generated binding. Enviro
 | `MicroDcs:Bindings:{id}:Discriminator` | string | none | Separates processors that share a prefix; the pair must be unique. |
 | `MicroDcs:Bindings:{id}:ScopeCheck` | `Enforce`, `Off` | `Enforce` | Compare subject scope and address scope. |
 | `MicroDcs:Bindings:{id}:Level0Subjects` | `Reject`, `Accept` | `Reject` | Subjects on addresses without a scope. |
-| `MicroDcs:Bindings:{id}:OutgoingQueueSize` | int | 0 | Size of the outgoing queue of the binding; 0 means `OutgoingQueueMaxSize`, larger values are capped to it. |
+| `MicroDcs:Bindings:{id}:OutgoingQueueSize` | int | 0 | Size of the outgoing queue of the binding; 0 means `OutgoingQueueMaxSize`; a larger value ends the process at start. |
 | `MicroDcs:Bindings:{id}:OutgoingTypeFilter` | string | none | Comma separated event type ids or patterns (`*`, `?`) a binding may publish; empty allows all. |
 
 The remaining binding fields (`ReplyBase`, `SharedGroup`) are validated but used from S13 on.
