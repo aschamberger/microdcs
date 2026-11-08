@@ -39,9 +39,12 @@ internal sealed class ValkeyTestEnvironment : IDisposable
     {
         var server = Multiplexer.GetServers()[0];
         var list = (string?)await server.ExecuteAsync("CLIENT", "LIST") ?? string.Empty;
-        var ids = list.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static line => line.Split(' ').ToDictionary(static f => f.Split('=')[0], static f => f.Contains('=') ? f[(f.IndexOf('=') + 1)..] : string.Empty))
-            .Where(f => f.GetValueOrDefault("name") == Context.Options.KeyPrefix)
+        // One line per client, fields separated by spaces; a line without an id (partial output) is skipped, not an error.
+        var ids = list.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .GroupBy(static f => f.Split('=')[0])
+                .ToDictionary(static g => g.Key, static g => g.First().Contains('=') ? g.First()[(g.First().IndexOf('=') + 1)..] : string.Empty))
+            .Where(f => f.GetValueOrDefault("name") == Context.Options.KeyPrefix && f.ContainsKey("id"))
             .Select(static f => f["id"]);
         foreach (var id in ids)
         {
