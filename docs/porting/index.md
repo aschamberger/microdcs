@@ -89,7 +89,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-25](decisions.md#d-25) | decided | The processor authoring experience is a primary goal |
 | [D-26](decisions.md#d-26) | decided | `valkey-bundle` is the Valkey image |
 | [D-27](decisions.md#d-27) | decided | Fail-fast startup (carried over from Python) |
-| [D-28](decisions.md#d-28) | decided | Explicit error on queue backpressure (carried over from Python) |
+| [D-28](decisions.md#d-28) | revised | Explicit error on queue backpressure (carried over from Python); all or nothing across bindings |
 | [D-29](decisions.md#d-29) | decided | No extra size limit on `custommetadata` (carried over from Python) |
 | [D-30](decisions.md#d-30) | decided | Comma-separated list values in configuration, if lists stay strings (carried over from Python) |
 | [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
@@ -107,10 +107,11 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-43](decisions.md#d-43) | decided | Stream consumption: pub/sub nudge plus 1 s fallback poll, one poller per instance |
 | [D-44](decisions.md#d-44) | decided | SFC core rules: work identity, schema direction, recipe pinning, capabilities, only qualifier N, routable `timeout`/`error`, build-time validation, time source, sweep, retry and scope-discovery values |
 | [D-45](decisions.md#d-45) | decided | Maintenance operations: plan/apply with digest and compare-and-delete, snapshots before every change, environment guard and optional marker key, defaults |
-| [D-46](decisions.md#d-46) | decided | MQTT transport: one connection, QoS 1 end to end, persistent session with 1 h expiry, acknowledgement after the pipeline, per-instance reply topic, retained state topics, reconnect loop |
-| [D-47](decisions.md#d-47) | decided | NATS transport: JetStream requests with shared durable consumers, plain inbox replies, KV state topics with message TTL, nak and poison handling; `Retain` is an MQTT-only hint; tenancy by account |
+| [D-46](decisions.md#d-46) | revised | MQTT transport: one connection, QoS 1 end to end, persistent session with 1 h expiry, acknowledgement after the pipeline, per-instance reply topic, retained state topics, reconnect loop |
+| [D-47](decisions.md#d-47) | revised | NATS transport: JetStream requests with shared durable consumers (name with a filter hash), plain inbox replies, KV state topics with message TTL, nak and poison handling, `AckProgress` while queued; `Retain` is an MQTT-only hint; tenancy by account |
+| [D-48](decisions.md#d-48) | decided | Reply addresses from peers are checked before the instance publishes to them (no `$`, no wildcards, not below an own prefix, optional allow list) |
 
-Next free id: **D-48**.
+Next free id: **D-49**.
 
 ## Open questions
 

@@ -43,6 +43,8 @@ Dispositions: **fix** (in this PR, with a regression test), **decision** (fix pl
 | RV-23 | The dev MCP start command in `CLAUDE.md` fails (no `CloudEventSource`, no binding) | fix | Command with `CloudEventSource` and an in-memory `greetings` binding |
 | RV-24 | `/mcp` does not check the `Origin` header (MCP spec requirement; covered today by the host and content-type checks) | fix | On loopback, a request with an `Origin` that is not a loopback origin gets 403. Unit test |
 
+Tests that are not regression tests in the strict sense: RV-10 is a narrow race without a deterministic test (the fix moves the cancel into the lock, as `Start` does); RV-11, RV-12 and RV-16 need a broker that refuses a subscribe or disconnects on a publish, which Mosquitto in the harness cannot do on demand, so they are covered by review and the existing reconnect tests; RV-15 needs a lost PubAck. RV-17 is tested for NATS (the auth callback reads the rotated file); for MQTT the options are built per attempt by the tested factory.
+
 Hardening for S21/S22 (not changed here): plain-HTTP bearer token on a non-loopback listener, no authentication on loopback in a shared pod network namespace, snapshot file mode.
 
 ## Dedupe wait (L-7, T-20)

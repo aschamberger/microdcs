@@ -327,6 +327,8 @@ Decision: when a bounded internal queue is full, enqueueing fails with an explic
 
 Consequences: overload becomes visible to the caller and in logs and metrics. S06 defines the error type and where it surfaces in the pipeline; bounded `System.Threading.Channels` with `BoundedChannelFullMode.Wait` are not used for these queues without a timeout that turns into the same error.
 
+Revised 2026-11-08 (M1 review, RV-7): an event that goes to several bindings is enqueued **all or nothing**. The capacity of every target queue is checked under one lock before anything is added; when one is full, none gets the event and `OutboundQueueFullException` names that binding. Without this a retry after the error duplicated the event under a new id on the healthy bindings.
+
 Background: [Python design decisions](research/python-design-decisions.md).
 
 ## D-29 No extra size limit on `custommetadata` {#d-29}
@@ -602,6 +604,8 @@ Consequences: `MicroDCS.Transport.Mqtt` (MQTTnet 5.2, AOT clean) with `AddMqttTr
 
 Open: duplicate handling while the first delivery is still in flight waits for the full lease (T-20); a poll cap is a candidate for S19.
 
+Revised 2026-11-08 (M1 review): (1) a failed re-subscribe after a reconnect disconnects before the next attempt, and the loop checks the connection again after it ends, so a drop in between is not lost (RV-11, RV-12); (2) a message is sent at most `MaxPublishAttempts` (5) times, waiting for a reconnect does not count; after that the publish fails and the pump ends the host (RV-16, D-27); (3) the client options, including the SAT token and the password file, are built again for every reconnect attempt (RV-17); (4) a response topic from a peer goes through the reply-address policy (D-48). The T-20 wait is solved in the pipeline: a duplicate polls at most every second, and a faulted message releases its claim (L-7).
+
 ## D-47 NATS transport: JetStream requests, inbox replies, KV state topics {#d-47}
 
 Status: decided (2026-11-08, S14). Details for D-9, D-10, D-37 and D-38. Findings and the leak list: [NATS transport](research/nats-transport.md).
@@ -623,3 +627,23 @@ Decision:
 Consequences: `MicroDCS.Transport.Nats` (NATS.Net 3.3.2, AOT clean) with `AddNatsTransport`; the `transport.nats` inspector; compose service `nats` in the dev stack and the test harness (digest-pinned `nats:2.15-alpine`, server 2.11 or later needed). The core interfaces `ITransport`, `IStateTopicPort`, `InboundMessage` and `OutboundMessage` needed no change.
 
 Open: a faulted message is redelivered while its dedupe claim is still held, so the redelivery waits for the lease (30 s). S19 releases the claim on a fault and caps the wait (finding L-7).
+
+Revised 2026-11-08 (M1 review): (1) **shared consumer name** is `{binding}-{group}-{hash}`, the hash taken over the filter subjects. Instances that filter differently (a rollout that changes intents, scope levels or the discriminator) get their own consumer instead of overwriting the shared one, where old instances would terminate types they do not know. During such a rollout both consumers receive the messages they filter; the dedupe store suppresses the second processing when Valkey is shared, and the old consumer ends through `InactiveThreshold` (RV-19). `AckWait` and `MaxDeliver` are not part of the hash: the last start sets them for the group, as before. (2) Consume recovery recreates the consumer with its start configuration (RV-14). (3) Each consumer pulls one message at a time, and every queued or running message gets `AckProgress` every `AckWait / 3` until it is settled, so waiting for a worker does not count as a delivery (RV-20). (4) A publish is repeated when the attempt saw a disconnect or reconnect (epoch of opened connections), also when the client is back by the time the timeout arrives (RV-15). (5) Credentials are read from their files in the auth callback on every connect (RV-17). (6) `Mdcs-Reply-To` goes through the reply-address policy (D-48). L-7 is done in the pipeline (release on fault, poll at most every second).
+
+## D-48 Reply addresses from peers are checked before the instance publishes to them {#d-48}
+
+Status: decided (2026-11-08, M1 review, RV-18).
+
+Context: a request carries the address its answer goes to (MQTT response topic, NATS `Mdcs-Reply-To`). The instance publishes the reply there with its own credentials, which include rights a peer may not have: the JetStream API and the state bucket on NATS, the retained state topics on MQTT. A peer that may only send commands could otherwise make the instance delete a stream (`$JS.API.STREAM.DELETE.*`) or overwrite a state key (a confused deputy). D-13 trusts transport access control for the identity of the sender, not for where the instance writes.
+
+Decision: `ReplyAddressPolicy` in Core, applied by every transport when a message arrives, rejects a reply address that
+
+* starts with `$` (broker and server namespaces: `$JS`, `$KV`, `$SYS`),
+* contains a wildcard of the transport (`+ #` for MQTT, `* >` for NATS), white space, control characters or an empty segment,
+* lies below a binding prefix of this instance (its own data, event, command and state addresses), unless it lies below one of the instance's reply bases (instance-to-instance replies stay allowed),
+* or, when the binding sets `AllowedReplyPrefixes` (comma separated, D-30), does not start with one of them.
+
+A message with a rejected reply address is dropped before the pipeline (acknowledged or terminated, counted as dropped) and logged in `MicroDCS.Security` with the binding and the reason, never the address. Restricting replies to `ReplyBase` only was rejected: MES clients bring their own reply topics.
+
+Consequences: the AMQP and Zenoh transports (S24, S25) apply the same policy with their separators and wildcards. Broker ACLs stay the first line of defence; the policy covers the gap between what a peer may send and what the instance may write.
+
