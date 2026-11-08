@@ -31,6 +31,7 @@ public sealed class NatsClientOptionsFactoryTests : IDisposable
         opts.Name.ShouldBe("client-1");
         opts.TlsOpts.Mode.ShouldBe(TlsMode.Disable);
         opts.MaxReconnectRetry.ShouldBe(-1);
+        opts.IgnoreAuthErrorAbort.ShouldBeTrue();
         opts.RetryOnInitialConnect.ShouldBeFalse();
     }
 
@@ -41,10 +42,10 @@ public sealed class NatsClientOptionsFactoryTests : IDisposable
         options.Username = "u";
         options.PasswordFile = File("pw", "secret\n");
 
-        var auth = Build(options).AuthOpts;
+        Build(options).AuthOpts.AuthCredCallback.ShouldNotBeNull();
+        var credentials = NatsClientOptionsFactory.ReadCredentials(options);
 
-        auth.Username.ShouldBe("u");
-        auth.Password.ShouldBe("secret");
+        credentials.ShouldBe(NatsAuthCred.FromUserInfo("u", "secret"));
     }
 
     [Fact]
@@ -52,11 +53,23 @@ public sealed class NatsClientOptionsFactoryTests : IDisposable
     {
         var token = Defaults();
         token.TokenFile = File("token", "tok\r\n");
-        Build(token).AuthOpts.Token.ShouldBe("tok");
+        NatsClientOptionsFactory.ReadCredentials(token).ShouldBe(NatsAuthCred.FromToken("tok"));
 
         var creds = Defaults();
         creds.CredsFile = File("a.creds", "x");
-        Build(creds).AuthOpts.CredsFile.ShouldBe(creds.CredsFile);
+        NatsClientOptionsFactory.ReadCredentials(creds).ShouldBe(NatsAuthCred.FromCredsFile(creds.CredsFile));
+    }
+
+    [Fact]
+    public async Task RV17_a_rotated_token_file_is_read_on_the_next_connect()
+    {
+        var options = Defaults();
+        options.TokenFile = File("token", "first\n");
+        var callback = Build(options).AuthOpts.AuthCredCallback.ShouldNotBeNull();
+
+        (await callback(new Uri("nats://localhost:4222"), TestContext.Current.CancellationToken)).ShouldBe(NatsAuthCred.FromToken("first"));
+        await System.IO.File.WriteAllTextAsync(options.TokenFile, "rotated\n", TestContext.Current.CancellationToken);
+        (await callback(new Uri("nats://localhost:4222"), TestContext.Current.CancellationToken)).ShouldBe(NatsAuthCred.FromToken("rotated"));
     }
 
     [Fact]

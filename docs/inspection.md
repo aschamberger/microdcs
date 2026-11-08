@@ -22,6 +22,10 @@ builder.Services.AddMicroDcsManagement().AddMicroDcsMcp();   // after AddMicroDc
 ```
 
 ```bash
+APP_MicroDcs__CloudEventSource=urn:microdcs:dev \
+APP_MicroDcs__Bindings__greetings__Transport=memory \
+APP_MicroDcs__Bindings__greetings__Prefix=dev \
+APP_MicroDcs__Bindings__greetings__ScopeLevels=2 \
 APP_MicroDcs__Management__Enabled=true \
 APP_MicroDcs__Management__McpEnabled=true \
 APP_MicroDcs__Management__WriteEnabled=true \
@@ -73,7 +77,7 @@ All tools are read-only except `inject_event`. `sfc_explain` and `sfc_dryrun` ne
 
 ## Security
 
-* Loopback by default. The `Host` header must name a loopback host (DNS rebinding). Other addresses need the bearer token on every request except `/health/*`.
+* Loopback by default. The `Host` header must name a loopback host (DNS rebinding), and a browser request with an `Origin` that is not a loopback origin gets 403. Other addresses need the bearer token on every request except `/health/*`.
 * `Payload` values are replaced by a size marker unless `IncludePayloads` is on.
 * Every call is logged in the `MicroDCS.Security` category with caller, tool and arguments, never results.
 * `inject_event` goes through the pipeline (claim, scope check, dispatch), never directly into Valkey. Confirm it in the client.

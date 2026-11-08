@@ -24,6 +24,39 @@ public sealed class DedupeAndLeaseTests
     }
 
     [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task RV4TheDoneMarkerHasNoLeaseLeft()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        var store = new ValkeyDedupeStore(env.Context, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(10));
+
+        await store.ClaimAsync("src", "3", "a", ct);
+        await store.MarkDoneAsync("src", "3", ct);
+
+        // The key keeps the 10 min retention, but a waiting duplicate must not sleep for it.
+        (await store.LeaseRemainingAsync("src", "3", ct)).ShouldBe(TimeSpan.Zero);
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task ReleaseGivesUpOnlyTheOwnLease()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        var store = new ValkeyDedupeStore(env.Context, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(10));
+
+        await store.ClaimAsync("src", "4", "a", ct);
+        await store.ReleaseAsync("src", "4", "b", ct);
+        (await store.ClaimAsync("src", "4", "b", ct)).ShouldBe(ClaimState.Busy, "another token does not release");
+
+        await store.ReleaseAsync("src", "4", "a", ct);
+        (await store.ClaimAsync("src", "4", "b", ct)).ShouldBe(ClaimState.Claimed);
+
+        await store.MarkDoneAsync("src", "4", ct);
+        await store.ReleaseAsync("src", "4", "b", ct);
+        (await store.ClaimAsync("src", "4", "c", ct)).ShouldBe(ClaimState.Done, "a done marker is never released");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
     public async Task ALapsedLeaseCanBeClaimedAgain()
     {
         var ct = TestContext.Current.CancellationToken;

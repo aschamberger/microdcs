@@ -83,8 +83,11 @@ Configuration binds the `MicroDcs` section with source-generated binding. Enviro
 | `MicroDcs:Bindings:{id}:Level0Subjects` | `Reject`, `Accept` | `Reject` | Subjects on addresses without a scope. |
 | `MicroDcs:Bindings:{id}:OutgoingQueueSize` | int | 0 | Size of the outgoing queue of the binding; 0 means `OutgoingQueueMaxSize`; a larger value ends the process at start. |
 | `MicroDcs:Bindings:{id}:OutgoingTypeFilter` | string | none | Comma separated event type ids or patterns (`*`, `?`) a binding may publish; empty allows all. |
+| `MicroDcs:Bindings:{id}:AllowedReplyPrefixes` | string | none | Comma separated prefixes a reply address from a peer must start with; empty allows every address the built-in rules accept (D-48). |
 
-The remaining binding fields (`ReplyBase`, `SharedGroup`) are validated but used from S13 on. The `MicroDcs:Management:*` fields (inspection and MCP) are in [Inspection and MCP](inspection.md).
+`ReplyBase` and `SharedGroup` are described with the transports ([MQTT](mqtt-transport.md), [NATS](nats-transport.md)).
+
+A reply address that a peer sends along (MQTT response topic, NATS `Mdcs-Reply-To`) is checked before the instance publishes to it with its own permissions (D-48). Rejected are addresses that start with `$` (broker and server namespaces such as `$JS.API` or `$KV`), contain wildcards, white space or empty segments, or lie below a binding prefix of this instance (its own event and state topics). Addresses below one of the instance's reply bases stay allowed. A message with a rejected reply address is dropped before the pipeline and logged in the `MicroDCS.Security` category without the address. The `MicroDcs:Management:*` fields (inspection and MCP) are in [Inspection and MCP](inspection.md).
 
 ## Pipeline
 

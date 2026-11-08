@@ -48,6 +48,9 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
     private Task[] _workers = [];
     private Task[] _readers = [];
     private ImmutableArray<NatsConsumerInfo> _consumers = [];
+    private readonly ConcurrentDictionary<NatsDelivery, byte> _outstanding = new(ReferenceEqualityComparer.Instance);
+    private ReplyAddressRules? _replyRules;
+    private Task? _progress;
     private volatile bool _stopped;
     private volatile bool _receiving;
     private int _opened;
@@ -137,6 +140,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         ArgumentNullException.ThrowIfNull(handler);
         _handler = handler;
         var plan = BuildPlan();
+        _replyRules = BuildReplyRules();
 
         var connection = new NatsConnection(NatsClientOptionsFactory.Build(_options, _clientName, _loggerFactory, _logger));
         _connection = connection;
@@ -184,25 +188,12 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         var consumers = new List<NatsConsumerInfo>();
         foreach (var consumer in plan.Consumers)
         {
-            var created = await js.CreateOrUpdateConsumerAsync(
-                consumer.Stream,
-                new ConsumerConfig(consumer.Name)
-                {
-                    DurableName = consumer.Name,
-                    AckPolicy = ConsumerConfigAckPolicy.Explicit,
-                    AckWait = _options.AckWait,
-                    MaxDeliver = _options.MaxDeliver,
-                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
-                    ReplayPolicy = ConsumerConfigReplayPolicy.Instant,
-                    FilterSubjects = [.. consumer.Filters],
-                    InactiveThreshold = _options.ConsumerInactiveThreshold,
-                    NumReplicas = _options.Replicas,
-                },
-                cancellationToken).ConfigureAwait(false);
+            var config = ConsumerConfigOf(consumer);
+            var created = await js.CreateOrUpdateConsumerAsync(consumer.Stream, config, cancellationToken).ConfigureAwait(false);
             var info = new NatsConsumerInfo(consumer.Stream, consumer.Name, consumer.BindingId, InboundKind.Request, string.Join(' ', consumer.Filters));
             consumers.Add(info);
             Log.ConsumerReady(_logger, info.Consumer, info.Stream, info.BindingId, info.Kind, info.Filters);
-            readers.Add(Task.Run(() => ReadConsumerAsync(created, info), CancellationToken.None));
+            readers.Add(Task.Run(() => ReadConsumerAsync(created, info, config), CancellationToken.None));
         }
 
         foreach (var reply in plan.Replies)
@@ -215,6 +206,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
 
         _consumers = [.. consumers];
         _readers = [.. readers];
+        _progress = Task.Run(KeepInProgressAsync, CancellationToken.None);
         _receiving = true;
     }
 
@@ -291,6 +283,11 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         _stopped = true;
         _receiving = false;
         await _stopping.CancelAsync().ConfigureAwait(false);
+        if (_progress is { } progress)
+        {
+            await progress.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (_connection is { } connection)
         {
             try
@@ -353,8 +350,12 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             if (filters.Count > 0)
             {
                 // A shared group is one durable consumer that the instances compete on; without a group each instance has its own and sees every message (D-10).
-                var owner = binding.SharedGroup is { } group ? group : instance;
-                consumers.Add(new NatsConsumerPlan(streamName, NatsAddressRenderer.InstanceToken(processor.BindingId + "-" + owner), processor.BindingId, filters));
+                // The shared name carries a hash of the configuration: instances that filter differently (a rollout) get their own consumer
+                // instead of overwriting each other's (RV-19, D-47 revised).
+                var name = binding.SharedGroup is { } group
+                    ? NatsAddressRenderer.InstanceToken(processor.BindingId + "-" + group) + "-" + ConfigHash(filters)
+                    : NatsAddressRenderer.InstanceToken(processor.BindingId + "-" + instance);
+                consumers.Add(new NatsConsumerPlan(streamName, name, processor.BindingId, filters));
             }
 
             if (GetReplyAddress(processor.BindingId, _core.InstanceId ?? string.Empty) is { } reply)
@@ -371,7 +372,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         return new NatsPlan([.. streams.Values], consumers, replies);
     }
 
-    private async Task ReadConsumerAsync(INatsJSConsumer consumer, NatsConsumerInfo info)
+    private async Task ReadConsumerAsync(INatsJSConsumer consumer, NatsConsumerInfo info, ConsumerConfig config)
     {
         var token = _receivingStop.Token;
         while (!token.IsCancellationRequested)
@@ -380,10 +381,14 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(token, Volatile.Read(ref _consumeCycle).Token);
             try
             {
-                await foreach (var message in consumer.ConsumeAsync(_inSerializer, new NatsJSConsumeOpts { MaxMsgs = Math.Max(1, _core.MessageWorkers) * 2 }, cycle.Token).ConfigureAwait(false))
+                // One message at a time from the server (RV-20): the rest waits on the server, where AckWait has not started.
+                await foreach (var message in consumer.ConsumeAsync(_inSerializer, new NatsJSConsumeOpts { MaxMsgs = 1 }, cycle.Token).ConfigureAwait(false))
                 {
                     Interlocked.Increment(ref _received);
                     var delivery = new NatsDelivery(info.BindingId, InboundKind.Request, message.Subject, message.Headers, message.Data, (long)(message.Metadata?.NumDelivered ?? 1), message);
+
+                    // From here until it is settled the message is kept in progress, also while it waits for a worker.
+                    _outstanding[delivery] = 0;
                     await _inbox!.Writer.WriteAsync(delivery, token).ConfigureAwait(false);
                 }
             }
@@ -401,12 +406,12 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             }
             catch (Exception ex) when (ex is NatsException or InvalidOperationException)
             {
-                // The consumer vanished (server restart without persistence, inactive threshold): create it again and go on.
+                // The consumer vanished (server restart without persistence, inactive threshold): create it again and go on (RV-14).
                 Log.ConsumeFailed(_logger, ex, info.Consumer);
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(1), _time, token).ConfigureAwait(false);
-                    consumer = await _js!.GetConsumerAsync(info.Stream, info.Consumer, token).ConfigureAwait(false);
+                    consumer = await _js!.CreateOrUpdateConsumerAsync(info.Stream, config, token).ConfigureAwait(false);
                 }
                 catch (Exception inner) when (inner is OperationCanceledException or NatsException)
                 {
@@ -446,10 +451,18 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 var disposition = await ProcessAsync(delivery).ConfigureAwait(false);
                 await SettleAsync(delivery, disposition).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 // The pipeline reports handler faults as an outcome; anything else is a bug in the transport. Do not acknowledge: the server redelivers.
-                Log.WorkerFaulted(_logger, ex, delivery.Subject);
+                // A worker never ends while the inbox is open, also not on a cancellation (RV-13).
+                if (!_stopping.IsCancellationRequested)
+                {
+                    Log.WorkerFaulted(_logger, ex, delivery.Subject);
+                }
+            }
+            finally
+            {
+                _outstanding.TryRemove(delivery, out _);
             }
         }
     }
@@ -471,13 +484,21 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             return DropBeforePipeline(delivery.Subject, size, "invalid subject segment");
         }
 
+        var replyTo = NatsMessageMapper.GetReplyTo(delivery.Headers);
+        if (replyTo is { } reply && ReplyAddressPolicy.Check(reply.Value, _replyRules!, binding) is { } refused)
+        {
+            // D-48: the instance would publish to the peer's subject with its own permissions ($JS.API, $KV, own subjects).
+            Log.ReplyAddressRejected(_security, delivery.BindingId, refused);
+            return DropBeforePipeline(delivery.Subject, size, "reply address rejected");
+        }
+
         var inbound = new InboundMessage
         {
             BindingId = delivery.BindingId,
             Kind = delivery.Kind,
             Envelope = NatsMessageMapper.WithNatsExpiry(decoded, delivery.Headers),
             Address = address,
-            ReplyTo = NatsMessageMapper.GetReplyTo(delivery.Headers),
+            ReplyTo = replyTo,
             Redelivered = delivery.NumDelivered > 1,
         };
         var outcome = await _handler!.HandleAsync(inbound, _stopping.Token).ConfigureAwait(false);
@@ -577,16 +598,86 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 throw new InvalidOperationException("The transport is stopped.");
             }
 
+            // RV-15: retry when the attempt saw a disconnect, also when the client is back by the time the timeout arrives (a lost
+            // PubAck). The epoch counts opened connections; the message id keeps the repeated stream publish idempotent.
+            var epoch = Volatile.Read(ref _opened);
             try
             {
                 await operation().ConfigureAwait(false);
                 return;
             }
-            catch (Exception ex) when (ex is NatsException && !cancellationToken.IsCancellationRequested && !IsConnected && !_stopped)
+            catch (Exception ex) when (ex is NatsException && !cancellationToken.IsCancellationRequested && !_stopped && (!IsConnected || Volatile.Read(ref _opened) != epoch))
             {
                 Log.PublishWaiting(_logger, subject);
                 await Task.Delay(TimeSpan.FromMilliseconds(100), _time, cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private static string ConfigHash(IEnumerable<string> filters) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join('\n', filters.Order(StringComparer.Ordinal)))))[..8];
+
+    private ConsumerConfig ConsumerConfigOf(NatsConsumerPlan consumer) => new(consumer.Name)
+    {
+        DurableName = consumer.Name,
+        AckPolicy = ConsumerConfigAckPolicy.Explicit,
+        AckWait = _options.AckWait,
+        MaxDeliver = _options.MaxDeliver,
+        DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+        ReplayPolicy = ConsumerConfigReplayPolicy.Instant,
+        FilterSubjects = [.. consumer.Filters],
+        InactiveThreshold = _options.ConsumerInactiveThreshold,
+        NumReplicas = _options.Replicas,
+    };
+
+    private ReplyAddressRules BuildReplyRules()
+    {
+        var bindings = _core.Bindings.Values.Where(b => string.Equals(b.Transport, Name, StringComparison.Ordinal)).ToList();
+        return new ReplyAddressRules(
+            '.',
+            "*>",
+            [.. bindings.Where(static b => !string.IsNullOrEmpty(b.Prefix)).Select(static b => NatsAddressRenderer.NormalizePrefix(b.Prefix!))],
+            [.. bindings.Where(static b => !string.IsNullOrEmpty(b.ReplyBase)).Select(static b => NatsAddressRenderer.NormalizePrefix(b.ReplyBase!))]);
+    }
+
+    /// <summary>
+    /// RV-20: tells the server every <c>AckWait / 3</c> that queued and running messages are still being worked on, so they are not
+    /// redelivered while they wait for a worker. A message whose instance dies is redelivered after <c>AckWait</c> as before.
+    /// </summary>
+    private async Task KeepInProgressAsync()
+    {
+        var interval = TimeSpan.FromTicks(Math.Max(TimeSpan.FromMilliseconds(100).Ticks, _options.AckWait.Ticks / 3));
+        var token = _stopping.Token;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(interval, _time, token).ConfigureAwait(false);
+                foreach (var delivery in _outstanding.Keys)
+                {
+                    if (delivery.Message is { } message)
+                    {
+                        await SendProgressAsync(delivery, message).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Stopping.
+        }
+    }
+
+    private async Task SendProgressAsync(NatsDelivery delivery, INatsJSMsg<byte[]> message)
+    {
+        try
+        {
+            await message.AckProgressAsync(cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is NatsException or InvalidOperationException)
+        {
+            // The connection is down; the next round tries again, or the server redelivers after AckWait.
+            Log.AcknowledgeFailed(_logger, ex, delivery.Subject);
         }
     }
 

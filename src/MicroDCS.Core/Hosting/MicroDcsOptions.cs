@@ -92,6 +92,12 @@ public sealed class BindingOptions
     /// <summary>Comma separated CloudEvent type ids or <c>*</c> patterns that may be published; empty allows all (T-5).</summary>
     public string? OutgoingTypeFilter { get; set; }
 
+    /// <summary>
+    /// Comma separated prefixes a reply address from a peer must start with (D-48); empty allows any address that passes the
+    /// built-in rules. Replies to this instance's own reply bases are always allowed.
+    /// </summary>
+    public string? AllowedReplyPrefixes { get; set; }
+
     /// <summary>Scope check (A-7).</summary>
     public ScopeCheck ScopeCheck { get; set; } = ScopeCheck.Enforce;
 

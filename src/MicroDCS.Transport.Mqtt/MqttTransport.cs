@@ -19,6 +19,9 @@ namespace MicroDCS.Transport.Mqtt;
 /// </summary>
 public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposable
 {
+    /// <summary>Sent attempts per message before the publish fails (RV-16); waiting for a reconnect does not count.</summary>
+    public const int MaxPublishAttempts = 5;
+
     private static readonly MqttAddressRenderer _renderer = new();
 
     private readonly MqttOptions _options;
@@ -36,7 +39,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
     private Channel<MqttApplicationMessageReceivedEventArgs>? _inbox;
     private Task[] _workers = [];
     private ImmutableArray<MqttSubscription> _subscriptions = [];
-    private MqttClientOptions? _clientOptions;
+    private ReplyAddressRules? _replyRules;
     private TaskCompletionSource _up = NewSignal();
     private Task? _reconnect;
     private volatile bool _stopped;
@@ -126,7 +129,8 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         ArgumentNullException.ThrowIfNull(handler);
         _handler = handler;
         _subscriptions = BuildSubscriptions();
-        _clientOptions = BuildClientOptions();
+        _replyRules = BuildReplyRules();
+        var clientOptions = BuildClientOptions();
 
         _inbox = Channel.CreateBounded<MqttApplicationMessageReceivedEventArgs>(new BoundedChannelOptions(Math.Max(1, _core.MessageWorkers) * 2)
         {
@@ -141,7 +145,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         client.DisconnectedAsync += OnDisconnectedAsync;
 
         // A broker that is not reachable at start ends the process (D-27); only later losses are retried.
-        var result = await client.ConnectAsync(_clientOptions, cancellationToken).ConfigureAwait(false);
+        var result = await client.ConnectAsync(clientOptions, cancellationToken).ConfigureAwait(false);
         Log.Connected(_logger, _options.Hostname, _options.Port, _clientId, result.IsSessionPresent);
         await SubscribeAsync(client, cancellationToken).ConfigureAwait(false);
         _receiving = true;
@@ -368,10 +372,14 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                     Log.LeftUnacknowledged(_logger, topic);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 // The pipeline reports handler faults as an outcome; anything else is a bug in the transport. Do not acknowledge.
-                Log.WorkerFaulted(_logger, ex, topic);
+                // A worker never ends while the inbox is open, also not on a cancellation (RV-13).
+                if (!_stopping.IsCancellationRequested)
+                {
+                    Log.WorkerFaulted(_logger, ex, topic);
+                }
             }
         }
     }
@@ -404,6 +412,14 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 // A topic that matched the filter but has an invalid scope segment must not skip the scope check (R-11).
                 Log.InvalidTopicRejected(_security, match.BindingId);
                 DropBeforePipeline(topic, size, "invalid topic segment");
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(message.ResponseTopic) && ReplyAddressPolicy.Check(message.ResponseTopic, _replyRules!, binding) is { } refused)
+            {
+                // D-48: the instance would publish to the peer's address with its own permissions.
+                Log.ReplyAddressRejected(_security, match.BindingId, refused);
+                DropBeforePipeline(topic, size, "reply address rejected");
                 continue;
             }
 
@@ -452,6 +468,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
 
     private async ValueTask PublishWhenConnectedAsync(MqttApplicationMessage message, CancellationToken cancellationToken)
     {
+        var attempts = 0;
         while (true)
         {
             if (_stopped)
@@ -474,9 +491,10 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 Log.Published(_logger, message.Topic, size, qos);
                 return;
             }
-            catch (MqttCommunicationException)
+            catch (MqttCommunicationException) when (++attempts < MaxPublishAttempts)
             {
-                // The connection dropped under the publish: wait for the reconnect and send again (Python parity).
+                // The connection dropped under the publish: wait for the reconnect and send again (Python parity). A message that
+                // makes the broker drop the connection every time (ACL, packet size) fails after MaxPublishAttempts (RV-16, D-27).
                 Log.PublishWaiting(_logger, message.Topic);
                 await Task.Delay(TimeSpan.FromMilliseconds(100), _time, cancellationToken).ConfigureAwait(false);
             }
@@ -510,12 +528,16 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             Volatile.Write(ref _up, NewSignal());
         }
 
+        EnsureReconnecting();
+        return Task.CompletedTask;
+    }
+
+    private void EnsureReconnecting()
+    {
         if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) == 0)
         {
             _reconnect = Task.Run(ReconnectAsync, CancellationToken.None);
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task ReconnectAsync()
@@ -528,7 +550,8 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 await Task.Delay(delay, _time, _stopping.Token).ConfigureAwait(false);
                 try
                 {
-                    var result = await _client!.ConnectAsync(_clientOptions!, _stopping.Token).ConfigureAwait(false);
+                    // Built again for every attempt: a rotated token or password file is read here (RV-17).
+                    var result = await _client!.ConnectAsync(BuildClientOptions(), _stopping.Token).ConfigureAwait(false);
                     Log.Connected(_logger, _options.Hostname, _options.Port, _clientId, result.IsSessionPresent);
                     if (_receiving)
                     {
@@ -545,6 +568,9 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 {
                     delay = TimeSpan.FromTicks(Math.Min(_options.ReconnectMaxDelay.Ticks, delay.Ticks * 2));
                     Log.ReconnectFailed(_logger, ex, delay);
+
+                    // RV-11: connected but the subscribe failed; a connect on a connected client throws forever, so drop the link first.
+                    await DisconnectQuietlyAsync().ConfigureAwait(false);
                 }
             }
         }
@@ -555,7 +581,45 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         finally
         {
             Volatile.Write(ref _reconnecting, 0);
+
+            // RV-12: a disconnect between the connect and this reset found the loop still running and started none. Look again.
+            if (!_stopped && _client is { IsConnected: false })
+            {
+                if (Volatile.Read(ref _up).Task.IsCompleted)
+                {
+                    Volatile.Write(ref _up, NewSignal());
+                }
+
+                EnsureReconnecting();
+            }
         }
+    }
+
+    private async Task DisconnectQuietlyAsync()
+    {
+        if (_client is not { IsConnected: true } client)
+        {
+            return;
+        }
+
+        try
+        {
+            await client.DisconnectAsync(new MqttClientDisconnectOptions { Reason = MqttClientDisconnectOptionsReason.NormalDisconnection }, _stopping.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is MqttCommunicationException or OperationCanceledException or InvalidOperationException)
+        {
+            Log.ConnectionLost(_logger, ex.GetType().Name);
+        }
+    }
+
+    private ReplyAddressRules BuildReplyRules()
+    {
+        var bindings = _core.Bindings.Values.Where(b => string.Equals(b.Transport, Name, StringComparison.Ordinal)).ToList();
+        return new ReplyAddressRules(
+            '/',
+            "+#",
+            [.. bindings.Where(static b => !string.IsNullOrEmpty(b.Prefix)).Select(static b => b.Prefix!.Trim('/'))],
+            [.. bindings.Where(static b => !string.IsNullOrEmpty(b.ReplyBase)).Select(static b => b.ReplyBase!.Trim('/'))]);
     }
 }
 

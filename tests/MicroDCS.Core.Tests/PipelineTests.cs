@@ -110,6 +110,12 @@ internal sealed class RecordingDedupe(IDedupeStore inner, SharedLog trace) : IDe
         return inner.MarkDoneAsync(source, id, cancellationToken);
     }
 
+    public ValueTask ReleaseAsync(string source, string id, string token, CancellationToken cancellationToken)
+    {
+        trace.Add("release");
+        return inner.ReleaseAsync(source, id, token, cancellationToken);
+    }
+
     public ValueTask<TimeSpan> LeaseRemainingAsync(string source, string id, CancellationToken cancellationToken) =>
         inner.LeaseRemainingAsync(source, id, cancellationToken);
 }
@@ -148,10 +154,16 @@ internal sealed class TestTransport(SharedLog trace, bool canRedeliver) : ITrans
 
     public ReplyAddress? GetReplyAddress(string bindingId, string instanceId) => new ReplyAddress("reply/" + bindingId + "/" + instanceId);
 
-    public ValueTask StartAsync(IInboundHandler handler, CancellationToken cancellationToken)
+    public Func<IInboundHandler, ValueTask>? OnStart { get; set; }
+
+    public async ValueTask StartAsync(IInboundHandler handler, CancellationToken cancellationToken)
     {
         _handler = handler;
-        return ValueTask.CompletedTask;
+        if (OnStart is { } onStart)
+        {
+            // A message delivered while the transport starts (a persistent session redelivers at connect).
+            await onStart(handler).ConfigureAwait(false);
+        }
     }
 
     public ValueTask<DeliveryOutcome> InjectAsync(InboundMessage message, CancellationToken cancellationToken) =>
@@ -201,6 +213,44 @@ internal sealed class TestTransport(SharedLog trace, bool canRedeliver) : ITrans
     }
 }
 
+/// <summary>A fake clock that reports every timer created on it, so a test can wait for a delay before advancing.</summary>
+internal sealed class RecordingTime(DateTimeOffset start) : FakeTimeProvider(start)
+{
+    private readonly List<(TimeSpan Due, TaskCompletionSource Seen)> _waiters = [];
+    private readonly List<TimeSpan> _created = [];
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var timer = base.CreateTimer(callback, state, dueTime, period);
+        lock (_waiters)
+        {
+            _created.Add(dueTime);
+            foreach (var waiter in _waiters.Where(w => w.Due == dueTime))
+            {
+                waiter.Seen.TrySetResult();
+            }
+        }
+
+        return timer;
+    }
+
+    /// <summary>Completes once a timer with this due time exists.</summary>
+    public Task WaitForTimerAsync(TimeSpan due)
+    {
+        lock (_waiters)
+        {
+            if (_created.Contains(due))
+            {
+                return Task.CompletedTask;
+            }
+
+            var seen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((due, seen));
+            return seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+}
+
 internal sealed class Rig : IAsyncDisposable
 {
     public required ServiceProvider Provider { get; init; }
@@ -211,7 +261,7 @@ internal sealed class Rig : IAsyncDisposable
 
     public required SharedLog Trace { get; init; }
 
-    public required FakeTimeProvider Time { get; init; }
+    public required RecordingTime Time { get; init; }
 
     public required IHostApplicationLifetime Lifetime { get; init; }
 
@@ -230,17 +280,18 @@ public sealed class PipelineTests
 {
     private static readonly TimeSpan _wait = TimeSpan.FromSeconds(10);
 
-    private static async Task<Rig> StartRigAsync<TProcessor>(
+    internal static async Task<Rig> StartRigAsync<TProcessor>(
         string bindingId,
         Action<IServiceCollection, SharedLog>? configure = null,
         Action<MicroDcsOptions>? options = null,
-        bool canRedeliver = false)
+        bool canRedeliver = false,
+        Func<IInboundHandler, ValueTask>? onStart = null)
         where TProcessor : class, IDescribedProcessor
     {
         var log = new SharedLog();
         var trace = new SharedLog();
-        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        var transport = new TestTransport(trace, canRedeliver);
+        var time = new RecordingTime(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var transport = new TestTransport(trace, canRedeliver) { OnStart = onStart };
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         lifetime.When(l => l.StopApplication()).Do(_ => stopped.TrySetResult());
@@ -274,7 +325,7 @@ public sealed class PipelineTests
         return rig;
     }
 
-    private static InboundMessage Request(string type, string subject, string json, string id = "e1", ReplyAddress? replyTo = null, string bindingId = "sample", string scope = "p") => new()
+    internal static InboundMessage Request(string type, string subject, string json, string id = "e1", ReplyAddress? replyTo = null, string bindingId = "sample", string scope = "p") => new()
     {
         BindingId = bindingId,
         Kind = InboundKind.Request,
@@ -304,17 +355,18 @@ public sealed class PipelineTests
     }
 
     [Fact]
-    public async Task Fault_leaves_the_event_claimed_and_a_redelivery_after_the_lease_succeeds()
+    public async Task Fault_releases_the_claim_so_the_redelivery_is_processed_at_once()
     {
-        await using var rig = await StartRigAsync<SampleProcessor>("sample", (s, log) => s.AddSingleton<ILog>(new FlakyLog(log)));
+        await using var rig = await StartRigAsync<SampleProcessor>("sample", (s, log) => s.AddSingleton<ILog>(new FlakyLog(log)), canRedeliver: true);
         var message = Request("test.hello.v1", "p/res", """{"Name":"Bob"}""");
 
         var first = await rig.Transport.InjectAsync(message, TestContext.Current.CancellationToken);
-        rig.Time.Advance(TimeSpan.FromSeconds(31));
-        var second = await rig.Transport.InjectAsync(message, TestContext.Current.CancellationToken);
+        var second = await rig.Transport.InjectAsync(message, TestContext.Current.CancellationToken).AsTask().WaitAsync(_wait, TestContext.Current.CancellationToken);
 
+        // L-7: no wait for the 30 s lease; the clock did not move.
         first.ShouldBe(DeliveryOutcome.Fault);
         second.ShouldBe(DeliveryOutcome.Ack);
+        rig.Trace.Entries.Count(e => e == "release").ShouldBe(1);
         rig.Trace.Entries.Count(e => e == "done").ShouldBe(1);
         rig.Log.Entries.ShouldBe(["hello:Bob:p"]);
     }

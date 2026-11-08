@@ -1,3 +1,4 @@
+using MicroDCS.Core.Transport;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
 
@@ -20,27 +21,11 @@ internal static class NatsClientOptionsFactory
         var urls = NatsOptionsValidator.SplitUrls(options.Url);
         var tls = File.Exists(options.TlsCaFile);
         var auth = new NatsAuthOpts();
-        var hasCredentials = false;
-
-        if (options.Username is not null)
+        var hasCredentials = options.Username is not null || options.TokenFile is not null || options.CredsFile is not null || options.NKeyFile is not null;
+        if (hasCredentials)
         {
-            auth = auth with { Username = options.Username, Password = options.PasswordFile is { } file ? ReadSecret(file) : options.Password };
-            hasCredentials = true;
-        }
-        else if (options.TokenFile is { } tokenFile)
-        {
-            auth = auth with { Token = ReadSecret(tokenFile) };
-            hasCredentials = true;
-        }
-        else if (options.CredsFile is { } creds)
-        {
-            auth = auth with { CredsFile = creds };
-            hasCredentials = true;
-        }
-        else if (options.NKeyFile is { } nkey)
-        {
-            auth = auth with { NKeyFile = nkey };
-            hasCredentials = true;
+            // Read on every connect, not once at start: a rotated secret file is picked up by the next reconnect (RV-17).
+            auth = auth with { AuthCredCallback = (_, _) => ValueTask.FromResult(ReadCredentials(options)) };
         }
 
         if (hasCredentials && !tls)
@@ -70,19 +55,32 @@ internal static class NatsClientOptionsFactory
             ReconnectWaitMin = options.ReconnectMinDelay,
             ReconnectWaitMax = options.ReconnectMaxDelay,
             MaxReconnectRetry = -1,
+
+            // The default gives up for good after the same authentication error twice, while the process stays up. A secret being
+            // rotated can be out of step for a moment, so keep trying, as the MQTT transport does (D-49).
+            IgnoreAuthErrorAbort = true,
             RetryOnInitialConnect = false,
             LoggerFactory = loggerFactory,
         };
     }
 
-    private static string ReadSecret(string path)
+    /// <summary>The credentials as the files hold them now, in the order of precedence of the options.</summary>
+    /// <param name="options">The transport options.</param>
+    /// <returns>The credentials for one connect.</returns>
+    internal static NatsAuthCred ReadCredentials(NatsOptions options)
     {
-        var text = File.ReadAllText(path);
-        if (text.EndsWith("\r\n", StringComparison.Ordinal))
+        if (options.Username is not null)
         {
-            return text[..^2];
+            return NatsAuthCred.FromUserInfo(options.Username, options.PasswordFile is { } file ? SecretFile.Read(file) : options.Password ?? string.Empty);
         }
 
-        return text.EndsWith('\n') ? text[..^1] : text;
+        if (options.TokenFile is { } tokenFile)
+        {
+            return NatsAuthCred.FromToken(SecretFile.Read(tokenFile));
+        }
+
+        return options.CredsFile is { } creds
+            ? NatsAuthCred.FromCredsFile(creds)
+            : NatsAuthCred.FromNkeyFile(options.NKeyFile!);
     }
 }

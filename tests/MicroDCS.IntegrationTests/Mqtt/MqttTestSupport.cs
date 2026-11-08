@@ -116,7 +116,7 @@ internal sealed class MqttTestHost : IAsyncDisposable
 
     public IServiceProvider Services => _host.Services;
 
-    public static async Task<MqttTestHost> StartAsync(string? prefix = null, string? sharedGroup = null, CancellationToken ct = default)
+    public static async Task<MqttTestHost> StartAsync(string? prefix = null, string? sharedGroup = null, Dictionary<string, string?>? extra = null, CancellationToken ct = default)
     {
         var (broker, port) = TestEndpoints.Mqtt!.Value;
         prefix ??= "it" + Guid.NewGuid().ToString("N")[..10];
@@ -136,6 +136,11 @@ internal sealed class MqttTestHost : IAsyncDisposable
             ["MicroDcs:Mqtt:SatTokenFile"] = "/nonexistent/sat",
             ["MicroDcs:Mqtt:ReconnectMinDelay"] = "00:00:00.200",
         };
+        foreach (var (key, value) in extra ?? [])
+        {
+            settings[key] = value;
+        }
+
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration.AddInMemoryCollection(settings);
         builder.Services.AddMicroDcs(builder.Configuration).AddMqttTransport(builder.Configuration).AddProcessor<GreetingsProcessor>();

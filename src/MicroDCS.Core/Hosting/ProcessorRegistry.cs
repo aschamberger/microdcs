@@ -8,8 +8,13 @@ public sealed class ProcessorRegistry
 {
     private readonly Dictionary<string, ProcessorDescriptor> _byBinding = new(StringComparer.Ordinal);
     private readonly Dictionary<Type, IPayloadDescriptor> _byPayloadType = [];
+    private readonly Dictionary<Type, SortedSet<string>> _ambiguous = [];
 
-    /// <summary>Creates the registry. A binding id or payload type registered twice is an error (D-27).</summary>
+    /// <summary>
+    /// Creates the registry. A binding id registered twice is an error (D-27). A CLR payload type with descriptors of different
+    /// type ids (for example two <see cref="BinaryPayloadDescriptor"/>s) is ambiguous: handlers still decode it, but an outgoing
+    /// event cannot be built from it (<see cref="GetDescriptor"/>).
+    /// </summary>
     /// <param name="processors">The processor descriptors.</param>
     /// <param name="extraPayloads">Further payload descriptors, for example for <see cref="Replies"/> of mixed types.</param>
     public ProcessorRegistry(IEnumerable<ProcessorDescriptor> processors, IEnumerable<IPayloadDescriptor> extraPayloads)
@@ -27,13 +32,13 @@ public sealed class ProcessorRegistry
             foreach (var handler in processor.Handlers.Select(h => h.Payload).OfType<IPayloadDescriptor>()
                 .Concat(processor.ReplyPayloads.IsDefault ? [] : processor.ReplyPayloads))
             {
-                _byPayloadType[handler.PayloadType] = handler;
+                Add(handler);
             }
         }
 
         foreach (var payload in extraPayloads)
         {
-            _byPayloadType[payload.PayloadType] = payload;
+            Add(payload);
         }
     }
 
@@ -49,8 +54,44 @@ public sealed class ProcessorRegistry
     /// <summary>Finds the descriptor for a payload object.</summary>
     /// <param name="payloadType">The CLR type.</param>
     /// <param name="descriptor">The descriptor.</param>
-    /// <returns><see langword="true"/> when found.</returns>
-    public bool TryGetDescriptor(Type payloadType, out IPayloadDescriptor descriptor) => _byPayloadType.TryGetValue(payloadType, out descriptor!);
+    /// <returns><see langword="true"/> when found and not ambiguous.</returns>
+    public bool TryGetDescriptor(Type payloadType, out IPayloadDescriptor descriptor) =>
+        _byPayloadType.TryGetValue(payloadType, out descriptor!) && !_ambiguous.ContainsKey(payloadType);
+
+    /// <summary>The descriptor an outgoing event of this CLR type is encoded with.</summary>
+    /// <param name="payloadType">The CLR type.</param>
+    /// <returns>The descriptor.</returns>
+    /// <exception cref="InvalidOperationException">No descriptor is registered, or more than one type id uses the CLR type.</exception>
+    public IPayloadDescriptor GetDescriptor(Type payloadType)
+    {
+        ArgumentNullException.ThrowIfNull(payloadType);
+        if (_ambiguous.TryGetValue(payloadType, out var typeIds))
+        {
+            throw new InvalidOperationException($"The payload type '{payloadType.Name}' is registered for the event types {string.Join(", ", typeIds)}; an outgoing event cannot pick one. Publish an EventEnvelope or use a distinct CLR type per event type.");
+        }
+
+        return _byPayloadType.TryGetValue(payloadType, out var descriptor)
+            ? descriptor
+            : throw new InvalidOperationException($"No payload descriptor for type '{payloadType.Name}'. Register it with AddPayloads.");
+    }
+
+    private void Add(IPayloadDescriptor descriptor)
+    {
+        if (!_byPayloadType.TryAdd(descriptor.PayloadType, descriptor))
+        {
+            var existing = _byPayloadType[descriptor.PayloadType];
+            if (!string.Equals(existing.TypeId, descriptor.TypeId, StringComparison.Ordinal))
+            {
+                if (!_ambiguous.TryGetValue(descriptor.PayloadType, out var typeIds))
+                {
+                    typeIds = new SortedSet<string>(StringComparer.Ordinal) { existing.TypeId };
+                    _ambiguous[descriptor.PayloadType] = typeIds;
+                }
+
+                typeIds.Add(descriptor.TypeId);
+            }
+        }
+    }
 
     /// <summary>Checks that every processor has a configured binding (T-21).</summary>
     /// <param name="options">The options.</param>

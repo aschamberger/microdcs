@@ -35,7 +35,18 @@ public interface IDedupeStore
     /// <returns>A task.</returns>
     ValueTask MarkDoneAsync(string source, string id, CancellationToken cancellationToken);
 
-    /// <summary>Time until the current lease ends; zero when there is none.</summary>
+    /// <summary>
+    /// Gives up a lease the caller holds, so a redelivery can claim the event at once (after a handler fault). A lease of another
+    /// token and a <c>done</c> entry stay untouched.
+    /// </summary>
+    /// <param name="source">The event source.</param>
+    /// <param name="id">The event id.</param>
+    /// <param name="token">The token the lease was claimed with.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>A task.</returns>
+    ValueTask ReleaseAsync(string source, string id, string token, CancellationToken cancellationToken);
+
+    /// <summary>Time until the current lease ends; zero when there is none or the event is done.</summary>
     /// <param name="source">The event source.</param>
     /// <param name="id">The event id.</param>
     /// <param name="cancellationToken">Cancellation.</param>

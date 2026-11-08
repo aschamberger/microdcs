@@ -13,6 +13,18 @@ public sealed class ValkeyDedupeStore : IDedupeStore
     private const int ClaimTries = 3;
     private const string Done = "done";
 
+    // Deletes the key only when it still holds this caller's lease.
+    private const string ReleaseScript = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
+
+    // The remaining lease in milliseconds; 0 for a done marker or a missing key (the TTL of done is the retention, not a lease).
+    private const string LeaseScript = """
+        local v = redis.call('GET', KEYS[1])
+        if not v or v == 'done' then return 0 end
+        local ttl = redis.call('PTTL', KEYS[1])
+        if ttl < 0 then return 0 end
+        return ttl
+        """;
+
     private readonly ValkeyContext _context;
     private readonly TimeSpan _lease;
     private readonly TimeSpan _retention;
@@ -68,10 +80,15 @@ public sealed class ValkeyDedupeStore : IDedupeStore
         await _context.Database.StringSetAsync(_context.Keys.CloudEventDedupe(source, id), Done, _retention).WaitAsync(cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
+    public async ValueTask ReleaseAsync(string source, string id, string token, CancellationToken cancellationToken) =>
+        await _context.Database.ScriptEvaluateAsync(ReleaseScript, [_context.Keys.CloudEventDedupe(source, id)], ["processing:" + token]).WaitAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
     public async ValueTask<TimeSpan> LeaseRemainingAsync(string source, string id, CancellationToken cancellationToken)
     {
-        var ttl = await _context.Database.KeyTimeToLiveAsync(_context.Keys.CloudEventDedupe(source, id)).WaitAsync(cancellationToken).ConfigureAwait(false);
-        return ttl is { } remaining && remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        var result = await _context.Database.ScriptEvaluateAsync(LeaseScript, [_context.Keys.CloudEventDedupe(source, id)]).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var milliseconds = (long)result;
+        return milliseconds > 0 ? TimeSpan.FromMilliseconds(milliseconds) : TimeSpan.Zero;
     }
 }
 

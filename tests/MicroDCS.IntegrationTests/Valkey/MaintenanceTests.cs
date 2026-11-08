@@ -254,4 +254,44 @@ public sealed class MaintenanceTests
         await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanPurgeScopeAsync("test", "plant/none", false, ct));
         await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanDedupeReleaseAsync("test", "src", "none", ct));
     }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task RV21PurgeRemovesNothingWhenAnIndexChangesBetweenTheRecheckAndTheDelete()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        await SeedScopeAsync(env, ct);
+        var plan = await rig.Operations.PlanPurgeScopeAsync("test", Scope, false, ct);
+        var dao = new JobOrderDao(env.Context);
+
+        // A running instance stores a new job order while the apply writes its snapshot: the order list index grows.
+        rig.Operations.BeforeChange = async () => await dao.SaveAsync("o3", Scope, "{\"n\":3}", 3, "Create", 0, cancellationToken: ct);
+        var ex = await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.ApplyAsync("test", plan.Token, ct));
+
+        ex.Message.ShouldContain("Nothing was removed");
+        (await dao.GetAsync("o1", ct)).ShouldNotBeNull();
+        (await dao.GetAsync("o3", ct)).ShouldNotBeNull();
+        (await dao.ListAsync(Scope, cancellationToken: ct)).ShouldContain("o3");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task RV22RestoreWritesNothingWhenATargetIsCreatedBetweenTheRecheckAndTheWrite()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        await SeedScopeAsync(env, ct);
+        var purged = await rig.Operations.ApplyAsync("test", (await rig.Operations.PlanPurgeScopeAsync("test", Scope, false, ct)).Token, ct);
+        var plan = await rig.Operations.PlanRestoreAsync("test", purged.SnapshotId!, false, ct);
+        var dao = new JobOrderDao(env.Context);
+
+        // The scope is used again before the restore runs: o1 exists now with new content.
+        rig.Operations.BeforeChange = async () => await dao.SaveAsync("o1", Scope, "{\"n\":42}", 1, "Create", 0, cancellationToken: ct);
+        var ex = await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.ApplyAsync("test", plan.Token, ct));
+
+        ex.Message.ShouldContain("Nothing was written");
+        (await dao.GetAsync("o1", ct))!.Document.ShouldContain("42");
+        (await dao.GetAsync("o2", ct)).ShouldBeNull();
+    }
 }

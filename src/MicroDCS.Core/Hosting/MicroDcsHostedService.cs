@@ -76,6 +76,8 @@ public sealed class MicroDcsHostedService : IHostedService
                 Log.ProcessorInitialised(_logger, processor.ProcessorType.Name, processor.BindingId);
             }
 
+            // The queues accept events before the first transport delivers: a handler may publish from the first message (RV-1).
+            _pipeline.OpenPublishing();
             foreach (var transport in _transports)
             {
                 await transport.StartAsync(_pipeline, cancellationToken).ConfigureAwait(false);
@@ -97,37 +99,48 @@ public sealed class MicroDcsHostedService : IHostedService
         // 1. stop receiving, 2. let in-flight messages finish, 3. drain the outgoing queues, 4. stop transports,
         // 5. wait for the expiry timers until the grace period ends, 6. processor shutdown hooks,
         // 7. shared infrastructure closes with the host.
-        Log.ShutdownPhase(_logger, "stop-receiving");
+        // When the grace period ends (the token is cancelled) every later phase still runs, with the cancelled token: each one
+        // then takes its "grace period ended" path (abort the queues, cancel the timers) instead of being skipped.
         foreach (var transport in _transports)
         {
-            await transport.StopReceivingAsync(cancellationToken).ConfigureAwait(false);
+            await RunPhaseAsync("stop-receiving", () => transport.StopReceivingAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         }
 
-        Log.ShutdownPhase(_logger, "drain");
-        while (_pipeline.InFlight > 0)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), _time, cancellationToken).ConfigureAwait(false);
-        }
-
-        Log.ShutdownPhase(_logger, "drain-outgoing");
-        await _pipeline.DrainOutgoingAsync(cancellationToken).ConfigureAwait(false);
-
-        Log.ShutdownPhase(_logger, "stop-transports");
+        await RunPhaseAsync("drain", () => WaitForInFlightAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
+        await RunPhaseAsync("drain-outgoing", () => _pipeline.DrainOutgoingAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         foreach (var transport in _transports)
         {
-            await transport.StopAsync(cancellationToken).ConfigureAwait(false);
+            await RunPhaseAsync("stop-transports", () => transport.StopAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         }
 
-        Log.ShutdownPhase(_logger, "expiries");
-        await _pipeline.WaitForExpiriesAsync(cancellationToken).ConfigureAwait(false);
-
-        Log.ShutdownPhase(_logger, "processors");
+        await RunPhaseAsync("expiries", () => _pipeline.WaitForExpiriesAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         foreach (var processor in _registry.Processors)
         {
             if (processor.Lifecycle.Shutdown is { } shutdown)
             {
-                await shutdown(_services, cancellationToken).ConfigureAwait(false);
+                await RunPhaseAsync("processors", () => shutdown(_services, cancellationToken), cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async ValueTask RunPhaseAsync(string phase, Func<ValueTask> run, CancellationToken cancellationToken)
+    {
+        Log.ShutdownPhase(_logger, phase);
+        try
+        {
+            await run().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Log.GracePeriodEnded(_logger, phase);
+        }
+    }
+
+    private async ValueTask WaitForInFlightAsync(CancellationToken cancellationToken)
+    {
+        while (_pipeline.InFlight > 0)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(10), _time, cancellationToken).ConfigureAwait(false);
         }
     }
 

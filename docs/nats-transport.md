@@ -53,13 +53,13 @@ Credentials over a connection without TLS are sent, with a warning in the log.
 | Message | `{Prefix}.{scope…}.{Discriminator}.{data｜events｜commands｜metadata}` |
 | Subscription | the same with `*` for every scope level from 0 to `ScopeLevels` |
 | Stream | `{StreamPrefix}_{Prefix}` (dots become `_`), subjects `{Prefix}.>`; one stream per prefix, shared by the bindings with that prefix |
-| Consumer | `{binding}-{SharedGroup}`, or `{binding}-{instance}` without a group |
+| Consumer | `{binding}-{SharedGroup}-{hash}`, or `{binding}-{instance}` without a group. The hash covers the filter subjects |
 | Reply (per instance) | `{ReplyBase}.{instance}`, a plain subject, never shared |
 | State topic | key `{address}.{name}` in the bucket `StateBucket` |
 
 A prefix or reply base may be written with `/` as for MQTT; it is rendered with `.`. Segments use only `A-Z a-z 0-9 _ -` ([D-38](porting/decisions.md#d-38)); other characters of the instance id become `_`. Two prefixes where one extends the other (`dcs` and `dcs.jobs`) overlap in the server and are refused at start.
 
-A binding **without** `SharedGroup` gets a consumer of its own per instance, so every instance sees every message. With a group the instances compete on one consumer. Give requests a reply subject: a request without one is answered on its own subject, and two instances then answer each other's replies.
+A binding **without** `SharedGroup` gets a consumer of its own per instance, so every instance sees every message. With a group the instances compete on one consumer. Instances with different filters (during a rollout that changes intents or scope levels) get separate consumers; the old one ends after `ConsumerInactiveThreshold` ([D-47](porting/decisions.md#d-47)). Give requests a reply subject: a request without one is answered on its own subject, and two instances then answer each other's replies.
 
 ## Message mapping
 
@@ -77,10 +77,13 @@ The envelope travels in binary content mode: attributes are NATS headers under t
 
 * Requests are delivered by JetStream and acknowledged after the pipeline finished them (dedupe `mark done` first). A crash in between means redelivery and the dedupe claim answers the duplicate.
 * A message that cannot be decoded, or whose subject has an invalid scope segment, is terminated, counted and logged. A duplicate is acknowledged.
-* A handler fault sends a negative acknowledgement and the server redelivers after `NakDelay`. NATS can redeliver inside the session, so the host keeps running ([D-37](porting/decisions.md#d-37)). After `MaxDeliver` failed deliveries the message is terminated, logged and counted (`microdcs.nats.poisoned`). Known limit: the redelivery waits until the dedupe lease of the failed attempt ends (30 s by default), finding L-7 in the research file.
+* A handler fault sends a negative acknowledgement and the server redelivers after `NakDelay`. NATS can redeliver inside the session, so the host keeps running ([D-37](porting/decisions.md#d-37)). After `MaxDeliver` failed deliveries the message is terminated, logged and counted (`microdcs.nats.poisoned`). The failed attempt releases its dedupe claim, so the redelivery is processed at once.
 * After a connection loss a message that the server handed to the pull request of the lost connection is redelivered only after `AckWait`, so recovery can take up to that long.
+* Each consumer pulls one message at a time. A message that waits for a worker or is being processed gets an "in progress" acknowledgement every `AckWait / 3`, so a slow worker does not cause redeliveries. A consumer that the server deleted (for example after `ConsumerInactiveThreshold`) is created again.
+* Credentials are read from their files on every connect, so rotated secrets are used after the next reconnect. A credential the server rejects does not end the attempts ([D-49](porting/decisions.md#d-49)).
+* A `Mdcs-Reply-To` from a peer is checked before the reply is published there ([D-48](porting/decisions.md#d-48)): `$` subjects (`$JS.API`, `$KV`), wildcards and subjects below a binding prefix of this instance are rejected, and the message is terminated.
 * Responses are plain messages and are not stored. A response that arrives while the instance is gone is lost; the SFC re-dispatches the command ([D-9](porting/decisions.md#d-9)).
-* Publishing to a stream waits for the server's acknowledgement, and waits and retries while the connection is down.
+* Publishing to a stream waits for the server's acknowledgement, and waits and retries while the connection is down; an attempt that saw a reconnect is repeated even if the client is already back (`Nats-Msg-Id` keeps it idempotent).
 * `Retain` on an event is ignored with a warning (NATS has no per-message retain); use state topics.
 
 ## State topics

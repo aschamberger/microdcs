@@ -43,4 +43,7 @@ internal static partial class Log
 
     [LoggerMessage(EventId = 113, Level = LogLevel.Warning, Message = "Rejected topic with an invalid scope segment on binding {Binding}")]
     public static partial void InvalidTopicRejected(ILogger logger, string binding);
+
+    [LoggerMessage(EventId = 114, Level = LogLevel.Warning, Message = "Message on binding {Binding} dropped: its reply address was rejected ({Reason}, D-48)")]
+    public static partial void ReplyAddressRejected(ILogger logger, string binding, string reason);
 }

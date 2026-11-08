@@ -194,9 +194,13 @@ Port `docs/` (concepts, operations with all configuration equivalents, persisten
 
 ### S24 AMQP transport
 
+Transport checklist from the M1 review: reply addresses through `ReplyAddressPolicy` (D-48), credential files read on every connect with the rotation test (D-49), workers survive every exception while the inbox is open, publish retries bounded, the compose tests of `MqttTransportTests` and `NatsTransportTests` as the pattern.
+
 AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semantics, reply-to, broker target decision. Reference `AMQPNetLite.Core`, not the `AMQPNetLite` metapackage (which pulls in the serializer with 13 AOT warnings, [D-33](decisions.md#d-33)); use the `Data` body and message properties only. Optionally spike `RabbitMQ.AMQP.Client` (builds on Core) against RabbitMQ 4 and decide the supported brokers. Add an AOT-published integration check against an AMQP 1.0 broker (Artemis worked in S04).
 
 ### S25 Zenoh transport
+
+Transport checklist as in S24 (D-48, D-49, workers, bounded retries).
 
 First verify the S04 finding ([library spike](research/library-spike.md#zenoh-cs-050-and-zenoh-c-1100)): `Session.Get` against a queryable crashes with `free(): invalid pointer`; suspected stale `ZGetOptions` (no `cancellation_token`). Compare every struct the transport uses with the zenoh-c headers. Then record the binding choice (`Zenoh-CS` with an upstream fix, a fork, ZenohDotNet or an own binding), including how the zenoh-c version is pinned together with the package. Then the binding and the CloudEvents-over-Zenoh mapping (attachment or structured), query/reply for commands (D-10), no-redelivery behaviour (A-5), router versus peer mode, native library in the image for both platforms (D-32).
 
