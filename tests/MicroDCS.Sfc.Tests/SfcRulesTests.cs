@@ -75,8 +75,10 @@ public class SfcRulesTests
     [Fact]
     public void BuildResultSucceedsOnlyWithAGraphAndNoErrors()
     {
-        new SfcBuildResult(new object(), []).Succeeded.ShouldBeTrue();
+        SfcGraph graph = Rec.Graph(Rec.Recipe([Rec.Step("A", true)], [], []));
+
+        new SfcBuildResult(graph, []).Succeeded.ShouldBeTrue();
         new SfcBuildResult(null, [new SfcBuildError("SFC001", "no initial step")]).Succeeded.ShouldBeFalse();
-        new SfcBuildResult(new object(), [new SfcBuildError("SFC001", "x")]).Succeeded.ShouldBeFalse();
+        new SfcBuildResult(graph, [new SfcBuildError("SFC001", "x")]).Succeeded.ShouldBeFalse();
     }
 }

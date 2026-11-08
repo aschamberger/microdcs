@@ -7,6 +7,7 @@
     <Project Path="src/MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
     <Project Path="src/MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <Project Path="src/MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
+    <Project Path="src/MicroDCS.Sfc.Simulation/MicroDCS.Sfc.Simulation.csproj" />
     <Project Path="src/MicroDCS.Testing/MicroDCS.Testing.csproj" />
     <Project Path="src/MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
   </Folder>

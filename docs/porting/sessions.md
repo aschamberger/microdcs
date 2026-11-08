@@ -152,7 +152,7 @@ NATS.Net: subject rendering with an escaping rule, headers mapping, JetStream co
 
 Read: [SFC core](research/sfc-core.md), the S07 decisions, D-17, D-18.
 
-The pure core (findings 1 to 11): compiled graph with build-time validation (including "a cycle must wait" and the propagation limit), versioned recipe and state payloads with checked-in schema and a wire-name test, step/transition/branch/qualifier semantics, `StartWork`/`CancelWork` commands, continuation, `Tick` and `Resume` events, deadlines and `max_attempts`, exhaustive unit tests and no I/O. The in-memory host with virtual clock and transcript, and the architecture test that keeps the project dependency-free. Port the Python `test_sfc_engine.py` and `test_sfc_recipe.py` scenarios (from `python-archive`) as simulations. Read-only `sfc_explain` and `sfc_dryrun` become possible once S11 exists.
+The pure core (findings 1 to 11): compiled graph with build-time validation (including "a cycle must wait" and the propagation limit), versioned recipe and state payloads with checked-in schema and a wire-name test, step/transition/branch/qualifier semantics, `StartWork`/`CancelWork` commands, continuation, `Tick` and `Resume` events, deadlines and `max_attempts`, exhaustive unit tests and no I/O. The in-memory host with virtual clock and transcript, and the architecture test that keeps the project dependency-free. Port the Python `test_sfc_engine.py` and `test_sfc_recipe.py` scenarios (from `python-archive`) as simulations. Read-only `sfc_explain` and `sfc_dryrun` (MCP tools over the core, built in S15 together with the simulation host).
 
 ## M2 Parity gate
 

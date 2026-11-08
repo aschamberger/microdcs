@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>MicroDCS MCP server: read-only inspection tools, an optional write group and the maintenance tools on the management listener (D-19). Dev and test only; production applications do not reference it.</Description>
+    <Description>MicroDCS MCP server: read-only read-only inspection tools, the SFC explain and dry-run tools, an optional write group and the maintenance tools on the management listener (D-19). Dev and test only; production applications do not reference it.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../MicroDCS.Inspection/MicroDCS.Inspection.csproj" />
     <ProjectReference Include="../MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
+    <ProjectReference Include="../MicroDCS.Sfc.Simulation/MicroDCS.Sfc.Simulation.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.AspNetCore" />

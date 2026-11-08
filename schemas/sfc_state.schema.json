@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/schemas/microdcs/sfc-state/v1.0.0/",
+  "title": "SFC Execution State",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "integer"
+    },
+    "formatMinor": {
+      "type": "integer"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "string"
+    },
+    "recipeHash": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "NotStarted",
+        "Running",
+        "Completed",
+        "Faulted",
+        "Cancelled"
+      ]
+    },
+    "current": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "activeSteps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "typeId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Pending",
+              "Dispatched",
+              "Waiting",
+              "Completed",
+              "Failed"
+            ]
+          },
+          "round": {
+            "type": "integer"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "commandId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deadline": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "typeId"
+        ]
+      }
+    },
+    "sequence": {
+      "type": "integer"
+    },
+    "faultCode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "faultMessage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "jobId",
+    "scope",
+    "recipeHash"
+  ]
+}

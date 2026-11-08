@@ -19,7 +19,8 @@ internal sealed class McpManagementModule : IManagementModule
     {
         var builder = management.AddMcpServer()
             .WithHttpTransport(static options => options.Stateless = true)
-            .WithTools<InspectionTools>(McpJsonContext.ToolOptions);
+            .WithTools<InspectionTools>(McpJsonContext.ToolOptions)
+            .WithTools<SfcTools>(McpJsonContext.ToolOptions);
         if (application.GetRequiredService<IOptions<MicroDcsOptions>>().Value.Management.WriteEnabled)
         {
             management.AddSingleton(application.GetRequiredService<EventInjector>());

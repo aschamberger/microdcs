@@ -351,7 +351,17 @@
         "dependencies": {
           "MicroDCS.Inspection": "[1.0.0, )",
           "MicroDCS.Maintenance": "[1.0.0, )",
+          "MicroDCS.Sfc.Simulation": "[1.0.0, )",
           "ModelContextProtocol.AspNetCore": "[2.4.0, )"
+        }
+      },
+      "microdcs.sfc": {
+        "type": "Project"
+      },
+      "microdcs.sfc.simulation": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Sfc": "[1.0.0, )"
         }
       },
       "microdcs.valkey": {

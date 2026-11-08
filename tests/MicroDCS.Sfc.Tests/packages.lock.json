@@ -221,6 +221,12 @@
       },
       "microdcs.sfc": {
         "type": "Project"
+      },
+      "microdcs.sfc.simulation": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Sfc": "[1.0.0, )"
+        }
       }
     }
   }

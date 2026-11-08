@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S13** (MQTT transport), **S15** (SFC core) or **S16** (job models); S08 to S12 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S13** (MQTT transport) or **S16** (job models); S08 to S12 and S15 are done.
 
 ## How to use these files
 
@@ -171,7 +171,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S12 | Maintenance tools with snapshot and restore | S11 | done |
 | S13 | MQTT transport | S10 | open |
 | S14 | NATS transport (abstraction check) | S13 | open |
-| S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | open |
+| S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | done |
 | **M2 Parity gate** | | | |
 | S16 | Job models and state machine | S05, S08 | open |
 | S17 | Machinery Jobs processor and job DAOs | S10, S16 | open |

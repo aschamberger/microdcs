@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS SFC simulation: an in-memory host with a virtual clock, scripted equipment and a transcript, for tests, recipe dry runs and explanations. Not durable, not distributed.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
+  </ItemGroup>
+</Project>

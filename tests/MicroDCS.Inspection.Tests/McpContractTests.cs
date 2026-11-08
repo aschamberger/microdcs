@@ -24,8 +24,64 @@ public sealed class McpContractTests
         var names = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToList();
 
         names.ShouldBe(
-            ["app_status", "config_effective", "dedupe_lookup", "inspect", "inspectors_list", "pipeline_recent", "processors_list", "stream_pending", "valkey_document", "valkey_keys"],
+            ["app_status", "config_effective", "dedupe_lookup", "inspect", "inspectors_list", "pipeline_recent", "processors_list", "sfc_dryrun", "sfc_explain", "stream_pending", "valkey_document", "valkey_keys"],
             ignoreOrder: true);
+    }
+
+    private const string Recipe = """{"Steps":[{"Name":"A","Initial":true},{"Name":"B"}],"Transitions":[{"Source":"A","Target":"B","Condition":"true"}],"Actions":[{"Name":"heat","Step":"A","Qualifier":"N","Interaction":"push_command","TypeId":"t.heat","TimeoutSeconds":10},{"Name":"cool","Step":"B","Qualifier":"N","Interaction":"push_command","TypeId":"t.cool","TimeoutSeconds":10}]}""";
+
+    [Fact]
+    public async Task SfcToolsExplainAndDryRunARecipeWithoutRunningAnything()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = await TestApp.StartAsync([], ct);
+        await using var client = await ConnectAsync(app, ct);
+
+        var explained = Text(await client.CallToolAsync("sfc_explain", new Dictionary<string, object?> { ["recipe"] = Recipe }, cancellationToken: ct));
+        var dryRun = Text(await client.CallToolAsync(
+            "sfc_dryrun",
+            new Dictionary<string, object?> { ["recipe"] = Recipe, ["script"] = """{"replies":{"heat":["silent","ok@2000"]}}""" },
+            cancellationToken: ct));
+
+        explained.ShouldContain("initial step 'A'");
+        explained.ShouldContain("action 'heat': push_command t.heat, timeout 10s");
+        dryRun.ShouldContain("run ended: Completed");
+        dryRun.ShouldContain("start_work push job-1:heat type=t.heat attempt=2");
+        dryRun.ShouldContain("cancel_work job-1:heat");
+    }
+
+    [Fact]
+    public async Task SfcToolsShareTheRequestRateLimitOfTheOtherTools()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = await TestApp.StartAsync(new() { ["MicroDcs:Management:RequestsPerMinute"] = "2" }, ct);
+        await using var client = await ConnectAsync(app, ct);
+        var arguments = new Dictionary<string, object?> { ["recipe"] = Recipe };
+
+        var first = await client.CallToolAsync("sfc_explain", arguments, cancellationToken: ct);
+        var second = await client.CallToolAsync("sfc_dryrun", arguments, cancellationToken: ct);
+        var third = await client.CallToolAsync("sfc_explain", arguments, cancellationToken: ct);
+
+        first.IsError.ShouldNotBe(true);
+        second.IsError.ShouldNotBe(true);
+        third.IsError.ShouldBe(true);
+    }
+
+    [Fact]
+    public async Task SfcToolsRefuseInvalidInputWithAReadableMessage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = await TestApp.StartAsync([], ct);
+        await using var client = await ConnectAsync(app, ct);
+        const string NoInitial = """{"Steps":[{"Name":"A"}],"Transitions":[],"Actions":[]}""";
+
+        var broken = await client.CallToolAsync("sfc_explain", new Dictionary<string, object?> { ["recipe"] = NoInitial }, cancellationToken: ct);
+        var badScript = await client.CallToolAsync("sfc_dryrun", new Dictionary<string, object?> { ["recipe"] = Recipe, ["script"] = "{\"nope\":1}" }, cancellationToken: ct);
+
+        broken.IsError.ShouldBe(true);
+        Text(broken).ShouldContain("SFC001");
+        badScript.IsError.ShouldBe(true);
+        Text(badScript).ShouldContain("Unknown script field 'nope'");
     }
 
     [Fact]
