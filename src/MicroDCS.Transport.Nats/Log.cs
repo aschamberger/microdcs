@@ -52,4 +52,7 @@ internal static partial class Log
 
     [LoggerMessage(EventId = 216, Level = LogLevel.Warning, Message = "Binding {Binding} publishes with retain on NATS: the flag is ignored, use a state topic (IStateTopicPort)")]
     public static partial void RetainIgnored(ILogger logger, string binding);
+
+    [LoggerMessage(EventId = 217, Level = LogLevel.Warning, Message = "Message on binding {Binding} dropped: its reply address was rejected ({Reason}, D-48)")]
+    public static partial void ReplyAddressRejected(ILogger logger, string binding, string reason);
 }

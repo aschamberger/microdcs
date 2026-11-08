@@ -27,6 +27,19 @@ public sealed class MqttTransportTests
     }
 
     [Fact(SkipUnless = nameof(TestEndpoints.MqttConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV18_a_response_topic_below_the_own_prefix_is_rejected()
+    {
+        await using var host = await MqttTestHost.StartAsync(ct: Ct);
+        await using var client = await MqttTestClient.ConnectAsync(null, Ct);
+
+        // The peer names one of the instance's own retained state topics as its reply address.
+        await client.PublishEventAsync($"{host.Prefix}/site/area/events", "deputy-1", MqttTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", $"{host.Prefix}/site/area/state/job", Ct);
+
+        await EventuallyAsync(() => host.Transport.Status.Dropped == 1);
+        host.Transport.Status.Published.ShouldBe(0);
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.MqttConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
     public async Task Hello_over_mqtt_is_answered_on_the_response_topic()
     {
         await using var host = await MqttTestHost.StartAsync(ct: Ct);

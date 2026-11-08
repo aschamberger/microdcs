@@ -287,6 +287,119 @@ public sealed class NatsTransportTests
         tenantB.Transport.Status.Received.ShouldBe(0);
     }
 
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV14_a_consumer_deleted_on_the_server_is_created_again()
+    {
+        await using var host = await NatsTestHost.StartAsync(ct: Ct);
+        await using var client = await NatsTestClient.ConnectAsync();
+        var reply = $"{host.Prefix}-test.replies";
+        await client.SubscribeAsync(reply, Ct);
+        var consumer = host.Transport.Status.Consumers.Single(c => c.Kind == InboundKind.Request);
+        var js = new NatsJSContext(client.Connection);
+
+        (await js.DeleteConsumerAsync(consumer.Stream, consumer.Consumer, Ct)).ShouldBeTrue();
+        await EventuallyAsync(() =>
+        {
+            try
+            {
+                return js.GetConsumerAsync(consumer.Stream, consumer.Consumer, Ct).AsTask().GetAwaiter().GetResult() is not null;
+            }
+            catch (NatsJSApiException)
+            {
+                return false;
+            }
+        });
+
+        await client.PublishEventAsync($"{host.Prefix}.site.area.events", "again-1", NatsTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", reply, Ct);
+        NatsTestClient.Header(await client.ReceiveAsync(Ct), "causationid").ShouldBe("again-1");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV18_a_reply_address_in_the_jetstream_api_is_rejected_and_nothing_is_published_there()
+    {
+        await using var host = await NatsTestHost.StartAsync(ct: Ct);
+        await using var client = await NatsTestClient.ConnectAsync();
+        var consumer = host.Transport.Status.Consumers.Single(c => c.Kind == InboundKind.Request);
+        var js = new NatsJSContext(client.Connection);
+
+        await client.PublishEventAsync($"{host.Prefix}.site.area.events", "deputy-1", NatsTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", "$JS.API.STREAM.DELETE." + consumer.Stream, Ct);
+        await EventuallyAsync(() => host.Transport.Status.Dropped == 1);
+
+        (await js.GetStreamAsync(consumer.Stream, cancellationToken: Ct)).Info.Config.Name.ShouldBe(consumer.Stream);
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV19_instances_of_a_shared_group_with_different_filters_get_separate_consumers()
+    {
+        var prefix = "it" + Guid.NewGuid().ToString("N")[..10];
+        await using var one = await NatsTestHost.StartAsync(prefix, "workers", ct: Ct);
+        await using var same = await NatsTestHost.StartAsync(prefix, "workers", ct: Ct);
+        await using var changed = await NatsTestHost.StartAsync(prefix, "workers", extra: new() { ["MicroDcs:Bindings:greetings:ScopeLevels"] = "3" }, ct: Ct);
+
+        static string Name(NatsTestHost host) => host.Transport.Status.Consumers.Single(c => c.Kind == InboundKind.Request).Consumer;
+
+        Name(same).ShouldBe(Name(one));
+        Name(changed).ShouldNotBe(Name(one));
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV20_messages_waiting_for_a_worker_are_kept_in_progress_and_not_redelivered()
+    {
+        var prefix = "it" + Guid.NewGuid().ToString("N")[..10];
+        await using var host = await NatsTestHost.StartAsync(
+            prefix,
+            extra: new() { ["MicroDcs:Nats:AckWait"] = "00:00:01", ["MicroDcs:MessageWorkers"] = "1" },
+            start: false,
+            ct: Ct);
+        var handler = new SlowHandler(TimeSpan.FromMilliseconds(1500));
+        var transport = host.Transport;
+        await transport.StartAsync(handler, Ct);
+        try
+        {
+            await using var client = await NatsTestClient.ConnectAsync();
+            for (var i = 0; i < 3; i++)
+            {
+                await client.PublishEventAsync($"{prefix}.site.area.events", "slow-" + i, NatsTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", null, Ct);
+            }
+
+            // The third message waits about 3 s for the only worker, three times the AckWait.
+            await EventuallyAsync(() => transport.Status.Acknowledged == 3, seconds: 20);
+            handler.Deliveries.ShouldBe([false, false, false]);
+        }
+        finally
+        {
+            await transport.StopReceivingAsync(Ct);
+            await transport.StopAsync(Ct);
+        }
+    }
+
+    private sealed class SlowHandler(TimeSpan delay) : IInboundHandler
+    {
+        private readonly List<bool> _deliveries = [];
+
+        public IReadOnlyList<bool> Deliveries
+        {
+            get
+            {
+                lock (_deliveries)
+                {
+                    return [.. _deliveries];
+                }
+            }
+        }
+
+        public async ValueTask<DeliveryOutcome> HandleAsync(InboundMessage message, CancellationToken cancellationToken)
+        {
+            lock (_deliveries)
+            {
+                _deliveries.Add(message.Redelivered);
+            }
+
+            await Task.Delay(delay, cancellationToken);
+            return DeliveryOutcome.Ack;
+        }
+    }
+
     private sealed class FaultingHandler : IInboundHandler
     {
         private readonly List<bool> _deliveries = [];
