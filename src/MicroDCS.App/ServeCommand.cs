@@ -3,6 +3,7 @@ using MicroDCS.Core.Hosting;
 using MicroDCS.Inspection;
 using MicroDCS.Maintenance;
 using MicroDCS.Mcp;
+using MicroDCS.Transport.Mqtt;
 using MicroDCS.Valkey;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -10,9 +11,9 @@ using Microsoft.Extensions.Hosting;
 namespace MicroDCS.App;
 
 /// <summary>
-/// <c>microdcs serve</c>: the greetings demo processor on the in-memory transport, with Valkey (and the maintenance operations) when
+/// <c>microdcs serve</c>: the greetings demo processor on the transport its binding names (<c>mqtt</c> or <c>memory</c>), with Valkey (and the maintenance operations) when
 /// <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
-/// It exists so the inspection tools have a running application until the real transports arrive (S13). Configuration comes from
+/// It exists so the inspection tools and the end-to-end tests have a running application until the real processors arrive (S17). Configuration comes from
 /// environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
 /// </summary>
 internal static class ServeCommand
@@ -23,8 +24,22 @@ internal static class ServeCommand
         builder.Configuration.AddEnvironmentVariables("APP_");
 
         builder.Services.AddMicroDcs(builder.Configuration)
-            .AddInMemoryTransport()
             .AddProcessor<GreetingsProcessor>();
+
+        // Transports are registered by what the bindings name (D-39); without a named transport the in-memory one runs.
+        var transports = builder.Configuration.GetSection("MicroDcs:Bindings").GetChildren()
+            .Select(static b => b["Transport"] ?? MqttOptions.TransportName)
+            .ToHashSet(StringComparer.Ordinal);
+        if (transports.Contains(MqttOptions.TransportName))
+        {
+            builder.Services.AddMqttTransport(builder.Configuration);
+        }
+
+        if (transports.Contains("memory") || transports.Count == 0)
+        {
+            builder.Services.AddInMemoryTransport();
+        }
+
         if (!string.IsNullOrEmpty(builder.Configuration["MicroDcs:Valkey:ConnectionString"]))
         {
             builder.Services.AddMicroDcsValkey(builder.Configuration);

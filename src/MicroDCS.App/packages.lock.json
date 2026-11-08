@@ -364,6 +364,18 @@
           "MicroDCS.Sfc": "[1.0.0, )"
         }
       },
+      "microdcs.transport.mqtt": {
+        "type": "Project",
+        "dependencies": {
+          "MQTTnet": "[5.2.0.1603, )",
+          "MicroDCS.Core": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )",
+          "Microsoft.Extensions.Options": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+        }
+      },
       "microdcs.valkey": {
         "type": "Project",
         "dependencies": {
@@ -450,6 +462,12 @@
         "dependencies": {
           "ModelContextProtocol": "[2.4.0]"
         }
+      },
+      "MQTTnet": {
+        "type": "CentralTransitive",
+        "requested": "[5.2.0.1603, )",
+        "resolved": "5.2.0.1603",
+        "contentHash": "iNuWVo/568aRo2ExEN2qkC4J5b07ckKqt+9Uok2kIbbK7PMBsXvYiKVENPHmOBWFB5ExhlNQb/qQ8M9/IYRTdQ=="
       },
       "StackExchange.Redis": {
         "type": "CentralTransitive",

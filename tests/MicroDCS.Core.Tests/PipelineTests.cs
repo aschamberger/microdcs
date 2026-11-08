@@ -26,6 +26,17 @@ public sealed partial class ExpiringProcessor(ILog log)
     }
 }
 
+[Processor(ProcessorBinding.Southbound, Id = "chatty")]
+public sealed partial class ChattyResponseProcessor(ILog log)
+{
+    [OnResponse]
+    public IEnumerable<ByeAck> OnAck(ByeAck ack)
+    {
+        log.Add("chatty:" + ack.Name);
+        yield return new ByeAck(ack.Name + "!");
+    }
+}
+
 internal sealed class SharedLog : ILog
 {
     private readonly List<string> _entries = [];
@@ -474,6 +485,19 @@ public sealed class PipelineTests
         outcome.ShouldBe(DeliveryOutcome.Ack);
         rig.Pipeline.PendingExpiries.ShouldBe(0);
         rig.Log.Entries.ShouldBe(["ack:x"]);
+    }
+
+    [Fact]
+    public async Task A_reply_to_a_response_has_no_destination_and_is_dropped_without_a_fault()
+    {
+        await using var rig = await StartRigAsync<ChattyResponseProcessor>("chatty");
+        var response = Response("c1") with { BindingId = "chatty", Address = null };
+
+        var outcome = await rig.Transport.InjectAsync(response, TestContext.Current.CancellationToken);
+
+        outcome.ShouldBe(DeliveryOutcome.Ack);
+        rig.Transport.Published.ShouldBeEmpty();
+        rig.Trace.Entries.ShouldBe(["claim", "done"]);
     }
 
     [Fact]
