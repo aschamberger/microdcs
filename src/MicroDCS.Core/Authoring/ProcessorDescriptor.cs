@@ -81,6 +81,7 @@ public sealed record LifecycleDescriptor(
 /// <param name="PublishIntents">Intents the processor may publish.</param>
 /// <param name="Handlers">The handlers.</param>
 /// <param name="Lifecycle">The lifecycle hooks.</param>
+/// <param name="ReplyPayloads">Descriptors of the payload types the handlers return, so replies can be encoded.</param>
 public sealed record ProcessorDescriptor(
     Type ProcessorType,
     string BindingId,
@@ -88,4 +89,5 @@ public sealed record ProcessorDescriptor(
     ImmutableArray<Intent> SubscribeIntents,
     ImmutableArray<Intent> PublishIntents,
     ImmutableArray<HandlerDescriptor> Handlers,
-    LifecycleDescriptor Lifecycle);
+    LifecycleDescriptor Lifecycle,
+    ImmutableArray<IPayloadDescriptor> ReplyPayloads = default);

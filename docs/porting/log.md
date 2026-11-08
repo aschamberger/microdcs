@@ -172,3 +172,20 @@ Changed in the plan: index (decisions, Q-DATA-1/2/4, Q-ARCH-8, session table), s
 Open questions: none new.
 Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the workflow job names (new test projects are covered by `dotnet test`).
 Next session pickup: S08 (core, depends on S06), S09 (Valkey layer, depends on S07) and S15 (SFC core, depends on S07) can start in any order. Run `/session-start <id>`. Start from `main` after the S07 merge: `git switch main && git pull --ff-only && gh stack init <branch>`. S09 starts from `KeySchema` and the key table in the data layer page; S15 from `MicroDCS.Sfc` and D-44 (architecture test: no references); read the parity rows named in each block.
+
+## S08 Core: envelope, processor API, hosting, in-memory transport, test harness (2026-11-08, branch `s08-core`)
+
+Status: done. Previous session post-merge: verified (`docs` green on `main` for #50; `ci` and `security` green at the time of the check; nine required checks set). CloudEvents checkpoint (D-14): PR #381 still open, 2.9.0 latest.
+Done:
+
+* `CloudEventsEnvelopeCodec` on upstream CloudEvents, JSON and binary payload descriptors, `[CarriedAs]` carry and restore.
+* New `MicroDCS.Generators` (Roslyn): payload descriptors, `IDescribedProcessor.Describe()`, all handler kinds and lifecycle hooks, MDCS001 to MDCS011.
+* Hosting: `AddMicroDcs`/`AddProcessor`/`AddInMemoryTransport`, source-generated options binding, validator, hosted service with the shutdown phases, `MinimalPipeline`, in-memory transport, dedupe store, state topics.
+* New `MicroDCS.Testing` (`ProcessorHarness` with a fake clock); greetings demo processor in `MicroDCS.App`; `microdcs smoke` now also runs the core end to end under Native AOT.
+* Docs: [Processors in .NET](../processors-dotnet.md) with the option table and diagnostics. About 3k lines including tests, above the size rule; kept in one PR at the maintainer's request.
+Findings: a generator cannot add `[JsonSerializable]` entries (generators do not see each other's output); a carried property also needs `[JsonIgnore]`; CloudEvents extension names cannot contain hyphens; `cond ? memory : null` turns into an empty `ReadOnlyMemory` through `byte[]` (caught by a test). Acceptance rows and their tests: [core contracts](research/core-contracts.md#s08-acceptance-tests).
+Decisions: revisions of D-35, D-36, D-37, D-39 (no new id).
+Changed in the plan: decisions, index (session table), core-contracts research, `zensical.toml` nav, new docs page.
+Open questions: none new. Reply routing without a reply address (events intent) is revisited in S10.
+Post-merge checks: `ci`, `security` and `docs` green on `main`; the nine required checks still match the job names (four new test projects are covered by `dotnet test`).
+Next session pickup: S09 (Valkey layer, depends on S07), S10 (pipeline, depends on S08 and S09), S15 (SFC core) and S16 (job models, depends on S05 and S08) can start; recommended next: S09, then S10. S10 replaces `MinimalPipeline` (keep the order of steps and `HostLifecycleTests`/`GreetingsTests` as regression tests) and takes over the outgoing queue, expiry timers, activity source and fault handling. `IDedupeStore` and `IStartLease` are the seams S09 implements. Start from `main` after the merge: `git switch main && git pull --ff-only && gh stack init <branch>`.

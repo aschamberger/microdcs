@@ -211,3 +211,25 @@ public sealed partial class MachineryJobsProcessor(IJobOrderStore jobs, IEventPu
 ## Decisions and code
 
 Decisions D-35 to D-40 in [decisions.md](../decisions.md). Compiling stubs in `src/MicroDCS.Core` (`Authoring`, `Messaging`, `Transport`, `Inspection`, `Hosting`); the pure rules (segment rule, scope policy, intent names, redaction) have unit tests in `tests/MicroDCS.Core.Tests/ContractTests.cs`.
+
+## S08 acceptance tests
+
+Rows the S08 block named as acceptance tests, and where they are covered.
+
+| Row | Test |
+|---|---|
+| E-3 collision guard | `EnvelopeCodecTests.Extension_named_like_a_standard_attribute_*` |
+| E-2 error context text | `EnvelopeCodecTests.Error_*` |
+| E-4, E-5 carried attributes | `PayloadDescriptorTests.Carried_field_*`, `GreetingsTests.Hello_is_answered_*`, `HostLifecycleTests.Harness_replies_*` |
+| P-3, P-4 parameter binding | `GeneratedProcessorTests.Incoming_handler_binds_scope_*`, `Subject_without_scope_is_rejected` |
+| P-5 one, many or no reply | `GeneratedProcessorTests.Incoming_handler_*`, `Async_handler_returning_null_*` |
+| P-6 correlation and causation | `GreetingsTests.Replies_follow_the_request_*` |
+| P-10 raw echo | `GreetingsTests.Event_without_a_handler_is_echoed_*` |
+| P-14 lifecycle hooks, singleton | `GeneratedProcessorTests.Fallback_and_lifecycle_hooks_run`, `HostLifecycleTests.Singleton_hook_is_skipped_*` |
+| P-15 event creation (id, source, times) | `GreetingsTests.Replies_follow_the_request_*` |
+| T-1, T-2, T-3 order, duplicate ack | `HostLifecycleTests.Duplicate_event_is_acknowledged_*` |
+| T-18 fault leaves the claim | `HostLifecycleTests.Handler_exception_is_a_fault_*` |
+| T-21 startup errors | `HostLifecycleTests` (missing binding, unknown transport, duplicate prefix, bad prefix) |
+| L-1 lifecycle order and failures | `HostLifecycleTests.Hooks_run_in_order_*`, `Invalid_options_*` |
+
+Not covered in S08 and owned later: expiry timers (P-12) and the outgoing queue (T-6, T-22, T-7) in S10; `post_start` lock in Valkey in S09; `max_length`/`min_length` validation of the greeting name (Python validated on decode) with the schema work in S23. The `hidden_obj` field of the Python greeting is dropped; the string field covers the demonstration.

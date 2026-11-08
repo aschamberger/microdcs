@@ -2,4 +2,17 @@
   <PropertyGroup>
     <Description>MicroDCS core: CloudEvents processing, processor model and hosting for distributed sequence control applications.</Description>
   </PropertyGroup>
+  <PropertyGroup>
+    <!-- Source-generated configuration binding: no reflection, AOT safe (D-39). -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CloudNative.CloudEvents" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
 </Project>

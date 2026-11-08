@@ -18,6 +18,7 @@ nav = [
   ]},
   {"Development" = [
     {"Overview" = "development.md"},
+    {"Processors in .NET" = "processors-dotnet.md"},
     {"Persistence" = "persistence.md"}
   ]},
   {"Operations" = [
