@@ -424,6 +424,8 @@ Decision:
 
 Consequences: S16 builds the neutral model, conversions, codec, state machine and the NodeSet2 extension project on these packages; the `Directory.Packages.props` entries (ISA95, Core.Schema, SourceGeneration 2.0.1) arrive with S16. Job order payloads are OPC UA JSON verbose (S06 records this in the envelope contract). Open for S16: V1/V2 field mapping where the models diverge (V1 single-string description, `Loaded` and `Error` states), the persisted job document format (S07), and the wire names against `schemas/machinery_jobs.schema.json` (D-2 allows a break).
 
+Revised 2026-11-08 (S16, maintainer): the V1 state mapping left open here follows the upstream provider: V1 `Waiting` is NotAllowedToStart, `Ready` is AllowedToStart, `Loaded` and `Error` are V1-only and show as Running and Aborted in a V2 view. The V1 specification gives no mapping and its text for Ready differs; details in [job models](research/job-models.md). Prepare sub-states exist for V2 only. CloudEvent types: `com.github.aschamberger.ISA95-JOBCONTROL_V2.config.workmaster.v1` and `.config.workmaster.ext.v1`.
+
 Not chosen: System.Text.Json on the generated types (unusable output); hand-written POCOs mirroring the spec (loses spec-conformant types and schemas); a hand-coded transition table (the spec data is machine readable and the Python port already generated it); using the server package's engine (internal, entangled with locks and subscriptions, no persistence); a `[DataType]` attribute class for the Work Master extension (works, but not publishable as an OPC UA model); V2 only (V1 is cheap with the neutral model).
 
 ## D-35 Processor authoring API: attributes, a source generator, explicit registration underneath {#d-35}

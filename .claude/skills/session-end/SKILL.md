@@ -25,7 +25,16 @@ Run and report the real results:
 
 If something fails and cannot be fixed in this session, say so plainly and record it as `partial`.
 
-## 2. Plan updates (part of the session's own PR)
+## 2. Code review (code sessions)
+
+Run `/code-review high` on the session's diff once the definition of done is green. Spike and design sessions without code skip this step.
+
+* Do not report the intentional design decisions listed in `CLAUDE.md`.
+* Check each finding against the code. Fix the confirmed ones in this session's PR, each with a regression test where a test can show it, then rerun the affected checks from section 1.
+* A finding that is not fixed gets its reason in the log entry. Record the review in the log entry: level, number of findings, number fixed.
+* `/code-review ultra` stays with the maintainer, at milestone boundaries: it is billed and user-triggered.
+
+## 3. Plan updates (part of the session's own PR)
 
 * `docs/porting/log.md`: append an entry using the template at the top of the file, about 15 lines. Findings others depend on go to `docs/porting/research/` and are linked.
 * `docs/porting/index.md`: session status in the table (`done` or `partial`), new decisions in the summary table, "Next free id", open questions struck through with the decision id or updated with the owner.
@@ -34,7 +43,7 @@ If something fails and cannot be fixed in this session, say so plainly and recor
 * "Next session pickup" in the log entry: session id, exact first steps, anything the maintainer must prepare. A fresh session must not need chat history.
 * Write the entry as of the merge: status `done` (or `partial`), and a "Post-merge checks" line listing what must hold after the squash merge (for example "CI green on `main`", "required checks: ..."). The next session's `/session-start` verifies them. Do repository settings such as required checks before the merge, once the PR has run the new check names.
 
-## 3. Commit, submit, merge (D-22)
+## 4. Commit, submit, merge (D-22)
 
 1. Commit with the session id in the message (`S04: ...`) and the attribution trailer.
 2. `gh stack submit` (in a non-interactive shell: `gh stack submit --auto --open`). This pushes all branches of the stack and creates or updates the PRs, each targeting the branch below; the bottom PR targets `main`.
@@ -45,6 +54,6 @@ If something fails and cannot be fixed in this session, say so plainly and recor
 6. Fallback without `gh stack`: `git push -u origin <branch>`, `gh pr create --base <branch below or main>`, `gh pr merge --squash --delete-branch`.
 7. After the merge, while the session branch is still checked out: `gh stack unstack --local` (a merged single-PR stack otherwise stays in `.git/gh-stack`, and the next `gh stack init` fails with "main belongs to multiple stacks"). Then `git switch main && git pull --ff-only`, delete the local session branch, and do any post-merge steps of the session. No follow-up PR for the post-merge state: the next session verifies the "Post-merge checks" and records the result in its own entry.
 
-## 4. Report
+## 5. Report
 
 Tell the user: what was done, what was verified and how, what is partial or skipped and why, the PR link, and the next session.

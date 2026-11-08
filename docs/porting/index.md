@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S16** (job models); S08 to S15 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S17** (Machinery Jobs processor); S08 to S16 are done.
 
 ## How to use these files
 
@@ -95,7 +95,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
 | [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
 | [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP via AMQPNetLite.Core (clean), Zenoh library open (Zenoh-CS `Get` crash) |
-| [D-34](decisions.md#d-34) | decided | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
+| [D-34](decisions.md#d-34) | revised | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
 | [D-35](decisions.md#d-35) | decided | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
 | [D-36](decisions.md#d-36) | decided | Own `EventEnvelope`; CloudEvents SDK only behind `IEnvelopeCodec`; `IPayloadDescriptor` with Json, OpcUaJson, Binary codecs |
 | [D-37](decisions.md#d-37) | decided | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model, shutdown phases |
@@ -177,7 +177,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S14 | NATS transport (abstraction check) | S13 | done |
 | S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | done |
 | **M2 Parity gate** | | | |
-| S16 | Job models and state machine | S05, S08 | open |
+| S16 | Job models and state machine | S05, S08 | done |
 | S17 | Machinery Jobs processor and job DAOs | S10, S16 | open |
 | S18 | Job order publisher and state topics | S13, S17 | open |
 | S19 | SFC Valkey host: work stream, outbox, due-index, push commands | S09, S15, S17 | open |
@@ -198,7 +198,7 @@ Session ids were renumbered on 2026-11-07; the mapping from the old ids is in th
 * **Size rule:** one coherent area, roughly up to 1.5k lines of new code including tests, or a spike whose output is only findings. If a session turns out too large, stop at a clean boundary and write the remainder into the handoff.
 * **Branches and PRs (D-22):** one milestone is one GitHub stack (`gh stack`); each session is one PR in that stack, on a branch named after the session (for example `s04-library-spike`), with the session id in the PR title. A PR targets the branch of the PR below it; the bottom PR targets `main`. Merge bottom-up with **squash**, as soon as a session is done and its checks are green, so `main` gets one commit per session and the stack stays short. Parallel sessions go into the stack in the order they are started. A session that needs a second PR adds it to the stack on top of its first one. The session's `log.md` entry and status change are part of its own PR. Each PR is also assigned to the GitHub milestone (M0 to M3) for the progress view.
 * **Start:** read this file, the own block in `sessions.md`, the last `log.md` entry, and the research files and decisions the block links to. `CLAUDE.md` and the path rules load by themselves. Do not re-research settled decisions; if one is wrong, record the change as a revision in `decisions.md` instead of silently deviating.
-* **Definition of done (code sessions):** build with zero warnings (warnings as errors), unit tests green, AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects, compose integration tests green for touched transports, public API has XML docs, no secrets or payloads in logs; once S03 exists the scanners are green (Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code; waivers only with reason and expiry, D-20); every new stateful component ships its read-only inspector (D-19, S11 is done); maintenance tools of a component follow D-45.
+* **Definition of done (code sessions):** build with zero warnings (warnings as errors), unit tests green, AOT publish without `IL2xxx`/`IL3xxx` warnings for the touched projects, compose integration tests green for touched transports, public API has XML docs, no secrets or payloads in logs; once S03 exists the scanners are green (Gitleaks clean, Trivy without fixable HIGH/CRITICAL, Sonar quality gate on new code; waivers only with reason and expiry, D-20); every new stateful component ships its read-only inspector (D-19, S11 is done); maintenance tools of a component follow D-45. Code sessions also pass `/code-review high` on their diff before the PR is opened, with confirmed findings fixed in the same PR (`/session-end`).
 * **End (mandatory, last task of every session):** append a `log.md` entry (with "Post-merge checks" that the next session verifies; no follow-up PR), set the session's status in the table above, update the affected decisions and open questions, and write the "Next session pickup" so that a fresh session needs nothing from chat history.
 * **Python cross-check (design and port sessions):** before replacing Python behaviour, read the matching sources and tests on `python-archive` and keep a parity list (behaviour, file, disposition `kept`/`changed`/`dropped`/`open`) in the session's research file. No row stays `open` at the end of the session; the plan documents and memory are not a substitute for reading the code. The session blocks name the files, and `/session-start` and `/session-end` check it.
 * **Decisions:** new ones take the next free id (above) and get a full entry in `decisions.md` plus a row here. A revision keeps the id and adds a dated "Revised" line.

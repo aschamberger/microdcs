@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Generates the Job Control V2 transition table of MicroDCS.JobControl from the vendored NodeSet2 (D-34).</Description>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>MicroDCS.JobControl.TableGen</RootNamespace>
+  </PropertyGroup>
+</Project>
