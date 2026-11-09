@@ -24,7 +24,7 @@ public sealed class McpContractTests
         var names = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToList();
 
         names.ShouldBe(
-            ["app_status", "config_effective", "dedupe_lookup", "inspect", "inspectors_list", "job_order", "job_orders", "pipeline_recent", "processors_list", "sfc_dryrun", "sfc_explain", "stream_pending", "valkey_document", "valkey_keys"],
+            ["app_status", "config_effective", "dedupe_lookup", "inspect", "inspectors_list", "job_order", "job_orders", "pipeline_recent", "processors_list", "publisher_status", "sfc_dryrun", "sfc_explain", "stream_pending", "valkey_document", "valkey_keys"],
             ignoreOrder: true);
     }
 
@@ -197,7 +197,7 @@ public sealed class McpContractTests
         var names = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).Where(static n => n.StartsWith("maint_", StringComparison.Ordinal)).ToList();
         var text = Text(await client.CallToolAsync("maint_purge_scope_plan", new Dictionary<string, object?> { ["scope"] = "plant.a" }, cancellationToken: ct));
 
-        names.ShouldBe(["maint_apply", "maint_dedupe_release_plan", "maint_job_delete_plan", "maint_purge_scope_plan", "maint_restore_plan", "maint_snapshots_list"], ignoreOrder: true);
+        names.ShouldBe(["maint_apply", "maint_dedupe_release_plan", "maint_job_delete_plan", "maint_publisher_reset_plan", "maint_purge_scope_plan", "maint_restore_plan", "maint_retained_clear_plan", "maint_snapshots_list"], ignoreOrder: true);
         text.ShouldContain("tok123");
         text.ShouldContain("WARNING: Bypasses the state machine.");
         text.ShouldContain("Nothing has changed yet");

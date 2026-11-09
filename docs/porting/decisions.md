@@ -686,3 +686,31 @@ Decision:
 Consequences: S18 reads `Cancel` and `Clear` change entries (Python's publisher handled only `Clear`, so a cancelled order kept its retained topics). S19 consumes the `start` work entries and must re-read the order and skip unless it is still in AllowedToStart, because RevokeStart and Cancel do not withdraw an entry and Start, RevokeStart, Start leaves two. Until S19 no consumer exists and entries stay in `sfc:work:{scope}` (no `MAXLEN`, D-42).
 
 Not chosen: hand-written `IEncodeable` classes (about 30 lines each, and the extension model already exists); a hand-built `ProcessorDescriptor` (loses the generated parameter binding, D-25); an atomic limit in the script (accepting a small overshoot keeps the script generic).
+
+## D-51 Job order publisher: split by role, lease as a guard, topics {#d-51}
+
+Status: decided (2026-11-09, S18). Answers Q-ARCH-9. Background: [job order publisher](research/job-publisher.md).
+
+Context: the publisher serves the MES, not the control path. It should be prompt, but its failures and load must not reach the control path. The command handler only writes a change entry in its script, so the two are already decoupled logically; what remains is the shared poller, connection, process and CPU. Python used a separate Deployment with one replica and a flag.
+
+Decision:
+
+* **Deployment modes:** production runs two Deployments, processors with `Roles=Processor` and one publisher with `Roles=Publisher`, `replicas: 1` (manifest in S22). A pod restart is enough failover, because the MES reads retained last values meanwhile. A separate deployment can also name another broker through its own environment. `Roles=All` stays the default for development and small sites.
+* **Hand-off:** `PollAsync` only marks the scope as dirty; a task of its own reads and publishes. D-43 stays: one poller per instance, which now cannot be held up by a broker. Dirty marks also batch the work.
+* **Lease as a guard:** a renewed key `publisher:lease` with the instance id, TTL 15 s, renewed every 5 s in its own loop so a publish that waits for a broker cannot lose it. Only the holder publishes, and it gives the lease up on stop. It covers `Roles=All` with several replicas and the overlap of a rolling update: without it a slower publisher can overwrite a retained topic with an older value that stays until the next change. Python needed no leader election because it trusted the deployment.
+* **Publisher-only instance:** transports connect in every role except `None` and subscribe, and on NATS create streams, only under `Processor`. Processor hooks do not run.
+* **Topics:** `prefix/{scope levels}/{discriminator}/data/` plus `state-index`, `order/{id}`, `result/{id}`, on the transport the `machinery_jobs` binding names. A transport without state topics ends the start (D-27). Payloads are OPC UA JSON: `JobOrderStateIndexDataType` (extension NodeSet 1.2.0), `ISA95JobOrderDataType` without state, `ISA95JobResponseDataType`. `Sequence` is an Int64, so it is a JSON string as OPC UA JSON writes it.
+* **State has one home:** `order/{id}` carries the order alone and changes on Store, StoreAndStart and Update; `state-index` carries the state.
+* **Job order ids** must fit the segment rule (D-38), because they become topic levels. Store, StoreAndStart and Update refuse others with `InvalidRequest`. The publisher still skips and counts one that arrives some other way, so it cannot block its scope.
+* **Results:** `result/{id}` is written on any change of a job in Completed, Closed or Aborted with a response. Python checked on `ResultUpdate` only and lost a result stored before the end. `HasResult` in the index is true only when that topic exists.
+* **Rebuild:** a scope is rebuilt from the documents on its first visit under a lease, when it has no cursor, when the stream was trimmed past the cursor (MAXLEN, D-42), and at half the time to live so that idle orders keep their topics. Removals during a gap cannot be seen; those topics run out by their time to live.
+* **Delivery:** at least once, the cursor moves after the topics are written. A failed round repeats on the next poll.
+* **Maintenance:** `maint_publisher_reset` removes the cursor of a scope, and the running publisher rebuilds it. `maint_retained_clear` removes state topics through `IStateTopicCatalog` in Core; broker state has no snapshot. The sequence is never reset, so an MES can keep comparing.
+
+* **MQTT session of a publisher-only instance:** clean start and session expiry 0, so it cannot resume subscriptions of an earlier run under another role.
+* **NATS delete markers** carry a time to live of 1 h. A delete would otherwise leave a marker per removed key for ever, and job ids are unique.
+
+Consequences: `MicroDCS.MachineryJobs/Publishing`, options in `MicroDcs:JobPublisher`, inspector `publisher`, MCP `publisher_status`, `maint_retained_clear_plan`, `maint_publisher_reset_plan`. `InMemoryTransport` implements the port. S19 must run the SFC host under `Processor` only. S22 writes the two Deployments.
+
+Not chosen: role flag alone (silent double publishing with the default roles and during rollouts); a lease with hot standby as the default (failover in seconds is not needed for this consumer, though `replicas: 2` works); a publisher poller of its own (a second nudge subscription for what a dirty mark achieves); encoding unsuitable ids into topics (the MES could no longer derive the topic from the id); publishing the order on every change (full documents on every transition for a field the state index already has).
+

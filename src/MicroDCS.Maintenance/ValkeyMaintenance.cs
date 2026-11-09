@@ -19,6 +19,8 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     private const string PurgeTool = "maint_purge_scope";
     private const string RestoreTool = "maint_restore";
     private const string JobDeleteTool = "maint_job_delete";
+    private const string RetainedClearTool = "maint_retained_clear";
+    private const string PublisherResetTool = "maint_publisher_reset";
 
     // Removes the targets in one step. ARGV holds three values per key: operation, argument (set member or hash field) and the
     // fingerprint of the plan image (KeyImage.Fingerprint). Nothing is removed when any target differs from its fingerprint (RV-21).
@@ -65,6 +67,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     private readonly ILogger _audit;
     private readonly SnapshotStore _snapshots;
     private readonly PlanStore _plans;
+    private readonly IReadOnlyList<IStateTopicCatalog> _catalogs;
 
     /// <summary>Initializes a new instance of the <see cref="ValkeyMaintenance"/> class.</summary>
     /// <param name="context">The Valkey context.</param>
@@ -72,7 +75,8 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     /// <param name="environment">The host environment, for the guard.</param>
     /// <param name="time">The clock.</param>
     /// <param name="loggerFactory">The logger factory.</param>
-    public ValkeyMaintenance(ValkeyContext context, IOptions<MaintenanceOptions> options, IHostEnvironment environment, TimeProvider time, ILoggerFactory loggerFactory)
+    /// <param name="catalogs">The components that keep state topics; none when absent.</param>
+    public ValkeyMaintenance(ValkeyContext context, IOptions<MaintenanceOptions> options, IHostEnvironment environment, TimeProvider time, ILoggerFactory loggerFactory, IEnumerable<IStateTopicCatalog>? catalogs = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(options);
@@ -86,6 +90,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         _audit = loggerFactory.CreateLogger(PipelineTelemetry.SecurityCategory);
         _snapshots = new SnapshotStore(_options, time, _audit);
         _plans = new PlanStore(time);
+        _catalogs = catalogs is null ? [] : [.. catalogs];
     }
 
     private IDatabase Database => _context.Multiplexer.GetDatabase();
@@ -156,6 +161,52 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
                 "This bypasses the OPC UA state machine and the pipeline. No status event is sent, no change entry is written, and retained topics on the broker stay (use the publisher reset to republish).",
                 "Entries of this job in the change and work streams stay.",
             ],
+            allowLarge: false,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanRetainedClearAsync(string caller, string scope, string? id, bool allowLarge, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        await GuardAsync(caller, RetainedClearTool, cancellationToken).ConfigureAwait(false);
+        var catalog = _catalogs.Count > 0 ? _catalogs[0] : throw Refuse(caller, RetainedClearTool, "No component of this instance keeps state topics.");
+        var names = await catalog.ListAsync(scope, string.IsNullOrEmpty(id) ? null : id, cancellationToken).ConfigureAwait(false);
+        if (names.Count == 0)
+        {
+            throw Refuse(caller, RetainedClearTool, "There are no state topics for these arguments.");
+        }
+
+        CheckCap(caller, RetainedClearTool, names.Count, allowLarge);
+        var items = names.Select(static n => new PlanItem("retained", n, "delete", "state topic on the broker")).ToList();
+        var arguments = $"scope={scope},id={id},allow_large={allowLarge.ToString().ToLowerInvariant()}";
+        var plan = NewPlan(
+            RetainedClearTool,
+            arguments,
+            $"Removes {names.Count} state topics of scope '{scope}' on the broker.",
+            items,
+            [
+                "Broker state is not part of a snapshot and cannot be restored. A running publisher writes the topics of live job orders again on their next change or refresh; use the publisher reset to do so at once.",
+                "The list comes from the stored job orders. Topics of orders that are no longer stored are only removed when the id is named.",
+            ],
+            KeyImage.Digest([]));
+        _plans.Add(new PendingPlan { Plan = plan, Targets = [], Retained = new RetainedTopics(catalog, scope, names) });
+        Log.Planned(_audit, caller, plan.Tool, plan.Arguments, items.Count, plan.Digest);
+        return plan;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanPublisherResetAsync(string caller, string scope, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        await GuardAsync(caller, PublisherResetTool, cancellationToken).ConfigureAwait(false);
+        return await CreateDeletePlanAsync(
+            caller,
+            PublisherResetTool,
+            $"scope={scope}",
+            $"Forgets the publisher cursor of scope '{scope}'. The publisher then writes all its state topics again from the stored documents and replays the change stream.",
+            [new Target(_context.Keys.PublisherCursors(), scope, "hashfield")],
+            ["Subscribers receive every state topic of the scope again. The sequence of the state index keeps growing."],
             allowLarge: false,
             cancellationToken).ConfigureAwait(false);
     }
@@ -237,9 +288,18 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             throw Refuse(caller, plan.Tool, $"The targets changed since the plan (digest {plan.Digest}, now {digest}). Nothing was changed. Plan again.");
         }
 
-        var result = pending.RestoreItems is null
-            ? await ApplyDeleteAsync(caller, pending, current, cancellationToken).ConfigureAwait(false)
-            : await ApplyRestoreAsync(caller, pending, current, cancellationToken).ConfigureAwait(false);
+        MaintenanceResult result;
+        if (pending.Retained is { } retained)
+        {
+            result = await ApplyRetainedClearAsync(plan, retained, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            result = pending.RestoreItems is null
+                ? await ApplyDeleteAsync(caller, pending, current, cancellationToken).ConfigureAwait(false)
+                : await ApplyRestoreAsync(caller, pending, current, cancellationToken).ConfigureAwait(false);
+        }
+
         Log.Applied(_audit, caller, plan.Tool, plan.Arguments, result.Changed, result.SnapshotId ?? "-", plan.Digest);
         return result;
     }
@@ -266,6 +326,16 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         _plans.Add(new PendingPlan { Plan = plan, Targets = targets });
         Log.Planned(_audit, caller, tool, arguments, items.Count, plan.Digest);
         return plan;
+    }
+
+    private static async Task<MaintenanceResult> ApplyRetainedClearAsync(MaintenancePlan plan, RetainedTopics retained, CancellationToken cancellationToken)
+    {
+        foreach (var name in retained.Names)
+        {
+            await retained.Catalog.DeleteAsync(retained.Scope, name, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new MaintenanceResult(plan.Tool, retained.Names.Count, null, ["No snapshot: broker state is not covered."]);
     }
 
     private async Task<MaintenanceResult> ApplyDeleteAsync(string caller, PendingPlan pending, KeyImage?[] current, CancellationToken cancellationToken)

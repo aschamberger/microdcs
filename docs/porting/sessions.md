@@ -172,7 +172,7 @@ Commands (store, start, abort, ...), job order and response DAOs with the S07 in
 
 Read: [SFC core](research/sfc-core.md), the S07 decisions, D-9, D-18.
 
-The thin host around the S15 core: work stream consumption through the poller, CAS script that stores state, due-index entry and outbox entries atomically, scope registry, push_command dispatch with the persisted deadline (D-9), due-index sweep, trimming rule. Inspectors and MCP tools from the sketch. Recipe execution for push actions in compose.
+The thin host around the S15 core: work stream consumption through the poller, CAS script that stores state, due-index entry and outbox entries atomically, scope registry, push_command dispatch with the persisted deadline (D-9), due-index sweep, trimming rule. Inspectors and MCP tools from the sketch. Recipe execution for push actions in compose. The host runs under the `Processor` role only, and its consumers must not wait on a broker inside `PollAsync` (D-51).
 
 ### S20 SFC pull events, recovery, multi-instance
 
@@ -184,7 +184,7 @@ Q-OPS-1: liveness and readiness, metrics (OTLP and/or Prometheus), job state que
 
 ### S22 Container, Kubernetes, supply chain, security review
 
-Image pinned by digest, one multi-arch image for linux-x64 and linux-arm64 from the two native CI builds (D-32), probes using the HTTP surface, hardened manifest with egress NetworkPolicy, SBOM attestation, signing and verification in CI (R-9; the SBOM artifact exists since S03), review of scanner waivers (D-20), the open SonarQube Cloud findings on `deploy/k8s.yaml` (storage requests and limits, rules S6870/S6897, left for the manifest port in S03), `docs/security.md` update including the trust model (D-13), operational limits per transport (R-12), tenancy for the remaining transports (R-20), support model and zones/conduits (R-21), a review of the "Done in the session" list against the new code, and the unverified items that need a cluster (document what is still unverified).
+Two Deployments by role: processors with `Roles=Processor` and one publisher with `Roles=Publisher`, `replicas: 1` (D-51). Image pinned by digest, one multi-arch image for linux-x64 and linux-arm64 from the two native CI builds (D-32), probes using the HTTP surface, hardened manifest with egress NetworkPolicy, SBOM attestation, signing and verification in CI (R-9; the SBOM artifact exists since S03), review of scanner waivers (D-20), the open SonarQube Cloud findings on `deploy/k8s.yaml` (storage requests and limits, rules S6870/S6897, left for the manifest port in S03), `docs/security.md` update including the trust model (D-13), operational limits per transport (R-12), tenancy for the remaining transports (R-20), support model and zones/conduits (R-21), a review of the "Done in the session" list against the new code, and the unverified items that need a cluster (document what is still unverified).
 
 ### S23 Docs port, parity acceptance, release
 

@@ -103,6 +103,14 @@ internal sealed class InspectionTools
         CancellationToken cancellationToken = default) =>
         Run(service, "job_order", "jobs", Arguments("jobs.order", ("id", id)), cancellationToken);
 
+    [McpServerTool(Name = "publisher_status", ReadOnly = true, Destructive = false)]
+    [Description("The job order publisher for a scope: whether this instance holds the lease, who does, the cursor against the newest change, the last state index sequence and the state topics it keeps. Needs the Machinery Jobs processor.")]
+    public static Task<string> PublisherStatus(
+        InspectionService service,
+        [Description("Scope, dotted form.")] string scope,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "publisher_status", "publisher", Arguments("publisher.status", ("scope", scope)), cancellationToken);
+
     [McpServerTool(Name = "inspect", ReadOnly = true, Destructive = false)]
     [Description("Generic query of any inspector (see inspectors_list), for components that have no dedicated tool yet.")]
     public static Task<string> Inspect(

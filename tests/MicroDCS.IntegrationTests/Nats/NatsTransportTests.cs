@@ -7,6 +7,7 @@ using MicroDCS.Transport.Nats;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 using NATS.Client.KeyValueStore;
 
 namespace MicroDCS.IntegrationTests.Nats;
@@ -163,6 +164,11 @@ public sealed class NatsTransportTests
 
         await port.DeleteAsync(address, "order/42", Ct);
         await Should.ThrowAsync<NatsKVKeyDeletedException>(async () => await store.GetEntryAsync<byte[]>(key, serializer: NatsRawSerializer<byte[]>.Default, cancellationToken: Ct));
+
+        // A marker without a time to live would stay for ever, one per removed key.
+        var stream = await new NatsJSContext(client.Connection).GetStreamAsync("KV_it-state-" + host.Prefix, cancellationToken: Ct);
+        var marker = await stream.GetAsync(new StreamMsgGetRequest { LastBySubj = $"$KV.it-state-{host.Prefix}.{key}" }, Ct);
+        Encoding.UTF8.GetString(Convert.FromBase64String(marker.Message.Hdrs!)).ShouldContain("Nats-TTL");
 
         // The server removes the value when the time to live ends, with nobody to delete it (the publisher is gone).
         await port.PublishAsync(address, "order/43", "short"u8.ToArray(), TimeSpan.FromSeconds(1), Ct);
@@ -374,10 +380,10 @@ public sealed class NatsTransportTests
         var prefix = "it" + Guid.NewGuid().ToString("N")[..10];
         await using var host = await NatsTestHost.StartAsync(
             prefix,
-            extra: new() { ["MicroDcs:Nats:AckWait"] = "00:00:01", ["MicroDcs:MessageWorkers"] = "1" },
+            extra: new() { ["MicroDcs:Nats:AckWait"] = "00:00:02", ["MicroDcs:MessageWorkers"] = "1" },
             start: false,
             ct: Ct);
-        var handler = new SlowHandler(TimeSpan.FromMilliseconds(1500));
+        var handler = new SlowHandler(TimeSpan.FromMilliseconds(3000));
         var transport = host.Transport;
         await transport.StartAsync(handler, Ct);
         try
@@ -388,8 +394,9 @@ public sealed class NatsTransportTests
                 await client.PublishEventAsync($"{prefix}.site.area.events", "slow-" + i, NatsTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", null, Ct);
             }
 
-            // The third message waits about 3 s for the only worker, three times the AckWait.
-            await EventuallyAsync(() => transport.Status.Acknowledged == 3, seconds: 20);
+            // The third message waits about 6 s for the only worker, three times the AckWait. A wider window than 1 s: under load the
+            // in-progress signal of a 1 s AckWait can arrive late and cause a redelivery the test would rightly count.
+            await EventuallyAsync(() => transport.Status.Acknowledged == 3, seconds: 30);
             handler.Deliveries.ShouldBe([false, false, false]);
         }
         finally

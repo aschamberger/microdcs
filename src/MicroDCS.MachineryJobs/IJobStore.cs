@@ -98,6 +98,12 @@ public interface IJobStore
     /// <returns>The response, or <see langword="null"/>.</returns>
     ValueTask<StoredJobResponse?> GetResponseByOrderAsync(string jobOrderId, CancellationToken cancellationToken);
 
+    /// <summary>Checks whether a job order has a job response.</summary>
+    /// <param name="jobOrderId">The job order id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns><see langword="true"/> when it has one.</returns>
+    ValueTask<bool> HasResponseAsync(string jobOrderId, CancellationToken cancellationToken);
+
     /// <summary>Reads the job responses of a scope in any of the given states.</summary>
     /// <param name="scope">The scope.</param>
     /// <param name="states">The states.</param>

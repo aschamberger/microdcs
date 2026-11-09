@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using MicroDCS.Core.Authoring;
 using MicroDCS.Core.Messaging;
+using MicroDCS.Core.Transport;
 using MicroDCS.JobControl.Codec;
 using MicroDCS.JobControl.Conversions;
 using MicroDCS.JobControl.Extension;
@@ -351,8 +352,9 @@ public sealed partial class MachineryJobsProcessor
             return null;
         }
 
+        // The id becomes a segment of its state topics (order/{id}, D-38, D-51), so an id the topics cannot carry is refused here, where the sender learns of it.
         var neutral = JobControlConversions.FromV2Order(order);
-        return JobControlValidation.Validate(neutral) == JobReturnStatus.Success ? neutral : null;
+        return JobControlValidation.Validate(neutral) == JobReturnStatus.Success && LogicalAddress.IsValidSegment(neutral.Id) ? neutral : null;
     }
 
     private async ValueTask<bool> IsRepeatAsync(string id, string scope, EventContext context, CancellationToken cancellationToken)

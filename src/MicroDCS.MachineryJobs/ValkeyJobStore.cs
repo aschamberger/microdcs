@@ -109,6 +109,10 @@ public sealed class ValkeyJobStore : IJobStore
     }
 
     /// <inheritdoc />
+    public async ValueTask<bool> HasResponseAsync(string jobOrderId, CancellationToken cancellationToken) =>
+        await _responses.ExistsByJobOrderAsync(jobOrderId, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<JobResponse>> GetResponsesByStateAsync(string scope, IReadOnlyCollection<JobOrderState> states, int limit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(states);

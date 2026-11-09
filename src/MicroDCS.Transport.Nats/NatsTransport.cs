@@ -22,6 +22,11 @@ namespace MicroDCS.Transport.Nats;
 /// </summary>
 public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposable
 {
+    private const string KvOperationHeader = "KV-Operation";
+    private const string KvDeleteOperation = "DEL";
+
+    private static readonly TimeSpan _deleteMarkerTtl = TimeSpan.FromHours(1);
+
     private static readonly NatsAddressRenderer _renderer = new();
     private static readonly INatsSerialize<ReadOnlyMemory<byte>> _outSerializer = NatsRawSerializer<ReadOnlyMemory<byte>>.Default;
     private static readonly INatsDeserialize<byte[]> _inSerializer = NatsRawSerializer<byte[]>.Default;
@@ -42,7 +47,6 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
 
     private NatsConnection? _connection;
     private NatsJSContext? _js;
-    private INatsKVStore? _state;
     private IInboundHandler? _handler;
     private Channel<NatsDelivery>? _inbox;
     private Task[] _workers = [];
@@ -154,7 +158,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         var js = new NatsJSContext(connection, new NatsJSOpts(connection.Opts, domain: _options.JetStreamDomain));
         _js = js;
         var kv = new NatsKVContext(js);
-        _state = await kv.CreateOrUpdateStoreAsync(
+        await kv.CreateOrUpdateStoreAsync(
             new NatsKVConfig(_options.StateBucket)
             {
                 History = 1,
@@ -270,11 +274,14 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
     public async ValueTask DeleteAsync(LogicalAddress address, string name, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(address);
-        var key = StateKey(address, name);
-        await WhenConnectedAsync(
-            async () => await _state!.DeleteAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false),
-            "$KV." + _options.StateBucket + "." + key,
-            cancellationToken).ConfigureAwait(false);
+
+        // Written like the client's own delete, with a time to live: without one every removed key would leave a marker for ever (D-51).
+        var headers = new NatsHeaders
+        {
+            [KvOperationHeader] = KvDeleteOperation,
+            [NatsMessageMapper.TtlHeader] = NatsMessageMapper.ToSeconds(_deleteMarkerTtl).ToString(CultureInfo.InvariantCulture),
+        };
+        await PublishStreamAsync("$KV." + _options.StateBucket + "." + StateKey(address, name), ReadOnlyMemory<byte>.Empty, headers, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -331,7 +338,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         var consumers = new List<NatsConsumerPlan>();
         var replies = new List<NatsReplyPlan>();
         var instance = NatsAddressRenderer.InstanceToken(_core.InstanceId ?? string.Empty);
-        foreach (var processor in _registry.Processors)
+        foreach (var processor in _core.Roles.HasFlag(InstanceRoles.Processor) ? _registry.Processors : [])
         {
             var binding = _core.Bindings[processor.BindingId];
             if (!string.Equals(binding.Transport, Name, StringComparison.Ordinal))

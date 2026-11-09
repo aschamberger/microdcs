@@ -41,4 +41,28 @@ internal static partial class Log
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Ignored the acceptance limit {Limit} for scope {Scope}: it must not be negative")]
     public static partial void InvalidLimit(ILogger logger, int limit, string scope);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Job order publisher {Holder}: holds the lease = {Held}")]
+    public static partial void PublisherLeaseChanged(ILogger logger, string holder, bool held);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Job order publisher could not reach its lease")]
+    public static partial void PublisherLeaseFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Job order publisher failed for scope {Scope}; it will try again")]
+    public static partial void PublisherScopeFailed(ILogger logger, Exception exception, string scope);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Job order publisher skipped scope {Scope}: no topic can carry it")]
+    public static partial void PublisherScopeInvalid(ILogger logger, string scope);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Job order publisher skipped job order {JobOrderId} in scope {Scope}: no topic can carry the id")]
+    public static partial void PublisherIdSkipped(ILogger logger, string jobOrderId, string scope);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Job order publisher skipped job order {JobOrderId} in scope {Scope}: the document cannot be decoded")]
+    public static partial void PublisherOrderUndecodable(ILogger logger, string jobOrderId, string scope);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Change entries of scope {Scope} after {Cursor} may be lost (oldest is {First}); rebuilding its topics")]
+    public static partial void PublisherGap(ILogger logger, string scope, string cursor, string first);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Published the state index of scope {Scope}, sequence {Sequence}, {Count} job orders")]
+    public static partial void PublisherStateIndex(ILogger logger, string scope, long sequence, int count);
 }

@@ -145,4 +145,13 @@ public sealed class MqttClientOptionsFactoryTests : IDisposable
         certificates.ShouldNotBeNull().Count.ShouldBe(1);
         certificates[0].ShouldBeOfType<X509Certificate2>().HasPrivateKey.ShouldBeTrue();
     }
+
+    [Fact]
+    public void An_instance_that_does_not_subscribe_starts_clean_and_keeps_no_session()
+    {
+        var built = MqttClientOptionsFactory.Build(Defaults(), "c", _logger, resumeSession: false);
+
+        built.CleanSession.ShouldBeTrue();
+        built.SessionExpiryInterval.ShouldBe(0u);
+    }
 }

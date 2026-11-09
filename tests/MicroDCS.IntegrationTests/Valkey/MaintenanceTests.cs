@@ -1,3 +1,4 @@
+using MicroDCS.Core.Transport;
 using MicroDCS.Maintenance;
 using MicroDCS.Valkey;
 using MicroDCS.Valkey.Documents;
@@ -31,12 +32,12 @@ public sealed class MaintenanceTests
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "mdcs-it-" + Guid.NewGuid().ToString("N")[..8]);
 
-        public Rig(ValkeyTestEnvironment env, Action<MaintenanceOptions>? configure = null, string environment = "Test")
+        public Rig(ValkeyTestEnvironment env, Action<MaintenanceOptions>? configure = null, string environment = "Test", IStateTopicCatalog[]? catalogs = null)
         {
             Env = env;
             var options = new MaintenanceOptions { Enabled = true, SnapshotDirectory = _directory };
             configure?.Invoke(options);
-            Operations = new ValkeyMaintenance(env.Context, Options.Create(options), new Environment(environment), TimeProvider.System, NullLoggerFactory.Instance);
+            Operations = new ValkeyMaintenance(env.Context, Options.Create(options), new Environment(environment), TimeProvider.System, NullLoggerFactory.Instance, catalogs);
             Directory = _directory;
         }
 
@@ -351,5 +352,79 @@ public sealed class MaintenanceTests
         ex.Message.ShouldContain("Nothing was written");
         (await dao.GetAsync("o1", ct))!.Document.ShouldContain("42");
         (await dao.GetAsync("o2", ct)).ShouldBeNull();
+    }
+
+    private sealed class RecordingCatalog : IStateTopicCatalog
+    {
+        public List<string> Deleted { get; } = [];
+
+        public ValueTask<IReadOnlyList<string>> ListAsync(string scope, string? id, CancellationToken cancellationToken) =>
+            new(id is null ? ["state-index", "order/o1", "result/o1"] : (IReadOnlyList<string>)["order/" + id, "result/" + id]);
+
+        public ValueTask DeleteAsync(string scope, string name, CancellationToken cancellationToken)
+        {
+            Deleted.Add(scope + ":" + name);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task Publisher_reset_forgets_one_cursor_and_can_be_restored()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var cursors = env.Keys.PublisherCursors();
+        await env.Database.HashSetAsync(cursors, [new HashEntry(Scope, "7-0"), new HashEntry("other", "9-0")]);
+
+        var plan = await rig.Operations.PlanPublisherResetAsync("test", Scope, ct);
+        plan.Items.ShouldHaveSingleItem().Action.ShouldBe("delete");
+        var result = await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        (await env.Database.HashExistsAsync(cursors, Scope)).ShouldBeFalse();
+        ((string?)await env.Database.HashGetAsync(cursors, "other")).ShouldBe("9-0");
+
+        var restore = await rig.Operations.PlanRestoreAsync("test", result.SnapshotId!, overwrite: false, ct);
+        await rig.Operations.ApplyAsync("test", restore.Token, ct);
+        ((string?)await env.Database.HashGetAsync(cursors, Scope)).ShouldBe("7-0");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task Publisher_reset_of_a_scope_without_cursor_is_refused()
+    {
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanPublisherResetAsync("test", Scope, TestContext.Current.CancellationToken));
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task Retained_clear_removes_the_planned_topics_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        var catalog = new RecordingCatalog();
+        using var rig = new Rig(env, catalogs: [catalog]);
+
+        var plan = await rig.Operations.PlanRetainedClearAsync("test", Scope, null, allowLarge: false, ct);
+
+        plan.Items.Select(static i => i.Key).ShouldBe(["state-index", "order/o1", "result/o1"]);
+        catalog.Deleted.ShouldBeEmpty();
+
+        var result = await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        result.Changed.ShouldBe(3);
+        result.SnapshotId.ShouldBeNull();
+        catalog.Deleted.ShouldBe([Scope + ":state-index", Scope + ":order/o1", Scope + ":result/o1"]);
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.ApplyAsync("test", plan.Token, ct));
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task Retained_clear_without_a_catalog_is_refused()
+    {
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanRetainedClearAsync("test", Scope, null, allowLarge: false, TestContext.Current.CancellationToken));
     }
 }

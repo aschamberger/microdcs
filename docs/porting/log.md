@@ -367,3 +367,24 @@ Open questions: none new.
 Verified: build 0 warnings, 829 tests (745 passed, 84 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 84 passed 0 skipped (`tests` exited 0), `scripts/scan` clean, `zensical build`. `serve` with the binding against Valkey: `job_orders` and `processors_list` answered over MCP. The AOT smoke round-trips a `StoreCall` but does not run the processor. The Sonar quality gate runs on the PR.
 Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 84 tests with 0 skipped.
 Next session pickup: S18 (job order publisher and state topics; depends on S13, S17). Run `git switch main && git pull --ff-only && gh stack init s18-job-order-publisher`. Read the change entries of `changes:{scope}`, handle both `Cancel` and `Clear` as removals (D-50), and add `publisher_status`, `maint_retained_clear` and `maint_publisher_reset`. S19 must re-read the order before acting on a `start` entry (D-50). After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
+
+## S18 Job order publisher and state topics (2026-11-09, branch `s18-job-order-publisher`)
+
+Status: done. Previous session post-merge: verified (`ci`, `security`, `docs` green on `main` for `13fc09d`, required checks unchanged). About 2.4k lines of C# with tests.
+Done:
+
+* `src/MicroDCS.MachineryJobs/Publishing`: `JobOrderPublisher` on `IStateTopicPort` keeps `state-index`, `order/{id}` and `result/{id}`, on MQTT retained and NATS KV. Poller hand-off, lease, cursors and sequence in Valkey, rebuild from documents.
+* Roles (Q-ARCH-9): a publisher-only instance connects without subscribing, a clean MQTT session and no NATS command streams. `InMemoryTransport` implements the port.
+* The processor refuses job order ids outside the segment rule. New wire type `JobOrderStateIndexDataType` (extension NodeSet 1.2.0).
+* Inspector `publisher`, MCP `publisher_status`, `maint_retained_clear_plan`, `maint_publisher_reset_plan`; `IStateTopicCatalog` in Core.
+* Compose: split roles over MQTT, failover between two publishers, publisher-only on NATS KV, lease and cursor store, maintenance round trip.
+* `/code-review high`: 10 findings, 10 fixed, 9 with a regression test and the MQTT session with a client-options unit test. NATS delete markers now have a 1 h time to live.
+
+Findings ([job order publisher](research/job-publisher.md), with the Python parity list, no row open): a publish inside the poller would stall the SFC host in S19, because consumers run one after the other and an MQTT publish waits through a reconnect. Python lost a result stored before the job ended and let topics of idle orders run out. `RV20_...` in the NATS tests failed twice in about seven host runs on its 1 s ack window; widened to 2 s and it passed since.
+Decisions: D-51 (new).
+Changed in the plan: index, decisions, sessions (S19, S22), research (`job-publisher.md` new), `docs/job-control.md`, `docs/inspection.md`, `zensical.toml`, `CLAUDE.md`.
+Open questions: Q-ARCH-9 closed.
+Verified: build 0 warnings, 885 tests (790 passed, 95 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 95 passed 0 skipped (`tests` exited 0), `scripts/scan` clean, `zensical build`. The AOT smoke round-trips the state index but does not run the publisher; `publisher_status` was not called against a running `serve`. The Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 95 tests with 0 skipped.
+Next session pickup: S19 (SFC Valkey host; depends on S09, S15, S17). Run `git switch main && git pull --ff-only && gh stack init s19-sfc-valkey-host`. Run the SFC host under the `Processor` role only (D-51). Re-read the order before acting on a `start` entry (D-50). Register work consumers with `ValkeyPoller`, which runs them one after the other: a consumer must not wait on a broker inside `PollAsync`, see the hand-off in `JobOrderPublisher`. After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
+
