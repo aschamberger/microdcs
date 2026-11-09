@@ -178,6 +178,12 @@ The thin host around the S15 core: work stream consumption through the poller, C
 
 Selector-based pull-event matching with persisted waits and build-time rejection of ambiguous recipes (R-1), `XAUTOCLAIM` recovery, the `Resume`-based recovery scan (finding 6), late-response absorption per the S07 rules. Tests with two replicas in compose: kill one mid-job; start a job through replica A, kill A, and check that replica B picks up its work and deadlines (scope registry); stop all pods longer than a deadline and check the outage grace rule. Measure sweep latency.
 
+### S20a SFC hold and release
+
+Read: [D-52](decisions.md#d-52), D-18, [SFC host](research/sfc-host.md), [SFC core in .NET](../sfc-core.md).
+
+MES Pause holds the recipe at the next step boundary and Resume releases it (the usual ISA-88 meaning of pause; D-52). Python never held a recipe, so this is new behaviour, not parity. Pause and Resume write `hold` and `release` work entries in the same script as the job order, as Abort and Stop write `cancel`. In the pure core: new events for hold and release, the held state with its start time in the state document (additive format bump, schema regenerated). While held no transition fires and nothing new is dispatched, including re-sends; responses to commands already out are still recorded, so equipment can finish what it started; open deadlines do not expire. On release, open deadlines move by the length of the hold (the mechanism of the outage rule) and transitions that became possible fire. Host: a `dispatch` entry that reaches a consumer while the job is held is not sent and costs no attempt; release issues it. Stop and Abort of a held job still end the recipe, and a repeated `hold` or `release` is absorbed. Show the hold in `sfc_job`. Exit: core tests for each rule above, compose test that pauses a running recipe over MQTT, asserts that no further command arrives, resumes and completes the job. Out of scope: telling the equipment to stop (S27). A long equipment action finishes during a pause.
+
 ### S21 HTTP surface and observability
 
 Q-OPS-1: liveness and readiness, metrics (OTLP and/or Prometheus), job state query API (R-19) as the stable REST adapter over the inspection services (D-19), using the `(scope, id)` identity if S07 chose it; authn/z for the HTTP endpoints (R-8); OpenTelemetry completeness (traces over all transports, metrics for the pipeline and the SFC engine).
@@ -207,3 +213,10 @@ First verify the S04 finding ([library spike](research/library-spike.md#zenoh-cs
 ### S26 Packaging and release
 
 Needs a released upstream CloudEvents package (D-14). NuGet package split, semver tooling, changelog, API reference generation (R-13, R-17), and a `dotnet new` template package (`MicroDCS.Templates`) replacing the Python `init` scaffolder (Dockerfile, Kubernetes manifest, `CLAUDE.md` and `.claude/` starter files, VS Code tasks and settings).
+
+### S27 SFC equipment hold
+
+Read: [D-52](decisions.md#d-52), the S20a entry in the [log](log.md), [SFC core in .NET](../sfc-core.md).
+
+Builds on the step-boundary hold of S20a: on a Pause the equipment is actually told to stop. Recipes declare hold and restart actions (the ISA-88 hold logic), as a backward-compatible extension of the recipe format with a new `dataschema` version, build-time validation and a regenerated schema. A command contract between the host and the equipment for hold, restart and "could not hold": type ids, outcomes, and what a failure or timeout of a hold action does to the job. Decide what happens to an action that is running when the hold begins, how a restart relates to its attempt and deadline, whether a recipe without hold actions keeps the S20a behaviour (default yes), and the capability flag that lets a station refuse such recipes. Compose test: a pause interrupts a running action through its hold action, and Resume restarts it to the end of the job. Record the contract as a decision (next free id).
+

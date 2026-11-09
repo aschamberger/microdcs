@@ -77,7 +77,7 @@ public sealed class ValkeyJobStore : IJobStore
             write.ChangeType,
             write.ExpectedVersion,
             write.Operation,
-            write.StartRecipe,
+            write.Recipe switch { JobRecipeWork.Start => "start", JobRecipeWork.Cancel => "cancel", _ => null },
             cancellationToken).ConfigureAwait(false);
         return result.Written;
     }
@@ -160,6 +160,15 @@ public sealed class ValkeyJobStore : IJobStore
     /// <inheritdoc />
     public async ValueTask<bool> IsReferenceAsync(JobReferenceKind kind, string id, string scope, CancellationToken cancellationToken) =>
         await _references.IsMemberAsync(ListName(kind), id, scope, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async ValueTask<JobWorkMaster?> GetWorkMasterAsync(string id, string scope, CancellationToken cancellationToken)
+    {
+        var stored = await _workMasters.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        return stored is null || !string.Equals(stored.Scope, scope, StringComparison.Ordinal)
+            ? null
+            : JobControlConversions.FromWorkMasterExt(OpcUaJsonCodec.Decode<ISA95WorkMasterExtDataType>(Encoding.UTF8.GetBytes(stored.Document)));
+    }
 
     /// <inheritdoc />
     public async ValueTask<bool> SaveWorkMasterAsync(JobWorkMaster workMaster, string scope, CancellationToken cancellationToken)

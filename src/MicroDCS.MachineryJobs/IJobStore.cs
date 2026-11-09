@@ -23,8 +23,21 @@ public sealed record StoredJobResponse(JobResponse Response, string Scope);
 /// <param name="ChangeType">The change type for the change stream.</param>
 /// <param name="ExpectedVersion">The version this write builds on, 0 to create.</param>
 /// <param name="Operation">The id of the operation.</param>
-/// <param name="StartRecipe">Whether the same step queues the start of the job's recipe.</param>
-public sealed record JobOrderWrite(JobOrder Order, JobOrderState State, string Scope, string ChangeType, long ExpectedVersion, string Operation, bool StartRecipe);
+/// <param name="Recipe">The work the same step queues for the job's recipe.</param>
+public sealed record JobOrderWrite(JobOrder Order, JobOrderState State, string Scope, string ChangeType, long ExpectedVersion, string Operation, JobRecipeWork Recipe);
+
+/// <summary>What a job order write queues for the job's recipe in the same step (D-50, D-52).</summary>
+public enum JobRecipeWork
+{
+    /// <summary>Nothing.</summary>
+    None,
+
+    /// <summary>The job reached AllowedToStart: start the recipe.</summary>
+    Start,
+
+    /// <summary>The job was aborted or stopped: end the recipe.</summary>
+    Cancel,
+}
 
 /// <summary>The lists of what a station may use.</summary>
 public enum JobReferenceKind
@@ -142,6 +155,13 @@ public interface IJobStore
     /// <param name="cancellationToken">Cancellation.</param>
     /// <returns><see langword="true"/> when it does.</returns>
     ValueTask<bool> IsReferenceAsync(JobReferenceKind kind, string id, string scope, CancellationToken cancellationToken);
+
+    /// <summary>Reads a Work Master of a scope.</summary>
+    /// <param name="id">The id.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The Work Master, or <see langword="null"/> when the scope has none with this id.</returns>
+    ValueTask<JobWorkMaster?> GetWorkMasterAsync(string id, string scope, CancellationToken cancellationToken);
 
     /// <summary>Stores a Work Master for a scope.</summary>
     /// <param name="workMaster">The Work Master.</param>

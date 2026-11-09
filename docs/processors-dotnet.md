@@ -43,7 +43,7 @@ The class is `partial`; the generator adds `Describe()` (the `IDescribedProcesso
 |---|---|
 | `[Incoming]` | Handles a request. The first parameter is the payload. |
 | `[Outgoing(typeof(T))]` | Factory for command payloads, called by type id with a `CommandRequest`. |
-| `[OnResponse]` | Handles a response to a command this instance sent. |
+| `[OnResponse]` | Handles a response to a command this instance sent. May return an `ActionOutcome`, which is not published and tells a recipe how the action ended; without one the outcome is `done`. |
 | `[OnExpired]` | Called when a command expired without a response. |
 | `[Fallback]` | Takes events no handler claims. First parameter is the `EventEnvelope`. |
 | `[OnInitialize]`, `[OnStarted(Singleton = true)]`, `[OnShutdown]` | Lifecycle hooks. |

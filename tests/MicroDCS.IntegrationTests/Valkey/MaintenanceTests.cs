@@ -427,4 +427,102 @@ public sealed class MaintenanceTests
 
         await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanRetainedClearAsync("test", Scope, null, allowLarge: false, TestContext.Current.CancellationToken));
     }
+
+    private const string SfcStateDocument = """{"format":1,"formatMinor":0,"jobId":"j1","scope":"plant.a","recipeHash":"h","status":"Running","activeSteps":["s1"],"actions":{"a1":{"name":"a1","typeId":"t","status":"Dispatched","round":1,"attempt":1,"commandId":"c","deadline":5000}},"sequence":1}""";
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task SfcJobDeleteRemovesTheStateAndItsIndexEntriesOnly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var dao = new SfcStateDao(env.Context);
+        await new JobOrderDao(env.Context).SaveAsync("j1", "plant.a", "doc", 1, "Store", cancellationToken: ct);
+        await dao.CompareAndSetAsync("j1", "plant.a", SfcStateDocument, 0, 5000, true, [], cancellationToken: ct);
+
+        var plan = await rig.Operations.PlanSfcJobDeleteAsync("test", "j1", ct);
+        var result = await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        result.Changed.ShouldBe(3);
+        result.SnapshotId.ShouldNotBeNull();
+        (await dao.GetAsync("j1", ct)).ShouldBeNull();
+        (await dao.ListActiveAsync("plant.a", ct)).ShouldBeEmpty();
+        (await dao.ListDueAsync("plant.a", 10, ct)).ShouldBeEmpty();
+        (await new JobOrderDao(env.Context).GetAsync("j1", ct)).ShouldNotBeNull();
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task RebuildDueIndexWritesItFromTheJobStates()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var dao = new SfcStateDao(env.Context);
+        await dao.CompareAndSetAsync("j1", "plant.a", SfcStateDocument, 0, null, true, [], cancellationToken: ct);
+        await dao.SetDueAsync("plant.a", "stale", 1, ct);
+
+        var plan = await rig.Operations.PlanSfcRebuildDueIndexAsync("test", "plant.a", ct);
+        plan.Items.Select(static i => (i.Key, i.Action)).ShouldBe([("j1", "add"), ("stale", "remove")], ignoreOrder: true);
+        await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        (await dao.ListDueAsync("plant.a", 10, ct)).ShouldBe([("j1", 5000L)]);
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanSfcRebuildDueIndexAsync("test", "plant.a", ct));
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task RebuildDueIndexRefusesWhenAnEntryChangedAfterThePlan()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var dao = new SfcStateDao(env.Context);
+        await dao.CompareAndSetAsync("j1", "plant.a", SfcStateDocument, 0, null, true, [], cancellationToken: ct);
+        var plan = await rig.Operations.PlanSfcRebuildDueIndexAsync("test", "plant.a", ct);
+        rig.Operations.BeforeChange = async () => await dao.SetDueAsync("plant.a", "other", 1, ct);
+
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.ApplyAsync("test", plan.Token, ct));
+
+        (await dao.ListDueAsync("plant.a", 10, ct)).ShouldHaveSingleItem().JobId.ShouldBe("other");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task RequeueMovesADeadEntryBackToWork()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var id = await env.Database.StreamAddAsync(env.Keys.SfcDead("plant.a"), [new("dead_reason", "x"), new("source_id", "1-0"), new("job_id", "j1"), new("action", "tick")]);
+
+        var plan = await rig.Operations.PlanStreamRequeueAsync("test", "plant.a", id.ToString(), ct);
+        var result = await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        result.SnapshotId.ShouldNotBeNull();
+        (await env.Database.StreamLengthAsync(env.Keys.SfcDead("plant.a"))).ShouldBe(0);
+        var work = (await env.Database.StreamRangeAsync(env.Keys.SfcWork("plant.a"))).ShouldHaveSingleItem();
+        work.Values.Select(static v => v.Name.ToString()).ShouldBe(["job_id", "action"]);
+        work["job_id"].ToString().ShouldBe("j1");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task StreamAckRemovesAPendingEntryAndARestoreAddsItBack()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var stream = env.Keys.SfcWork("plant.a");
+        var id = await env.Database.StreamAddAsync(stream, [new("job_id", "j1"), new("action", "tick")]);
+        await env.Database.StreamCreateConsumerGroupAsync(stream, SfcStateDao.ConsumerGroup, StreamPosition.Beginning);
+        await env.Database.StreamReadGroupAsync(stream, SfcStateDao.ConsumerGroup, "c1", StreamPosition.NewMessages, 10);
+
+        var plan = await rig.Operations.PlanStreamAckAsync("test", "plant.a", id.ToString(), ct);
+        var result = await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        result.Changed.ShouldBe(1);
+        (await env.Database.StreamLengthAsync(stream)).ShouldBe(0);
+        (await env.Database.StreamPendingAsync(stream, SfcStateDao.ConsumerGroup)).PendingMessageCount.ShouldBe(0);
+
+        var restore = await rig.Operations.PlanRestoreAsync("test", result.SnapshotId.ShouldNotBeNull(), overwrite: false, ct);
+        await rig.Operations.ApplyAsync("test", restore.Token, ct);
+        (await env.Database.StreamRangeAsync(stream)).ShouldHaveSingleItem()["job_id"].ToString().ShouldBe("j1");
+    }
 }

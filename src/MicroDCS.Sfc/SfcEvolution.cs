@@ -13,6 +13,7 @@ internal sealed class SfcEvolution
     private SfcJobStatus _status;
     private string? _current;
     private long _sequence;
+    private long? _startedAt;
     private string? _faultCode;
     private string? _faultMessage;
     private SfcContinuation _continuation = new SfcDefer();
@@ -54,6 +55,7 @@ internal sealed class SfcEvolution
             return Refuse(SfcDisposition.Absorbed, "The job was started already.");
         }
 
+        _startedAt = _at;
         _status = SfcJobStatus.Running;
         _current = _graph.InitialStep;
         EnterStep(_graph.InitialStep);
@@ -505,6 +507,7 @@ internal sealed class SfcEvolution
             ActiveSteps = [.. _active],
             Actions = _actions,
             Sequence = _sequence,
+            StartedAt = _startedAt ?? _original.StartedAt,
             FaultCode = _faultCode,
             FaultMessage = _faultMessage,
         },

@@ -45,6 +45,7 @@ public static class MicroDcsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, AppInspector>());
         services.TryAddSingleton<IInboundHandler>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.TryAddSingleton<IEventPublisher>(static sp => sp.GetRequiredService<MessagePipeline>());
+        services.TryAddSingleton<IOutgoingCommands>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.AddHostedService<MicroDcsHostedService>();
         return services;
     }

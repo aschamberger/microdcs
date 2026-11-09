@@ -21,7 +21,7 @@ public sealed class JobStoreTests
         new(new JobOrderDao(env.Context), new JobResponseDao(env.Context), new WorkMasterDao(env.Context), new ReferenceListDao(env.Context), new JobAcceptanceDao(env.Context));
 
     private static JobOrderWrite Write(JobOrderState state, long expected, bool start = false, string change = "Store", string operation = "op") =>
-        new(new JobOrder { Id = "job-1", Priority = 5 }, state, Scope, change, expected, operation, start);
+        new(new JobOrder { Id = "job-1", Priority = 5 }, state, Scope, change, expected, operation, start ? JobRecipeWork.Start : JobRecipeWork.None);
 
     [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
     public async Task An_order_round_trips_with_its_sub_state_and_version()
@@ -117,7 +117,7 @@ public sealed class JobStoreTests
         for (var i = 0; i < 205; i++)
         {
             var state = i == 204 ? JobOrderState.Running : JobOrderState.Aborted;
-            await store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = $"job-{i}", Priority = (short)i }, state, Scope, "Store", 0, "op", false), Ct);
+            await store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = $"job-{i}", Priority = (short)i }, state, Scope, "Store", 0, "op", JobRecipeWork.None), Ct);
         }
 
         var running = await inspector.InspectAsync(new InspectionQuery("jobs.orders", Arguments: new Dictionary<string, string> { ["scope"] = Scope, ["state"] = "Running" }), Ct);
@@ -209,7 +209,7 @@ public sealed class JobStoreTests
         var store = Store(env);
         var inspector = new JobsInspector(store, env.Context);
         await store.SaveOrderAsync(Write(JobOrderState.Running, 0), Ct);
-        await store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-2" }, JobOrderState.Aborted, Scope, "Store", 0, "op", false), Ct);
+        await store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-2" }, JobOrderState.Aborted, Scope, "Store", 0, "op", JobRecipeWork.None), Ct);
         await store.SaveResponseAsync(new JobResponse { Id = "r-1", JobOrderId = "job-1", State = JobOrderState.Running }, Scope, Ct);
 
         var orders = await inspector.InspectAsync(new InspectionQuery("jobs.orders", Arguments: new Dictionary<string, string> { ["scope"] = Scope }), Ct);

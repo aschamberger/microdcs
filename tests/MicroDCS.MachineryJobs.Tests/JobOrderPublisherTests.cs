@@ -58,7 +58,7 @@ public sealed class JobOrderPublisherTests : IDisposable
     private async Task SaveAsync(string id, JobOrderState state, string change = "Store", string scope = Scope)
     {
         var version = _store.Order(id)?.Version ?? 0;
-        await _store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = id }, state, scope, change, version, "op", false), Ct);
+        await _store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = id }, state, scope, change, version, "op", JobRecipeWork.None), Ct);
         _state.Append(scope, change, id);
     }
 

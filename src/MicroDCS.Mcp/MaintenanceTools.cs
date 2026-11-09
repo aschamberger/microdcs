@@ -71,6 +71,44 @@ internal sealed class MaintenanceTools
         CancellationToken cancellationToken = default) =>
         Run(service, "maint_publisher_reset_plan", async () => Format(await operations.PlanPublisherResetAsync(Caller, scope, cancellationToken).ConfigureAwait(false)));
 
+    [McpServerTool(Name = "maint_sfc_job_delete_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans the removal of the SFC state of one job. The job order and response stay, so a Running job stays Running with no recipe. Changes nothing; run maint_apply with the returned token to execute. Show the plan and ask first.")]
+    public static Task<string> SfcJobDeletePlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("The job id.")] string id,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_sfc_job_delete_plan", async () => Format(await operations.PlanSfcJobDeleteAsync(Caller, id, cancellationToken).ConfigureAwait(false)));
+
+    [McpServerTool(Name = "maint_sfc_rebuild_due_index_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans writing the due-index of a scope again from the states of its running jobs. Changes nothing; run maint_apply with the returned token to execute. Show the plan and ask first.")]
+    public static Task<string> SfcRebuildDueIndexPlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("Scope, dotted form.")] string scope,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_sfc_rebuild_due_index_plan", async () => Format(await operations.PlanSfcRebuildDueIndexAsync(Caller, scope, cancellationToken).ConfigureAwait(false)));
+
+    [McpServerTool(Name = "maint_stream_requeue_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans moving one entry of the SFC dead stream of a scope back to its work stream. Changes nothing; run maint_apply with the returned token to execute. Show the plan and ask first.")]
+    public static Task<string> StreamRequeuePlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("The entry id in the dead stream.")] string entryId,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_stream_requeue_plan", async () => Format(await operations.PlanStreamRequeueAsync(Caller, scope, entryId, cancellationToken).ConfigureAwait(false)));
+
+    [McpServerTool(Name = "maint_stream_ack_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans acknowledging and removing one entry of the SFC work stream of a scope without running it. Changes nothing; run maint_apply with the returned token to execute. Show the plan and ask first.")]
+    public static Task<string> StreamAckPlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("The entry id in the work stream, see sfc_work_pending.")] string entryId,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_stream_ack_plan", async () => Format(await operations.PlanStreamAckAsync(Caller, scope, entryId, cancellationToken).ConfigureAwait(false)));
+
     [McpServerTool(Name = "maint_restore_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
     [Description("Plans putting the content of a snapshot back (see maint_snapshots_list). Refuses when a target exists with different content unless overwrite is set. Changes nothing; run maint_apply with the returned token to execute.")]
     public static Task<string> RestorePlan(

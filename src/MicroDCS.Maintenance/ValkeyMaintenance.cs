@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text.Json;
 using MicroDCS.Core.Transport;
+using MicroDCS.Sfc;
 using MicroDCS.Valkey;
 using MicroDCS.Valkey.Documents;
 using Microsoft.Extensions.Hosting;
@@ -21,6 +24,29 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     private const string JobDeleteTool = "maint_job_delete";
     private const string RetainedClearTool = "maint_retained_clear";
     private const string PublisherResetTool = "maint_publisher_reset";
+    private const string SfcJobDeleteTool = "maint_sfc_job_delete";
+    private const string SfcRebuildDueTool = "maint_sfc_rebuild_due_index";
+    private const string StreamRequeueTool = "maint_stream_requeue";
+    private const string StreamAckTool = "maint_stream_ack";
+
+    // Replaces a due-index, guarded by the cardinality the plan saw. ARGV: expected cardinality, then member and score pairs. KEYS: due-index.
+    private const string RebuildDueScript = """
+        if redis.call('ZCARD', KEYS[1]) ~= tonumber(ARGV[1]) then return 0 end
+        redis.call('DEL', KEYS[1])
+        for i = 2, #ARGV, 2 do redis.call('ZADD', KEYS[1], ARGV[i + 1], ARGV[i]) end
+        return 1
+        """;
+
+    // Moves a dead entry back to work. KEYS: dead stream, work stream, nudge channel. ARGV: entry id, scope, then field names and values.
+    private const string RequeueScript = """
+        if #redis.call('XRANGE', KEYS[1], ARGV[1], ARGV[1]) == 0 then return 0 end
+        local fields = {}
+        for i = 3, #ARGV do fields[#fields + 1] = ARGV[i] end
+        redis.call('XADD', KEYS[2], '*', unpack(fields))
+        redis.call('XDEL', KEYS[1], ARGV[1])
+        redis.call('PUBLISH', KEYS[3], ARGV[2])
+        return 1
+        """;
 
     // Removes the targets in one step. ARGV holds three values per key: operation, argument (set member or hash field) and the
     // fingerprint of the plan image (KeyImage.Fingerprint). Nothing is removed when any target differs from its fingerprint (RV-21).
@@ -42,6 +68,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
           elseif c == 'm' then return redis.pcall('SISMEMBER', key, arg) == 1
           elseif c == 'M' then return type(redis.pcall('ZSCORE', key, arg)) == 'string'
           elseif c == 'f' then return redis.pcall('HGET', key, arg) == p
+          elseif c == 'e' then return #redis.pcall('XRANGE', key, arg, arg) == 1
           end
           return false
         end
@@ -55,6 +82,9 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
           if op == 'del' then removed = removed + redis.call('DEL', KEYS[i])
           elseif op == 'srem' then removed = removed + redis.call('SREM', KEYS[i], arg)
           elseif op == 'zrem' then removed = removed + redis.call('ZREM', KEYS[i], arg)
+          elseif op == 'xdel' then
+            redis.call('XACK', KEYS[i], string.sub(ARGV[i * 3], 2), arg)
+            removed = removed + redis.call('XDEL', KEYS[i], arg)
           else removed = removed + redis.call('HDEL', KEYS[i], arg) end
         end
         return {1, removed}
@@ -212,12 +242,109 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     }
 
     /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanSfcJobDeleteAsync(string caller, string id, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        await GuardAsync(caller, SfcJobDeleteTool, cancellationToken).ConfigureAwait(false);
+        var keys = _context.Keys;
+        var scope = (string?)await Database.HashGetAsync(keys.SfcState(id), "scope").WaitAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw Refuse(caller, SfcJobDeleteTool, $"There is no SFC state for job '{id}'.");
+        return await CreateDeletePlanAsync(
+            caller,
+            SfcJobDeleteTool,
+            $"id={id}",
+            $"Removes the SFC state of job '{id}' of scope '{scope}'. The job order and its response stay.",
+            [new Target(keys.SfcState(id)), new Target(keys.SfcActive(scope), id, "setmember"), new Target(keys.SfcDue(scope), id, "zsetmember")],
+            ["The job order keeps its state, so a running job stays Running with no recipe behind it. Work entries of this job stay and find no state."],
+            allowLarge: false,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanSfcRebuildDueIndexAsync(string caller, string scope, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        await GuardAsync(caller, SfcRebuildDueTool, cancellationToken).ConfigureAwait(false);
+        var keys = _context.Keys;
+        var active = await Database.SetMembersAsync(keys.SfcActive(scope)).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var wanted = new SortedDictionary<string, long>(StringComparer.Ordinal);
+        foreach (var job in active.Select(static v => v.ToString()))
+        {
+            var document = (string?)await Database.HashGetAsync(keys.SfcState(job), "doc").WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (document is not null && JsonSerializer.Deserialize(document, SfcJsonContext.Default.SfcState)?.NextDeadline is { } deadline)
+            {
+                wanted[job] = deadline;
+            }
+        }
+
+        var target = new Target(keys.SfcDue(scope));
+        var image = await KeyImage.CaptureAsync(Database, target, cancellationToken).ConfigureAwait(false);
+        var current = (image?.Scored ?? []).ToDictionary(static s => s.Member, static s => (long)s.Score, StringComparer.Ordinal);
+        var items = new List<PlanItem>();
+        foreach (var (job, deadline) in wanted.Where(w => !current.TryGetValue(w.Key, out var score) || score != w.Value))
+        {
+            items.Add(new PlanItem("sfcdue", job, current.ContainsKey(job) ? "update" : "add", deadline.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        items.AddRange(current.Keys.Where(c => !wanted.ContainsKey(c)).Order(StringComparer.Ordinal).Select(static job => new PlanItem("sfcdue", job, "remove", "no open deadline")));
+        if (items.Count == 0)
+        {
+            throw Refuse(caller, SfcRebuildDueTool, "The due-index already matches the job states.");
+        }
+
+        CheckCap(caller, SfcRebuildDueTool, items.Count, allowLarge: false);
+        var plan = NewPlan(SfcRebuildDueTool, $"scope={scope}", $"Writes the due-index of scope '{scope}' again: {items.Count} of {wanted.Count} entries differ.", items, ["A sweep or a step of a running instance can change the index between the plan and the apply; the apply then refuses."], KeyImage.Digest([image]));
+        _plans.Add(new PendingPlan { Plan = plan, Targets = [target], DueIndex = new DueIndexRebuild(keys.SfcDue(scope), [.. wanted.Select(static w => (w.Key, w.Value))]) });
+        Log.Planned(_audit, caller, plan.Tool, plan.Arguments, items.Count, plan.Digest);
+        return plan;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanStreamRequeueAsync(string caller, string scope, string entryId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        ArgumentException.ThrowIfNullOrEmpty(entryId);
+        await GuardAsync(caller, StreamRequeueTool, cancellationToken).ConfigureAwait(false);
+        var keys = _context.Keys;
+        var target = new Target(keys.SfcDead(scope), entryId, "streamentry");
+        var image = await KeyImage.CaptureAsync(Database, target, cancellationToken).ConfigureAwait(false)
+            ?? throw Refuse(caller, StreamRequeueTool, $"The dead stream of scope '{scope}' has no entry '{entryId}'.");
+        var plan = NewPlan(
+            StreamRequeueTool,
+            $"scope={scope},id={entryId}",
+            $"Moves dead entry '{entryId}' of scope '{scope}' back to the work stream.",
+            [new PlanItem("sfcdead", entryId, "requeue", image.Describe)],
+            ["The entry runs again with a new id and a new delivery count. A step that already ran is absorbed by the core."],
+            KeyImage.Digest([image]));
+        _plans.Add(new PendingPlan { Plan = plan, Targets = [target], Requeue = new StreamRequeue(keys.SfcWork(scope), keys.Nudge("sfc"), scope, entryId) });
+        Log.Planned(_audit, caller, plan.Tool, plan.Arguments, 1, plan.Digest);
+        return plan;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanStreamAckAsync(string caller, string scope, string entryId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scope);
+        ArgumentException.ThrowIfNullOrEmpty(entryId);
+        await GuardAsync(caller, StreamAckTool, cancellationToken).ConfigureAwait(false);
+        return await CreateDeletePlanAsync(
+            caller,
+            StreamAckTool,
+            $"scope={scope},id={entryId}",
+            $"Acknowledges and removes work entry '{entryId}' of scope '{scope}' without running it.",
+            [new Target(_context.Keys.SfcWork(scope), entryId, "streamentry")],
+            ["What the entry would have done does not happen: a job can stay waiting until its next deadline or for ever. Restoring the snapshot adds the entry again with a new id."],
+            allowLarge: false,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<MaintenancePlan> PlanRestoreAsync(string caller, string snapshotId, bool overwrite, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(snapshotId);
         await GuardAsync(caller, RestoreTool, cancellationToken).ConfigureAwait(false);
         var snapshot = await LoadSnapshotAsync(caller, snapshotId, cancellationToken).ConfigureAwait(false);
-        var targets = snapshot.Items.Select(static i => new Target(i.Key, i.Part, i.Type switch { "setmember" => "setmember", "zsetmember" => "zsetmember", "hashfield" => "hashfield", _ => null })).ToList();
+        var targets = snapshot.Items.Select(static i => new Target(i.Key, i.Part, i.Type switch { "setmember" => "setmember", "zsetmember" => "zsetmember", "hashfield" => "hashfield", "streamentry" => "streamentry", _ => null })).ToList();
         var current = await CaptureAllAsync(targets, cancellationToken).ConfigureAwait(false);
 
         var items = new List<PlanItem>();
@@ -253,7 +380,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         }
 
         CheckCap(caller, RestoreTool, write, allowLarge: false);
-        if (snapshot.Items.Any(static i => i.Type == "stream"))
+        if (snapshot.Items.Any(static i => i.Type is "stream" or "streamentry"))
         {
             warnings.Add("Stream entries are added again with new ids; consumers see them as new work, and a publisher cursor from before the purge makes the publisher read the change entries again. Consumer groups and pending entries are not restored.");
         }
@@ -292,6 +419,14 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         if (pending.Retained is { } retained)
         {
             result = await ApplyRetainedClearAsync(plan, retained, cancellationToken).ConfigureAwait(false);
+        }
+        else if (pending.DueIndex is { } dueIndex)
+        {
+            result = await ApplyDueRebuildAsync(caller, pending, dueIndex, current, cancellationToken).ConfigureAwait(false);
+        }
+        else if (pending.Requeue is { } requeue)
+        {
+            result = await ApplyRequeueAsync(caller, pending, requeue, current, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -338,6 +473,63 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         return new MaintenanceResult(plan.Tool, retained.Names.Count, null, ["No snapshot: broker state is not covered."]);
     }
 
+    private async Task<string> WriteSnapshotAsync(string caller, MaintenancePlan plan, List<KeyImage> images, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _snapshots.WriteAsync(plan.Tool, plan.Arguments, plan.Digest, _context.Options.KeyPrefix, images, cancellationToken).ConfigureAwait(false);
+        }
+        catch (MaintenanceRefusedException ex)
+        {
+            throw Refuse(caller, plan.Tool, ex.Message);
+        }
+    }
+
+    private async Task<MaintenanceResult> ApplyDueRebuildAsync(string caller, PendingPlan pending, DueIndexRebuild rebuild, KeyImage?[] current, CancellationToken cancellationToken)
+    {
+        var plan = pending.Plan;
+        var snapshotId = current[0] is { } image ? await WriteSnapshotAsync(caller, plan, [image], cancellationToken).ConfigureAwait(false) : null;
+        if (BeforeChange is { } beforeChange)
+        {
+            await beforeChange().ConfigureAwait(false);
+        }
+
+        var values = new List<RedisValue>(1 + (rebuild.Entries.Count * 2)) { current[0]?.Scored?.Count ?? 0 };
+        foreach (var (job, deadline) in rebuild.Entries)
+        {
+            values.Add(job);
+            values.Add(deadline);
+        }
+
+        var written = (int)await Database.ScriptEvaluateAsync(RebuildDueScript, [rebuild.Key], [.. values]).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return written == 1
+            ? new MaintenanceResult(plan.Tool, rebuild.Entries.Count, snapshotId, [])
+            : throw Refuse(caller, plan.Tool, "The due-index changed between the check and the write. Nothing was written. Plan again.");
+    }
+
+    private async Task<MaintenanceResult> ApplyRequeueAsync(string caller, PendingPlan pending, StreamRequeue requeue, KeyImage?[] current, CancellationToken cancellationToken)
+    {
+        var plan = pending.Plan;
+        var image = current[0] ?? throw Refuse(caller, plan.Tool, "The entry is gone.");
+        var snapshotId = await WriteSnapshotAsync(caller, plan, [image], cancellationToken).ConfigureAwait(false);
+        if (BeforeChange is { } beforeChange)
+        {
+            await beforeChange().ConfigureAwait(false);
+        }
+
+        var values = new List<RedisValue> { requeue.EntryId, requeue.Scope };
+        foreach (var pair in (image.Pairs ?? []).Where(static p => p.Name is not ("dead_reason" or "source_id")))
+        {
+            values.Add(pair.Name);
+            values.Add(pair.Value);
+        }
+
+        var moved = (int)await Database.ScriptEvaluateAsync(RequeueScript, [image.Key, requeue.WorkKey, requeue.Nudge], [.. values]).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return moved == 1
+            ? new MaintenanceResult(plan.Tool, 1, snapshotId, [])
+            : throw Refuse(caller, plan.Tool, $"The entry was removed between the check and the move. The snapshot {snapshotId} was written anyway. Plan again.");
+    }
+
     private async Task<MaintenanceResult> ApplyDeleteAsync(string caller, PendingPlan pending, KeyImage?[] current, CancellationToken cancellationToken)
     {
         var plan = pending.Plan;
@@ -371,7 +563,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         {
             var (target, image) = removals[i];
             keys[i] = target.Key;
-            values[(i * 3)] = target.PartKind switch { "setmember" => "srem", "zsetmember" => "zrem", "hashfield" => "hdel", _ => "del" };
+            values[(i * 3)] = target.PartKind switch { "setmember" => "srem", "zsetmember" => "zrem", "hashfield" => "hdel", "streamentry" => "xdel", _ => "del" };
             values[(i * 3) + 1] = target.Part ?? string.Empty;
             values[(i * 3) + 2] = image.Fingerprint();
         }
@@ -430,7 +622,8 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         for (var i = 0; i < items.Count; i++)
         {
             // RV-22: the live state must still be what the recheck saw, or nothing is written (a running instance wrote in between).
-            if (current[i] is null || current[i]!.Canonical() != items[i].Canonical())
+            // A stream entry is appended with a new id, so there is nothing it could overwrite.
+            if (pending.Targets[i].PartKind != "streamentry" && (current[i] is null || current[i]!.Canonical() != items[i].Canonical()))
             {
                 transaction.AddCondition(KeyImage.ConditionFor(pending.Targets[i], current[i]));
             }

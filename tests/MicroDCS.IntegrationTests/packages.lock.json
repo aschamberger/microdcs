@@ -610,6 +610,7 @@
           "MicroDCS.MachineryJobs": "[1.0.0, )",
           "MicroDCS.Maintenance": "[1.0.0, )",
           "MicroDCS.Mcp": "[1.0.0, )",
+          "MicroDCS.Sfc.Hosting": "[1.0.0, )",
           "MicroDCS.Transport.Mqtt": "[1.0.0, )",
           "MicroDCS.Transport.Nats": "[1.0.0, )",
           "MicroDCS.Valkey": "[1.0.0, )",
@@ -660,6 +661,7 @@
         "type": "Project",
         "dependencies": {
           "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.Sfc": "[1.0.0, )",
           "MicroDCS.Valkey": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
@@ -675,12 +677,24 @@
         "dependencies": {
           "MicroDCS.Inspection": "[1.0.0, )",
           "MicroDCS.Maintenance": "[1.0.0, )",
+          "MicroDCS.Sfc.Hosting": "[1.0.0, )",
           "MicroDCS.Sfc.Simulation": "[1.0.0, )",
           "ModelContextProtocol.AspNetCore": "[2.4.0, )"
         }
       },
       "microdcs.sfc": {
         "type": "Project"
+      },
+      "microdcs.sfc.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.MachineryJobs": "[1.0.0, )",
+          "MicroDCS.Sfc": "[1.0.0, )",
+          "MicroDCS.Valkey": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+        }
       },
       "microdcs.sfc.simulation": {
         "type": "Project",

@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+    <ProjectReference Include="../MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
     <ProjectReference Include="../MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
   </ItemGroup>
   <ItemGroup>

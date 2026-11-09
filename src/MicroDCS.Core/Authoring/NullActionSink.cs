@@ -4,14 +4,8 @@ namespace MicroDCS.Core.Authoring;
 public sealed class NullActionSink : IActionSink
 {
     /// <inheritdoc />
-    public ValueTask CompleteAsync(string commandId, CancellationToken cancellationToken) => ValueTask.CompletedTask;
-
-    /// <inheritdoc />
-    public ValueTask FailAsync(string commandId, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    public ValueTask CompleteAsync(ActionResponse response, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
     public ValueTask EventReceivedAsync(EventContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
-
-    /// <inheritdoc />
-    public ValueTask ScopeDiscoveredAsync(string scope, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 }

@@ -9,6 +9,7 @@
     <Project Path="src/MicroDCS.MachineryJobs/MicroDCS.MachineryJobs.csproj" />
     <Project Path="src/MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <Project Path="src/MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
+    <Project Path="src/MicroDCS.Sfc.Hosting/MicroDCS.Sfc.Hosting.csproj" />
     <Project Path="src/MicroDCS.Sfc.Simulation/MicroDCS.Sfc.Simulation.csproj" />
     <Project Path="src/MicroDCS.Testing/MicroDCS.Testing.csproj" />
     <Project Path="src/MicroDCS.Transport.Mqtt/MicroDCS.Transport.Mqtt.csproj" />
@@ -30,6 +31,7 @@
     <Project Path="tests/MicroDCS.MachineryJobs.Tests/MicroDCS.MachineryJobs.Tests.csproj" />
     <Project Path="tests/MicroDCS.Maintenance.Tests/MicroDCS.Maintenance.Tests.csproj" />
     <Project Path="tests/MicroDCS.IntegrationTests/MicroDCS.IntegrationTests.csproj" />
+    <Project Path="tests/MicroDCS.Sfc.Hosting.Tests/MicroDCS.Sfc.Hosting.Tests.csproj" />
     <Project Path="tests/MicroDCS.Sfc.Tests/MicroDCS.Sfc.Tests.csproj" />
     <Project Path="tests/MicroDCS.Valkey.Tests/MicroDCS.Valkey.Tests.csproj" />
     <Project Path="tests/MicroDCS.Transport.Mqtt.Tests/MicroDCS.Transport.Mqtt.Tests.csproj" />

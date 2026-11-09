@@ -97,13 +97,16 @@ public sealed record SfcState
     /// <summary>The current format number; additive changes bump <see cref="FormatMinor"/>.</summary>
     public const int CurrentFormat = 1;
 
+    /// <summary>The current minor format number.</summary>
+    public const int CurrentFormatMinor = 1;
+
     /// <summary>Gets the major format number.</summary>
     [JsonPropertyName("format")]
     public int Format { get; init; } = CurrentFormat;
 
     /// <summary>Gets the minor format number.</summary>
     [JsonPropertyName("formatMinor")]
-    public int FormatMinor { get; init; }
+    public int FormatMinor { get; init; } = CurrentFormatMinor;
 
     /// <summary>Gets the job id.</summary>
     [JsonPropertyName("jobId")]
@@ -136,6 +139,10 @@ public sealed record SfcState
     /// <summary>Gets the counter that makes command ids a pure function of the state.</summary>
     [JsonPropertyName("sequence")]
     public long Sequence { get; init; }
+
+    /// <summary>Gets the time the job started in epoch milliseconds (additive, format 1.1).</summary>
+    [JsonPropertyName("startedAt")]
+    public long? StartedAt { get; init; }
 
     /// <summary>Gets the fault code when the job ended with a fault.</summary>
     [JsonPropertyName("faultCode")]

@@ -69,9 +69,9 @@ public sealed class SfcAndIndexTests
         using var env = await ValkeyTestEnvironment.CreateAsync();
         var dao = new SfcStateDao(env.Context);
 
-        (await dao.GetHeartbeatAsync(ct)).ShouldBeNull();
-        await dao.SetHeartbeatAsync(1234, ct);
-        (await dao.GetHeartbeatAsync(ct)).ShouldBe(1234);
+        (await dao.GetHeartbeatAsync("s", ct)).ShouldBeNull();
+        await env.Database.HashSetAsync(env.Keys.SfcHeartbeat(), "s", 1234);
+        (await dao.GetHeartbeatAsync("s", ct)).ShouldBe(1234);
 
         (await dao.PutRecipeAsync("abc", "recipe-1", ct)).ShouldBeTrue();
         (await dao.PutRecipeAsync("abc", "recipe-2", ct)).ShouldBeFalse();
@@ -121,5 +121,60 @@ public sealed class SfcAndIndexTests
         (await maintenance.VerifyAsync(ct)).ShouldBeEmpty();
         (await orders.ListAsync("a", cancellationToken: ct)).ShouldBe(["o0", "o4"]);
         (await responses.GetByJobOrderAsync("o99", ct)).ShouldBeNull();
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task ASweepTakesDueJobsOnceAndLeavesLaterOnes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        var dao = new SfcStateDao(env.Context);
+        var now = await dao.ServerTimeAsync(ct);
+        await dao.SetDueAsync("s", "due", now - 1000, ct);
+        await dao.SetDueAsync("s", "later", now + 600_000, ct);
+
+        var (popped, outage) = await dao.SweepAsync("s", 100, 30_000, ct);
+        var (again, _) = await dao.SweepAsync("s", 100, 30_000, ct);
+
+        popped.ShouldBe(1);
+        outage.ShouldBe(0);
+        again.ShouldBe(0);
+        var tick = (await env.Database.StreamRangeAsync(env.Keys.SfcWork("s"))).ShouldHaveSingleItem();
+        tick["job_id"].ToString().ShouldBe("due");
+        tick["action"].ToString().ShouldBe("tick");
+        (await dao.ListDueAsync("s", 10, ct)).ShouldHaveSingleItem().JobId.ShouldBe("later");
+        (await dao.GetHeartbeatAsync("s", ct)).ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(now);
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task ASweepAfterAnOutageTakesEveryJobOnceWithTheGap()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        var dao = new SfcStateDao(env.Context);
+        var now = await dao.ServerTimeAsync(ct);
+        await env.Database.HashSetAsync(env.Keys.SfcHeartbeat(), "s", now - 120_000);
+        await dao.SetDueAsync("s", "overdue", now - 60_000, ct);
+        await dao.SetDueAsync("s", "future", now + 600_000, ct);
+
+        var (popped, outage) = await dao.SweepAsync("s", 1, 30_000, ct);
+        var (_, afterwards) = await dao.SweepAsync("s", 1, 30_000, ct);
+
+        popped.ShouldBe(2, "the limit does not apply: every open deadline has to move");
+        outage.ShouldBeGreaterThanOrEqualTo(120_000);
+        afterwards.ShouldBe(0, "only one sweep sees the gap");
+        var ticks = await env.Database.StreamRangeAsync(env.Keys.SfcWork("s"));
+        ticks.Select(static t => t["outage_ms"].ToString()).Distinct().ShouldBe([outage.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task ServerTimeIsTheClockOfTheServer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+
+        var server = await new SfcStateDao(env.Context).ServerTimeAsync(ct);
+
+        Math.Abs(server - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ShouldBeLessThan(60_000);
     }
 }

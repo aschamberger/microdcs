@@ -83,6 +83,18 @@ public sealed class ValkeyStreams
         return result.ClaimedEntries;
     }
 
+    /// <summary>Reads the delivery counts of pending entries.</summary>
+    /// <param name="stream">The stream key.</param>
+    /// <param name="group">The group.</param>
+    /// <param name="fromId">The first id.</param>
+    /// <param name="toId">The last id.</param>
+    /// <param name="count">The maximum number of entries.</param>
+    /// <param name="consumer">Only the entries of this consumer; <see cref="RedisValue.Null"/> for all.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The pending entries with consumer, idle time and delivery count.</returns>
+    public async Task<IReadOnlyList<StreamPendingMessageInfo>> PendingAsync(string stream, string group, RedisValue fromId, RedisValue toId, int count, RedisValue consumer, CancellationToken cancellationToken = default) =>
+        await _context.Database.StreamPendingMessagesAsync(stream, group, count, consumer, fromId, toId).WaitAsync(cancellationToken).ConfigureAwait(false);
+
     /// <summary>Acknowledges entries and trims what is acknowledged.</summary>
     /// <param name="stream">The stream key.</param>
     /// <param name="group">The group.</param>

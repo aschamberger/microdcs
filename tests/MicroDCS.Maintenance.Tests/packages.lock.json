@@ -92,6 +92,11 @@
           "xunit.v3.core.mtp-v2": "[4.0.2]"
         }
       },
+      "BitFaster.Caching": {
+        "type": "Transitive",
+        "resolved": "2.6.1",
+        "contentHash": "wFFvDHne7d0mzh70dnryCyCs2YhBG5xGOlKPtObLF7SmtNEqNz3RXKffOcrjpi0IcqrvRgsL/MtH5rU++uK17g=="
+      },
       "Castle.Core": {
         "type": "Transitive",
         "resolved": "5.1.1",
@@ -124,6 +129,11 @@
         "resolved": "6.0.0",
         "contentHash": "UcSjPsst+DfAdJGVDsu346FX0ci0ah+lw3WRtn18NUwEqRt70HaOQ7lI72vy3+1LxtqI3T5GWwV39rQSrCzAeg=="
       },
+      "Microsoft.Bcl.TimeProvider": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "YgZ5iXpo16E5nqvIqNiJXzyG8DiBsx3wg4jcwz8zxnxDV798izSzJn/PBg7s+xLU57+myilIxEg2RhQmNCcl0w=="
+      },
       "Microsoft.DiaSymReader": {
         "type": "Transitive",
         "resolved": "2.2.10",
@@ -155,6 +165,16 @@
         "resolved": "10.0.10",
         "contentHash": "rfZA1RjR021RPqSmIPovfz2aOd79TGqJ9BengbjnzIISOVwjLmuSDnhCMmiY/1c6iYvGolQ1iNGzkav0u11XEA=="
       },
+      "Microsoft.Extensions.Diagnostics": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "amx0O/R4dReqKlC3T740+CHpX8D8tAIV0f5kAPfFi4XK9jYo9BSepGt9/rWfvvCoSMaZ1+XvnqPp/Vv2fmTdAg==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.12",
+          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12"
+        }
+      },
       "Microsoft.Extensions.Diagnostics.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.14",
@@ -170,6 +190,19 @@
         "contentHash": "rAqf2Em2ZjLqNbcLJlboQnXNyJP604F960TsCKNiP00Ur6ExIc1mcwmNb8L2eTRT8RC8UKx/GjecoWcW2Sj7bw==",
         "dependencies": {
           "Microsoft.Extensions.Primitives": "10.0.14"
+        }
+      },
+      "Microsoft.Extensions.Http": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "x/fnoUGgmIUjSgLR1p6Mpi/vXc1Xe0xDPJnggPp23I6vwM/kY4nxyOjo8i6G5KPVw+esJM+rJsqnHbdjasvCBw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Diagnostics": "10.0.12",
+          "Microsoft.Extensions.Logging": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options": "10.0.12"
         }
       },
       "Microsoft.Extensions.Primitives": {
@@ -236,6 +269,58 @@
         "resolved": "0.11.6",
         "contentHash": "f33RkDtZO8VlGXCtmQIviOtxgnUdym9xx/b1p9h91CRGOsJFxCFOFK1FDbVt1OCf1aWwYejUFa2MOQyFWTFjbA=="
       },
+      "OPCFoundation.NetStandard.Opc.Ua.Core": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "EvA1n4bidfRDBEqdcc70+b3UpNl6Cs9qKO02ZTMnMvPb+gszDs5YFK4kK1GS2l74kKP+KQa+x0yWaaIhwwpzZw==",
+        "dependencies": {
+          "BitFaster.Caching": "2.6.1",
+          "Microsoft.Bcl.TimeProvider": "10.0.12",
+          "Microsoft.Extensions.Configuration": "10.0.12",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Diagnostics": "10.0.12",
+          "Microsoft.Extensions.Http": "10.0.12",
+          "Microsoft.Extensions.Logging": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options": "10.0.12",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12",
+          "OPCFoundation.NetStandard.Opc.Ua.Core.Types": "2.0.1",
+          "OPCFoundation.NetStandard.Opc.Ua.Security.Certificates": "2.0.1",
+          "System.Threading.RateLimiting": "10.0.12"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Core.Types": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "Ft/tdNvbgjRkf+tatz0Ho8TrR0c7BLaeDGfjqjUmr9MHEkWM/MzYaKNRyX6dwazQhEcMsvDjXCiGBkAKr0ReXw==",
+        "dependencies": {
+          "Microsoft.Bcl.TimeProvider": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "OPCFoundation.NetStandard.Opc.Ua.Types": "2.0.1"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Security.Certificates": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "XLmgbvh0ev+zR3/lhzuOiSWrCURN/2hpg8YAKJEbBixfIaNENK7XYVyi1iSjIScSOkW2LWHAhetDmmxY2hqF7Q==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "OPCFoundation.NetStandard.Opc.Ua.Types": "2.0.1"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Types": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "Od/2MwoVSKxeB9/91/Vl8vrdTGOggg8pEtB7zLOQKQ4v18r7EUpDLpZrhylyWIQUEDaaiz0n5vySzTLS7s67HA==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12"
+        }
+      },
       "RESPite": {
         "type": "Transitive",
         "resolved": "3.4.31",
@@ -268,6 +353,11 @@
         "type": "Transitive",
         "resolved": "6.0.1",
         "contentHash": "IQ4NXP/B3Ayzvw0rDQzVTYsCKyy0Jp9KI6aYcK7UnGVlR9+Awz++TIPCQtPYfLJfOpm8ajowMR09V7quD3sEHw=="
+      },
+      "System.Threading.RateLimiting": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "Y3f2aLAgynO44Q9xYHR35NC1KuSTcZwo49xjHuq0gQWyOWw8fvipIdoc+1e8FS+9neYZuQ1K4iwl5frNJXekgw=="
       },
       "xunit.analyzers": {
         "type": "Transitive",
@@ -345,10 +435,29 @@
           "MicroDCS.Core": "[1.0.0, )"
         }
       },
+      "microdcs.jobcontrol": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Core": "[1.0.0, )",
+          "OPCFoundation.NetStandard.Opc.Ua.Core.Schema": "[2.0.1, )",
+          "OPCFoundation.NetStandard.Opc.Ua.ISA95": "[2.0.1, )"
+        }
+      },
+      "microdcs.machineryjobs": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.JobControl": "[1.0.0, )",
+          "MicroDCS.Valkey": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+        }
+      },
       "microdcs.maintenance": {
         "type": "Project",
         "dependencies": {
           "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.Sfc": "[1.0.0, )",
           "MicroDCS.Valkey": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
@@ -364,12 +473,24 @@
         "dependencies": {
           "MicroDCS.Inspection": "[1.0.0, )",
           "MicroDCS.Maintenance": "[1.0.0, )",
+          "MicroDCS.Sfc.Hosting": "[1.0.0, )",
           "MicroDCS.Sfc.Simulation": "[1.0.0, )",
           "ModelContextProtocol.AspNetCore": "[2.4.0, )"
         }
       },
       "microdcs.sfc": {
         "type": "Project"
+      },
+      "microdcs.sfc.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.MachineryJobs": "[1.0.0, )",
+          "MicroDCS.Sfc": "[1.0.0, )",
+          "MicroDCS.Valkey": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+        }
       },
       "microdcs.sfc.simulation": {
         "type": "Project",
@@ -471,6 +592,50 @@
         "contentHash": "qo04FrgNKc5obyjzqd8CTu1vofrxcbKnOFVzxQ1+b3G9SBluwRMT31NZTztegJ1QDri4Z/3jUe8UqaIc+2xmCw==",
         "dependencies": {
           "ModelContextProtocol": "[2.4.0]"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.Core.Schema": {
+        "type": "CentralTransitive",
+        "requested": "[2.0.1, )",
+        "resolved": "2.0.1",
+        "contentHash": "ET4FRV3thJcCanZnZa4q6sZD3GBzQ+u4HyhP/WKZ3M9f7XhVfEmtXItd7OLYJyi/6nw1XH4Mgi+mCAl6hmJOUA==",
+        "dependencies": {
+          "BitFaster.Caching": "2.6.1",
+          "Microsoft.Bcl.TimeProvider": "10.0.12",
+          "Microsoft.Extensions.Configuration": "10.0.12",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Diagnostics": "10.0.12",
+          "Microsoft.Extensions.Http": "10.0.12",
+          "Microsoft.Extensions.Logging": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options": "10.0.12",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12",
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "2.0.1",
+          "System.Threading.RateLimiting": "10.0.12"
+        }
+      },
+      "OPCFoundation.NetStandard.Opc.Ua.ISA95": {
+        "type": "CentralTransitive",
+        "requested": "[2.0.1, )",
+        "resolved": "2.0.1",
+        "contentHash": "BdATnKU2vBGJcGI7ysb27t0VKsTakBKM6PdBMbALWaHwqK7XSMH/RGi+kDPnpcmp/+r28Bh9P4a9hmffQNcwMQ==",
+        "dependencies": {
+          "BitFaster.Caching": "2.6.1",
+          "Microsoft.Bcl.TimeProvider": "10.0.12",
+          "Microsoft.Extensions.Configuration": "10.0.12",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection": "10.0.12",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Diagnostics": "10.0.12",
+          "Microsoft.Extensions.Http": "10.0.12",
+          "Microsoft.Extensions.Logging": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options": "10.0.12",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12",
+          "OPCFoundation.NetStandard.Opc.Ua.Core": "2.0.1",
+          "System.Threading.RateLimiting": "10.0.12"
         }
       },
       "StackExchange.Redis": {

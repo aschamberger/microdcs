@@ -51,7 +51,7 @@ Background for [D-44](../decisions.md#d-44) (S07). Builds on [SFC core](sfc-core
 | S-31 | State machine over the job order (`transitions` library): reconstruct state from the state texts, `may_trigger`, `trigger`, save with the transition name as change type | `_trigger_job_transition`, `_reconstruct_state_name`, `_build_job_state_object` | changed: generated transition table and pure function (D-34, S16) |
 | S-32 | Recipe helper lookups by name (initial step, action, branch, branch of a step, next step in a path) | static helpers | kept as graph indexes built once in `Build` |
 | S-33 | `register_scope` is called by the app wiring | `register_scope` | dropped: scope registry (D-42) |
-| S-34 | SFC execution state fields: job id, scope, work master id, current step, correlation id, active steps, actions (state, type id, command id, attempt, result, error), completed, failed, error | `SfcExecutionState`, `SfcActionExecution` | changed: `SfcState` adds recipe hash, version, sequence, deadlines, open waits, bounded decision log (sfc-core finding 6); correlation id kept |
+| S-34 | SFC execution state fields: job id, scope, work master id, current step, correlation id, active steps, actions (state, type id, command id, attempt, result, error), completed, failed, error | `SfcExecutionState`, `SfcActionExecution` | changed: `SfcState` adds recipe hash, version, sequence, deadlines, open waits, bounded decision log (sfc-core finding 6); correlation id kept. S19: the state keeps no correlation id, the job id serves as one ([SFC host](sfc-host.md)) |
 | S-35 | Action states `pending`, `dispatched`, `waiting`, `completed`, `failed` | `SfcActionState` | kept; `failed` carries the reserved outcome |
 | S-36 | Four CAS scripts operating on JSON paths | `_CAS_*_LUA` | changed: one generic script on the version (D-41, D-44) |
 | S-37 | Active-job sets global and per scope, removed at finish | `SfcExecutionDAO.save`, `cas_finish` | changed: per scope only (`sfc:active:{scope}`) |
@@ -78,7 +78,7 @@ All other SFC keys are in the [data layer](data-layer.md#key-schema).
 | `OutageThreshold` | duration | 30 s | Heartbeat gap that marks a tick `afterOutage` |
 | `MaxAttempts` | int | 3 | Host default for the recipe field `max_attempts` |
 | `ExpiryGrace` | duration | 2 s | Deadline minus wire expiry |
-| `ScopeRefreshInterval` | duration | 5 s | Scope registry read |
+| `MicroDcs:Valkey:ScopeRefreshInterval` | duration | 5 s | Scope registry read (a poller setting) |
 | `AutoclaimIdle` | duration | 30 s | Minimum idle time before `XAUTOCLAIM` |
 | `MaxDeliveries` | int | 5 | Deliveries before a work item goes to the dead stream |
 

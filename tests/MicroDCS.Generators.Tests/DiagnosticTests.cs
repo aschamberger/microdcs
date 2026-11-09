@@ -113,4 +113,37 @@ public sealed class DiagnosticTests
     [Fact]
     public void Generic_payload_is_not_supported() =>
         Ids("[CloudEventType(\"g.v1\")] public sealed record G<T>(T X);").ShouldBe(["MDCS011"]);
+
+    [Fact]
+    public void AnOutgoingFactoryPassesItsOutcomesToTheDescriptor()
+    {
+        var code = Generated("""
+            [Processor(ProcessorBinding.Southbound, Id = "p")]
+            public sealed partial class P
+            {
+                [Outgoing(typeof(A), Outcomes = ["good", "bad"])]
+                public static A Create(CommandRequest request) => new("x");
+            }
+            """);
+
+        code.ShouldContain("ImmutableArray.Create<string>(\"good\", \"bad\")");
+    }
+
+    [Fact]
+    public void AResponseHandlerMayReturnAnOutcome()
+    {
+        var diagnostics = Run("""
+            [Processor(ProcessorBinding.Southbound, Id = "p")]
+            public sealed partial class P
+            {
+                [OnResponse]
+                public static ActionOutcome Sync(A a) => ActionOutcome.Done;
+
+                [OnResponse]
+                public static System.Threading.Tasks.Task<ActionOutcome> Async(B b) => System.Threading.Tasks.Task.FromResult(ActionOutcome.Done);
+            }
+            """);
+
+        diagnostics.ShouldBeEmpty();
+    }
 }

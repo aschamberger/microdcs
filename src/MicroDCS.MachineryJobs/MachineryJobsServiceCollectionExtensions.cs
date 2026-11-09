@@ -24,6 +24,7 @@ public static class MachineryJobsServiceCollectionExtensions
         services.AddOptions<JobAcceptanceOptions>().Bind(configuration.GetSection(JobAcceptanceOptions.SectionName));
         services.TryAddSingleton<IJobStore, ValkeyJobStore>();
         services.TryAddSingleton<JobAcceptanceCheck>();
+        services.TryAddSingleton<JobExecution>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, JobsInspector>());
         services.AddOptions<JobPublisherOptions>()
             .Bind(configuration.GetSection(JobPublisherOptions.SectionName))

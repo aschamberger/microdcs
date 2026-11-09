@@ -345,6 +345,17 @@ public sealed partial class MachineryJobsProcessor
     private static bool IsAllowedToStart(JobOrderState state) =>
         state is JobOrderState.AllowedToStartWaiting or JobOrderState.AllowedToStartReady or JobOrderState.AllowedToStartLoaded;
 
+    private static JobRecipeWork RecipeWorkOf(JobOrderOperation operation, JobOrderState from, JobOrderState to)
+    {
+        if (IsAllowedToStart(to) && !IsAllowedToStart(from))
+        {
+            return JobRecipeWork.Start;
+        }
+
+        // The recipe must not keep commanding equipment for a job the MES ended (D-52). Python left it running.
+        return operation is JobOrderOperation.Abort or JobOrderOperation.Stop ? JobRecipeWork.Cancel : JobRecipeWork.None;
+    }
+
     private static JobOrder? ToValidOrder(V2.ISA95JobOrderDataType? order)
     {
         if (order is null)
@@ -459,7 +470,7 @@ public sealed partial class MachineryJobsProcessor
             var version = existing?.Version ?? 0;
             var written = removes
                 ? await _store.RemoveOrderAsync(id, scope, operation.ToString(), version, context.EventId, cancellationToken).ConfigureAwait(false)
-                : await _store.SaveOrderAsync(new JobOrderWrite(order, transition.State, scope, operation.ToString(), version, context.EventId, IsAllowedToStart(transition.State) && !IsAllowedToStart(state)), cancellationToken).ConfigureAwait(false);
+                : await _store.SaveOrderAsync(new JobOrderWrite(order, transition.State, scope, operation.ToString(), version, context.EventId, RecipeWorkOf(operation, state, transition.State)), cancellationToken).ConfigureAwait(false);
             if (written)
             {
                 Log.Applied(_logger, operation, id, scope, transition.State);

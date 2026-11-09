@@ -17,7 +17,7 @@ namespace MicroDCS.Core.Transport;
 /// binding (D-28); commands that expect a response start a local expiry timer (P-12, D-9). One activity source continues the
 /// W3C trace context; logs carry identifiers and sizes, never payloads (R-10).
 /// </summary>
-public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposable
+public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoingCommands, IDisposable
 {
     /// <summary>The CloudEvents type of the event a pipeline sends back when it drops a request that has a reply address.</summary>
     public const string ErrorEventType = "io.microdcs.error.v1";
@@ -184,6 +184,49 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         return ValueTask.CompletedTask;
     }
 
+    /// <inheritdoc />
+    public bool CanDispatch(string typeId) => FindFactory(typeId) is not null;
+
+    /// <inheritdoc />
+    public async ValueTask DispatchAsync(string typeId, CommandRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(typeId);
+        ArgumentNullException.ThrowIfNull(request);
+        var queues = _queues ?? throw new InvalidOperationException("The pipeline is not publishing yet: commands can be dispatched after the host started.");
+        var (processor, factory) = FindFactory(typeId) ?? throw new InvalidOperationException($"No processor declares an outgoing factory for the type '{typeId}'.");
+        var trigger = new EventEnvelope { Id = request.CommandId, Source = _options.CloudEventSource!, Type = typeId, Subject = request.Scope, CorrelationId = request.CorrelationId };
+        var produced = await factory.Invoke(_services, BuildContext(trigger, processor.BindingId, null), request, cancellationToken).ConfigureAwait(false);
+        if (produced.Count != 1)
+        {
+            throw new InvalidOperationException($"The outgoing factory for the type '{typeId}' must produce exactly one payload.");
+        }
+
+        var envelope = _envelopes.Build(
+            produced[0].Payload,
+            new PublishOptions { Subject = request.Scope, EventId = request.CommandId, ActionKey = request.ActionKey, CorrelationId = request.CorrelationId, ExpiryInterval = request.ExpiryInterval, BindingId = processor.BindingId },
+            request: null);
+        if (!queues.Accepts(processor.BindingId, envelope.Type))
+        {
+            throw new InvalidOperationException($"The outgoing type filter of binding '{processor.BindingId}' refuses the type '{typeId}'.");
+        }
+
+        queues.Enqueue(processor.BindingId, CreateOutbound(processor.BindingId, envelope, Intent.Command, retain: false));
+    }
+
+    private (ProcessorDescriptor Processor, HandlerDescriptor Factory)? FindFactory(string typeId)
+    {
+        foreach (var processor in _registry.Processors)
+        {
+            var factory = processor.Handlers.FirstOrDefault(h => h.Kind == HandlerKind.Outgoing && h.TypeId == typeId);
+            if (factory is not null)
+            {
+                return (processor, factory);
+            }
+        }
+
+        return null;
+    }
+
     private OutboundMessage CreateOutbound(string bindingId, EventEnvelope envelope, Intent intent, bool retain)
     {
         var binding = _options.Bindings[bindingId];
@@ -259,7 +302,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         {
             var input = handler.Payload.Decode(envelope.Data, envelope.Extensions);
             var replies = await handler.Invoke(_services, BuildContext(envelope, command.BindingId, command.Address), input, cancellationToken).ConfigureAwait(false);
-            foreach (var reply in replies)
+            foreach (var reply in replies.Where(static r => r.Payload is not ActionOutcome))
             {
                 if (_queues is null or { IsClosed: true })
                 {
@@ -420,7 +463,14 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
     private async ValueTask<Step> DispatchAsync(InboundMessage message, ProcessorDescriptor processor, ITransport? transport, CancellationToken cancellationToken)
     {
         var envelope = message.Envelope;
-        var kind = message.Kind == InboundKind.Response ? HandlerKind.Response : HandlerKind.Incoming;
+        var isResponse = message.Kind == InboundKind.Response;
+        if (isResponse && envelope.Error is { } failure && envelope.CausationId is not null)
+        {
+            // The peer refused the command: a failure of the action, with no payload for a handler to decode.
+            return await ReportErrorResponseAsync(message, failure, cancellationToken).ConfigureAwait(false);
+        }
+
+        var kind = isResponse ? HandlerKind.Response : HandlerKind.Incoming;
         var handler = processor.Handlers.FirstOrDefault(h => h.Kind == kind && h.TypeId == envelope.Type)
             ?? processor.Handlers.FirstOrDefault(h => h.Kind == HandlerKind.Fallback);
         if (handler is null)
@@ -444,7 +494,16 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
         try
         {
             var replies = await RunFiltersAsync(handler, context, input, cancellationToken).ConfigureAwait(false);
-            await _actions.EventReceivedAsync(context, cancellationToken).ConfigureAwait(false);
+            var outcome = replies.Select(static r => r.Payload).OfType<ActionOutcome>().FirstOrDefault();
+            if (!isResponse)
+            {
+                await _actions.EventReceivedAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+            else if (handler.Kind == HandlerKind.Response && envelope.CausationId is { } commandId)
+            {
+                await _actions.CompleteAsync(ToResponse(envelope, commandId, outcome ?? ActionOutcome.Done), cancellationToken).ConfigureAwait(false);
+            }
+
             await PublishRepliesAsync(message, replies, transport, cancellationToken).ConfigureAwait(false);
             return new Step(Result.Processed);
         }
@@ -455,6 +514,24 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
             return new Step(Result.Faulted);
         }
     }
+
+    private async ValueTask<Step> ReportErrorResponseAsync(InboundMessage message, EnvelopeError failure, CancellationToken cancellationToken)
+    {
+        var envelope = message.Envelope;
+        try
+        {
+            await _actions.CompleteAsync(ToResponse(envelope, envelope.CausationId!, ActionOutcome.Failed(failure.Message)), cancellationToken).ConfigureAwait(false);
+            return new Step(Result.Processed);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            Log.HandlerFaulted(_logger, ex, envelope.Id, envelope.Type, message.BindingId);
+            return new Step(Result.Faulted);
+        }
+    }
+
+    private static ActionResponse ToResponse(EventEnvelope envelope, string commandId, ActionOutcome outcome) =>
+        new() { EventId = envelope.Id, CommandId = commandId, ActionKey = envelope.ActionKey, Outcome = outcome };
 
     private EventContext BuildContext(EventEnvelope envelope, string bindingId, LogicalAddress? address) => new()
     {
@@ -490,7 +567,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IDisposa
             return;
         }
 
-        foreach (var reply in replies)
+        foreach (var reply in replies.Where(static r => r.Payload is not ActionOutcome))
         {
             var envelope = _envelopes.Build(reply.Payload, reply.Options, request.Envelope);
             await SendReplyAsync(request, transport, envelope, reply.Options?.Retain ?? false, cancellationToken).ConfigureAwait(false);

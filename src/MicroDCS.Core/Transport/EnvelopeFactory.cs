@@ -74,10 +74,11 @@ internal sealed class EnvelopeFactory
             RecordedTime = now,
             TraceParent = traceParent,
             TraceState = traceState,
-            ExpiryInterval = options.MessageExpiry is { } expiry && expiry > TimeSpan.Zero ? expiry : null,
+            ExpiryInterval = publish?.ExpiryInterval ?? (options.MessageExpiry is { } expiry && expiry > TimeSpan.Zero ? expiry : null),
             CorrelationId = publish?.CorrelationId ?? request?.CorrelationId ?? Guid.NewGuid().ToString(),
             CausationId = publish?.CausationId ?? request?.Id,
-            ActionKey = publish?.ActionKey,
+            // A response names the action of its command, so the sender can match it by key (D-44).
+            ActionKey = publish?.ActionKey ?? request?.ActionKey,
             Method = publish?.Method,
             Extensions = carried.ToImmutableDictionary(StringComparer.Ordinal),
             Data = data,

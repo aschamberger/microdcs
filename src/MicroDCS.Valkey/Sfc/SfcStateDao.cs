@@ -14,6 +14,9 @@ public sealed record SfcWorkEntry(IReadOnlyList<KeyValuePair<string, string>> Fi
 /// </summary>
 public sealed class SfcStateDao : DocumentDao
 {
+    /// <summary>The consumer group of the work streams (S-38).</summary>
+    public const string ConsumerGroup = "sfc-engine";
+
     /// <summary>
     /// KEYS: state hash, work stream, due-index, active set, scopes, nudge channel. ARGV: 1 expected version, 2 operation, 3 job id,
     /// 4 scope, 5 document, 6 next deadline (empty for none), 7 running (1 or 0), 8 entry count, then per entry the field count
@@ -48,6 +51,42 @@ public sealed class SfcStateDao : DocumentDao
         redis.call('DEL', KEYS[1])
         redis.call('ZREM', KEYS[2], ARGV[1])
         redis.call('SREM', KEYS[3], ARGV[1])
+        return 1
+        """;
+
+    /// <summary>
+    /// The sweep of one scope (D-18, D-44): takes due jobs off the index and appends their <c>tick</c> entries in one step, so a job is popped by one
+    /// instance and cannot be lost in between. Reads the server clock itself. The heartbeat per scope is part of the step: exactly one sweep sees a gap
+    /// above the threshold, and that sweep takes every entry of the index (all open deadlines move by the gap, D-18).
+    /// KEYS: due-index, work stream, heartbeat hash, nudge channel. ARGV: scope, limit, outage threshold in ms. Returns <c>{popped, outageMs}</c>.
+    /// </summary>
+    internal const string SweepScript = """
+        local time = redis.call('TIME')
+        local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+        local last = tonumber(redis.call('HGET', KEYS[3], ARGV[1]) or '0')
+        redis.call('HSET', KEYS[3], ARGV[1], string.format('%.0f', now))
+        local outage = 0
+        if last > 0 and now - last > tonumber(ARGV[3]) then outage = now - last end
+        local due
+        if outage > 0 then
+          due = redis.call('ZRANGE', KEYS[1], 0, -1)
+        else
+          due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', string.format('%.0f', now), 'LIMIT', 0, ARGV[2])
+        end
+        for _, job in ipairs(due) do
+          redis.call('ZREM', KEYS[1], job)
+          redis.call('XADD', KEYS[2], '*', 'job_id', job, 'action', 'tick', 'scope', ARGV[1], 'outage_ms', string.format('%.0f', outage))
+        end
+        if #due > 0 then redis.call('PUBLISH', KEYS[4], ARGV[1]) end
+        return {#due, outage}
+        """;
+
+    /// <summary>Moves a pending work entry to the dead stream and acknowledges it in one step. KEYS: work stream, dead stream. ARGV: group, entry id, reason, then field names and values.</summary>
+    internal const string MoveToDeadScript = """
+        local fields = {}
+        for i = 4, #ARGV do fields[#fields + 1] = ARGV[i] end
+        redis.call('XADD', KEYS[2], 'MAXLEN', '~', 5000, '*', 'dead_reason', ARGV[3], 'source_id', ARGV[2], unpack(fields))
+        redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
         return 1
         """;
 
@@ -161,20 +200,78 @@ public sealed class SfcStateDao : DocumentDao
         return [.. values.Select(static v => v.ToString())];
     }
 
-    /// <summary>Stores the time of the last sweep (outage rule, D-18).</summary>
-    /// <param name="unixMs">The time as Unix milliseconds.</param>
+    /// <summary>Sweeps the due-index of a scope and appends the <c>tick</c> entries (D-18).</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="limit">The most jobs to take in an ordinary sweep.</param>
+    /// <param name="outageThresholdMs">The heartbeat gap in milliseconds that counts as an outage.</param>
     /// <param name="cancellationToken">Cancellation.</param>
-    /// <returns>A task.</returns>
-    public async Task SetHeartbeatAsync(long unixMs, CancellationToken cancellationToken = default) =>
-        await Database.StringSetAsync(Keys.SfcHeartbeat(), unixMs).WaitAsync(cancellationToken).ConfigureAwait(false);
+    /// <returns>The number of jobs taken and the outage length, zero without one.</returns>
+    public async Task<(int Popped, long OutageMs)> SweepAsync(string scope, int limit, long outageThresholdMs, CancellationToken cancellationToken = default)
+    {
+        RequireText(scope, nameof(scope));
+        RedisKey[] keys = [Keys.SfcDue(scope), Keys.SfcWork(scope), Keys.SfcHeartbeat(), Keys.Nudge("sfc")];
+        var result = (RedisResult[]?)await Database.ScriptEvaluateAsync(SweepScript, keys, [scope, limit, outageThresholdMs]).WaitAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The sweep script returned no result.");
+        return ((int)result[0], (long)result[1]);
+    }
 
-    /// <summary>Reads the time of the last sweep.</summary>
+    /// <summary>Reads the time of the last sweep of a scope.</summary>
+    /// <param name="scope">The scope.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     /// <returns>Unix milliseconds, or <see langword="null"/> before the first sweep.</returns>
-    public async Task<long?> GetHeartbeatAsync(CancellationToken cancellationToken = default)
+    public async Task<long?> GetHeartbeatAsync(string scope, CancellationToken cancellationToken = default)
     {
-        var value = await Database.StringGetAsync(Keys.SfcHeartbeat()).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var value = await Database.HashGetAsync(Keys.SfcHeartbeat(), scope).WaitAsync(cancellationToken).ConfigureAwait(false);
         return value.HasValue && value.TryParse(out long ms) ? ms : null;
+    }
+
+    /// <summary>Puts a job on the due-index, for a tick that found nothing to do after the sweep took the job off (D-18).</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="jobId">The job id.</param>
+    /// <param name="deadlineMs">The next deadline as Unix milliseconds.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>A task.</returns>
+    public async Task SetDueAsync(string scope, string jobId, long deadlineMs, CancellationToken cancellationToken = default) =>
+        await Database.SortedSetAddAsync(Keys.SfcDue(scope), jobId, deadlineMs).WaitAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Lists the due-index of a scope with the deadlines.</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="limit">The most jobs to return.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>Job id and deadline as Unix milliseconds, earliest first.</returns>
+    public async Task<IReadOnlyList<(string JobId, long DeadlineMs)>> ListDueAsync(string scope, int limit, CancellationToken cancellationToken = default)
+    {
+        var values = await Database.SortedSetRangeByRankWithScoresAsync(Keys.SfcDue(scope), 0, limit - 1).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return [.. values.Select(static v => (v.Element.ToString(), (long)v.Score))];
+    }
+
+    /// <summary>Reads the server clock (D-44): the time of an event that does not pass through a stream.</summary>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>Unix milliseconds.</returns>
+    public async Task<long> ServerTimeAsync(CancellationToken cancellationToken = default)
+    {
+        var result = (RedisResult[]?)await Database.ExecuteAsync("TIME").WaitAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("TIME returned no result.");
+        return ((long)result[0] * 1000) + ((long)result[1] / 1000);
+    }
+
+    /// <summary>Moves a work entry that keeps failing to the dead stream of its scope (D-44).</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="group">The consumer group.</param>
+    /// <param name="entry">The entry.</param>
+    /// <param name="reason">The reason.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>A task.</returns>
+    public async Task MoveToDeadAsync(string scope, string group, StreamEntry entry, string reason, CancellationToken cancellationToken = default)
+    {
+        var arguments = new List<RedisValue> { group, entry.Id, reason };
+        foreach (var value in entry.Values)
+        {
+            arguments.Add(value.Name);
+            arguments.Add(value.Value);
+        }
+
+        await Database.ScriptEvaluateAsync(MoveToDeadScript, [Keys.SfcWork(scope), Keys.SfcDead(scope)], [.. arguments]).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Stores a recipe text by content hash; written once, an existing hash is kept (D-44).</summary>

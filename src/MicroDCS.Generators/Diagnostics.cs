@@ -15,7 +15,7 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor UnsupportedParameter = Error("MDCS004", "Unsupported parameter", "Parameter '{0}' of '{1}' is not supported: use the payload, EventContext, CancellationToken, [Scope]/[SubjectPart] string or a service");
 
-    public static readonly DiagnosticDescriptor UnsupportedReturn = Error("MDCS005", "Unsupported return type", "Return type of '{0}' is not supported: use a payload class, IEnumerable/IAsyncEnumerable of payloads, Replies, void or Task/ValueTask of these");
+    public static readonly DiagnosticDescriptor UnsupportedReturn = Error("MDCS005", "Unsupported return type", "Return type of '{0}' is not supported: use a payload class, IEnumerable/IAsyncEnumerable of payloads, Replies, ActionOutcome, void or Task/ValueTask of these");
 
     public static readonly DiagnosticDescriptor PayloadWithoutAttribute = Error("MDCS006", "Payload without [CloudEventType]", "Type '{0}' is used as a payload but has no [CloudEventType] attribute");
 
