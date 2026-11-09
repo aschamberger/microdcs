@@ -154,8 +154,16 @@ internal static class ProcessorEmitter
 
         var payloadExpr = payload is null ? "null" : "global::MicroDcsPayloads." + payload.FieldName;
         var typeId = payload is null ? "null" : Literal(payload.TypeId);
-        descriptor = $"new {Core}Authoring.HandlerDescriptor({Core}Authoring.HandlerKind.{kind}, {typeId}, {payloadExpr}, {invoker})";
+        descriptor = $"new {Core}Authoring.HandlerDescriptor({Core}Authoring.HandlerKind.{kind}, {typeId}, {payloadExpr}, {invoker}{OutcomesArgument(attribute)})";
         return Outcome.Emitted;
+    }
+
+    private static string OutcomesArgument(AttributeData attribute)
+    {
+        var values = attribute.NamedArguments.FirstOrDefault(a => a.Key == "Outcomes").Value;
+        return values.Kind != TypedConstantKind.Array || values.Values.Length == 0
+            ? string.Empty
+            : ", global::System.Collections.Immutable.ImmutableArray.Create<string>(" + string.Join(", ", values.Values.Select(v => Literal((string)v.Value!))) + ")";
     }
 
     private static bool FirstParameterMatches(ITypeSymbol type, bool isOutgoing, bool isFallback)
@@ -433,6 +441,12 @@ internal sealed class ReturnShape
         if (type.ToDisplayString() == Names.Replies)
         {
             return new ReturnShape("replies", false, false);
+        }
+
+        if (type.ToDisplayString() == Names.ActionOutcome)
+        {
+            // The outcome of a response handler; the pipeline takes it out of the replies (D-44).
+            return new ReturnShape("one", false, false);
         }
 
         if (type.ToDisplayString() == Names.EventEnvelope)

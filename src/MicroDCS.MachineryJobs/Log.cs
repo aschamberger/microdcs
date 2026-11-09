@@ -12,6 +12,9 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected {Operation} on job order {JobOrderId} in scope {Scope}: {Status}")]
     public static partial void Rejected(ILogger logger, JobOrderOperation operation, string jobOrderId, string scope, JobReturnStatus status);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Execution transition {Operation} on job order {JobOrderId} is refused in state {State}")]
+    public static partial void ExecutionRefused(ILogger logger, JobOrderOperation operation, string jobOrderId, JobOrderState state);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rejected the request {Operation}: a required field is missing")]
     public static partial void InvalidRequest(ILogger logger, JobOrderOperation operation);
 

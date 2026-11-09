@@ -22,24 +22,23 @@ public sealed class JobOrderDao : DocumentDao
     /// <param name="changeType">The change type written to the change stream.</param>
     /// <param name="expectedVersion">The version this write builds on, 0 to create; <see langword="null"/> overwrites unconditionally.</param>
     /// <param name="operation">An id that makes a repeated logical write recognisable (R-4); generated when absent.</param>
-    /// <param name="startRecipe">Whether the same step appends the SFC work entry that starts the recipe of this job.</param>
+    /// <param name="recipeWork">The SFC work action the same step appends for this job (<c>start</c> or <c>cancel</c>); <see langword="null"/> for none.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     /// <returns>The result.</returns>
-    public Task<WriteResult> SaveAsync(string id, string scope, string document, double priority, string changeType, long? expectedVersion = null, string? operation = null, bool startRecipe = false, CancellationToken cancellationToken = default)
+    public Task<WriteResult> SaveAsync(string id, string scope, string document, double priority, string changeType, long? expectedVersion = null, string? operation = null, string? recipeWork = null, CancellationToken cancellationToken = default)
     {
         RequireText(id, nameof(id));
         RequireText(scope, nameof(scope));
         RequireText(document, nameof(document));
         var op = NewOperation(operation);
         var key = Keys.JobOrder(id);
-        RedisKey[] keys = startRecipe
+        RedisKey[] keys = recipeWork is not null
             ? [key, Keys.JobOrderList(scope), Keys.Changes(scope), Keys.Scopes(), Keys.Nudge("changes"), Keys.SfcWork(scope), Keys.Nudge("sfc")]
             : [key, Keys.JobOrderList(scope), Keys.Changes(scope), Keys.Scopes(), Keys.Nudge("changes")];
-        var script = startRecipe ? DocumentScripts.PutJobOrderAndStart : DocumentScripts.PutJobOrder;
-        return Context.WriteAsync(key, op, async _ => await Database.ScriptEvaluateAsync(
-            script,
-            keys,
-            PutArguments(expectedVersion, op, id, scope, priority, document, changeType, Timestamp(), id, Context.Options.ChangeStreamMaxLength, string.Empty, string.Empty)).ConfigureAwait(false), cancellationToken);
+        var script = recipeWork is not null ? DocumentScripts.PutJobOrderAndWork : DocumentScripts.PutJobOrder;
+        var arguments = PutArguments(expectedVersion, op, id, scope, priority, document, changeType, Timestamp(), id, Context.Options.ChangeStreamMaxLength, string.Empty, string.Empty);
+        RedisValue[] values = recipeWork is not null ? [.. arguments, recipeWork] : arguments;
+        return Context.WriteAsync(key, op, async _ => await Database.ScriptEvaluateAsync(script, keys, values).ConfigureAwait(false), cancellationToken);
     }
 
     /// <summary>Removes a job order and its list entry and appends a change entry, atomically and guarded by the version (D-34).</summary>

@@ -109,6 +109,36 @@ public interface IMaintenanceOperations
     /// <exception cref="MaintenanceRefusedException">Maintenance is not allowed here or the scope has no cursor.</exception>
     ValueTask<MaintenancePlan> PlanPublisherResetAsync(string caller, string scope, CancellationToken cancellationToken);
 
+    /// <summary>Plans the removal of the SFC state of one job, leaving its job order and response.</summary>
+    /// <param name="caller">The caller, for the audit log.</param>
+    /// <param name="id">The job id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    ValueTask<MaintenancePlan> PlanSfcJobDeleteAsync(string caller, string id, CancellationToken cancellationToken);
+
+    /// <summary>Plans writing the due-index of a scope again from the states of its running jobs.</summary>
+    /// <param name="caller">The caller, for the audit log.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    ValueTask<MaintenancePlan> PlanSfcRebuildDueIndexAsync(string caller, string scope, CancellationToken cancellationToken);
+
+    /// <summary>Plans moving an entry of the dead stream back to the work stream of its scope.</summary>
+    /// <param name="caller">The caller, for the audit log.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="entryId">The entry id in the dead stream.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    ValueTask<MaintenancePlan> PlanStreamRequeueAsync(string caller, string scope, string entryId, CancellationToken cancellationToken);
+
+    /// <summary>Plans acknowledging and removing an entry of the work stream without running it.</summary>
+    /// <param name="caller">The caller, for the audit log.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="entryId">The entry id in the work stream.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    ValueTask<MaintenancePlan> PlanStreamAckAsync(string caller, string scope, string entryId, CancellationToken cancellationToken);
+
     /// <summary>Plans putting the content of a snapshot back.</summary>
     /// <param name="caller">Who asks, for the audit line.</param>
     /// <param name="snapshotId">The snapshot id from <see cref="ListSnapshotsAsync"/>.</param>

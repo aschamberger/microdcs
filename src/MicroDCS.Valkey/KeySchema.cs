@@ -133,7 +133,7 @@ public sealed class KeySchema
     /// <returns>The key.</returns>
     public string SfcDue(string scope) => Key("sfc:due:", scope);
 
-    /// <summary>Last sweep time, for the outage rule (D-18).</summary>
+    /// <summary>Last sweep time per scope, a hash, for the outage rule (D-18).</summary>
     /// <returns>The key.</returns>
     public string SfcHeartbeat() => Key("sfc:heartbeat");
 

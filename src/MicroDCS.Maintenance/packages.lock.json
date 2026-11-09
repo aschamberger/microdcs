@@ -138,6 +138,9 @@
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
         }
       },
+      "microdcs.sfc": {
+        "type": "Project"
+      },
       "microdcs.valkey": {
         "type": "Project",
         "dependencies": {

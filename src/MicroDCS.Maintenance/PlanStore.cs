@@ -3,6 +3,18 @@ using MicroDCS.Core.Transport;
 
 namespace MicroDCS.Maintenance;
 
+/// <summary>The wanted content of a due-index.</summary>
+/// <param name="Key">The due-index key.</param>
+/// <param name="Entries">Job id and deadline in Unix milliseconds.</param>
+internal sealed record DueIndexRebuild(string Key, IReadOnlyList<(string Job, long Deadline)> Entries);
+
+/// <summary>A dead work entry on its way back.</summary>
+/// <param name="WorkKey">The work stream.</param>
+/// <param name="Nudge">The nudge channel.</param>
+/// <param name="Scope">The scope.</param>
+/// <param name="EntryId">The entry id in the dead stream.</param>
+internal sealed record StreamRequeue(string WorkKey, string Nudge, string Scope, string EntryId);
+
 /// <summary>A plan waiting for its apply.</summary>
 internal sealed class PendingPlan
 {
@@ -18,6 +30,12 @@ internal sealed class PendingPlan
 
     /// <summary>State topics to remove on the broker; <see langword="null"/> for a plan over Valkey state.</summary>
     public RetainedTopics? Retained { get; init; }
+
+    /// <summary>The wanted due-index; <see langword="null"/> for other plans.</summary>
+    public DueIndexRebuild? DueIndex { get; init; }
+
+    /// <summary>The dead entry to move back; <see langword="null"/> for other plans.</summary>
+    public StreamRequeue? Requeue { get; init; }
 }
 
 /// <summary>State topics a plan removes.</summary>

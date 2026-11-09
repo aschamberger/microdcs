@@ -35,12 +35,13 @@ internal static class DocumentScripts
     public const string PutJobOrder = Guard + StoreJobOrder + Written;
 
     /// <summary>
-    /// <see cref="PutJobOrder"/> plus the SFC work entry that starts the recipe of the job, in the same step, so an order that reached
-    /// AllowedToStart cannot be left without its entry (D-50). KEYS: document, list, changes, scopes, change nudge channel, work stream, work nudge channel.
+    /// <see cref="PutJobOrder"/> plus an SFC work entry in the same step: <c>start</c>, so an order that reached AllowedToStart cannot be left
+    /// without its entry (D-50), or <c>cancel</c>, so a recipe cannot outlive an Abort or Stop (D-52). ARGV 13 is the action.
+    /// KEYS: document, list, changes, scopes, change nudge channel, work stream, work nudge channel.
     /// </summary>
-    public const string PutJobOrderAndStart = Guard + StoreJobOrder + """
+    public const string PutJobOrderAndWork = Guard + StoreJobOrder + """
 
-        redis.call('XADD', KEYS[6], '*', 'job_id', ARGV[3], 'action', 'start', 'scope', ARGV[4])
+        redis.call('XADD', KEYS[6], '*', 'job_id', ARGV[3], 'action', ARGV[13], 'scope', ARGV[4])
         redis.call('PUBLISH', KEYS[7], ARGV[4])
         """ + Written;
 

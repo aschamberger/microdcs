@@ -17,6 +17,7 @@ internal static class Names
     public const string SubjectPart = "MicroDCS.Core.Authoring.SubjectPartAttribute";
     public const string EventContext = "MicroDCS.Core.Authoring.EventContext";
     public const string CommandRequest = "MicroDCS.Core.Authoring.CommandRequest";
+    public const string ActionOutcome = "MicroDCS.Core.Authoring.ActionOutcome";
     public const string Replies = "MicroDCS.Core.Authoring.Replies";
     public const string EventEnvelope = "MicroDCS.Core.Messaging.EventEnvelope";
     public const string JsonIgnore = "System.Text.Json.Serialization.JsonIgnoreAttribute";

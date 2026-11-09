@@ -79,9 +79,12 @@ public sealed class OutgoingAttribute : Attribute
 
     /// <summary>The payload type.</summary>
     public Type PayloadType { get; }
+
+    /// <summary>The outcome names responses to this command can report, which a recipe may name in a transition condition (D-44). The reserved outcomes need no entry.</summary>
+    public string[] Outcomes { get; init; } = [];
 }
 
-/// <summary>A method that handles a response to a command this instance sent (P-11). Arrives on the instance's reply address (D-9).</summary>
+/// <summary>A method that handles a response to a command this instance sent (P-11). Arrives on the instance's reply address (D-9). It may return an <see cref="ActionOutcome"/> for the action of the command (D-44); otherwise the outcome is <see cref="ActionOutcome.DefaultName"/>.</summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class OnResponseAttribute : Attribute;
 

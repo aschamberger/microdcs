@@ -145,6 +145,31 @@ public sealed class ProcessorTests : IAsyncLifetime
         _store.RecipeStarts.ShouldBe(["job-1"]);
     }
 
+    [Theory]
+    [InlineData("Abort")]
+    [InlineData("Stop")]
+    public async Task Ending_a_running_job_queues_the_end_of_its_recipe(string command)
+    {
+        await _store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-1" }, JobOrderState.Running, "site.area", "Run", 0, "seed", JobRecipeWork.None), Ct);
+
+        var status = command == "Abort"
+            ? await SendAsync<AbortCall, AbortResponse>(new AbortCall { JobOrderID = "job-1" })
+            : await SendAsync<StopCall, StopResponse>(new StopCall { JobOrderID = "job-1" });
+
+        status.ShouldBe(Success);
+        _store.RecipeCancels.ShouldBe(["job-1"]);
+    }
+
+    [Fact]
+    public async Task Pausing_a_running_job_does_not_end_its_recipe()
+    {
+        await _store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-1" }, JobOrderState.Running, "site.area", "Run", 0, "seed", JobRecipeWork.None), Ct);
+
+        (await SendAsync<PauseCall, PauseResponse>(new PauseCall { JobOrderID = "job-1" })).ShouldBe(Success);
+
+        _store.RecipeCancels.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Status_event_carries_subject_correlation_and_causation()
     {

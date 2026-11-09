@@ -47,7 +47,7 @@ Run `/code-review high` on the session's diff once the definition of done is gre
 
 1. Commit with the session id in the message (`S04: ...`) and the attribution trailer.
 2. `gh stack submit` (in a non-interactive shell: `gh stack submit --auto --open`). This pushes all branches of the stack and creates or updates the PRs, each targeting the branch below; the bottom PR targets `main`.
-3. Set title, body and milestone of the session PR: `gh pr edit <branch> --title "S04: <title>" --milestone "M1 Foundation" --body-file <file>`. Milestones: `M0 Setup` (S01-S03), `M1 Foundation` (S04-S15), `M2 Parity gate` (S16-S23), `M3 Extensions` (S24-S26).
+3. Set title, body and milestone of the session PR: `gh pr edit <branch> --title "S04: <title>" --milestone "M1 Foundation" --body-file <file>`. Milestones: `M0 Setup` (S01-S03), `M1 Foundation` (S04-S15), `M2 Parity gate` (S16-S23), `M3 Extensions` (S24-S27).
 4. Wait for the checks (`gh pr checks <branch> --watch`). Ask the user before merging.
 5. Merge bottom-up with squash: `gh stack merge <pr number> --squash` (merges every PR below it too, atomically). GitHub then rebases the rest of the stack; run `gh stack sync` locally.
    A stack with a single open PR is not a stack on GitHub (it needs two or more PRs), and `gh stack merge` refuses it: use `gh pr merge <pr number> --squash` instead.

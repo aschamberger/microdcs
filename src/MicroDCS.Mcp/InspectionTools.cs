@@ -111,6 +111,32 @@ internal sealed class InspectionTools
         CancellationToken cancellationToken = default) =>
         Run(service, "publisher_status", "publisher", Arguments("publisher.status", ("scope", scope)), cancellationToken);
 
+    [McpServerTool(Name = "sfc_job", ReadOnly = true, Destructive = false)]
+    [Description("The SFC execution state of one job: status, active steps, each action with attempt, round, deadline and outcome, the next deadline and a fault if there is one. Needs the SFC host.")]
+    public static Task<string> SfcJob(
+        InspectionService service,
+        [Description("The job id.")] string id,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "sfc_job", "sfc", Arguments("sfc.job", ("id", id)), cancellationToken);
+
+    [McpServerTool(Name = "sfc_due", ReadOnly = true, Destructive = false)]
+    [Description("The due-index of a scope: the jobs with an open deadline, earliest first. Needs the SFC host.")]
+    public static Task<string> SfcDue(
+        InspectionService service,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("Maximum entries, default 50.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "sfc_due", "sfc", Arguments("sfc.due", limit, ("scope", scope)), cancellationToken);
+
+    [McpServerTool(Name = "sfc_work_pending", ReadOnly = true, Destructive = false)]
+    [Description("The SFC work stream of a scope: length, dead entries, the last sweep, and the entries a consumer holds with idle time and delivery count. Needs the SFC host.")]
+    public static Task<string> SfcWorkPending(
+        InspectionService service,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("Maximum entries, default 50.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "sfc_work_pending", "sfc", Arguments("sfc.work", limit, ("scope", scope)), cancellationToken);
+
     [McpServerTool(Name = "inspect", ReadOnly = true, Destructive = false)]
     [Description("Generic query of any inspector (see inspectors_list), for components that have no dedicated tool yet.")]
     public static Task<string> Inspect(

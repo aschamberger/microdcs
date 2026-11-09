@@ -1,6 +1,6 @@
 # SFC core in .NET
 
-This page describes `MicroDCS.Sfc` and `MicroDCS.Sfc.Simulation` (decisions [D-17](porting/decisions.md#d-17), [D-18](porting/decisions.md#d-18) and [D-44](porting/decisions.md#d-44)). The core is the sequence logic of the SFC engine as one pure function. It replaces the logic part of `sfc_engine.py`; the Valkey host that runs it comes with S19. The older page [SFC Engine](sfc_engine.md) still describes the Python design.
+This page describes `MicroDCS.Sfc` and `MicroDCS.Sfc.Simulation` (decisions [D-17](porting/decisions.md#d-17), [D-18](porting/decisions.md#d-18) and [D-44](porting/decisions.md#d-44)). The core is the sequence logic of the SFC engine as one pure function. It replaces the logic part of `sfc_engine.py`; [the Valkey host](#the-valkey-host) runs it. The older page [SFC Engine](sfc_engine.md) still describes the Python design.
 
 ```text
 (graph, state, snapshot, event)  ->  (next state, continuation, commands)
@@ -37,7 +37,7 @@ SfcStepResult r = interpreter.Evolve(graph, state, SfcSnapshot.Default, new SfcS
 // r.State is stored; r.Commands are applied in order; r.Continuation goes to the job state machine.
 ```
 
-`At` is the host's time in epoch milliseconds. The host takes it from the stream entry id of the work item (D-44).
+`At` is the host's time in epoch milliseconds. The host takes it from the stream entry id of the work item, except for `SfcStart` and responses, which read the server clock (D-44).
 
 ## Recipe
 
@@ -131,3 +131,38 @@ Two read-only tools in the dev MCP server (see [Inspection and MCP](inspection.m
 | `sfc_dryrun` | Runs a recipe on the virtual clock with a script and returns the transcript. |
 
 A script is JSON: `{"default":"ok","replies":{"tighten":["silent","ok@500"]},"events":[{"atMs":1000,"typeId":"t.qa","outcome":"ok"}]}`. A reply is `silent`, `error[:text][@delayMs]` or `outcome[@delayMs]`. Without a script every action answers `ok` at once. The tools share the rate limit and the audit log of the other tools. They accept any outcome name that the recipe itself uses, so they find structural errors but not outcome typos; a station checks outcomes against its processors at build time.
+
+## The Valkey host {#the-valkey-host}
+
+`MicroDCS.Sfc.Hosting` runs recipes for the jobs of the Machinery Jobs processor (D-52). `AddSfcHost` adds it; `serve` does so when the Machinery Jobs binding is configured. It runs only under the `Processor` role.
+
+For each event the host loads the state, calls the core, and stores the new state, the due-index entry and the work entries in one compare-and-set. Work goes through the `sfc:work:{scope}` stream, read through the poller by the consumer group `sfc-engine`, so any instance can pick it up:
+
+| Entry | Written by | Does |
+|---|---|---|
+| `start` | The job order script, on every entry into AllowedToStart | Re-reads the order and starts the recipe if the order is still allowed to start. A job without a usable recipe is aborted. |
+| `cancel` | The job order script on Abort and Stop, or the `sfc_abort` tool | Ends the recipe; open work is withdrawn. |
+| `dispatch:{action}` | A step | Sends one push command, only while that attempt is the open one. |
+| `job` | A step | Applies job order transitions: start of execution, complete (with the job response) or abort. |
+| `tick` | The due-index sweep, or the `sfc_tick` tool | Fires expired deadlines. |
+| `resume` | The `sfc_redispatch` tool | Issues an open action again. |
+
+A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, and after `MaxDeliveries` it moves to `sfc:dead:{scope}` with the reason. `sfc_work_pending` shows both; `maint_stream_requeue_plan` and `maint_stream_ack_plan` act on them.
+
+**Push commands and responses.** The command goes through the `[Outgoing]` factory of its type id, as a command on that processor's binding, with the action key as `mdcsactionkey`. The instance that sent it waits on its own reply address (D-9). The `[OnResponse]` handler returns an `ActionOutcome` that a recipe can name in a condition; the outcome names are declared on the factory, and `done` is the default. An error event from the peer or `ActionOutcome.Failed` is the reserved outcome `error`.
+
+**Deadlines.** Every instance sweeps the due-index of every scope; the script pops each job once. A sweep that finds a heartbeat gap above `OutageThreshold` moves every open deadline by the gap instead of expiring it, so a platform outage does not abort running jobs.
+
+Pull events are not offered yet: a recipe with a `pull_event` action is refused at build time until the host supports them.
+
+| Setting (`MicroDcs:Sfc:`) | Type | Default | Description |
+|---|---|---|---|
+| `Enabled` | bool | `true` | Whether this instance runs recipes. |
+| `SweepInterval` | duration | 1 s | Time between due-index sweeps. |
+| `OutageThreshold` | duration | 30 s | Heartbeat gap that counts as a platform outage. Must be above `SweepInterval` and `MicroDcs:Valkey:PollInterval`, which paces the sweep. |
+| `MaxAttempts` | int | 3 | Dispatch attempts of a push action whose recipe sets none. |
+| `ExpiryGrace` | duration | 2 s | How long before the deadline the wire expiry of a command ends. |
+| `AutoclaimIdle` | duration | 30 s | How long a work entry stays with a consumer before another one takes it over. |
+| `MaxDeliveries` | int | 5 | Deliveries of a work entry before it goes to the dead stream. |
+| `ReadCount` | int | 10 | Most work entries read at once. |
+| `SweepLimit` | int | 100 | Most jobs one ordinary sweep of a scope takes. |

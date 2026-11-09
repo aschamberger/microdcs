@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
+using MicroDCS.Valkey.Sfc;
 using StackExchange.Redis;
 
 namespace MicroDCS.Maintenance;
@@ -24,7 +25,7 @@ internal sealed record StreamEntryImage(string Id, List<Pair> Fields);
 /// <summary>Where a maintenance operation looks: a whole key, or one set member or hash field of a shared key.</summary>
 /// <param name="Key">The full key.</param>
 /// <param name="Part">The set member or hash field, or <see langword="null"/> for the whole key.</param>
-/// <param name="PartKind">The kind of the part, <c>setmember</c>, <c>zsetmember</c> or <c>hashfield</c>; <see langword="null"/> for a whole key.</param>
+/// <param name="PartKind">The kind of the part, <c>setmember</c>, <c>zsetmember</c>, <c>hashfield</c> or <c>streamentry</c>; <see langword="null"/> for a whole key.</param>
 internal sealed record Target(string Key, string? Part = null, string? PartKind = null);
 
 /// <summary>
@@ -64,6 +65,7 @@ internal sealed class KeyImage
         "stream" => $"stream, {Entries?.Count ?? 0} entries",
         "setmember" => "set member",
         "zsetmember" => "sorted set member",
+        "streamentry" => "stream entry",
         _ => "hash field",
     };
 
@@ -121,6 +123,7 @@ internal sealed class KeyImage
         "setmember" => "m",
         "zsetmember" => "M",
         "hashfield" => "f" + Value,
+        "streamentry" => "e" + SfcStateDao.ConsumerGroup,
         _ => throw new MaintenanceRefusedException($"The image holds the unknown type '{Type}'."),
     };
 
@@ -189,6 +192,14 @@ internal sealed class KeyImage
         {
             var value = await db.HashGetAsync(key, target.Part).WaitAsync(cancellationToken).ConfigureAwait(false);
             return value.HasValue ? new KeyImage { Key = key, Part = target.Part, Type = "hashfield", Value = value.ToString() } : null;
+        }
+
+        if (target.PartKind == "streamentry")
+        {
+            var found = await db.StreamRangeAsync(key, target.Part, target.Part, 1).WaitAsync(cancellationToken).ConfigureAwait(false);
+            return found.Length == 0
+                ? null
+                : new KeyImage { Key = key, Part = target.Part, Type = "streamentry", Pairs = [.. found[0].Values.Select(static v => new Pair(v.Name.ToString(), v.Value.ToString()))] };
         }
 
         var type = await db.KeyTypeAsync(key).WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -271,6 +282,9 @@ internal sealed class KeyImage
             case "hashfield":
                 tasks.Add(transaction.HashSetAsync(Key, Part, Value));
                 return 0;
+            case "streamentry":
+                tasks.Add(transaction.StreamAddAsync(Key, [.. (Pairs ?? []).Select(static f => new NameValueEntry(f.Name, f.Value))]));
+                return 1;
         }
 
         tasks.Add(transaction.KeyDeleteAsync(Key));

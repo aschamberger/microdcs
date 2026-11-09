@@ -234,7 +234,7 @@ public sealed class JobOrderPublisherE2ETests
             }
 
             var store = publisher.Services.GetRequiredService<IJobStore>();
-            await store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-1" }, JobOrderState.Running, Subject, "Store", 0, "op-1", false), Ct);
+            await store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-1" }, JobOrderState.Running, Subject, "Store", 0, "op-1", JobRecipeWork.None), Ct);
             var kv = await new NatsKVContext(js).GetStoreAsync(prefix + "-state", Ct);
             var orderKey = $"{prefix}.site.area.data.order.job-1";
             var indexKey = $"{prefix}.site.area.data.state-index";

@@ -388,3 +388,22 @@ Verified: build 0 warnings, 885 tests (790 passed, 95 integration skipped on the
 Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 95 tests with 0 skipped.
 Next session pickup: S19 (SFC Valkey host; depends on S09, S15, S17). Run `git switch main && git pull --ff-only && gh stack init s19-sfc-valkey-host`. Run the SFC host under the `Processor` role only (D-51). Re-read the order before acting on a `start` entry (D-50). Register work consumers with `ValkeyPoller`, which runs them one after the other: a consumer must not wait on a broker inside `PollAsync`, see the hand-off in `JobOrderPublisher`. After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
 
+## S19 SFC Valkey host (2026-11-09, branch `s19-sfc-valkey-host`)
+
+Status: done. Previous session post-merge: the S18 runs on `main` first failed with zero jobs in a GitHub Actions outage, a re-run passed (`ci`, `security`, `docs` green for `6c37991`), required checks unchanged. Scope lifted by the maintainer (full tool sketch): about 3.2k lines of C# with tests.
+Done:
+
+* `src/MicroDCS.Sfc.Hosting`: work consumer in the poller, compare-and-set of state, due-index and work entries, push dispatch, response path, deadline sweep with the outage rule, `XAUTOCLAIM` and dead stream, Processor role only, `MicroDcs:Sfc` options.
+* Core: `MessagePipeline` implements `IOutgoingCommands`; `IActionSink` takes the response with its outcome; `[Outgoing(Outcomes = ...)]`, `ActionOutcome` from `[OnResponse]`. `JobExecution` in Machinery Jobs applies Begin, Complete (with job response) and Abort. SFC state format 1.1 (`startedAt`).
+* MES Abort and Stop write a `cancel` entry in the order script. Python left the recipe running.
+* Inspector `sfc`; MCP `sfc_job`, `sfc_due`, `sfc_work_pending`, write group `sfc_tick`, `sfc_redispatch`, `sfc_abort`, maintenance `maint_sfc_job_delete_plan`, `maint_sfc_rebuild_due_index_plan`, `maint_stream_requeue_plan`, `maint_stream_ack_plan`.
+* `/code-review high`: 10 findings, 10 fixed, 7 with a regression test (three are docs, a doc comment and the delivery count, whose test covers the new helper only).
+
+Findings ([SFC host](research/sfc-host.md), with the Python parity list, no row open): the time of `start` cannot be the entry id, an order that waited in the stream lost its attempt without a command (found by compose under load). A tick that finds nothing must put the job back on the due-index. Pause and Resume still do not hold the recipe, and it can complete a job the MES paused (S20a).
+Decisions: D-52 (new); D-35 and D-44 revised.
+Changed in the plan: index, decisions, sessions (S20a and S27 new), research (`sfc-host.md` new, `sfc-rules.md`), `docs/sfc-core.md`, `docs/inspection.md`, `docs/processors-dotnet.md`, `zensical.toml`, `CLAUDE.md`, `/session-end` milestone range.
+Open questions: none new.
+Verified: build 0 warnings, 940 tests (821 passed, 119 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 119 passed 0 skipped (`tests` exited 0), `scripts/scan` clean, `zensical build`. `serve` from the AOT binary against Valkey: the eight `sfc_*` tools listed, `sfc_job` answered over MCP. The AOT smoke does not run a recipe; the end-to-end run is the compose test on the JIT build. The Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 119 tests with 0 skipped.
+Next session pickup: S20 (SFC pull events, recovery, multi-instance; depends on S19). Run `git switch main && git pull --ff-only && gh stack init s20-sfc-recovery`. Turn on `SfcFeature.PullEvent` in `SfcGraphs.CapabilitiesOf` and implement `SfcActionSink.EventReceivedAsync`. `resume` entries and `XAUTOCLAIM` already work; the start-up recovery scan does not exist yet. S20 runs two replicas in compose. After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
+

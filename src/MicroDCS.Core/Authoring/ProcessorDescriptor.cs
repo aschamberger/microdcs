@@ -57,7 +57,8 @@ public delegate ValueTask<IReadOnlyList<Reply>> HandlerInvoker(
 /// <param name="TypeId">The CloudEvent type id the handler is keyed by; <see langword="null"/> for <see cref="HandlerKind.Fallback"/>.</param>
 /// <param name="Payload">The payload descriptor for the type id.</param>
 /// <param name="Invoke">The invoker.</param>
-public sealed record HandlerDescriptor(HandlerKind Kind, string? TypeId, IPayloadDescriptor? Payload, HandlerInvoker Invoke);
+/// <param name="Outcomes">The outcome names of an <see cref="HandlerKind.Outgoing"/> factory, which a recipe may name (D-44); default for none.</param>
+public sealed record HandlerDescriptor(HandlerKind Kind, string? TypeId, IPayloadDescriptor? Payload, HandlerInvoker Invoke, ImmutableArray<string> Outcomes = default);
 
 /// <summary>Lifecycle hooks (P-14).</summary>
 /// <param name="Initialize">Before transports start.</param>

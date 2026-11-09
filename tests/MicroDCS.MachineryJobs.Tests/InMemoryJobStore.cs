@@ -19,6 +19,8 @@ internal sealed class InMemoryJobStore : IJobStore
 
     public List<string> RecipeStarts { get; } = [];
 
+    public List<string> RecipeCancels { get; } = [];
+
     /// <summary>Runs after an order is read, to change something in the middle of a publisher round.</summary>
     public Action? AfterOrderRead { get; set; }
 
@@ -54,9 +56,13 @@ internal sealed class InMemoryJobStore : IJobStore
 
         _orders[write.Order.Id] = new StoredJobOrder(write.Order, write.State, write.Scope, current + 1, write.Operation);
         Changes.Add($"{write.ChangeType}:{write.Order.Id}");
-        if (write.StartRecipe)
+        if (write.Recipe == JobRecipeWork.Start)
         {
             RecipeStarts.Add(write.Order.Id);
+        }
+        else if (write.Recipe == JobRecipeWork.Cancel)
+        {
+            RecipeCancels.Add(write.Order.Id);
         }
 
         return new(true);
@@ -111,6 +117,9 @@ internal sealed class InMemoryJobStore : IJobStore
     }
 
     public ValueTask<bool> IsReferenceAsync(JobReferenceKind kind, string id, string scope, CancellationToken cancellationToken) => new(_references.Contains((kind, id, scope)));
+
+    public ValueTask<JobWorkMaster?> GetWorkMasterAsync(string id, string scope, CancellationToken cancellationToken) =>
+        new(_workMasters.TryGetValue(id, out var existing) && existing.Scope == scope ? existing.Master : null);
 
     public ValueTask<bool> SaveWorkMasterAsync(JobWorkMaster workMaster, string scope, CancellationToken cancellationToken)
     {

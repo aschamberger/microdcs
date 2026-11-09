@@ -115,6 +115,13 @@ public sealed class ProcessorHarness : IAsyncDisposable
     public Task<HarnessResult> SendEnvelopeAsync(EventEnvelope envelope, CancellationToken cancellationToken = default) =>
         DeliverAsync(envelope, InboundKind.Request, replyTo: null, cancellationToken);
 
+    /// <summary>Sends a prebuilt envelope as a response, for example an error event from the peer.</summary>
+    /// <param name="envelope">The envelope.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The result.</returns>
+    public Task<HarnessResult> SendResponseEnvelopeAsync(EventEnvelope envelope, CancellationToken cancellationToken = default) =>
+        DeliverAsync(envelope, InboundKind.Response, replyTo: null, cancellationToken);
+
     /// <summary>Decodes a published message into its payload.</summary>
     /// <typeparam name="TPayload">The payload type.</typeparam>
     /// <param name="message">The published message.</param>

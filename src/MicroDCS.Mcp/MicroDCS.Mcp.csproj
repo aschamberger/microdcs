@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="../MicroDCS.Inspection/MicroDCS.Inspection.csproj" />
     <ProjectReference Include="../MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
+    <ProjectReference Include="../MicroDCS.Sfc.Hosting/MicroDCS.Sfc.Hosting.csproj" />
     <ProjectReference Include="../MicroDCS.Sfc.Simulation/MicroDCS.Sfc.Simulation.csproj" />
   </ItemGroup>
   <ItemGroup>

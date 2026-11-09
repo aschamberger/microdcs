@@ -57,6 +57,16 @@ public sealed partial class GreetingsProcessor(ILogger<GreetingsProcessor> logge
         return new Bye(request.Scope);
     }
 
+    /// <summary>Takes the equipment's answer to a bye command; the SFC action of the command ends with the default outcome (D-44).</summary>
+    /// <param name="response">The answer.</param>
+    /// <returns>The outcome.</returns>
+    [OnResponse]
+    public static ActionOutcome OnByeAnswered(Hello response)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        return ActionOutcome.Done;
+    }
+
     /// <summary>Echoes events without a handler as raw events (P-10).</summary>
     /// <param name="raw">The received event.</param>
     /// <returns>The echo, same data and content type.</returns>

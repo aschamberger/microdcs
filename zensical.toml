@@ -49,6 +49,7 @@ nav = [
       {"Job order publisher" = "porting/research/job-publisher.md"},
       {"Data layer" = "porting/research/data-layer.md"},
       {"SFC rules" = "porting/research/sfc-rules.md"},
+      {"SFC host" = "porting/research/sfc-host.md"},
       {"Valkey findings" = "porting/research/valkey-findings.md"},
       {"MQTT transport" = "porting/research/mqtt-transport.md"},
       {"NATS transport" = "porting/research/nats-transport.md"},

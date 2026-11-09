@@ -23,6 +23,9 @@ public sealed record PublishOptions
     /// <summary>Overrides the event id (stable command id for re-dispatch, D-9).</summary>
     public string? EventId { get; init; }
 
+    /// <summary>Overrides the expiry interval of <c>MicroDcs:MessageExpiry</c>.</summary>
+    public TimeSpan? ExpiryInterval { get; init; }
+
     /// <summary>The method hint (<c>PUT</c> or <c>DELETE</c>).</summary>
     public string? Method { get; init; }
 

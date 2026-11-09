@@ -4,6 +4,7 @@ using MicroDCS.Inspection;
 using MicroDCS.MachineryJobs;
 using MicroDCS.Maintenance;
 using MicroDCS.Mcp;
+using MicroDCS.Sfc.Hosting;
 using MicroDCS.Transport.Mqtt;
 using MicroDCS.Transport.Nats;
 using MicroDCS.Valkey;
@@ -15,7 +16,7 @@ namespace MicroDCS.App;
 /// <summary>
 /// <c>microdcs serve</c>: the processors whose bindings are configured, on the transport each binding names (<c>mqtt</c>, <c>nats</c> or <c>memory</c>), with Valkey
 /// (and the maintenance operations) when <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
-/// The greetings demo runs unless only the Machinery Jobs binding is configured; that binding needs Valkey and otherwise ends the start (D-27).
+/// The greetings demo runs unless only the Machinery Jobs binding is configured; that binding needs Valkey and otherwise ends the start (D-27), and it also runs the recipes of its jobs through the SFC host.
 /// Configuration comes from environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
 /// </summary>
 internal static class ServeCommand
@@ -61,6 +62,9 @@ internal static class ServeCommand
             if (machineryJobs)
             {
                 builder.Services.AddMachineryJobs(builder.Configuration);
+
+                // Runs only under the Processor role (D-51); MicroDcs:Sfc:Enabled turns it off for a station without recipes.
+                builder.Services.AddSfcHost(builder.Configuration);
             }
         }
         else if (machineryJobs)
