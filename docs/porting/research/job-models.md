@@ -13,7 +13,7 @@ Implements [D-34](../decisions.md#d-34) in `src/MicroDCS.JobControl`. Sources: `
 * **Optional fields:** the neutral records keep the received V2 `EncodingMask`, so a field sent with its default value stays present in a same-version round trip. Upstream drops those.
 * **Limits:** the stack defaults (65535 for strings and arrays, 2 MB per message) are off in the shared context, because recipes are opaque and the transport bounds a message (as D-29). The nesting limit stays.
 * **Effects come from the NodeSet:** the sub-state machine transitions, including Close, have no `HasEffect`, so they emit nothing. The upstream engine emits a status event on Close. S18 sees those changes through the change stream.
-* **Generator:** `[CloudEventType(Codec = OpcUaJson)]` is rejected by MDCS010. S17 registers `OpcUaJsonPayloadDescriptor<T>` by hand, which D-35 allows.
+* **Generator:** `[CloudEventType(Codec = OpcUaJson)]` was rejected by MDCS010 until S17 added generated descriptors (D-50).
 * The neutral records use the OPC UA core types (`LocalizedText`, `Variant`, `DateTimeUtc`, `EUInformation`, `ArrayOf<T>`) like upstream; only the ISA-95 generated types stay behind the conversions.
 * The AOT binary is 33 MB with the job models linked in.
 

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
-  MicroDCS Job Control extension (D-34): a Work Master that carries opaque recipe content.
-  Published under the MIT licence of the MicroDCS repository. It requires the ISA-95 Job Control V2 model
-  and only adds a subtype of ISA95WorkMasterDataType.
+  MicroDCS Job Control extension (D-34, D-50): a Work Master that carries opaque recipe content, and the structures that carry
+  the Job Control method arguments and status events as CloudEvent payloads (OPC UA methods have no structure of their own).
+  Published under the MIT licence of the MicroDCS repository. It requires the ISA-95 Job Control V2 model.
 -->
 <UANodeSet xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd">
   <NamespaceUris>
@@ -10,15 +10,21 @@
     <Uri>http://opcfoundation.org/UA/ISA95-JOBCONTROL_V2/</Uri>
   </NamespaceUris>
   <Models>
-    <Model ModelUri="urn:microdcs:jobcontrol" Version="1.0.0" PublicationDate="2026-11-08T00:00:00Z">
+    <Model ModelUri="urn:microdcs:jobcontrol" Version="1.1.0" PublicationDate="2026-11-08T00:00:00Z">
       <RequiredModel ModelUri="http://opcfoundation.org/UA/" Version="1.04.11" PublicationDate="2022-03-29T00:00:00Z" />
       <RequiredModel ModelUri="http://opcfoundation.org/UA/ISA95-JOBCONTROL_V2/" Version="2.0.0" PublicationDate="2024-01-31T00:00:00Z" />
     </Model>
   </Models>
   <Aliases>
+    <Alias Alias="UInt64">i=9</Alias>
     <Alias Alias="String">i=12</Alias>
+    <Alias Alias="LocalizedText">i=21</Alias>
+    <Alias Alias="Structure">i=22</Alias>
     <Alias Alias="HasSubtype">i=45</Alias>
+    <Alias Alias="ISA95StateDataType">ns=2;i=3006</Alias>
     <Alias Alias="ISA95WorkMasterDataType">ns=2;i=3007</Alias>
+    <Alias Alias="ISA95JobOrderDataType">ns=2;i=3008</Alias>
+    <Alias Alias="ISA95JobResponseDataType">ns=2;i=3013</Alias>
   </Aliases>
   <UADataType NodeId="ns=1;i=3001" BrowseName="1:ISA95WorkMasterExtDataType">
     <DisplayName>ISA95WorkMasterExtDataType</DisplayName>
@@ -32,6 +38,120 @@
       </Field>
       <Field Name="Data" DataType="String" IsOptional="true">
         <Description>The recipe content as text.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3002" BrowseName="1:JobOrderMethodCallDataType">
+    <DisplayName>JobOrderMethodCallDataType</DisplayName>
+    <Description>Arguments of Store, StoreAndStart and Update.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobOrderMethodCallDataType">
+      <Field Name="JobOrder" DataType="ISA95JobOrderDataType">
+        <Description>The job order.</Description>
+      </Field>
+      <Field Name="Comment" DataType="LocalizedText" ValueRank="1">
+        <Description>Why the method was called.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3003" BrowseName="1:JobOrderIdMethodCallDataType">
+    <DisplayName>JobOrderIdMethodCallDataType</DisplayName>
+    <Description>Arguments of the methods that name an existing job order.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobOrderIdMethodCallDataType">
+      <Field Name="JobOrderID" DataType="String">
+        <Description>The job order id.</Description>
+      </Field>
+      <Field Name="Comment" DataType="LocalizedText" ValueRank="1">
+        <Description>Why the method was called.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3004" BrowseName="1:JobMethodResponseDataType">
+    <DisplayName>JobMethodResponseDataType</DisplayName>
+    <Description>Result of a job order method.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobMethodResponseDataType">
+      <Field Name="ReturnStatus" DataType="UInt64">
+        <Description>The ReturnStatus bitmap of OPC 10031-4, Annex B.2.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3005" BrowseName="1:JobResponseByIdCallDataType">
+    <DisplayName>JobResponseByIdCallDataType</DisplayName>
+    <Description>Arguments of RequestJobResponseByJobOrderID.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobResponseByIdCallDataType">
+      <Field Name="JobOrderID" DataType="String">
+        <Description>The job order id.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3006" BrowseName="1:JobResponseByIdResultDataType">
+    <DisplayName>JobResponseByIdResultDataType</DisplayName>
+    <Description>Result of RequestJobResponseByJobOrderID.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobResponseByIdResultDataType">
+      <Field Name="JobResponse" DataType="ISA95JobResponseDataType" IsOptional="true">
+        <Description>The job response, when there is one.</Description>
+      </Field>
+      <Field Name="ReturnStatus" DataType="UInt64">
+        <Description>The ReturnStatus bitmap of OPC 10031-4, Annex B.2.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3007" BrowseName="1:JobResponseByStateCallDataType">
+    <DisplayName>JobResponseByStateCallDataType</DisplayName>
+    <Description>Arguments of RequestJobResponseByJobOrderState.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobResponseByStateCallDataType">
+      <Field Name="JobOrderState" DataType="ISA95StateDataType" ValueRank="1">
+        <Description>The state to match.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3008" BrowseName="1:JobResponseByStateResultDataType">
+    <DisplayName>JobResponseByStateResultDataType</DisplayName>
+    <Description>Result of RequestJobResponseByJobOrderState.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobResponseByStateResultDataType">
+      <Field Name="JobResponses" DataType="ISA95JobResponseDataType" ValueRank="1">
+        <Description>The matching job responses.</Description>
+      </Field>
+      <Field Name="ReturnStatus" DataType="UInt64">
+        <Description>The ReturnStatus bitmap of OPC 10031-4, Annex B.2.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3009" BrowseName="1:JobOrderStatusEventDataType">
+    <DisplayName>JobOrderStatusEventDataType</DisplayName>
+    <Description>The fields of ISA95JobOrderStatusEventType as a CloudEvent payload.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobOrderStatusEventDataType">
+      <Field Name="JobOrder" DataType="ISA95JobOrderDataType">
+        <Description>The job order.</Description>
+      </Field>
+      <Field Name="JobResponse" DataType="ISA95JobResponseDataType" IsOptional="true">
+        <Description>The job response, when there is one.</Description>
+      </Field>
+      <Field Name="JobState" DataType="ISA95StateDataType" ValueRank="1">
+        <Description>The state of the job order.</Description>
       </Field>
     </Definition>
   </UADataType>

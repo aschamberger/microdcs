@@ -577,6 +577,7 @@
           "MicroDCS.Core": "[1.0.0, )",
           "MicroDCS.Inspection": "[1.0.0, )",
           "MicroDCS.JobControl": "[1.0.0, )",
+          "MicroDCS.MachineryJobs": "[1.0.0, )",
           "MicroDCS.Maintenance": "[1.0.0, )",
           "MicroDCS.Mcp": "[1.0.0, )",
           "MicroDCS.Transport.Mqtt": "[1.0.0, )",
@@ -613,6 +614,16 @@
           "MicroDCS.Core": "[1.0.0, )",
           "OPCFoundation.NetStandard.Opc.Ua.Core.Schema": "[2.0.1, )",
           "OPCFoundation.NetStandard.Opc.Ua.ISA95": "[2.0.1, )"
+        }
+      },
+      "microdcs.machineryjobs": {
+        "type": "Project",
+        "dependencies": {
+          "MicroDCS.Core": "[1.0.0, )",
+          "MicroDCS.JobControl": "[1.0.0, )",
+          "MicroDCS.Valkey": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
         }
       },
       "microdcs.maintenance": {

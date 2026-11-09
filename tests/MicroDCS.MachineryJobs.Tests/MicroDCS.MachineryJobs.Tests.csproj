@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MicroDCS.MachineryJobs/MicroDCS.MachineryJobs.csproj" />
+    <ProjectReference Include="../../src/MicroDCS.Testing/MicroDCS.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+</Project>

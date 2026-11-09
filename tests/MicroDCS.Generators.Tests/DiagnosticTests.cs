@@ -17,23 +17,50 @@ public sealed class DiagnosticTests
         [JsonSerializable(typeof(A))] [JsonSerializable(typeof(B))] internal sealed partial class Ctx : JsonSerializerContext;
         """;
 
-    private static ImmutableArray<Diagnostic> Run(string source)
+    private static CSharpCompilation Compile(string source)
     {
         var references = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!.ToString()!
             .Split(Path.PathSeparator)
             .Append(typeof(MicroDCS.Core.Authoring.ProcessorAttribute).Assembly.Location)
             .Select(path => MetadataReference.CreateFromFile(path));
-        var compilation = CSharpCompilation.Create(
+        return CSharpCompilation.Create(
             "TestAssembly",
             [CSharpSyntaxTree.ParseText(Header + "\n" + source)],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+    }
 
-        var driver = CSharpGeneratorDriver.Create(new MicroDcsGenerator()).RunGenerators(compilation);
+    private static ImmutableArray<Diagnostic> Run(string source)
+    {
+        var driver = CSharpGeneratorDriver.Create(new MicroDcsGenerator()).RunGenerators(Compile(source));
         return driver.GetRunResult().Diagnostics;
     }
 
+    private static string Generated(string source)
+    {
+        var compilation = Compile(source);
+        var result = CSharpGeneratorDriver.Create(new MicroDcsGenerator()).RunGenerators(compilation).GetRunResult();
+        return string.Concat(result.GeneratedTrees.Select(static t => t.ToString()));
+    }
+
     private static string[] Ids(string source) => [.. Run(source).Select(d => d.Id).Order()];
+
+    [Fact]
+    public void Opc_ua_json_payload_needs_a_generated_structure() =>
+        Ids("[CloudEventType(\"e.v1\", Codec = PayloadCodec.OpcUaJson)] public sealed record E(string X);").ShouldBe(["MDCS010"]);
+
+    [Fact]
+    public void Opc_ua_json_payload_gets_a_descriptor()
+    {
+        const string Source = """
+            namespace Opc.Ua { public interface IEncodeable { } }
+            [CloudEventType("e.v1", Codec = PayloadCodec.OpcUaJson)] public sealed class E : Opc.Ua.IEncodeable { }
+            [Processor(ProcessorBinding.Northbound)] public partial class P { [Incoming] public E On(E e) => e; }
+            """;
+
+        Run(Source).ShouldBeEmpty();
+        Generated(Source).ShouldContain("global::MicroDCS.JobControl.Codec.OpcUaJsonPayloadDescriptor<global::E>");
+    }
 
     [Fact]
     public void Valid_processor_has_no_diagnostics() =>

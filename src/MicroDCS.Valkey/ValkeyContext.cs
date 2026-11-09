@@ -4,6 +4,31 @@ using StackExchange.Redis;
 
 namespace MicroDCS.Valkey;
 
+/// <summary>A write named a document id that exists in another scope; a document id belongs to one scope (D-42).</summary>
+public sealed class DocumentScopeMismatchException : InvalidOperationException
+{
+    /// <summary>Initializes a new instance of the <see cref="DocumentScopeMismatchException"/> class.</summary>
+    public DocumentScopeMismatchException()
+        : base("The document exists in another scope; a document id belongs to one scope (D-42).")
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="DocumentScopeMismatchException"/> class.</summary>
+    /// <param name="message">The message.</param>
+    public DocumentScopeMismatchException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="DocumentScopeMismatchException"/> class.</summary>
+    /// <param name="message">The message.</param>
+    /// <param name="innerException">The cause.</param>
+    public DocumentScopeMismatchException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
 /// <summary>Result of a version-guarded write.</summary>
 /// <param name="Written">The document was written (now, or by an earlier attempt that the operation id proves).</param>
 /// <param name="Version">The version after the write; on a conflict the version found in Valkey (zero when the document does not exist).</param>
@@ -95,7 +120,7 @@ public sealed class ValkeyContext
                     case StatusConflict:
                         return new WriteResult(false, version);
                     case StatusScopeMismatch:
-                        throw new InvalidOperationException("The document exists in another scope; a document id belongs to one scope (D-42).");
+                        throw new DocumentScopeMismatchException();
                     default:
                         // An indexed attribute changed between the read and the script: read again.
                         if (last)

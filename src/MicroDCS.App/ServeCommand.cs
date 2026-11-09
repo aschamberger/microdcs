@@ -1,6 +1,7 @@
 using MicroDCS.App.Greetings;
 using MicroDCS.Core.Hosting;
 using MicroDCS.Inspection;
+using MicroDCS.MachineryJobs;
 using MicroDCS.Maintenance;
 using MicroDCS.Mcp;
 using MicroDCS.Transport.Mqtt;
@@ -12,10 +13,10 @@ using Microsoft.Extensions.Hosting;
 namespace MicroDCS.App;
 
 /// <summary>
-/// <c>microdcs serve</c>: the greetings demo processor on the transport its binding names (<c>mqtt</c>, <c>nats</c> or <c>memory</c>), with Valkey (and the maintenance operations) when
-/// <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
-/// It exists so the inspection tools and the end-to-end tests have a running application until the real processors arrive (S17). Configuration comes from
-/// environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
+/// <c>microdcs serve</c>: the processors whose bindings are configured, on the transport each binding names (<c>mqtt</c>, <c>nats</c> or <c>memory</c>), with Valkey
+/// (and the maintenance operations) when <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
+/// The greetings demo runs unless only the Machinery Jobs binding is configured; that binding needs Valkey and otherwise ends the start (D-27).
+/// Configuration comes from environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
 /// </summary>
 internal static class ServeCommand
 {
@@ -24,8 +25,13 @@ internal static class ServeCommand
         var builder = Host.CreateApplicationBuilder(args);
         builder.Configuration.AddEnvironmentVariables("APP_");
 
-        builder.Services.AddMicroDcs(builder.Configuration)
-            .AddProcessor<GreetingsProcessor>();
+        builder.Services.AddMicroDcs(builder.Configuration);
+        var bindings = builder.Configuration.GetSection("MicroDcs:Bindings");
+        var machineryJobs = bindings.GetSection(MachineryJobsProcessor.BindingId).Exists();
+        if (!machineryJobs || bindings.GetSection("greetings").Exists())
+        {
+            builder.Services.AddProcessor<GreetingsProcessor>();
+        }
 
         // Transports are registered by what the bindings name (D-39); without a named transport the in-memory one runs.
         var transports = builder.Configuration.GetSection("MicroDcs:Bindings").GetChildren()
@@ -52,6 +58,14 @@ internal static class ServeCommand
 
             // The maintenance operations work on Valkey state and start only in Development or Test (D-45).
             builder.Services.AddMicroDcsMaintenance(builder.Configuration);
+            if (machineryJobs)
+            {
+                builder.Services.AddMachineryJobs(builder.Configuration);
+            }
+        }
+        else if (machineryJobs)
+        {
+            throw new InvalidOperationException("The Machinery Jobs binding needs Valkey: set MicroDcs:Valkey:ConnectionString.");
         }
 
         builder.Services.AddMicroDcsManagement().AddMicroDcsMcp();

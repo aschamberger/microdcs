@@ -6,6 +6,7 @@
     <Project Path="src/MicroDCS.Inspection/MicroDCS.Inspection.csproj" />
     <Project Path="src/MicroDCS.JobControl/MicroDCS.JobControl.csproj" />
     <Project Path="src/MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
+    <Project Path="src/MicroDCS.MachineryJobs/MicroDCS.MachineryJobs.csproj" />
     <Project Path="src/MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <Project Path="src/MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
     <Project Path="src/MicroDCS.Sfc.Simulation/MicroDCS.Sfc.Simulation.csproj" />
@@ -26,6 +27,7 @@
     <Project Path="tests/MicroDCS.Generators.Tests/MicroDCS.Generators.Tests.csproj" />
     <Project Path="tests/MicroDCS.Inspection.Tests/MicroDCS.Inspection.Tests.csproj" />
     <Project Path="tests/MicroDCS.JobControl.Tests/MicroDCS.JobControl.Tests.csproj" />
+    <Project Path="tests/MicroDCS.MachineryJobs.Tests/MicroDCS.MachineryJobs.Tests.csproj" />
     <Project Path="tests/MicroDCS.Maintenance.Tests/MicroDCS.Maintenance.Tests.csproj" />
     <Project Path="tests/MicroDCS.IntegrationTests/MicroDCS.IntegrationTests.csproj" />
     <Project Path="tests/MicroDCS.Sfc.Tests/MicroDCS.Sfc.Tests.csproj" />

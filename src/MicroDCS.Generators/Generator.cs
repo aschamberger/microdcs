@@ -62,6 +62,12 @@ public sealed class MicroDcsGenerator : IIncrementalGenerator
         foreach (var payload in payloads)
         {
             var type = payload.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            if (payload.ContextAccess is null)
+            {
+                sb.AppendLine($"    public static readonly {Names.OpcUaJsonDescriptor}<{type}> {payload.FieldName} = new({Literal(payload.TypeId)}, {(payload.Schema is null ? "null" : Literal(payload.Schema))});");
+                continue;
+            }
+
             sb.AppendLine($"    public static readonly global::MicroDCS.Core.Messaging.JsonPayloadDescriptor<{type}> {payload.FieldName} = new(");
             sb.AppendLine($"        {Literal(payload.TypeId)}, {(payload.Schema is null ? "null" : Literal(payload.Schema))}, {payload.ContextAccess},");
             sb.Append("        " + CarriedArray(type, payload.Carried));

@@ -106,6 +106,64 @@ public sealed class MaintenanceTests
     }
 
     [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task JobDeleteRemovesOneOrderOnlyAndRestoresIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var orders = new JobOrderDao(env.Context);
+        var responses = new JobResponseDao(env.Context);
+        await orders.SaveAsync("job-1", Scope, "doc", 3, "Store", cancellationToken: ct);
+        await orders.SaveAsync("job-2", Scope, "other", 1, "Store", cancellationToken: ct);
+        await responses.SaveAsync("resp-1", Scope, "rdoc", 0, "job-1", "Running", cancellationToken: ct);
+
+        var plan = await rig.Operations.PlanJobDeleteAsync("test", "job-1", ct);
+        plan.Items.Select(static i => i.Key).ShouldContain($"joborder:list:{Scope}[job-1]");
+        var result = await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        (await orders.GetAsync("job-1", ct)).ShouldBeNull();
+        (await orders.GetAsync("job-2", ct)).ShouldNotBeNull();
+        (await orders.ListAsync(Scope, cancellationToken: ct)).ShouldBe(["job-2"]);
+        (await responses.GetByJobOrderAsync("job-1", ct)).ShouldBeNull();
+        (await responses.ListAsync(Scope, cancellationToken: ct)).ShouldBeEmpty();
+        (await env.Database.SetLengthAsync(env.Keys.JobResponseByState(Scope, "Running"))).ShouldBe(0);
+
+        var restore = await rig.Operations.PlanRestoreAsync("test", result.SnapshotId!, false, ct);
+        await rig.Operations.ApplyAsync("test", restore.Token, ct);
+
+        (await orders.GetAsync("job-1", ct)).ShouldNotBeNull().Document.ShouldBe("doc");
+        (await env.Database.SortedSetScoreAsync(env.Keys.JobOrderList(Scope), "job-1")).ShouldBe(3);
+        (await responses.GetByJobOrderAsync("job-1", ct)).ShouldNotBeNull().Id.ShouldBe("resp-1");
+        (await env.Database.SetContainsAsync(env.Keys.JobResponseByState(Scope, "Running"), "resp-1")).ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task JobDeleteIsRefusedForAnUnknownOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.PlanJobDeleteAsync("test", "nope", ct));
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task JobDeleteDoesNothingWhenAListMemberChangedAfterThePlan()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var orders = new JobOrderDao(env.Context);
+        await orders.SaveAsync("job-1", Scope, "doc", 3, "Store", cancellationToken: ct);
+        var plan = await rig.Operations.PlanJobDeleteAsync("test", "job-1", ct);
+        rig.Operations.BeforeChange = async () => await env.Database.SortedSetRemoveAsync(env.Keys.JobOrderList(Scope), "job-1");
+
+        await Should.ThrowAsync<MaintenanceRefusedException>(async () => await rig.Operations.ApplyAsync("test", plan.Token, ct));
+
+        (await orders.GetAsync("job-1", ct)).ShouldNotBeNull();
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
     public async Task PurgeScopeThenRestoreGivesBackTheExactState()
     {
         var ct = TestContext.Current.CancellationToken;

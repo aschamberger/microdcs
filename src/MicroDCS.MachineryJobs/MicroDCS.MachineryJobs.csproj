@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MicroDCS Machinery Jobs: the job order processor, its store over Valkey, station configuration and inspection (S17, D-50).</Description>
+    <!-- Source-generated configuration binding: no reflection, AOT safe (D-39). -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
+    <ProjectReference Include="../MicroDCS.JobControl/MicroDCS.JobControl.csproj" />
+    <ProjectReference Include="../MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
+    <ProjectReference Include="../MicroDCS.Generators/MicroDCS.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MicroDCS.MachineryJobs.Tests" />
+  </ItemGroup>
+</Project>

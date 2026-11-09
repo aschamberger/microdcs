@@ -17,16 +17,44 @@ internal static class DocumentScripts
         local nextVersion = currentVersion + 1
         """;
 
-    /// <summary>KEYS: document, list, changes, scopes, nudge channel.</summary>
-    public const string PutJobOrder = Guard + """
+    private const string StoreJobOrder = """
 
         redis.call('HSET', KEYS[1], 'v', nextVersion, 'scope', ARGV[4], 'op', ARGV[2], 'score', ARGV[5], 'doc', ARGV[6])
         redis.call('ZADD', KEYS[2], ARGV[5], ARGV[3])
         redis.call('SADD', KEYS[4], ARGV[4])
         redis.call('XADD', KEYS[3], 'MAXLEN', '~', ARGV[10], '*', 'change_type', ARGV[7], 'job_order_id', ARGV[9], 'scope', ARGV[4], 'ts', ARGV[8])
         redis.call('PUBLISH', KEYS[5], ARGV[4])
+        """;
+
+    private const string Written = """
+
         return {1, nextVersion, ARGV[2]}
         """;
+
+    /// <summary>KEYS: document, list, changes, scopes, nudge channel.</summary>
+    public const string PutJobOrder = Guard + StoreJobOrder + Written;
+
+    /// <summary>
+    /// <see cref="PutJobOrder"/> plus the SFC work entry that starts the recipe of the job, in the same step, so an order that reached
+    /// AllowedToStart cannot be left without its entry (D-50). KEYS: document, list, changes, scopes, change nudge channel, work stream, work nudge channel.
+    /// </summary>
+    public const string PutJobOrderAndStart = Guard + StoreJobOrder + """
+
+        redis.call('XADD', KEYS[6], '*', 'job_id', ARGV[3], 'action', 'start', 'scope', ARGV[4])
+        redis.call('PUBLISH', KEYS[7], ARGV[4])
+        """ + Written;
+
+    /// <summary>
+    /// Removes a job order with a change entry, guarded by the version: Cancel and Clear are catalog changes the publisher must see (D-34).
+    /// KEYS: document, list, changes, nudge channel.
+    /// </summary>
+    public const string RemoveJobOrder = Guard + """
+
+        redis.call('DEL', KEYS[1])
+        redis.call('ZREM', KEYS[2], ARGV[3])
+        redis.call('XADD', KEYS[3], 'MAXLEN', '~', ARGV[10], '*', 'change_type', ARGV[7], 'job_order_id', ARGV[9], 'scope', ARGV[4], 'ts', ARGV[8], 'op', ARGV[2])
+        redis.call('PUBLISH', KEYS[4], ARGV[4])
+        """ + Written;
 
     /// <summary>KEYS: document, list, scope check not needed. Arguments: id, scope.</summary>
     public const string DeleteJobOrder = """

@@ -142,6 +142,6 @@ The generator reports these errors while you type.
 | MDCS007 | Invalid `[CarriedAs]` (not a settable string, no `[JsonIgnore]`, or a bad name). |
 | MDCS008 | Two payload types with the same type id. |
 | MDCS009 | Payload not listed in a `JsonSerializerContext` of the assembly. |
-| MDCS010 | Codec without a generated descriptor. |
+| MDCS010 | Codec without a generated descriptor: `Binary`, or `OpcUaJson` on a type that is not a generated OPC UA structure with a public parameterless constructor. |
 | MDCS011 | Payload type is generic, a value type or nested. |
 | MDCS012 | The `[Processor]` argument does not resolve (for example a missing `using` for `ProcessorBinding`). |

@@ -83,6 +83,14 @@ public interface IMaintenanceOperations
     /// <exception cref="MaintenanceRefusedException">The operation is refused.</exception>
     ValueTask<MaintenancePlan> PlanPurgeScopeAsync(string caller, string scope, bool allowLarge, CancellationToken cancellationToken);
 
+    /// <summary>Plans the removal of one job order with its job response and SFC state.</summary>
+    /// <param name="caller">Who asks, for the audit line.</param>
+    /// <param name="id">The job order id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    /// <exception cref="MaintenanceRefusedException">Maintenance is not allowed here or the order does not exist.</exception>
+    ValueTask<MaintenancePlan> PlanJobDeleteAsync(string caller, string id, CancellationToken cancellationToken);
+
     /// <summary>Plans putting the content of a snapshot back.</summary>
     /// <param name="caller">Who asks, for the audit line.</param>
     /// <param name="snapshotId">The snapshot id from <see cref="ListSnapshotsAsync"/>.</param>

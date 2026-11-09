@@ -6,6 +6,9 @@ namespace MicroDCS.Generators;
 /// <summary>Finds the <c>[CloudEventType]</c> payloads of a compilation and checks them.</summary>
 internal sealed class PayloadAnalyzer
 {
+    // The value of PayloadCodec.OpcUaJson; the generator does not reference MicroDCS.Core.
+    private const int OpcUaJsonCodec = 1;
+
     private static readonly Regex _attributeNamePattern = new("^[a-z0-9]{1,20}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private readonly Dictionary<INamedTypeSymbol, PayloadInfo> _payloads = new(SymbolEqualityComparer.Default);
@@ -101,7 +104,20 @@ internal sealed class PayloadAnalyzer
             return null;
         }
 
+        var schema = attribute.NamedArguments.FirstOrDefault(a => a.Key == "Schema").Value.Value as string;
+        var field = type.ToDisplayString().Replace('.', '_');
         var codec = attribute.NamedArguments.FirstOrDefault(a => a.Key == "Codec").Value.Value;
+        if (codec is int and OpcUaJsonCodec)
+        {
+            if (!IsEncodeable(type))
+            {
+                _report(Diagnostic.Create(Diagnostics.CodecNotGenerated, location, type.ToDisplayString()));
+                return null;
+            }
+
+            return new PayloadInfo(type, typeId, schema, field, null, []);
+        }
+
         if (codec is int and not 0)
         {
             _report(Diagnostic.Create(Diagnostics.CodecNotGenerated, location, type.ToDisplayString()));
@@ -130,10 +146,14 @@ internal sealed class PayloadAnalyzer
             }
         }
 
-        var schema = attribute.NamedArguments.FirstOrDefault(a => a.Key == "Schema").Value.Value as string;
-        var field = type.ToDisplayString().Replace('.', '_');
         return new PayloadInfo(type, typeId, schema, field, access, carried);
     }
+
+    // OpcUaJsonPayloadDescriptor<T> needs a generated OPC UA structure it can create.
+    private static bool IsEncodeable(INamedTypeSymbol type) =>
+        !type.IsAbstract
+        && type.Constructors.Any(static c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public)
+        && type.AllInterfaces.Any(static i => i.ToDisplayString() == Names.Encodeable);
 
     private static bool IsValidCarried(IPropertySymbol property, string name) =>
         property.Type.SpecialType == SpecialType.System_String
