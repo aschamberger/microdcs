@@ -16,10 +16,9 @@ public sealed partial class StationProcessor
     public static ActionOutcome OnHello(Hello hello) => hello.Name == "fail" ? ActionOutcome.Failed("broken") : new ActionOutcome(hello.Name);
 
     [OnResponse]
-    public static void OnAck(ByeAck ack)
-    {
-        // Reports no outcome: the pipeline uses the default.
-    }
+    public void OnAck(ByeAck ack) => Acknowledged = ack.Name; // Reports no outcome: the pipeline uses the default.
+
+    public string? Acknowledged { get; private set; }
 
     [Incoming]
     public static Replies OnBye(Bye bye) => new Replies().With(new ByeAck(bye.Name)).With(new ActionOutcome("ignored"));
