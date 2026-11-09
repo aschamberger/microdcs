@@ -23,9 +23,11 @@ public enum SfcFeature
 /// <summary>What a station can run: features, accepted qualifiers and the outcomes its processors declare.</summary>
 /// <param name="Features">The supported features.</param>
 /// <param name="Outcomes">The declared outcome names per action type id; the reserved outcomes are always valid.</param>
+/// <param name="EventOutcomes">The declared outcome names per event type a pull-event action can wait for; absent means <paramref name="Outcomes"/> also answers for pull events.</param>
 public sealed record SfcCapabilities(
     SfcFeature Features,
-    IReadOnlyDictionary<string, IReadOnlySet<string>> Outcomes)
+    IReadOnlyDictionary<string, IReadOnlySet<string>> Outcomes,
+    IReadOnlyDictionary<string, IReadOnlySet<string>>? EventOutcomes = null)
 {
     /// <summary>The only accepted action qualifier (non-stored, D-44).</summary>
     public const string AcceptedQualifier = "N";
@@ -47,5 +49,13 @@ public sealed record SfcCapabilities(
     /// <returns><see langword="true"/> for a reserved outcome or one the type declares.</returns>
     public bool IsOutcomeValid(string typeId, string outcome) =>
         SfcOutcome.IsReserved(outcome)
-        || (Outcomes.TryGetValue(typeId, out IReadOnlySet<string>? declared) && declared.Contains(outcome));
+        || (Outcomes.TryGetValue(typeId, out IReadOnlySet<string>? declared) && declared.Contains(outcome))
+        || (EventOutcomes is not null && EventOutcomes.TryGetValue(typeId, out IReadOnlySet<string>? declaredByEvent) && declaredByEvent.Contains(outcome));
+
+    /// <summary>Tells whether a processor of this station handles the type of an action.</summary>
+    /// <param name="typeId">The action's CloudEvent type id.</param>
+    /// <param name="interaction">The interaction of the action.</param>
+    /// <returns><see langword="true"/> when an event handler (pull) or a command factory (push) exists.</returns>
+    public bool Handles(string typeId, string interaction) =>
+        interaction == SfcNames.PullEvent && EventOutcomes is not null ? EventOutcomes.ContainsKey(typeId) : Outcomes.ContainsKey(typeId);
 }

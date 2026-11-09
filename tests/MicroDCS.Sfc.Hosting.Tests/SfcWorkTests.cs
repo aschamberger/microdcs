@@ -106,8 +106,8 @@ public sealed class SfcWorkTests
     }
 
     [Fact]
-    public void PullEventsAreNotOfferedYet() =>
-        SfcGraphs.CapabilitiesOf(Registry(default)).Features.HasFlag(SfcFeature.PullEvent).ShouldBeFalse();
+    public void PullEventsAreOffered() =>
+        SfcGraphs.CapabilitiesOf(Registry(default)).Features.HasFlag(SfcFeature.PullEvent).ShouldBeTrue();
 
     [Theory]
     [InlineData(nameof(SfcHostOptions.MaxAttempts))]

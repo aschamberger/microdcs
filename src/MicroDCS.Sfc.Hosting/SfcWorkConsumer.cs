@@ -72,9 +72,26 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
 
     public async ValueTask ScopeDiscoveredAsync(string scope, CancellationToken cancellationToken)
     {
-        if (_enabled)
+        if (!_enabled)
         {
-            await _streams.EnsureGroupAsync(_keys.SfcWork(scope), SfcWork.Group, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await _streams.EnsureGroupAsync(_keys.SfcWork(scope), SfcWork.Group, cancellationToken).ConfigureAwait(false);
+
+        // The recovery scan (S-29): every instance runs it when it first sees a scope. A resume with the scan mark changes nothing for live work, so several replicas can run it.
+        try
+        {
+            var jobs = await _states.QueueRecoveryAsync(scope, cancellationToken).ConfigureAwait(false);
+            if (jobs > 0)
+            {
+                Log.RecoveryScan(_logger, scope, jobs);
+            }
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        {
+            // The poller does not repeat a discovery, and the other consumers still need theirs. The scan only repairs: the sweep owns every deadline.
+            Log.RecoveryScanFailed(_logger, ex, scope);
         }
     }
 
@@ -162,6 +179,12 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         var entryId = entry.Id.ToString();
         var jobId = entry[SfcWork.JobIdField].ToString();
         var action = entry[SfcWork.ActionField].ToString();
+        if (action == SfcWork.Event)
+        {
+            await ReceiveEventAsync(scope, entry, entryId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (string.IsNullOrEmpty(jobId) || string.IsNullOrEmpty(action))
         {
             Log.InvalidWorkEntry(_logger, entryId, scope, "job id or action missing");
@@ -181,7 +204,7 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
                 await TickAsync(jobId, scope, entry, entryId, at, cancellationToken).ConfigureAwait(false);
                 break;
             case SfcWork.Resume:
-                await ResumeAsync(jobId, entry, entryId, at, cancellationToken).ConfigureAwait(false);
+                await ResumeAsync(jobId, scope, entry, entryId, at, cancellationToken).ConfigureAwait(false);
                 break;
             case SfcWork.Job:
                 await ApplyJobOperationsAsync(jobId, scope, entry, entryId, cancellationToken).ConfigureAwait(false);
@@ -283,8 +306,14 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         }
     }
 
-    private async ValueTask ResumeAsync(string jobId, StreamEntry entry, string entryId, long at, CancellationToken cancellationToken)
+    private async ValueTask ResumeAsync(string jobId, string scope, StreamEntry entry, string entryId, long at, CancellationToken cancellationToken)
     {
+        if (entry[SfcWork.ScanField] == "1")
+        {
+            await RecoverAsync(jobId, scope, entryId, at, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         // With "only", every other open action counts as live, so the core re-issues just that one (operator tool sfc_redispatch).
         var only = entry[SfcWork.OnlyField].ToString();
         Func<SfcState, IReadOnlyList<string>>? live = string.IsNullOrEmpty(only)
@@ -292,6 +321,114 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             : state => [.. state.Actions.Values.Where(a => !string.Equals(a.Name, only, StringComparison.Ordinal)).Select(a => ActionKey.Create(jobId, a.Name))];
         await _runner.RunAsync(jobId, new SfcResume { At = at }, entryId, live, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// The recovery scan of one job. Every action with a deadline counts as live, because the sweep owns it: resending it would use up an attempt on every
+    /// restart (D-9), and after an outage it would race the tick that moves the deadlines (D-18). So the scan re-issues only work that never got a
+    /// deadline and puts back index entries that were lost. A repaired entry is not due before the outage threshold, so a tick already under way goes first.
+    /// </summary>
+    private async ValueTask RecoverAsync(string jobId, string scope, string entryId, long at, CancellationToken cancellationToken)
+    {
+        SfcRunResult result;
+        try
+        {
+            result = await _runner.RunAsync(
+                jobId,
+                new SfcResume { At = at },
+                entryId,
+                state => [.. state.Actions.Values.Where(static a => a.IsOpen && a.Deadline is not null).Select(a => ActionKey.Create(jobId, a.Name))],
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is JsonException or (SfcStepFailedException and not SfcContentionException))
+        {
+            // A job that cannot be evaluated (recipe missing, state unreadable) would otherwise add a dead entry on every restart. Its deadline or an operator deals with it.
+            Log.RecoveryNotPossible(_logger, ex, jobId);
+            return;
+        }
+
+        if (result is not { Status: SfcRunStatus.Unchanged, State: { IsEnded: false } state })
+        {
+            return;
+        }
+
+        if (state.NextDeadline is { } deadline)
+        {
+            await _states.AddDueIfMissingAsync(scope, jobId, Math.Max(deadline, at + (long)_options.OutageThreshold.TotalMilliseconds), cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var typeId in state.WaitingTypeIds)
+        {
+            await _states.AddWaitingAsync(scope, typeId, jobId, at, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Offers an event to the jobs waiting for its type, oldest wait first (S-16, R-1). The compare-and-set decides between replicas, and the core decides
+    /// whether the selector matches. The first job that takes the event ends the search, so one event completes one action.
+    /// </summary>
+    private async ValueTask ReceiveEventAsync(string scope, StreamEntry entry, string entryId, CancellationToken cancellationToken)
+    {
+        var typeId = entry[SfcWork.TypeIdField].ToString();
+        if (string.IsNullOrEmpty(typeId))
+        {
+            Log.InvalidWorkEntry(_logger, entryId, scope, "event without a type");
+            return;
+        }
+
+        // The identity of the event, not of the entry: a broker redelivery of the event appends a new entry. An older entry has neither.
+        var eventKey = NullIfMissing(entry[SfcWork.EventKeyField]) ?? entryId;
+
+        // Applied before a crash or by another consumer: the job may have moved on, and the event must not complete another job.
+        if (await _states.IsEventClaimedAsync(scope, eventKey, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        var received = new SfcEventReceived
+        {
+            At = SfcWork.TimeOf(entryId),
+            TypeId = typeId,
+            Outcome = entry[SfcWork.OutcomeField].ToString(),
+            Subject = NullIfMissing(entry[SfcWork.SubjectField]),
+            CorrelationId = NullIfMissing(entry[SfcWork.CorrelationIdField]),
+            Error = NullIfMissing(entry[SfcWork.ErrorField]),
+        };
+
+        foreach (var (jobId, _) in await _states.ListWaitingAsync(scope, typeId, int.MaxValue, cancellationToken).ConfigureAwait(false))
+        {
+            try
+            {
+                var result = await _runner.RunAsync(jobId, received, entryId, liveWork: null, claimedEvent: eventKey, cancellationToken).ConfigureAwait(false);
+                if (result.Status == SfcRunStatus.AlreadyClaimed)
+                {
+                    return;
+                }
+
+                if (result.Status == SfcRunStatus.Applied)
+                {
+                    SfcTelemetry.EventsMatched.Add(1);
+                    Log.PullEventMatched(_logger, entryId, typeId, jobId);
+                    return;
+                }
+
+                // Only a job that cannot wait again: for a running one this read may be stale, and removing its entry would lose a live wait.
+                if (result.State is null or { IsEnded: true })
+                {
+                    await _states.RemoveWaitingAsync(scope, typeId, jobId, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is JsonException or (SfcStepFailedException and not SfcContentionException))
+            {
+                // One broken job must not block the event for the others or send it to the dead stream.
+                Log.PullEventNotApplied(_logger, ex, entryId, jobId);
+            }
+        }
+
+        SfcTelemetry.EventsUnmatched.Add(1);
+        Log.PullEventUnmatched(_logger, scope, entryId, typeId);
+    }
+
+    private static string? NullIfMissing(RedisValue value) => value.HasValue ? value.ToString() : null;
 
     private async ValueTask ApplyJobOperationsAsync(string jobId, string scope, StreamEntry entry, string entryId, CancellationToken cancellationToken)
     {

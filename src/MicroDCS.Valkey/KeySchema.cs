@@ -133,6 +133,18 @@ public sealed class KeySchema
     /// <returns>The key.</returns>
     public string SfcDue(string scope) => Key("sfc:due:", scope);
 
+    /// <summary>Jobs of a scope waiting for an event type, sorted set of job ids by wait start (R-1).</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="typeId">The event type id.</param>
+    /// <returns>The key.</returns>
+    public string SfcWaits(string scope, string typeId) => Key("sfc:waits:", scope, ":", typeId);
+
+    /// <summary>Marks an event as applied, so that a redelivery cannot complete a second job (R-1).</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="eventKey">The identity of the event.</param>
+    /// <returns>The key.</returns>
+    public string SfcEventClaim(string scope, string eventKey) => Key("sfc:event:", scope, ":", eventKey);
+
     /// <summary>Last sweep time per scope, a hash, for the outage rule (D-18).</summary>
     /// <returns>The key.</returns>
     public string SfcHeartbeat() => Key("sfc:heartbeat");

@@ -1,7 +1,10 @@
 using System.Text.Json;
 using MicroDCS.Core.Authoring;
+using MicroDCS.Valkey;
 using MicroDCS.Valkey.Sfc;
+using MicroDCS.Valkey.Streams;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace MicroDCS.Sfc.Hosting;
 
@@ -11,10 +14,14 @@ internal sealed class SfcActionSink : IActionSink
     private readonly SfcPendingCommands _pending;
     private readonly SfcJobRunner _runner;
     private readonly SfcStateDao _states;
+    private readonly ValkeyStreams _streams;
+    private readonly KeySchema _keys;
     private readonly ILogger<SfcActionSink> _logger;
 
-    public SfcActionSink(SfcPendingCommands pending, SfcJobRunner runner, SfcStateDao states, ILogger<SfcActionSink> logger)
+    public SfcActionSink(SfcPendingCommands pending, SfcJobRunner runner, SfcStateDao states, ValkeyStreams streams, ValkeyContext context, ILogger<SfcActionSink> logger)
     {
+        _streams = streams;
+        _keys = context.Keys;
         _pending = pending;
         _runner = runner;
         _states = states;
@@ -51,6 +58,51 @@ internal sealed class SfcActionSink : IActionSink
         }
     }
 
-    // Pull events follow in S20.
-    public ValueTask EventReceivedAsync(EventContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    /// <summary>
+    /// Queues an event that a job waits for; any replica may take it, because the wait is state (R-1). Every incoming event passes here, so the index
+    /// is read first. An event that arrives before its wait exists is dropped, as in Python (S-16); the action then ends with <c>timeout</c>.
+    /// </summary>
+    public async ValueTask EventReceivedAsync(EventContext context, ActionOutcome outcome, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(outcome);
+        if (context.Address?.Scope is not { Length: > 0 } scope)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!await _states.HasWaitingAsync(scope, context.Type, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        {
+            // Every incoming event passes here, most of them no recipe waits for. Faulting would stop the host over one of those; a job that did wait times out.
+            SfcTelemetry.EventsUnmatched.Add(1);
+            Log.WaitCheckFailed(_logger, ex, context.EventId);
+            return;
+        }
+
+        var fields = new List<(string, string)>
+        {
+            (SfcWork.EventKeyField, context.Source + "|" + context.EventId),
+            (SfcWork.TypeIdField, context.Type),
+            (SfcWork.OutcomeField, outcome.IsFailure ? SfcOutcome.Error : outcome.Name),
+        };
+        AddIfSet(fields, SfcWork.SubjectField, context.Subject);
+        AddIfSet(fields, SfcWork.CorrelationIdField, context.CorrelationId);
+        AddIfSet(fields, SfcWork.ErrorField, outcome.Error);
+        await _streams.AppendAsync(_keys.SfcWork(scope), SfcWork.NudgeKind, scope, SfcWork.Entry(string.Empty, scope, SfcWork.Event, [.. fields]), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AddIfSet(List<(string, string)> fields, string name, string? value)
+    {
+        if (value is not null)
+        {
+            fields.Add((name, value));
+        }
+    }
 }

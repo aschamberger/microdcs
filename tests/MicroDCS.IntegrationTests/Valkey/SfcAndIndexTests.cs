@@ -9,6 +9,23 @@ namespace MicroDCS.IntegrationTests.Valkey;
 public sealed class SfcAndIndexTests
 {
     [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task AWriteWhoseEventIsAlreadyClaimedIsRefused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        var dao = new SfcStateDao(env.Context);
+        SfcWaitChanges Claim() => new([], [], "urn:it|e1");
+        await dao.CompareAndSetAsync("a", "s", "state", 0, null, true, [], cancellationToken: ct);
+        await dao.CompareAndSetAsync("b", "s", "state", 0, null, true, [], cancellationToken: ct);
+
+        (await dao.CompareAndSetAsync("a", "s", "next", 1, null, true, [], waits: Claim(), cancellationToken: ct)).Written.ShouldBeTrue();
+        (await dao.IsEventClaimedAsync("s", "urn:it|e1", ct)).ShouldBeTrue();
+
+        (await dao.CompareAndSetAsync("b", "s", "next", 1, null, true, [], waits: Claim(), cancellationToken: ct)).Written.ShouldBeFalse();
+        (await dao.GetAsync("b", ct)).ShouldNotBeNull().Document.ShouldBe("state");
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
     public async Task CompareAndSetStoresStateCommandsDeadlineAndActiveSetAtomically()
     {
         var ct = TestContext.Current.CancellationToken;

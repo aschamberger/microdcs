@@ -199,6 +199,11 @@ public sealed record SfcState
         return new SfcState { JobId = jobId, Scope = scope, RecipeHash = graph.RecipeHash, Actions = actions };
     }
 
+    /// <summary>Gets the event types the job waits for now, without duplicates.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> WaitingTypeIds =>
+        IsEnded ? [] : [.. Actions.Values.Where(static a => a.Status == SfcActionStatus.Waiting).Select(static a => a.TypeId).Distinct(StringComparer.Ordinal)];
+
     /// <summary>Tells whether an active pull-event action awaits an event of the type (host helper to pick the job).</summary>
     /// <param name="typeId">The event type id.</param>
     /// <returns><see langword="true"/> when an action waits for it.</returns>

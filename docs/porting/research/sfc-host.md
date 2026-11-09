@@ -22,7 +22,7 @@ Work entries: `start`, `cancel`, `tick`, `resume`, `dispatch:{action}` and `job`
 
 ## Python parity list: host part of `sfc_engine.py` and the tests
 
-Rows S-1 to S-40 of [SFC rules](sfc-rules.md) hold the decisions from S07. This list records what S19 did with the ones it owns and what S20 keeps.
+Rows S-1 to S-40 of [SFC rules](sfc-rules.md) hold the decisions from S07. This list records what S19 and S20 did with the ones they own.
 
 | Id | Python behaviour | File / function | Disposition |
 |---|---|---|---|
@@ -45,8 +45,13 @@ Rows S-1 to S-40 of [SFC rules](sfc-rules.md) hold the decisions from S07. This 
 | H-17 | Job fail triggers `Abort`, writes no response | `_fail_job` | kept (S-27) |
 | H-18 | MES Abort or Stop leaves the recipe running and commanding equipment | `process_abort`, `process_stop` | changed (D-52): the order write queues a `cancel` entry |
 | H-19 | Pause and Resume do not touch the recipe | `process_pause` | kept in S19; changed in S20a: the recipe is held at the next step boundary (D-52) |
-| H-20 | Recovery scan at start, `resume` per active job | `_recovery_scan`, `_handle_resume`, `test_recovery_*` | S20; `resume` entries are already handled, for the operator tool |
-| H-21 | Pull-event matching and waits | `_handle_pull_event`, `pull_event_handler` | S20; the capability is off until then, so a recipe with a pull action is refused |
+| H-20 | Recovery scan at start, `resume` per active job; skips ended jobs | `_recovery_scan`, `_handle_resume`, `test_recovery_scan_*` | changed (D-53): only running jobs are listed; the scan resends nothing with a deadline and repairs the indexes; a job that cannot be evaluated is logged, not sent to the dead stream |
+| H-21 | Pull dispatch marks the action waiting; no routing entry | `_dispatch_pull_event`, `test_dispatch_pull_event_*` | kept: a wait is state, and the waits index is written in the same compare-and-set |
+| H-24 | Pull event as a work item, any replica; scope from the subject | `pull_event_handler` | changed: scope from the address (D-38); only queued when a job waits for the type |
+| H-25 | Match by type, first job in set order; CAS miss tries the next job | `_handle_pull_event`, `test_handle_pull_event_race_condition_tries_next_candidate` | changed (D-53): oldest wait first; the compare-and-set loser re-evaluates and the next job is tried |
+| H-26 | `ce_subject` and `ce_correlation_id` passed to the handler and never used | `_handle_pull_event` | changed (R-1): they are what `Selector` compares |
+| H-27 | No active job, no waiting action, unknown type: logged and ignored | `test_handle_pull_event_skips_if_no_active_jobs`, `test_handle_pull_event_ignores_unknown_type_id` | kept: dropped and counted in `microdcs.sfc.events.unmatched` |
+| H-28 | An event before its wait is lost | `_handle_pull_event` | kept: no buffering, the action times out (D-53) |
 | H-22 | Scope registered by the app wiring | `register_scope`, `test_register_scope` | dropped (S-33): scope registry |
 | H-23 | End-to-end: StoreAndStart, command on the greetings topic, answer on the reply topic, recipe completes, job response exists | `test_app_sfc_integration.py` | kept: `ARecipeOfPushActionsRunsToTheEndAndCompletesTheJob`; the job is stored directly, the command path of the MES is covered by `MachineryJobsMqttTests` |
 

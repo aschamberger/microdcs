@@ -103,7 +103,8 @@ public interface IActionSink
 
     /// <summary>An incoming event may complete a waiting pull-event action (P-17).</summary>
     /// <param name="context">The event.</param>
+    /// <param name="outcome">The outcome its handler reported; <see cref="ActionOutcome.Done"/> when it reported none.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     /// <returns>A task.</returns>
-    ValueTask EventReceivedAsync(EventContext context, CancellationToken cancellationToken);
+    ValueTask EventReceivedAsync(EventContext context, ActionOutcome outcome, CancellationToken cancellationToken);
 }

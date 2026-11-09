@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace MicroDCS.Sfc.Hosting;
 
 /// <summary>A step of a job cannot be done with what is stored, so repeating it at once would not help.</summary>
-internal sealed class SfcStepFailedException : InvalidOperationException
+internal class SfcStepFailedException : InvalidOperationException
 {
     public SfcStepFailedException()
     {
@@ -24,6 +24,24 @@ internal sealed class SfcStepFailedException : InvalidOperationException
     }
 }
 
+/// <summary>Other instances kept changing the job. Unlike the other failures this one is worth repeating.</summary>
+internal sealed class SfcContentionException : SfcStepFailedException
+{
+    public SfcContentionException()
+    {
+    }
+
+    public SfcContentionException(string message)
+        : base(message)
+    {
+    }
+
+    public SfcContentionException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
 /// <summary>What happened to an event.</summary>
 internal enum SfcRunStatus
 {
@@ -35,6 +53,9 @@ internal enum SfcRunStatus
 
     /// <summary>The job has no state.</summary>
     NoState,
+
+    /// <summary>Another instance applied the same event, to this job or another one.</summary>
+    AlreadyClaimed,
 }
 
 /// <summary>The result of running an event.</summary>
@@ -69,8 +90,13 @@ internal sealed class SfcJobRunner
 
     public static string Serialize(SfcState state) => JsonSerializer.Serialize(state, SfcJsonContext.Default.SfcState);
 
-    public async ValueTask<SfcRunResult> RunAsync(string jobId, SfcEvent input, string operation, Func<SfcState, IReadOnlyList<string>>? liveWork, CancellationToken cancellationToken)
+    public ValueTask<SfcRunResult> RunAsync(string jobId, SfcEvent input, string operation, Func<SfcState, IReadOnlyList<string>>? liveWork, CancellationToken cancellationToken) =>
+        RunAsync(jobId, input, operation, liveWork, claimedEvent: null, cancellationToken);
+
+    /// <summary>Runs an event; <paramref name="claimedEvent"/> names the event to mark as applied in the same write (R-1).</summary>
+    public async ValueTask<SfcRunResult> RunAsync(string jobId, SfcEvent input, string operation, Func<SfcState, IReadOnlyList<string>>? liveWork, string? claimedEvent, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(input);
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
             var document = await _states.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -96,13 +122,18 @@ internal sealed class SfcJobRunner
                 return new SfcRunResult(SfcRunStatus.Unchanged, state);
             }
 
-            if (await StoreAsync(result, document.Version, operation, started: false, cancellationToken).ConfigureAwait(false))
+            if (await StoreAsync(graph, result, document.Version, operation, started: false, input.At, claimedEvent, cancellationToken).ConfigureAwait(false))
             {
                 return new SfcRunResult(SfcRunStatus.Applied, result.State);
             }
+
+            if (claimedEvent is not null && await _states.IsEventClaimedAsync(state.Scope, claimedEvent, cancellationToken).ConfigureAwait(false))
+            {
+                return new SfcRunResult(SfcRunStatus.AlreadyClaimed, state);
+            }
         }
 
-        throw new SfcStepFailedException($"The SFC state of job '{jobId}' kept changing.");
+        throw new SfcContentionException($"The SFC state of job '{jobId}' kept changing.");
     }
 
     /// <summary>Stores the first state of a job. <paramref name="expectedVersion"/> is 0, or the version of the ended state a re-stored job id replaces.</summary>
@@ -110,10 +141,24 @@ internal sealed class SfcJobRunner
     {
         var snapshot = new SfcSnapshot { DefaultMaxAttempts = _options.MaxAttempts };
         var result = _graphs.Interpreter.Evolve(graph, initial, snapshot, new SfcStart { At = at });
-        return await StoreAsync(result, expectedVersion, operation, started: true, cancellationToken).ConfigureAwait(false);
+        return await StoreAsync(graph, result, expectedVersion, operation, started: true, at, claimedEvent: null, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<bool> StoreAsync(SfcStepResult result, long version, string operation, bool started, CancellationToken cancellationToken)
+    private static SfcWaitChanges? WaitChanges(SfcGraph graph, SfcStepResult result, long at, string? claimedEvent)
+    {
+        if (graph.PullTypeIds.Count == 0)
+        {
+            return null;
+        }
+
+        // A wait that begins in this step goes to the end of the queue, even when the job already waited for the type in the step before.
+        var waiting = result.State.WaitingTypeIds;
+        var begun = result.Commands.OfType<StartWork>().Where(static c => c.Work == SfcWorkKind.AwaitEvent).Select(static c => c.TypeId);
+        var remove = graph.PullTypeIds.Except(waiting, StringComparer.Ordinal).Union(begun, StringComparer.Ordinal);
+        return new SfcWaitChanges([.. waiting.Select(t => (t, at))], [.. remove], claimedEvent);
+    }
+
+    private async ValueTask<bool> StoreAsync(SfcGraph graph, SfcStepResult result, long version, string operation, bool started, long at, string? claimedEvent, CancellationToken cancellationToken)
     {
         var state = result.State;
         var written = await _states.CompareAndSetAsync(
@@ -125,6 +170,7 @@ internal sealed class SfcJobRunner
             !state.IsEnded,
             SfcWork.EntriesOf(result, started),
             operation,
+            WaitChanges(graph, result, at, claimedEvent),
             cancellationToken).ConfigureAwait(false);
         return written.Written;
     }

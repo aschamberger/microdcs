@@ -407,3 +407,22 @@ Verified: build 0 warnings, 940 tests (821 passed, 119 integration skipped on th
 Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 119 tests with 0 skipped.
 Next session pickup: S20 (SFC pull events, recovery, multi-instance; depends on S19). Run `git switch main && git pull --ff-only && gh stack init s20-sfc-recovery`. Turn on `SfcFeature.PullEvent` in `SfcGraphs.CapabilitiesOf` and implement `SfcActionSink.EventReceivedAsync`. `resume` entries and `XAUTOCLAIM` already work; the start-up recovery scan does not exist yet. S20 runs two replicas in compose. After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
 
+## S20 SFC pull events, recovery, multi-instance (2026-11-09, branch `s20-sfc-recovery`)
+
+Status: done. Previous session post-merge: verified (`ci`, `security`, `docs` green for `98faaf4`, required checks unchanged, the `tests` run uses `--fail-skips on`).
+Done:
+
+* Pull events: `Selector` in the recipe, `SfcFeature.PullEvent` on, `[Incoming(Outcomes = ...)]`, `event` work entry, waits index, one event one job.
+* Recovery scan per scope on first sight; it resends nothing with a deadline and repairs lost index entries. Maintenance snapshots, restores and deletes include the waits index.
+* Replica tests with two real containers of the AOT image, SIGKILL through the Docker API: kill mid-job, takeover by a later replica, outage longer than a deadline, sweep latency (`scripts/replica-tests`, in the CI `integration` job).
+* Inspector kind `sfc.waits`, MCP `sfc_waits`. `sfc_dryrun` understands selectors.
+* `/code-review high`: 10 findings, 10 fixed, 5 with a regression test. The others need 1000+ jobs or a timed race or fault: scan failure, stale-entry race, wait-check fault, contention, the candidate cap.
+
+Findings ([SFC host](research/sfc-host.md), with the Python parity list, no row open): resending on restart, as Python did, uses up `MaxAttempts` and races the outage tick, so the sweep owns every action with a deadline. Sweep latency with the default 1 s interval and two replicas: p50 662 and 730 ms, max 1009 and 1018 ms. A processor whose handler answers its own type without a reply address feeds itself through its `events` address; the greetings demo does (`docs/sfc-core.md`).
+Not covered: a real kill of a consumer that holds an unacknowledged entry (the `XAUTOCLAIM` path has the in-process S19 test). Each event offered to `{jobId}` selectors reads the waiting jobs one by one; no index on selector values.
+Decisions: D-53 (new); D-44 and D-52 revised.
+Changed in the plan: index, decisions, research (`sfc-host.md`, `sfc-rules.md`, `data-layer.md`), `docs/sfc-core.md`, `docs/inspection.md`, `docs/processors-dotnet.md`, `CLAUDE.md`.
+Open questions: none new.
+Verified: build 0 warnings, 963 tests (830 passed, 133 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 129 passed 0 skipped (`tests` exited 0), `scripts/replica-tests` 4 passed 0 skipped, `scripts/scan` clean, `zensical build`. The Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs the main tests with 0 skipped and the 4 replica tests.
+Next session pickup: S20a (SFC hold and release; depends on S20). Run `git switch main && git pull --ff-only && gh stack init s20a-sfc-hold`. Read the S20a block, D-52, D-18 and `docs/porting/research/sfc-host.md`. A pull-event wait held by a pause must not time out; decide how an event that arrives during a hold is treated, since the core records responses but S20 drops events with no wait. After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`. Nothing to prepare.

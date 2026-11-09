@@ -19,12 +19,20 @@ internal static class SfcWork
     public const string ReasonField = "reason";
     public const string OutageField = "outage_ms";
     public const string OnlyField = "only";
+    public const string ScanField = "scan";
+    public const string TypeIdField = "type_id";
+    public const string SubjectField = "subject";
+    public const string CorrelationIdField = "correlation_id";
+    public const string OutcomeField = "outcome";
+    public const string ErrorField = "error";
+    public const string EventKeyField = "event_key";
 
     public const string Start = "start";
     public const string Cancel = "cancel";
     public const string Tick = "tick";
     public const string Resume = "resume";
     public const string Job = "job";
+    public const string Event = "event";
     public const string DispatchPrefix = "dispatch:";
 
     /// <summary>The time of an entry: the millisecond part of its id, so all replicas read one clock and a redelivery keeps its time (D-44).</summary>

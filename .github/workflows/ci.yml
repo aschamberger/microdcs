@@ -162,6 +162,9 @@ jobs:
       # start), so check the container's own exit code as well.
       - name: Tests container exited with 0
         run: test "$(docker compose -f compose.test.yaml ps -a tests --format '{{.State}} {{.ExitCode}}')" = "exited 0"
+      # Two replicas of the application image, killed from outside (S20, D-53).
+      - name: SFC replica tests
+        run: scripts/replica-tests
       - if: always()
         name: Collect results and service logs
         run: |
@@ -172,7 +175,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-results
-          path: compose-results/
+          path: |
+            compose-results/
+            TestResults/replica/
           if-no-files-found: ignore
       - if: always()
         run: docker compose -f compose.test.yaml down -v

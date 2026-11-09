@@ -16,5 +16,9 @@ public static class SfcTelemetry
 
     internal static readonly Counter<long> Dead = _meter.CreateCounter<long>("microdcs.sfc.work.dead", description: "Work entries moved to the dead stream");
 
+    internal static readonly Counter<long> EventsMatched = _meter.CreateCounter<long>("microdcs.sfc.events.matched", description: "Incoming events that completed a pull-event action");
+
+    internal static readonly Counter<long> EventsUnmatched = _meter.CreateCounter<long>("microdcs.sfc.events.unmatched", description: "Incoming events of a waited-for type that no job took");
+
     internal static readonly Counter<long> Outages = _meter.CreateCounter<long>("microdcs.sfc.outages", description: "Platform outages found by the sweep");
 }

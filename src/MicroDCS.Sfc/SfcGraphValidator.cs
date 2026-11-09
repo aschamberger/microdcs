@@ -193,7 +193,9 @@ internal static class SfcGraphValidator
                 errors.Add(new("SFC009", $"Action '{a.Name}' needs MaxAttempts of at least 1."));
             }
 
-            if (!caps.Outcomes.ContainsKey(a.TypeId))
+            ValidateSelector(a, errors);
+
+            if (!caps.Handles(a.TypeId, a.Interaction))
             {
                 errors.Add(new("SFC014", $"No processor of this station declares the type '{a.TypeId}' (action '{a.Name}')."));
             }
@@ -368,8 +370,8 @@ internal static class SfcGraphValidator
     }
 
     /// <summary>
-    /// Two pull-event actions of one type that can wait at the same time cannot be told apart by the core (R-1): an event carries
-    /// the type only. Matching by parameters (a selector) comes with the host in S20.
+    /// Two pull-event actions of one type that can wait at the same time must be told apart by their selectors (R-1): both set one
+    /// field to different literals. A value with the job id placeholder can equal any literal, so it separates nothing.
     /// </summary>
     private static void ValidateSelectors(SfcRecipe recipe, RecipeIndex index, List<SfcBuildError> errors)
     {
@@ -385,11 +387,41 @@ internal static class SfcGraphValidator
                         return;
                     }
 
-                    if (index.CanWaitTogether(pulls[i].Step, pulls[j].Step))
+                    if (index.CanWaitTogether(pulls[i].Step, pulls[j].Step) && !AreDistinct(pulls[i].Selector, pulls[j].Selector))
                     {
-                        errors.Add(new("SFC011", $"Pull-event actions '{pulls[i].Name}' and '{pulls[j].Name}' can wait at the same time for type '{sameType.Key}'; an event could not be matched."));
+                        errors.Add(new("SFC011", $"Pull-event actions '{pulls[i].Name}' and '{pulls[j].Name}' can wait at the same time for type '{sameType.Key}' and their selectors do not tell them apart."));
                     }
                 }
+            }
+        }
+    }
+
+    private static bool AreDistinct(SfcSelector? a, SfcSelector? b) =>
+        a is not null && b is not null && (AreDistinct(a.Subject, b.Subject) || AreDistinct(a.CorrelationId, b.CorrelationId));
+
+    private static bool AreDistinct(string? a, string? b) =>
+        a is not null && b is not null
+        && !a.Contains(SfcSelector.JobIdPlaceholder, StringComparison.Ordinal)
+        && !b.Contains(SfcSelector.JobIdPlaceholder, StringComparison.Ordinal)
+        && !string.Equals(a, b, StringComparison.Ordinal);
+
+    private static void ValidateSelector(SfcActionBlock a, List<SfcBuildError> errors)
+    {
+        if (a.Selector is not { } selector)
+        {
+            return;
+        }
+
+        if (a.Interaction != SfcNames.PullEvent)
+        {
+            errors.Add(new("SFC009", $"Action '{a.Name}' has a selector, which only a pull event can use."));
+        }
+
+        foreach (string? value in new[] { selector.Subject, selector.CorrelationId })
+        {
+            if (value is not null && (value.Length == 0 || value.Replace(SfcSelector.JobIdPlaceholder, string.Empty, StringComparison.Ordinal).AsSpan().IndexOfAny('{', '}') >= 0))
+            {
+                errors.Add(new("SFC009", $"Action '{a.Name}' has a selector value that is empty or uses a placeholder other than '{SfcSelector.JobIdPlaceholder}'."));
             }
         }
     }

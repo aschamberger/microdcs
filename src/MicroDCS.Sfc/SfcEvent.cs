@@ -70,6 +70,18 @@ public sealed record SfcEventReceived : SfcEvent
     /// <summary>Gets the outcome the event carries.</summary>
     [JsonPropertyName("outcome")]
     public required string Outcome { get; init; }
+
+    /// <summary>Gets the event subject, for the selector of the action (R-1).</summary>
+    [JsonPropertyName("subject")]
+    public string? Subject { get; init; }
+
+    /// <summary>Gets the event correlation id, for the selector of the action (R-1).</summary>
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Gets the error text of an <c>error</c> outcome; kept as data on the action record.</summary>
+    [JsonPropertyName("error")]
+    public string? Error { get; init; }
 }
 
 /// <summary>The sweep found the job due. Expires open deadlines; <see cref="OutageMs"/> above zero extends them first (D-18).</summary>

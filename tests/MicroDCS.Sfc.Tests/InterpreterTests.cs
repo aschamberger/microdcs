@@ -466,6 +466,46 @@ public class InterpreterTests
     }
 
     [Fact]
+    public void PullEvent_WithASelectorTakesOnlyMatchingEvents()
+    {
+        var job = new Job(Graph(Recipe([Step("A", true)], [], [Pull("qa", "A", type: "t.qa", selector: new() { Subject = "st-1", CorrelationId = "{jobId}" })])));
+        job.Start();
+
+        job.Send(new SfcEventReceived { At = 1, TypeId = "t.qa", Outcome = "ok" }).Disposition.ShouldBe(SfcDisposition.Absorbed);
+        job.Send(new SfcEventReceived { At = 2, TypeId = "t.qa", Outcome = "ok", Subject = "st-2", CorrelationId = job.State.JobId }).Disposition.ShouldBe(SfcDisposition.Absorbed);
+        job.Send(new SfcEventReceived { At = 3, TypeId = "t.qa", Outcome = "ok", Subject = "st-1", CorrelationId = "another" }).Disposition.ShouldBe(SfcDisposition.Absorbed);
+        job.Send(new SfcEventReceived { At = 4, TypeId = "t.qa", Outcome = "ok", Subject = "st-1", CorrelationId = job.State.JobId }).Disposition.ShouldBe(SfcDisposition.Applied);
+        job.State.Status.ShouldBe(SfcJobStatus.Completed);
+    }
+
+    [Fact]
+    public void PullEvent_SelectorsPickTheActionWithinAJob()
+    {
+        var job = new Job(Graph(Recipe(
+            [Step("A", true)],
+            [],
+            [Pull("left", "A", type: "t.e", selector: new() { Subject = "l" }), Pull("right", "A", type: "t.e", selector: new() { Subject = "r" })])));
+        job.Start();
+
+        job.Send(new SfcEventReceived { At = 1, TypeId = "t.e", Outcome = "ok", Subject = "r" }).Disposition.ShouldBe(SfcDisposition.Applied);
+
+        job.State.Actions["right"].Status.ShouldBe(SfcActionStatus.Completed);
+        job.State.Actions["left"].Status.ShouldBe(SfcActionStatus.Waiting);
+    }
+
+    [Fact]
+    public void PullEvent_AnErrorOutcomeKeepsItsText()
+    {
+        var job = new Job(Graph(Recipe([Step("A", true)], [], [Pull("qa", "A", type: "t.qa")])));
+        job.Start();
+
+        job.Send(new SfcEventReceived { At = 1, TypeId = "t.qa", Outcome = SfcOutcome.Error, Error = "camera offline" });
+
+        job.State.Actions["qa"].Status.ShouldBe(SfcActionStatus.Failed);
+        job.State.Actions["qa"].Error.ShouldBe("camera offline");
+    }
+
+    [Fact]
     public void PullEvent_TimesOutWithoutRedispatch()
     {
         var job = new Job(Graph(Recipe([Step("A", true)], [], [Pull("qa", "A", 5)])));

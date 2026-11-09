@@ -51,6 +51,27 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "Sweep of scope {Scope} found an outage of {OutageMs} ms; open deadlines are moved")]
     public static partial void OutageDetected(ILogger logger, string scope, long outageMs);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Event {EntryId} of type {TypeId} completed a pull-event action of job {JobId}")]
+    public static partial void PullEventMatched(ILogger logger, string entryId, string typeId, string jobId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "No job of scope {Scope} takes event {EntryId} of type {TypeId}; it is dropped")]
+    public static partial void PullEventUnmatched(ILogger logger, string scope, string entryId, string typeId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Event {EntryId} could not be applied to job {JobId}; the next waiting job is tried")]
+    public static partial void PullEventNotApplied(ILogger logger, Exception exception, string entryId, string jobId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not check whether a job waits for event {EventId}; the event is not offered to the recipes")]
+    public static partial void WaitCheckFailed(ILogger logger, Exception exception, string eventId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The recovery scan of scope {Scope} could not be queued")]
+    public static partial void RecoveryScanFailed(ILogger logger, Exception exception, string scope);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The recovery scan could not check job {JobId}")]
+    public static partial void RecoveryNotPossible(ILogger logger, Exception exception, string jobId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Recovery scan of scope {Scope} queued a check of {Jobs} running jobs")]
+    public static partial void RecoveryScan(ILogger logger, string scope, int jobs);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "The job order of {JobId} no longer allows execution; ending its recipe")]
     public static partial void RecipeOrphaned(ILogger logger, string jobId);
 }

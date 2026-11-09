@@ -15,7 +15,7 @@ internal static class Rec
     internal static SfcActionBlock Push(string name, string step, int timeout = 30, int? max = null, string? type = null, string qualifier = "N") =>
         new() { Name = name, Step = step, Qualifier = qualifier, Interaction = SfcNames.PushCommand, TypeId = type ?? $"t.{name}", TimeoutSeconds = timeout, MaxAttempts = max };
 
-    internal static SfcActionBlock Pull(string name, string step, int timeout = 30, string? type = null, string? selector = null) =>
+    internal static SfcActionBlock Pull(string name, string step, int timeout = 30, string? type = null, string? parameter = null, SfcSelector? selector = null) =>
         new()
         {
             Name = name,
@@ -24,7 +24,8 @@ internal static class Rec
             Interaction = SfcNames.PullEvent,
             TypeId = type ?? $"t.{name}",
             TimeoutSeconds = timeout,
-            Parameters = selector is null ? null : new Dictionary<string, JsonElement> { ["selector"] = JsonSerializer.SerializeToElement(selector) },
+            Parameters = parameter is null ? null : new Dictionary<string, JsonElement> { ["selector"] = JsonSerializer.SerializeToElement(parameter) },
+            Selector = selector,
         };
 
     internal static SfcDivergence Sim(string name, params string[][] paths) => new() { Name = name, Kind = SfcNames.Simultaneous, Sequences = paths };

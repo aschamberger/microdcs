@@ -174,14 +174,28 @@ public sealed class SfcSimulation
                 {
                     (SfcWorkKind.PushCommand, SfcReplyKind.Error) => new SfcActionFailed { At = 0, ActionKey = start.ActionKey, Error = reply.Error, Round = start.Round },
                     (SfcWorkKind.PushCommand, _) => new SfcActionCompleted { At = 0, ActionKey = start.ActionKey, Outcome = reply.Outcome ?? "ok", TypeId = start.TypeId, Round = start.Round },
-                    (_, SfcReplyKind.Error) => new SfcEventReceived { At = 0, TypeId = start.TypeId, Outcome = SfcOutcome.Error },
-                    _ => new SfcEventReceived { At = 0, TypeId = start.TypeId, Outcome = reply.Outcome ?? "ok" },
+                    (_, SfcReplyKind.Error) => MatchingEvent(start, SfcOutcome.Error),
+                    _ => MatchingEvent(start, reply.Outcome ?? "ok"),
                 };
                 Schedule(Now + reply.DelayMs, response, start.CommandId);
                 break;
             default:
                 break;
         }
+    }
+
+    /// <summary>A scripted reply to a pull event answers that action, so it carries what the action's selector asks for.</summary>
+    private SfcEventReceived MatchingEvent(StartWork start, string outcome)
+    {
+        SfcSelector? selector = _graph.FindAction(start.Action)?.Selector;
+        return new SfcEventReceived
+        {
+            At = 0,
+            TypeId = start.TypeId,
+            Outcome = outcome,
+            Subject = selector?.Subject?.Replace(SfcSelector.JobIdPlaceholder, State.JobId, StringComparison.Ordinal),
+            CorrelationId = selector?.CorrelationId?.Replace(SfcSelector.JobIdPlaceholder, State.JobId, StringComparison.Ordinal),
+        };
     }
 
     private void Schedule(long due, SfcEvent input, string? commandId) => _scheduled.Add((due, _order++, input, commandId));

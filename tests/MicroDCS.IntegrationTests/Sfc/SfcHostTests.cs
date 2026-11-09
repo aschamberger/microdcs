@@ -143,12 +143,171 @@ public sealed class SfcHostTests
         public Task AnswerAsync(MqttApplicationMessage command) =>
             Equipment.PublishEventAsync(command.ResponseTopic, Guid.NewGuid().ToString(), HelloType, Scope, "{\"Name\":\"Plant\"}", null, Ct, causationId: MqttTestClient.Property(command, "id"));
 
+        public async Task ScanAsync()
+        {
+            foreach (var consumer in Services.GetServices<IStreamConsumer>().Where(static c => c.Kind == SfcWork.NudgeKind))
+            {
+                await consumer.ScopeDiscoveredAsync(Scope, Ct);
+            }
+        }
+
         public async ValueTask DisposeAsync()
         {
             await _host.StopAsync(CancellationToken.None);
             _host.Dispose();
             await Equipment.DisposeAsync();
         }
+    }
+
+    private static string PullRecipe(string? selector = null, int timeoutSeconds = 30) => $$$"""
+        {"Steps":[{"Name":"s1","Initial":true}],"Transitions":[],
+         "Actions":[{"Name":"p1","Step":"s1","Qualifier":"N","Interaction":"pull_event","TypeId":"{{{HelloType}}}","TimeoutSeconds":{{{timeoutSeconds}}}{{{(selector is null ? string.Empty : ",\"Selector\":" + selector)}}}}]}
+        """;
+
+    private static Task PublishHelloAsync(Rig rig, string id, string subject = Scope, string? correlationId = null) =>
+        rig.Equipment.PublishEventAsync($"{rig.Prefix}/site/area/events", id, HelloType, subject, "{\"Name\":\"Plant\"}", rig.Prefix + "-sink/hello", Ct, correlationId: correlationId);
+
+    private static Task WaitingAsync(Rig rig, string job) =>
+        EventuallyAsync(async () => (await rig.StateAsync(job))?.IsWaitingFor(HelloType) == true, $"{job} to wait");
+
+    private static Task CompletedAsync(Rig rig, string job) =>
+        EventuallyAsync(async () => (await rig.StateAsync(job))?.Status == SfcJobStatus.Completed, $"{job} to complete");
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AnEventCompletesTheOldestWaitOnly()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("pull-1", PullRecipe());
+        await WaitingAsync(rig, "pull-1");
+        await Task.Delay(5, CancellationToken.None);
+        await rig.StartJobAsync("pull-2", null);
+        await WaitingAsync(rig, "pull-2");
+
+        await PublishHelloAsync(rig, "ev-1");
+        await CompletedAsync(rig, "pull-1");
+        (await rig.StateAsync("pull-2")).ShouldNotBeNull().IsWaitingFor(HelloType).ShouldBeTrue();
+
+        await PublishHelloAsync(rig, "ev-2");
+        await CompletedAsync(rig, "pull-2");
+        (await rig.States.ListWaitingAsync(Scope, HelloType, 10, Ct)).ShouldBeEmpty();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task ASelectorOnTheJobIdPicksTheJobWhateverTheOrder()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("sel-1", PullRecipe("""{"CorrelationId":"{jobId}"}"""));
+        await WaitingAsync(rig, "sel-1");
+        await rig.StartJobAsync("sel-2", null);
+        await WaitingAsync(rig, "sel-2");
+
+        await PublishHelloAsync(rig, "ev-1", correlationId: "unrelated");
+        await PublishHelloAsync(rig, "ev-2", correlationId: "sel-2");
+
+        await CompletedAsync(rig, "sel-2");
+        var first = (await rig.StateAsync("sel-1")).ShouldNotBeNull();
+        first.IsWaitingFor(HelloType).ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AnAppliedEventIsNotOfferedToAnotherJobWhenRedelivered()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("claim-1", PullRecipe());
+        await WaitingAsync(rig, "claim-1");
+        const string EntryId = "9999999999999-0";
+        await rig.Context.Database.StringSetAsync(rig.Context.Keys.SfcEventClaim(Scope, EntryId), "claim-0");
+
+        await rig.Context.Database.StreamAddAsync(rig.Context.Keys.SfcWork(Scope), [new("job_id", string.Empty), new("action", SfcWork.Event), new("scope", Scope), new(SfcWork.TypeIdField, HelloType), new(SfcWork.OutcomeField, "done")], EntryId);
+
+        await EventuallyAsync(async () => (await rig.Context.Database.StreamPendingAsync(rig.Context.Keys.SfcWork(Scope), SfcWork.Group)).PendingMessageCount == 0, "the entry to be acknowledged");
+        (await rig.StateAsync("claim-1")).ShouldNotBeNull().IsWaitingFor(HelloType).ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AnEventDeliveredTwiceCompletesOneJob()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("twice-1", PullRecipe());
+        await WaitingAsync(rig, "twice-1");
+        await rig.StartJobAsync("twice-2", null);
+        await WaitingAsync(rig, "twice-2");
+        var stream = rig.Context.Keys.SfcWork(Scope);
+
+        foreach (var _ in new[] { 1, 2 })
+        {
+            await rig.Context.Database.StreamAddAsync(stream, [new("job_id", string.Empty), new("action", SfcWork.Event), new("scope", Scope), new(SfcWork.EventKeyField, "urn:it|same-id"), new(SfcWork.TypeIdField, HelloType), new(SfcWork.OutcomeField, "done")]);
+        }
+
+        await CompletedAsync(rig, "twice-1");
+        await EventuallyAsync(async () => (await rig.Context.Database.StreamPendingAsync(stream, SfcWork.Group)).PendingMessageCount == 0, "the entries to be acknowledged");
+        (await rig.StateAsync("twice-2")).ShouldNotBeNull().IsWaitingFor(HelloType).ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AJobThatWaitsAgainForTheSameTypeGoesToTheEndOfTheQueue()
+    {
+        const string TwoWaits = $$$"""
+            {"Steps":[{"Name":"s1","Initial":true},{"Name":"s2"}],
+             "Transitions":[{"Source":"s1","Target":"s2","Condition":"true","Priority":0}],
+             "Actions":[{"Name":"p1","Step":"s1","Qualifier":"N","Interaction":"pull_event","TypeId":"{{{HelloType}}}","TimeoutSeconds":30},
+                        {"Name":"p2","Step":"s2","Qualifier":"N","Interaction":"pull_event","TypeId":"{{{HelloType}}}","TimeoutSeconds":30}]}
+            """;
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("queue-1", TwoWaits);
+        await WaitingAsync(rig, "queue-1");
+        await Task.Delay(5, CancellationToken.None);
+        await rig.StartJobAsync("queue-2", PullRecipe(), "wm-2");
+        await WaitingAsync(rig, "queue-2");
+
+        await PublishHelloAsync(rig, "ev-1");
+        await EventuallyAsync(async () => (await rig.StateAsync("queue-1"))?.ActiveSteps.Contains("s2") == true, "the first job to reach its second wait");
+        await PublishHelloAsync(rig, "ev-2");
+
+        await CompletedAsync(rig, "queue-2");
+        (await rig.StateAsync("queue-1")).ShouldNotBeNull().IsWaitingFor(HelloType).ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AnEventNobodyWaitsForIsNotQueued()
+    {
+        await using var rig = await Rig.StartAsync();
+
+        await PublishHelloAsync(rig, "ev-idle");
+
+        await Task.Delay(300, CancellationToken.None);
+        (await rig.Context.Database.StreamLengthAsync(rig.Context.Keys.SfcWork(Scope))).ShouldBe(0);
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task TheRecoveryScanDoesNotResendACommandThatIsStillOpen()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("scan-1", Recipe());
+        await rig.Equipment.ReceiveAsync(Ct);
+
+        await rig.ScanAsync();
+
+        await EventuallyAsync(async () => (await rig.Context.Database.StreamPendingAsync(rig.Context.Keys.SfcWork(Scope), SfcWork.Group)).PendingMessageCount == 0, "the scan to be handled");
+        await Task.Delay(200, CancellationToken.None);
+        var action = (await rig.StateAsync("scan-1")).ShouldNotBeNull().Actions["a1"];
+        action.Attempt.ShouldBe(1);
+        action.Status.ShouldBe(SfcActionStatus.Dispatched);
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task TheRecoveryScanPutsBackLostIndexEntries()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("scan-2", PullRecipe());
+        await WaitingAsync(rig, "scan-2");
+        await rig.Context.Database.KeyDeleteAsync(rig.Context.Keys.SfcDue(Scope));
+        await rig.Context.Database.KeyDeleteAsync(rig.Context.Keys.SfcWaits(Scope, HelloType));
+
+        await rig.ScanAsync();
+
+        await EventuallyAsync(async () => (await rig.States.ListWaitingAsync(Scope, HelloType, 10, Ct)).Count == 1, "the wait to come back");
+        await EventuallyAsync(async () => (await rig.States.ListDueAsync(Scope, 10, Ct)).Count == 1, "the deadline to come back");
     }
 
     [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]

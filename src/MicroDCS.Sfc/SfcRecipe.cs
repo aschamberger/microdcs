@@ -90,9 +90,42 @@ public sealed record SfcActionBlock
     [JsonPropertyName("MaxAttempts")]
     public int? MaxAttempts { get; init; }
 
-    /// <summary>Gets the parameters handed to the action; for a pull event they act as its selector.</summary>
+    /// <summary>Gets the parameters handed to the action.</summary>
     [JsonPropertyName("Parameters")]
     public IReadOnlyDictionary<string, JsonElement>? Parameters { get; init; }
+
+    /// <summary>Gets which incoming events a pull event accepts besides its type (R-1); absent means every event of the type.</summary>
+    [JsonPropertyName("Selector")]
+    public SfcSelector? Selector { get; init; }
+}
+
+/// <summary>
+/// Narrows the events a pull-event action accepts (R-1). Set fields must match exactly; <see cref="JobIdPlaceholder"/> in a value stands for the job id,
+/// because a recipe is shared by many jobs and a literal alone cannot tell them apart.
+/// </summary>
+public sealed record SfcSelector
+{
+    /// <summary>The placeholder for the job id.</summary>
+    public const string JobIdPlaceholder = "{jobId}";
+
+    /// <summary>Gets the value the event subject must have.</summary>
+    [JsonPropertyName("Subject")]
+    public string? Subject { get; init; }
+
+    /// <summary>Gets the value the event correlation id must have.</summary>
+    [JsonPropertyName("CorrelationId")]
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Tells whether an event matches for a job.</summary>
+    /// <param name="jobId">The job id.</param>
+    /// <param name="subject">The event subject.</param>
+    /// <param name="correlationId">The event correlation id.</param>
+    /// <returns><see langword="true"/> when every set field matches.</returns>
+    public bool Matches(string jobId, string? subject, string? correlationId) =>
+        FieldMatches(Subject, jobId, subject) && FieldMatches(CorrelationId, jobId, correlationId);
+
+    private static bool FieldMatches(string? expected, string jobId, string? actual) =>
+        expected is null || string.Equals(expected.Replace(JobIdPlaceholder, jobId, StringComparison.Ordinal), actual, StringComparison.Ordinal);
 }
 
 /// <summary>

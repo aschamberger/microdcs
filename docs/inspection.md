@@ -78,6 +78,7 @@ All tools are read-only except the write group (`inject_event`, `sfc_tick`, `sfc
 | `sfc_dryrun` | Dry-runs an SFC recipe on a virtual clock with scripted equipment and returns the transcript. Pure; nothing is dispatched or stored. |
 | `sfc_job` | The SFC state of one job: status, active steps, each action with attempt, round, deadline and outcome, the next deadline, a fault. Needs the SFC host. |
 | `sfc_due` | The due-index of a scope: jobs with an open deadline, earliest first. Needs the SFC host. |
+| `sfc_waits` | The jobs of a scope waiting for an event type, oldest wait first. An entry can be stale; `sfc_job` shows the state. Needs the SFC host. |
 | `sfc_work_pending` | The SFC work stream of a scope: length, dead entries, the last sweep, and the entries a consumer holds with idle time and delivery count. Needs the SFC host. |
 | `inject_event` (write group) | Hands a request to a binding's pipeline as if its transport had received it. |
 | `sfc_tick` (write group) | Queues a tick for a job: expired deadlines fire, others stay. |

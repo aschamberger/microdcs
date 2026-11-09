@@ -59,6 +59,75 @@ services:
   # --abort-on-container-exit before the tests run, and compose then still exits 0. The AOT smoke
   # check (D-14) runs as `docker run` of the runtime image in CI instead.
 
+  # SFC replica tests (S20, D-53): scripts/replica-tests runs this profile. Separate from `tests`, because a replica
+  # that gets killed would end --abort-on-container-exit. Only this profile mounts the Docker socket.
+  sfc-a: &replica
+    profiles: [replicas]
+    build:
+      context: .
+      target: runtime
+    image: microdcs:replica-test
+    container_name: microdcs-test-sfc-a
+    command: ["serve"]
+    environment: &replica-environment
+      DOTNET_ENVIRONMENT: Test
+      APP_MicroDcs__InstanceId: sfc-a
+      APP_MicroDcs__Roles: Processor
+      APP_MicroDcs__CloudEventSource: urn:it:replicas
+      APP_MicroDcs__Bindings__machinery_jobs__Transport: mqtt
+      APP_MicroDcs__Bindings__machinery_jobs__Prefix: sfcr-mes
+      APP_MicroDcs__Bindings__machinery_jobs__ScopeLevels: "2"
+      APP_MicroDcs__Bindings__machinery_jobs__ReplyBase: sfcr-mes-reply
+      APP_MicroDcs__Bindings__greetings__Transport: mqtt
+      APP_MicroDcs__Bindings__greetings__Prefix: sfcr
+      APP_MicroDcs__Bindings__greetings__ScopeLevels: "2"
+      APP_MicroDcs__Bindings__greetings__ReplyBase: sfcr-reply
+      APP_MicroDcs__Mqtt__Hostname: mosquitto
+      APP_MicroDcs__Mqtt__Port: "1883"
+      APP_MicroDcs__Mqtt__TlsCaFile: /nonexistent/ca.crt
+      APP_MicroDcs__Mqtt__SatTokenFile: /nonexistent/sat
+      APP_MicroDcs__Valkey__ConnectionString: valkey:6379
+      APP_MicroDcs__Valkey__KeyPrefix: sfcr
+      APP_MicroDcs__Valkey__ScopeRefreshInterval: "00:00:00.500"
+      APP_MicroDcs__Valkey__PollInterval: "00:00:00.200"
+      APP_MicroDcs__Sfc__OutageThreshold: "00:00:04"
+      APP_MicroDcs__Sfc__AutoclaimIdle: "00:00:03"
+      APP_MicroDcs__Sfc__ExpiryGrace: "00:00:00"
+    depends_on:
+      valkey:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+
+  sfc-b:
+    <<: *replica
+    container_name: microdcs-test-sfc-b
+    environment:
+      <<: *replica-environment
+      APP_MicroDcs__InstanceId: sfc-b
+
+  replica-tests:
+    profiles: [replicas]
+    build:
+      context: .
+      target: tests
+    image: microdcs-tests:test
+    entrypoint: ["dotnet", "test", "--project", "tests/MicroDCS.IntegrationTests", "-c", "Release", "--no-build",
+                 "--fail-skips", "on", "--results-directory", "/results", "--report-xunit-trx",
+                 "--filter-trait", "Category=Replica"]
+    environment:
+      MICRODCS_TEST_VALKEY: valkey:6379
+      MICRODCS_TEST_MQTT: mosquitto:1883
+      MICRODCS_TEST_DOCKER: /var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./TestResults/replica:/results
+    depends_on:
+      valkey:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+
   tests:
     build:
       context: .

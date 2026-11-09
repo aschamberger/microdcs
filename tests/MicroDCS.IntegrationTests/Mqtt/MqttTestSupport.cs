@@ -48,7 +48,7 @@ internal sealed class MqttTestClient : IAsyncDisposable
         return await _received.Reader.ReadAsync(timeout.Token);
     }
 
-    public async Task PublishEventAsync(string topic, string id, string type, string subject, string json, string? responseTopic, CancellationToken ct, string? causationId = null)
+    public async Task PublishEventAsync(string topic, string id, string type, string subject, string json, string? responseTopic, CancellationToken ct, string? causationId = null, string? correlationId = null)
     {
         var builder = new MqttApplicationMessageBuilder()
             .WithTopic(topic)
@@ -70,6 +70,11 @@ internal sealed class MqttTestClient : IAsyncDisposable
         if (causationId is not null)
         {
             builder.WithUserProperty("causationid", Encoding.UTF8.GetBytes(causationId).AsMemory());
+        }
+
+        if (correlationId is not null)
+        {
+            builder.WithUserProperty("correlationid", Encoding.UTF8.GetBytes(correlationId).AsMemory());
         }
 
         if (responseTopic is not null)

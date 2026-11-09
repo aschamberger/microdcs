@@ -15,7 +15,7 @@ public class KeySchemaTests
             _keys.JobResponseByState("sc", "Ended_Completed"), _keys.WorkMaster("w"), _keys.WorkMasterList("sc"),
             _keys.Reference("equipment", "sc"), _keys.JobAcceptance("sc"), _keys.Scopes(), _keys.EnvironmentMarker(), _keys.Changes("sc"),
             _keys.PublishSequence("sc"), _keys.PublisherCursors(), _keys.SfcState("j"), _keys.SfcWork("sc"),
-            _keys.SfcDead("sc"), _keys.SfcActive("sc"), _keys.SfcDue("sc"), _keys.SfcHeartbeat(), _keys.SfcRecipe("h"),
+            _keys.SfcDead("sc"), _keys.SfcActive("sc"), _keys.SfcDue("sc"), _keys.SfcWaits("sc", "t"), _keys.SfcEventClaim("sc", "1-0"), _keys.SfcHeartbeat(), _keys.SfcRecipe("h"),
             _keys.Nudge("sfc"),
         ];
 

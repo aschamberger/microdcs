@@ -52,7 +52,8 @@ The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, 
 | `Actions[].Qualifier` | Short form of an IEC 61131-3 qualifier. Only `N` is supported; the others are known (`SfcActionQualifier`) and refused at build. |
 | `Actions[].TimeoutSeconds` | Deadline of one attempt. |
 | `Actions[].MaxAttempts` | Optional. Dispatch attempts of a push command; the host default (`Sfc:MaxAttempts`, 3) applies when absent. |
-| `Actions[].Parameters` | Handed to the command. They are not yet a selector for pull events (S20). |
+| `Actions[].Parameters` | Handed to the command. |
+| `Actions[].Selector` | Optional, pull events only. `Subject` and `CorrelationId` must match the event exactly. The placeholder `{jobId}` stands for the job id; a recipe is shared by many jobs, so a literal cannot tell jobs apart. Without a selector any event of the type matches. |
 | `Branches[]` | A divergence: `Type` is `simultaneous` (all sequences) or `selection` (one sequence). `Branches` inside it lists the sequences, each a list of step names. |
 
 Existing Python recipes need one change: `Condition: "always"` becomes `true`, and a named condition must be an outcome that the action types declare.
@@ -91,12 +92,12 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 | `SFC006` | A transition touches the inside of a sequence. |
 | `SFC007` | A decision with several transitions, or a selection divergence, has no default; a sequence has no selection transition. |
 | `SFC008` | Equal priorities among the transitions of one source. |
-| `SFC009` | Unknown interaction, `TimeoutSeconds` or `MaxAttempts` out of range. |
+| `SFC009` | Unknown interaction, `TimeoutSeconds` or `MaxAttempts` out of range; a selector on a push command, an empty selector value, or a placeholder other than `{jobId}`. |
 | `SFC010` | Qualifier other than `N`. |
-| `SFC011` | Two pull-event actions of one type that can wait together (an event carries only the type and could not be matched; selector matching comes with S20). |
+| `SFC011` | Two pull-event actions of one type that can wait together and whose selectors do not set one field to two different literals. A value with `{jobId}` separates nothing, because the job id can equal any literal. |
 | `SFC012` | A step that cannot be reached. |
 | `SFC013` | A cycle with nothing to wait for. |
-| `SFC014` | An action type that no processor of the station declares. |
+| `SFC014` | An action type that no processor of the station declares: an `[Outgoing]` factory for a push command, an `[Incoming]` handler for a pull event. |
 | `SFC015` | A feature the station does not support (push, pull, simultaneous divergence, selection divergence). |
 | `SFC016` | A condition names an outcome that no involved action type declares. |
 | `SFC017` | An empty step, divergence or action name, or an action name with `:` (the action key is `{jobId}:{action}`). |
@@ -130,7 +131,7 @@ Two read-only tools in the dev MCP server (see [Inspection and MCP](inspection.m
 | `sfc_explain` | Describes a recipe; with a job state it says where the job is, what it waits for and when the next deadline is due. Refuses invalid recipes with the build errors. |
 | `sfc_dryrun` | Runs a recipe on the virtual clock with a script and returns the transcript. |
 
-A script is JSON: `{"default":"ok","replies":{"tighten":["silent","ok@500"]},"events":[{"atMs":1000,"typeId":"t.qa","outcome":"ok"}]}`. A reply is `silent`, `error[:text][@delayMs]` or `outcome[@delayMs]`. Without a script every action answers `ok` at once. The tools share the rate limit and the audit log of the other tools. They accept any outcome name that the recipe itself uses, so they find structural errors but not outcome typos; a station checks outcomes against its processors at build time.
+A script is JSON: `{"default":"ok","replies":{"tighten":["silent","ok@500"]},"events":[{"atMs":1000,"typeId":"t.qa","outcome":"ok"}]}`; an event can also carry `subject` and `correlationId` for a selector. A scripted reply to a pull event always matches its selector. A reply is `silent`, `error[:text][@delayMs]` or `outcome[@delayMs]`. Without a script every action answers `ok` at once. The tools share the rate limit and the audit log of the other tools. They accept any outcome name that the recipe itself uses, so they find structural errors but not outcome typos; a station checks outcomes against its processors at build time.
 
 ## The Valkey host {#the-valkey-host}
 
@@ -145,7 +146,8 @@ For each event the host loads the state, calls the core, and stores the new stat
 | `dispatch:{action}` | A step | Sends one push command, only while that attempt is the open one. |
 | `job` | A step | Applies job order transitions: start of execution, complete (with the job response) or abort. |
 | `tick` | The due-index sweep, or the `sfc_tick` tool | Fires expired deadlines. |
-| `resume` | The `sfc_redispatch` tool | Issues an open action again. |
+| `resume` | The `sfc_redispatch` tool, or the recovery scan | Issues an open action again. |
+| `event` | An incoming event a job waits for | Offers the event to the waiting jobs. |
 
 A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, and after `MaxDeliveries` it moves to `sfc:dead:{scope}` with the reason. `sfc_work_pending` shows both; `maint_stream_requeue_plan` and `maint_stream_ack_plan` act on them.
 
@@ -153,7 +155,9 @@ A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, 
 
 **Deadlines.** Every instance sweeps the due-index of every scope; the script pops each job once. A sweep that finds a heartbeat gap above `OutageThreshold` moves every open deadline by the gap instead of expiring it, so a platform outage does not abort running jobs.
 
-Pull events are not offered yet: a recipe with a `pull_event` action is refused at build time until the host supports them.
+**Pull events.** A wait is state, so any replica can complete it (D-53). The `[Incoming]` handler of the event type runs first. It may return an `ActionOutcome`, named in `[Incoming(Outcomes = ...)]`; without one the outcome is `done`. If a job waits for the type, the event goes into the work stream and is offered to the waiting jobs, oldest wait first, until one takes it, so one event completes one action, also when the broker delivers it twice (CloudEvents `source` and `id` identify it). An event that arrives before the wait exists is dropped, and the action ends with `timeout` if nothing else arrives. A handler that answers with its own type and no reply address publishes to its own `events` address, so it would feed itself; give such events a reply address or return an `ActionOutcome` only.
+
+**Recovery.** Each instance runs a scan when it first sees a scope, and queues a check of every running job there. The scan does not resend commands: the sweep owns every action with a deadline, and a resend on each restart would use up attempts. It re-issues only work that never got a deadline and puts back lost index entries. An instance that dies with an unanswered command does not lose it: another instance sends it again when the deadline passes.
 
 | Setting (`MicroDcs:Sfc:`) | Type | Default | Description |
 |---|---|---|---|

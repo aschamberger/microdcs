@@ -26,18 +26,26 @@ internal sealed class SfcGraphs
 
     public IRecipeInterpreter Interpreter => _interpreter;
 
-    /// <summary>The features of this version: pull events follow in S20. Outcomes come from the <c>[Outgoing]</c> factories.</summary>
+    /// <summary>The features of this version. Outcomes of commands come from the <c>[Outgoing]</c> factories, outcomes of pull events from the <c>[Incoming]</c> handlers.</summary>
     public static SfcCapabilities CapabilitiesOf(ProcessorRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(registry);
+        return new SfcCapabilities(
+            SfcFeature.PushCommand | SfcFeature.PullEvent | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence,
+            OutcomesOf(registry, HandlerKind.Outgoing),
+            OutcomesOf(registry, HandlerKind.Incoming));
+    }
+
+    private static Dictionary<string, IReadOnlySet<string>> OutcomesOf(ProcessorRegistry registry, HandlerKind kind)
+    {
         var outcomes = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
-        foreach (var factory in registry.Processors.SelectMany(static p => p.Handlers).Where(static h => h.Kind == HandlerKind.Outgoing && h.TypeId is not null))
+        foreach (var handler in registry.Processors.SelectMany(static p => p.Handlers).Where(h => h.Kind == kind && h.TypeId is not null))
         {
-            IEnumerable<string> declared = factory.Outcomes.IsDefault ? [] : factory.Outcomes;
-            outcomes[factory.TypeId!] = declared.Append(ActionOutcome.DefaultName).ToFrozenSet(StringComparer.Ordinal);
+            IEnumerable<string> declared = handler.Outcomes.IsDefault ? [] : handler.Outcomes;
+            outcomes[handler.TypeId!] = declared.Append(ActionOutcome.DefaultName).ToFrozenSet(StringComparer.Ordinal);
         }
 
-        return new SfcCapabilities(SfcFeature.PushCommand | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence, outcomes);
+        return outcomes;
     }
 
     public SfcBuildResult Build(string recipe)

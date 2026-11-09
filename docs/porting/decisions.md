@@ -572,6 +572,8 @@ Revised 2026-11-08 (S15, built as decided, with these refinements): (1) recipe w
 
 Revised 2026-11-09 (S19, built as decided, with these refinements): (10) the `At` of a `start` is one read of the server clock, not the entry id: an order can wait in the stream longer than its first timeout, and that wait must not cost an attempt. A repeated start is absorbed, so nothing replays the value. (11) `sfc:heartbeat` is a hash per scope and is written by the sweep script itself, so exactly one sweep sees a gap; that sweep takes every entry of the index and passes the gap on its ticks. (12) outcomes are declared on the `[Outgoing]` factory (the key the recipe knows) and returned from `[OnResponse]`; `done` is every type's default. (13) the state has `startedAt` (format 1.1). (14) the wire expiry is the time left minus `Sfc:ExpiryGrace` where the time allows it; otherwise the full time left, so a timeout below the grace still reaches the equipment. (15) `XAUTOCLAIM` and the dead stream are built in S19 instead of S20, because a failed entry depends on them.
 
+Revised 2026-11-09 (S20, D-53): (16) `Parameters` are not a selector; the optional `Selector` field is. SFC011 accepts two waits of one type when their selectors set one field to different literals. (17) a pull event's outcomes come from `[Incoming(Outcomes = ...)]`.
+
 Consequences: S15 builds the core and the in-memory host against these rules; S19 and S20 build the Valkey host. The outage test and the two-replica test in S20 are acceptance tests.
 
 ## D-45 Maintenance operations: plan/apply, snapshots, guards {#d-45}
@@ -734,5 +736,24 @@ Decision:
 
 Consequences: `IActionSink` is `CompleteAsync(ActionResponse)` and `EventReceivedAsync`; `FailAsync` and `ScopeDiscoveredAsync` are gone (local expiry decides nothing, D-18; scope registry, D-42). `MessagePipeline` implements `IOutgoingCommands`. S20 adds pull events, the recovery scan and the capability flag `PullEvent`. S20a adds hold and release.
 
+Revised 2026-11-09 (S20): pull events and the recovery scan are built, see [D-53](#d-53).
+
 Not chosen: applying the job transition directly after the compare-and-set (a crash between them would leave a finished recipe on a running job); a dedicated job-transition stream (a second consumer for entries that only ever follow a step); cancelling equipment work on the wire (no protocol for it exists, as in Python).
+
+## D-53 SFC pull events, recovery scan, replica tests {#d-53}
+
+Status: decided (2026-11-09, S20; maintainer chose the `Selector` field and real containers). Background: [SFC host](research/sfc-host.md).
+
+Decision:
+
+* **Selector:** an optional `Selector` on a `pull_event` action with `Subject` and `CorrelationId`, exact match, literal or the placeholder `{jobId}` (R-1). A recipe is shared by many jobs, so only the placeholder tells jobs apart. No selector means every event of the type. Build error `SFC011` remains for waits a selector does not separate.
+* **Choosing the job:** the jobs waiting for a type are kept in `sfc:waits:{scope}:{typeId}`, ordered by wait start, written in the compare-and-set of the state. The first job the core accepts takes the event, so one event completes one action. Every incoming event reads this index first, and only an event someone waits for enters the work stream. An entry can be stale (a deleted job); the consumer removes it when it finds one.
+* **One event, one job:** the write that applies an event also sets `sfc:event:{scope}:{source|id}` for one hour, and the script refuses a write whose event is already claimed. The key is the CloudEvent identity, not the stream entry, because a broker redelivery appends a new entry. A wait that begins in a step goes to the end of the queue, even when the job already waited for the type in the step before.
+* **Early events are dropped**, as in Python: no buffering. The action ends with `timeout`.
+* **Recovery scan:** an instance queues a `resume` with the scan mark for each running job when it first sees a scope. Every action with a deadline counts as live, because the sweep owns it. A resend on every restart would use up `MaxAttempts`, and after an outage it would race the tick that moves the deadlines (D-9, D-18). The scan re-issues only work without a deadline and repairs lost due and wait entries. A repaired due entry is not due before `OutageThreshold`, so a tick already under way goes first. A job that cannot be evaluated is logged and left alone.
+* **Replica tests:** two replicas of the application image, killed with SIGKILL through the Docker Engine API from a test container. A separate `replicas` compose profile and `scripts/replica-tests`, because a container that exits would end `--abort-on-container-exit`. Only this profile mounts the Docker socket.
+
+Consequences: `IActionSink.EventReceivedAsync` takes the handler's `ActionOutcome`. `SfcCapabilities` has `EventOutcomes`. A station needs an `[Incoming]` handler for a pull type (`SFC014`). Inspector kind `sfc.waits`, MCP tool `sfc_waits`. Measured sweep latency with the default 1 s interval and two replicas, 20 deadlines spread over 1.4 s, two runs: p50 662 and 730 ms, max 1009 and 1018 ms from deadline to the command arriving.
+
+Not chosen: `Parameters` as the selector (two meanings for one field); scanning the active set per event (every incoming event would read every running job); resending on restart as in Python; in-process hosts for the kill tests (no real process death).
 
