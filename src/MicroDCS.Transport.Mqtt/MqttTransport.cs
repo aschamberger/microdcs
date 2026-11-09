@@ -283,7 +283,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
     private ImmutableArray<MqttSubscription> BuildSubscriptions()
     {
         var result = new List<MqttSubscription>();
-        foreach (var processor in _registry.Processors)
+        foreach (var processor in _core.Roles.HasFlag(InstanceRoles.Processor) ? _registry.Processors : [])
         {
             var binding = _core.Bindings[processor.BindingId];
             if (!string.Equals(binding.Transport, Name, StringComparison.Ordinal))
@@ -311,7 +311,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         return [.. result];
     }
 
-    private MqttClientOptions BuildClientOptions() => MqttClientOptionsFactory.Build(_options, _clientId, _logger);
+    private MqttClientOptions BuildClientOptions() => MqttClientOptionsFactory.Build(_options, _clientId, _logger, resumeSession: _core.Roles.HasFlag(InstanceRoles.Processor));
 
     private async Task SubscribeAsync(IMqttClient client, CancellationToken cancellationToken)
     {

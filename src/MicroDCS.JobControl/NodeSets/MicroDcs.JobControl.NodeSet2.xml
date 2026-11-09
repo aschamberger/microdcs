@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
   MicroDCS Job Control extension (D-34, D-50): a Work Master that carries opaque recipe content, and the structures that carry
-  the Job Control method arguments and status events as CloudEvent payloads (OPC UA methods have no structure of their own).
+  the Job Control method arguments, status events and the state index as payloads (OPC UA methods have no structure of their own).
   Published under the MIT licence of the MicroDCS repository. It requires the ISA-95 Job Control V2 model.
 -->
 <UANodeSet xmlns="http://opcfoundation.org/UA/2011/03/UANodeSet.xsd">
@@ -10,14 +10,17 @@
     <Uri>http://opcfoundation.org/UA/ISA95-JOBCONTROL_V2/</Uri>
   </NamespaceUris>
   <Models>
-    <Model ModelUri="urn:microdcs:jobcontrol" Version="1.1.0" PublicationDate="2026-11-08T00:00:00Z">
+    <Model ModelUri="urn:microdcs:jobcontrol" Version="1.2.0" PublicationDate="2026-11-09T00:00:00Z">
       <RequiredModel ModelUri="http://opcfoundation.org/UA/" Version="1.04.11" PublicationDate="2022-03-29T00:00:00Z" />
       <RequiredModel ModelUri="http://opcfoundation.org/UA/ISA95-JOBCONTROL_V2/" Version="2.0.0" PublicationDate="2024-01-31T00:00:00Z" />
     </Model>
   </Models>
   <Aliases>
+    <Alias Alias="Boolean">i=1</Alias>
+    <Alias Alias="Int64">i=8</Alias>
     <Alias Alias="UInt64">i=9</Alias>
     <Alias Alias="String">i=12</Alias>
+    <Alias Alias="UtcTime">i=294</Alias>
     <Alias Alias="LocalizedText">i=21</Alias>
     <Alias Alias="Structure">i=22</Alias>
     <Alias Alias="HasSubtype">i=45</Alias>
@@ -25,6 +28,7 @@
     <Alias Alias="ISA95WorkMasterDataType">ns=2;i=3007</Alias>
     <Alias Alias="ISA95JobOrderDataType">ns=2;i=3008</Alias>
     <Alias Alias="ISA95JobResponseDataType">ns=2;i=3013</Alias>
+    <Alias Alias="JobOrderStateIndexEntryDataType">ns=1;i=3010</Alias>
   </Aliases>
   <UADataType NodeId="ns=1;i=3001" BrowseName="1:ISA95WorkMasterExtDataType">
     <DisplayName>ISA95WorkMasterExtDataType</DisplayName>
@@ -152,6 +156,45 @@
       </Field>
       <Field Name="JobState" DataType="ISA95StateDataType" ValueRank="1">
         <Description>The state of the job order.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3010" BrowseName="1:JobOrderStateIndexEntryDataType">
+    <DisplayName>JobOrderStateIndexEntryDataType</DisplayName>
+    <Description>One job order in the state index of a scope.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobOrderStateIndexEntryDataType">
+      <Field Name="JobOrderID" DataType="String">
+        <Description>The id of the job order.</Description>
+      </Field>
+      <Field Name="State" DataType="ISA95StateDataType" ValueRank="1">
+        <Description>The state of the job order.</Description>
+      </Field>
+      <Field Name="HasResult" DataType="Boolean">
+        <Description>Whether a job response exists for the job order.</Description>
+      </Field>
+    </Definition>
+  </UADataType>
+  <UADataType NodeId="ns=1;i=3011" BrowseName="1:JobOrderStateIndexDataType">
+    <DisplayName>JobOrderStateIndexDataType</DisplayName>
+    <Description>The current state of every job order of a scope, kept as the state topic state-index.</Description>
+    <References>
+      <Reference ReferenceType="HasSubtype" IsForward="false">Structure</Reference>
+    </References>
+    <Definition Name="1:JobOrderStateIndexDataType">
+      <Field Name="Sequence" DataType="Int64">
+        <Description>Grows with every published index of the scope, so a reader can recognise an older one.</Description>
+      </Field>
+      <Field Name="Scope" DataType="String">
+        <Description>The scope.</Description>
+      </Field>
+      <Field Name="PublishedAt" DataType="UtcTime">
+        <Description>When the index was published.</Description>
+      </Field>
+      <Field Name="Jobs" DataType="JobOrderStateIndexEntryDataType" ValueRank="1">
+        <Description>The job orders of the scope.</Description>
       </Field>
     </Definition>
   </UADataType>

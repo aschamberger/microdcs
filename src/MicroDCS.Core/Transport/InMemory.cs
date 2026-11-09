@@ -69,7 +69,7 @@ public sealed class SlashAddressRenderer : IAddressRenderer
 /// A transport that lives in the process: tests and the harness inject messages and read what was published. It is also
 /// the reference for the transport contract (D-37).
 /// </summary>
-public sealed class InMemoryTransport : ITransport
+public sealed class InMemoryTransport : ITransport, IStateTopicPort
 {
     private readonly ConcurrentQueue<OutboundMessage> _published = new();
     private IInboundHandler? _handler;
@@ -77,10 +77,15 @@ public sealed class InMemoryTransport : ITransport
 
     /// <summary>Creates a transport with the given delivery guarantee.</summary>
     /// <param name="guarantee">The guarantee the transport declares.</param>
-    public InMemoryTransport(DeliveryGuarantee guarantee = DeliveryGuarantee.AtLeastOnce)
+    /// <param name="time">The clock for the time to live of state topics; the system clock when absent.</param>
+    public InMemoryTransport(DeliveryGuarantee guarantee = DeliveryGuarantee.AtLeastOnce, TimeProvider? time = null)
     {
         Profile = new DeliveryProfile(guarantee, NativeReply: true, NativeExpiry: false, StateTopics: true, SharedConsumption: false);
+        StateTopics = new InMemoryStateTopicPort(time ?? TimeProvider.System, Addresses);
     }
+
+    /// <summary>The state topics of this transport.</summary>
+    public InMemoryStateTopicPort StateTopics { get; }
 
     /// <inheritdoc />
     public string Name => "memory";
@@ -99,6 +104,14 @@ public sealed class InMemoryTransport : ITransport
 
     /// <summary>Everything published so far, oldest first.</summary>
     public ImmutableArray<OutboundMessage> Published => [.. _published];
+
+    /// <inheritdoc />
+    public ValueTask PublishAsync(LogicalAddress address, string name, ReadOnlyMemory<byte> payload, TimeSpan timeToLive, CancellationToken cancellationToken) =>
+        StateTopics.PublishAsync(address, name, payload, timeToLive, cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask DeleteAsync(LogicalAddress address, string name, CancellationToken cancellationToken) =>
+        StateTopics.DeleteAsync(address, name, cancellationToken);
 
     /// <inheritdoc />
     public ValueTask StartAsync(IInboundHandler handler, CancellationToken cancellationToken)
@@ -319,6 +332,15 @@ public sealed class InMemoryStateTopicPort : IStateTopicPort
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Removes every topic, as a broker that lost its retained messages would.</summary>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _topics.Clear();
+        }
     }
 
     private string Key(LogicalAddress address, string name) => _renderer.RenderPublish(address) + "/" + name;

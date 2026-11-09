@@ -51,6 +51,26 @@ internal sealed class MaintenanceTools
         CancellationToken cancellationToken = default) =>
         Run(service, "maint_job_delete_plan", async () => Format(await operations.PlanJobDeleteAsync(Caller, id, cancellationToken).ConfigureAwait(false)));
 
+    [McpServerTool(Name = "maint_retained_clear_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans the removal of the state topics (state index, job orders, results) of a scope or of one job order on the broker. Changes nothing; run maint_apply with the returned token to execute. Broker state has no snapshot; show the plan and ask first.")]
+    public static Task<string> RetainedClearPlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("Only this job order, also one that is no longer stored; empty for the whole scope.")] string? id = null,
+        [Description("Allow a plan above the item cap.")] bool allowLarge = false,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_retained_clear_plan", async () => Format(await operations.PlanRetainedClearAsync(Caller, scope, id, allowLarge, cancellationToken).ConfigureAwait(false)));
+
+    [McpServerTool(Name = "maint_publisher_reset_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans forgetting the publisher cursor of a scope, so the publisher writes its state topics again from the stored documents. Changes nothing; run maint_apply with the returned token to execute. Show the plan and ask first.")]
+    public static Task<string> PublisherResetPlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("Scope, dotted form.")] string scope,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_publisher_reset_plan", async () => Format(await operations.PlanPublisherResetAsync(Caller, scope, cancellationToken).ConfigureAwait(false)));
+
     [McpServerTool(Name = "maint_restore_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
     [Description("Plans putting the content of a snapshot back (see maint_snapshots_list). Refuses when a target exists with different content unless overwrite is set. Changes nothing; run maint_apply with the returned token to execute.")]
     public static Task<string> RestorePlan(

@@ -167,6 +167,17 @@ public sealed class ProcessorTests : IAsyncLifetime
         status.Envelope.CausationId.ShouldBe("cmd-1");
     }
 
+    [Theory]
+    [InlineData("JO.2026")]
+    [InlineData("JO/1")]
+    [InlineData("JO 1")]
+    public async Task A_store_with_an_id_no_state_topic_can_carry_is_refused(string id)
+    {
+        (await StoreAsync(id)).ShouldBe(InvalidRequest);
+
+        _store.Order(id).ShouldBeNull();
+    }
+
     [Fact]
     public async Task Store_without_a_job_order_is_an_invalid_request() =>
         (await SendAsync<StoreCall, StoreResponse>(new StoreCall())).ShouldBe(InvalidRequest);

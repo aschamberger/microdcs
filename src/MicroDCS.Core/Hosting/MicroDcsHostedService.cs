@@ -78,12 +78,20 @@ public sealed class MicroDcsHostedService : IHostedService
 
             // The queues accept events before the first transport delivers: a handler may publish from the first message (RV-1).
             _pipeline.OpenPublishing();
+        }
+
+        // A publisher-only instance also needs its connection; the transports subscribe only under the Processor role (D-51).
+        if (options.Roles != InstanceRoles.None)
+        {
             foreach (var transport in _transports)
             {
                 await transport.StartAsync(_pipeline, cancellationToken).ConfigureAwait(false);
                 Log.TransportStarted(_logger, transport.Name);
             }
+        }
 
+        if (runsProcessors)
+        {
             _pipeline.StartPublishing();
 
             foreach (var processor in _registry.Processors)
@@ -114,7 +122,7 @@ public sealed class MicroDcsHostedService : IHostedService
         }
 
         await RunPhaseAsync("expiries", () => _pipeline.WaitForExpiriesAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
-        foreach (var processor in _registry.Processors)
+        foreach (var processor in _options.Value.Roles.HasFlag(InstanceRoles.Processor) ? _registry.Processors : [])
         {
             if (processor.Lifecycle.Shutdown is { } shutdown)
             {

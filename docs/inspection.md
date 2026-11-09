@@ -73,6 +73,7 @@ All tools are read-only except `inject_event`. `sfc_explain` and `sfc_dryrun` ne
 | `stream_pending` | Length, consumer groups, pending count and lag of the SFC work, dead-letter and change streams of a scope. |
 | `job_orders` | Job orders of a scope with state, version, priority and last operation id; optional state filter. Needs the Machinery Jobs processor. |
 | `job_order` | One job order with its state, job response and recent changes. Needs the Machinery Jobs processor. |
+| `publisher_status` | The job order publisher for a scope: whether this instance holds the lease, who does, the cursor against the newest change, the last state index sequence and the state topics it keeps. Needs the Machinery Jobs processor. |
 | `sfc_explain` | Explains an SFC recipe, and a job state on it. Pure; takes the recipe as text. See [SFC core](sfc-core.md#mcp-tools). |
 | `sfc_dryrun` | Dry-runs an SFC recipe on a virtual clock with scripted equipment and returns the transcript. Pure; nothing is dispatched or stored. |
 | `inject_event` (write group) | Hands a request to a binding's pipeline as if its transport had received it. |
@@ -96,6 +97,8 @@ Every change has two steps. A `*_plan` tool changes nothing and returns the targ
 | `maint_dedupe_release_plan` | Plans the release of one dedupe entry (lease or done marker) so the event can be processed again. |
 | `maint_purge_scope_plan` | Plans the removal of everything stored for a scope: documents, indexes, change and work streams, due-index, cursor and registry entry. Shared recipe texts stay. |
 | `maint_job_delete_plan` | Plans the removal of one job order with its job response and SFC state. Bypasses the state machine; stream entries and retained topics stay. |
+| `maint_retained_clear_plan` | Plans the removal of the state topics of a scope or of one job order on the broker. Broker state has no snapshot. |
+| `maint_publisher_reset_plan` | Plans forgetting the publisher cursor of a scope, so the publisher writes its state topics again from the stored documents. |
 | `maint_restore_plan` | Plans putting a snapshot back. Refuses when a target exists with different content unless `overwrite` is set; replaced content is snapshotted first. |
 | `maint_apply` | Runs a plan by its token. Writes a snapshot before it deletes or overwrites. |
 | `maint_snapshots_list` | Lists snapshots without their content. |

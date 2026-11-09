@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S18** (Job order publisher and state topics); S08 to S17 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S19** (SFC Valkey host); S08 to S18 are done.
 
 ## How to use these files
 
@@ -113,8 +113,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-49](decisions.md#d-49) | decided | Credential files are read on every connect attempt; a rejected credential does not end the retries; one shared compose test per transport |
 
 | [D-50](decisions.md#d-50) | decided | Machinery Jobs processor: V2 commands only, wire shapes in the extension NodeSet, responses with their own type id, recipe start atomic with the order on every entry into AllowedToStart |
+| [D-51](decisions.md#d-51) | decided | Job order publisher: separate Deployment by role, poller hand-off, lease as a guard, order topic without state, ids limited to the segment rule, rebuild from documents |
 
-Next free id: **D-51**.
+Next free id: **D-52**.
 
 ## Open questions
 
@@ -135,7 +136,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-ARCH-6~~ Abstraction fit | → D-37, D-38 (A-1 to A-8 decided, see [core contracts](research/core-contracts.md)) | — |
 | ~~Q-ARCH-7~~ Delivery semantics | → D-37: dedupe claim for `AtLeastOnce` profiles only; commands over at-most-once paths rely on SFC re-dispatch with `mdcsactionkey` (D-9). Zenoh mapping stays with S25 | — |
 | ~~Q-ARCH-8~~ SFC multi-instance model | → D-44 (generic CAS script, scope registry, retry limit, trimming rule D-42, id-only identity D-42) | — |
-| Q-ARCH-9 Deployment modes | Keep the processor/publisher split and single-container mode? Effect of the in-process HTTP surface | S18 |
+| ~~Q-ARCH-9~~ Deployment modes | → D-51: two Deployments by role in production, single container for development and small sites | — |
 | ~~Q-ARCH-10~~ Southbound | → D-11. Remaining: CloudEvents-over-Zenoh mapping (attachment vs. structured), Zenoh query/reply for commands, router vs. peer mode | S25 |
 | ~~Q-DATA-1~~ Documents and secondary indexes | → D-41, D-42: hash documents with explicit indexes, no valkey-json or valkey-search; analysis in [data layer](research/data-layer.md) | — |
 | ~~Q-DATA-2~~ Client library | → D-7, D-43: no blocking reads, pub/sub nudge plus 1 s fallback poll | — |
@@ -181,7 +182,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | **M2 Parity gate** | | | |
 | S16 | Job models and state machine | S05, S08 | done |
 | S17 | Machinery Jobs processor and job DAOs | S10, S16 | done |
-| S18 | Job order publisher and state topics | S13, S17 | open |
+| S18 | Job order publisher and state topics | S13, S17 | done |
 | S19 | SFC Valkey host: work stream, outbox, due-index, push commands | S09, S15, S17 | open |
 | S20 | SFC pull events, recovery, multi-instance | S19 | open |
 | S21 | HTTP surface and observability | S17 | open |

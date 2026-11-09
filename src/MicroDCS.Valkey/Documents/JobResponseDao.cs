@@ -61,6 +61,16 @@ public sealed class JobResponseDao : DocumentDao
         return id is null ? null : await ReadAsync(Database, Keys.JobResponse(id), id, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Checks whether a job order has a job response, without reading the document.</summary>
+    /// <param name="jobOrderId">The job order id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns><see langword="true"/> when it has one.</returns>
+    public async Task<bool> ExistsByJobOrderAsync(string jobOrderId, CancellationToken cancellationToken = default)
+    {
+        RequireText(jobOrderId, nameof(jobOrderId));
+        return await Database.KeyExistsAsync(Keys.JobResponseByOrder(jobOrderId)).WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Enumerates the ids of the job responses in a normalized state (R-15); an empty state yields nothing.</summary>
     /// <param name="scope">The scope.</param>
     /// <param name="state">The normalized state.</param>

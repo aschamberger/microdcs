@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using MicroDCS.Core.Transport;
 
 namespace MicroDCS.Maintenance;
 
@@ -14,7 +15,16 @@ internal sealed class PendingPlan
     public List<KeyImage>? RestoreItems { get; init; }
 
     public bool Overwrite { get; init; }
+
+    /// <summary>State topics to remove on the broker; <see langword="null"/> for a plan over Valkey state.</summary>
+    public RetainedTopics? Retained { get; init; }
 }
+
+/// <summary>State topics a plan removes.</summary>
+/// <param name="Catalog">The component that keeps them.</param>
+/// <param name="Scope">The scope.</param>
+/// <param name="Names">The topic names.</param>
+internal sealed record RetainedTopics(IStateTopicCatalog Catalog, string Scope, IReadOnlyList<string> Names);
 
 /// <summary>Plans in memory, single use, short lived. A restart of the process drops them on purpose.</summary>
 internal sealed class PlanStore

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using MicroDCS.Core.Messaging;
 using MicroDCS.JobControl.Model;
 using MicroDCS.JobControl.StateMachine;
 
@@ -18,6 +19,12 @@ internal sealed class InMemoryJobStore : IJobStore
 
     public List<string> RecipeStarts { get; } = [];
 
+    /// <summary>Runs after an order is read, to change something in the middle of a publisher round.</summary>
+    public Action? AfterOrderRead { get; set; }
+
+    /// <summary>Reading the response of this order fails as an undecodable document does.</summary>
+    public string? FailDecodingResponseOf { get; set; }
+
     /// <summary>Runs before a write, to simulate another writer that got in first.</summary>
     public Action? BeforeWrite { get; set; }
 
@@ -29,7 +36,12 @@ internal sealed class InMemoryJobStore : IJobStore
         _orders[id] = order with { State = state, Version = order.Version + 1, Operation = "machine" };
     }
 
-    public ValueTask<StoredJobOrder?> GetOrderAsync(string id, CancellationToken cancellationToken) => new(_orders.GetValueOrDefault(id));
+    public ValueTask<StoredJobOrder?> GetOrderAsync(string id, CancellationToken cancellationToken)
+    {
+        var order = _orders.GetValueOrDefault(id);
+        AfterOrderRead?.Invoke();
+        return new(order);
+    }
 
     public ValueTask<bool> SaveOrderAsync(JobOrderWrite write, CancellationToken cancellationToken)
     {
@@ -72,7 +84,10 @@ internal sealed class InMemoryJobStore : IJobStore
     public ValueTask<IReadOnlyList<string>> ListOrderIdsAsync(string scope, int start, int limit, CancellationToken cancellationToken) =>
         new([.. _orders.Values.Where(o => o.Scope == scope).Select(static o => o.Order.Id).Skip(start).Take(limit)]);
 
-    public ValueTask<StoredJobResponse?> GetResponseByOrderAsync(string jobOrderId, CancellationToken cancellationToken) => new(_responses.GetValueOrDefault(jobOrderId));
+    public ValueTask<StoredJobResponse?> GetResponseByOrderAsync(string jobOrderId, CancellationToken cancellationToken) =>
+        jobOrderId == FailDecodingResponseOf ? throw new PayloadException("undecodable") : new(_responses.GetValueOrDefault(jobOrderId));
+
+    public ValueTask<bool> HasResponseAsync(string jobOrderId, CancellationToken cancellationToken) => new(_responses.ContainsKey(jobOrderId));
 
     public ValueTask<IReadOnlyList<JobResponse>> GetResponsesByStateAsync(string scope, IReadOnlyCollection<JobOrderState> states, int limit, CancellationToken cancellationToken) =>
         new([.. _responses.Values.Where(r => r.Scope == scope && states.Contains(r.Response.State)).Select(static r => r.Response).Take(limit)]);

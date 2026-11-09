@@ -23,3 +23,23 @@ public interface IStateTopicPort
     /// <returns>A task.</returns>
     ValueTask DeleteAsync(LogicalAddress address, string name, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Knows which state topics a component keeps, for maintenance: a broker cannot be asked which retained topics exist.
+/// </summary>
+public interface IStateTopicCatalog
+{
+    /// <summary>Lists the names of the state topics of a scope.</summary>
+    /// <param name="scope">The scope, dotted form.</param>
+    /// <param name="id">Only the topics of this item; <see langword="null"/> for the whole scope.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The topic names below the address of the scope.</returns>
+    ValueTask<IReadOnlyList<string>> ListAsync(string scope, string? id, CancellationToken cancellationToken);
+
+    /// <summary>Removes one state topic.</summary>
+    /// <param name="scope">The scope, dotted form.</param>
+    /// <param name="name">The topic name.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>A task.</returns>
+    ValueTask DeleteAsync(string scope, string name, CancellationToken cancellationToken);
+}

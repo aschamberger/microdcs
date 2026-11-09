@@ -75,3 +75,32 @@ Once at start one replica publishes a retained metadata event (`org.opcfoundatio
 | `MicroDcs:JobAcceptance:MaxDownloadableJobOrders` | int | `0` | Limit for a scope without its own; 0 means no limit. A limit set through `config.jobacceptance` always applies, also 0, which accepts nothing. |
 
 The inspector `jobs` backs the MCP tools `job_orders` and `job_order`. The maintenance tool `maint_job_delete_plan` removes one order; it bypasses the state machine.
+
+## Job order publisher
+
+The publisher keeps last-value state topics for the MES, on the transport the binding `machinery_jobs` names. It reads the change stream of each scope, so a command never waits for it. MQTT uses retained messages, NATS a key-value bucket. A transport without state topics ends the start.
+
+| Topic below `{prefix}/{scope levels}/{discriminator}/data/` | Payload | Written |
+|---|---|---|
+| `state-index` | `JobOrderStateIndexDataType` | After every batch of changes |
+| `order/{id}` | `ISA95JobOrderDataType`, no state | On Store, StoreAndStart and Update; removed on Cancel and Clear |
+| `result/{id}` | `ISA95JobResponseDataType` | When a job in Completed, Closed or Aborted has a response; removed on Cancel and Clear |
+
+The state index holds `Sequence`, `Scope`, `PublishedAt` and per job `JobOrderID`, `State` and `HasResult`, which is true when the `result/{id}` topic exists. `Sequence` grows with every index of the scope and survives restarts. An MES that sees the value it last read has missed nothing. A higher value means it should read the index again. A rebuild raises it too. All payloads are OPC UA JSON, and `Sequence` is a JSON string as every Int64 is.
+
+A job order id becomes a topic level, so it may only use letters, digits, `_` and `-`. A Store, StoreAndStart or Update with any other id gets `InvalidRequest`.
+
+Delivery is at least once. A scope is rebuilt from the stored documents on its first visit under a lease, when its cursor is missing, when the change stream was trimmed past the cursor, and at half the time to live so that idle orders keep their topics.
+
+### Deployment
+
+`MicroDcs:Roles` decides what an instance runs. In production run the processors with `Processor` and one publisher with `Publisher`: a stalled MES broker or a costly index then stays out of the control path, and the publisher can use another broker through its own environment. `All`, the default, runs both in one process for development and small sites. A publisher-only instance connects but does not subscribe. One lease in Valkey lets only one instance publish, also with several replicas and during a rolling update.
+
+| Configuration | Type | Default | Description |
+|---|---|---|---|
+| `MicroDcs:JobPublisher:RetainedTtl` | TimeSpan | `48:00:00` | How long a topic stays when nothing refreshes it. Topics are refreshed at half of this. At least 2 s. |
+| `MicroDcs:JobPublisher:ReadCount` | int | `50` | Most change entries per scope in one round. |
+| `MicroDcs:JobPublisher:LeaseTtl` | TimeSpan | `00:00:15` | Lifetime of the publisher lease, renewed at a third of this. At least 3 s. |
+
+The inspector `publisher` backs the MCP tool `publisher_status`. `maint_publisher_reset_plan` makes the publisher write a scope again, and `maint_retained_clear_plan` removes state topics from the broker.
+

@@ -104,6 +104,10 @@ public sealed class KeySchema
     /// <returns>The key.</returns>
     public string PublisherCursors() => Key("publisher:cursors");
 
+    /// <summary>The lease of the active job order publisher, a string holding the instance id (D-51).</summary>
+    /// <returns>The key.</returns>
+    public string PublisherLease() => Key("publisher:lease");
+
     /// <summary>SFC state document hash of a job.</summary>
     /// <param name="jobId">The job id.</param>
     /// <returns>The key.</returns>

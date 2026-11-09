@@ -14,14 +14,18 @@ internal static class MqttClientOptionsFactory
 {
     private const string SatMethod = "K8S-SAT";
 
-    public static MqttClientOptions Build(MqttOptions options, string clientId, ILogger logger)
+    /// <param name="options">The options.</param>
+    /// <param name="clientId">The client id.</param>
+    /// <param name="logger">The logger.</param>
+    /// <param name="resumeSession">Keep a persistent session. An instance that does not subscribe must not resume the subscriptions of an earlier run.</param>
+    public static MqttClientOptions Build(MqttOptions options, string clientId, ILogger logger, bool resumeSession = true)
     {
         var builder = new MqttClientOptionsBuilder()
             .WithTcpServer(options.Hostname, options.Port)
             .WithClientId(clientId)
             .WithProtocolVersion(MqttProtocolVersion.V500)
-            .WithCleanStart(false)
-            .WithSessionExpiryInterval((uint)Math.Min(uint.MaxValue, options.SessionExpiry.TotalSeconds))
+            .WithCleanStart(!resumeSession)
+            .WithSessionExpiryInterval(resumeSession ? (uint)Math.Min(uint.MaxValue, options.SessionExpiry.TotalSeconds) : 0)
             .WithKeepAlivePeriod(options.KeepAlive)
             .WithTimeout(options.OperationTimeout);
 

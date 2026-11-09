@@ -56,6 +56,21 @@ public sealed class HostLifecycleTests
     }
 
     [Fact]
+    public async Task A_publisher_only_instance_connects_its_transport_and_runs_no_processor_hooks()
+    {
+        var log = new ListLog();
+        var settings = Valid();
+        settings["MicroDcs:Roles"] = nameof(InstanceRoles.Publisher);
+        await using var provider = Build(settings, log);
+
+        await Host(provider).StartAsync(TestContext.Current.CancellationToken);
+        provider.GetRequiredService<InMemoryTransport>().IsConnected.ShouldBeTrue();
+        await Host(provider).StopAsync(TestContext.Current.CancellationToken);
+
+        log.Entries.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Invalid_options_fail_the_start()
     {
         var settings = Valid();

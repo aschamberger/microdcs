@@ -91,6 +91,24 @@ public interface IMaintenanceOperations
     /// <exception cref="MaintenanceRefusedException">Maintenance is not allowed here or the order does not exist.</exception>
     ValueTask<MaintenancePlan> PlanJobDeleteAsync(string caller, string id, CancellationToken cancellationToken);
 
+    /// <summary>Plans the removal of the state topics of a scope or of one job order on the broker. A snapshot does not cover broker state.</summary>
+    /// <param name="caller">Who asks, for the audit line.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="id">Only the topics of this job order, also one that is no longer stored; <see langword="null"/> for the whole scope.</param>
+    /// <param name="allowLarge">Allows a plan above the item cap.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    /// <exception cref="MaintenanceRefusedException">Maintenance is not allowed here, no component keeps state topics, or there is nothing to remove.</exception>
+    ValueTask<MaintenancePlan> PlanRetainedClearAsync(string caller, string scope, string? id, bool allowLarge, CancellationToken cancellationToken);
+
+    /// <summary>Plans forgetting the publisher cursor of a scope, so the publisher rebuilds the state topics from the stored documents.</summary>
+    /// <param name="caller">Who asks, for the audit line.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The plan.</returns>
+    /// <exception cref="MaintenanceRefusedException">Maintenance is not allowed here or the scope has no cursor.</exception>
+    ValueTask<MaintenancePlan> PlanPublisherResetAsync(string caller, string scope, CancellationToken cancellationToken);
+
     /// <summary>Plans putting the content of a snapshot back.</summary>
     /// <param name="caller">Who asks, for the audit line.</param>
     /// <param name="snapshotId">The snapshot id from <see cref="ListSnapshotsAsync"/>.</param>
