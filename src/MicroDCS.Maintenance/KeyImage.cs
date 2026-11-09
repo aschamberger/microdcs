@@ -24,7 +24,7 @@ internal sealed record StreamEntryImage(string Id, List<Pair> Fields);
 /// <summary>Where a maintenance operation looks: a whole key, or one set member or hash field of a shared key.</summary>
 /// <param name="Key">The full key.</param>
 /// <param name="Part">The set member or hash field, or <see langword="null"/> for the whole key.</param>
-/// <param name="PartKind">The kind of the part, <c>setmember</c> or <c>hashfield</c>; <see langword="null"/> for a whole key.</param>
+/// <param name="PartKind">The kind of the part, <c>setmember</c>, <c>zsetmember</c> or <c>hashfield</c>; <see langword="null"/> for a whole key.</param>
 internal sealed record Target(string Key, string? Part = null, string? PartKind = null);
 
 /// <summary>
@@ -37,7 +37,7 @@ internal sealed class KeyImage
 
     public string? Part { get; init; }
 
-    /// <summary><c>string</c>, <c>hash</c>, <c>set</c>, <c>zset</c>, <c>stream</c>, <c>setmember</c> or <c>hashfield</c>.</summary>
+    /// <summary><c>string</c>, <c>hash</c>, <c>set</c>, <c>zset</c>, <c>stream</c>, <c>setmember</c>, <c>zsetmember</c> or <c>hashfield</c>.</summary>
     public required string Type { get; init; }
 
     public long? TtlMs { get; init; }
@@ -63,6 +63,7 @@ internal sealed class KeyImage
         "zset" => $"sorted set, {Scored?.Count ?? 0} members",
         "stream" => $"stream, {Entries?.Count ?? 0} entries",
         "setmember" => "set member",
+        "zsetmember" => "sorted set member",
         _ => "hash field",
     };
 
@@ -118,6 +119,7 @@ internal sealed class KeyImage
         "zset" => "z" + (Scored?.Count ?? 0).ToString(CultureInfo.InvariantCulture),
         "stream" => "x" + (Entries?.Count ?? 0).ToString(CultureInfo.InvariantCulture) + "|" + (Entries is { Count: > 0 } entries ? entries[^1].Id : string.Empty),
         "setmember" => "m",
+        "zsetmember" => "M",
         "hashfield" => "f" + Value,
         _ => throw new MaintenanceRefusedException($"The image holds the unknown type '{Type}'."),
     };
@@ -134,6 +136,7 @@ internal sealed class KeyImage
             return target.PartKind switch
             {
                 "setmember" => Condition.SetNotContains(target.Key, target.Part),
+                "zsetmember" => Condition.SortedSetNotContains(target.Key, target.Part),
                 "hashfield" => Condition.HashNotExists(target.Key, target.Part),
                 _ => Condition.KeyNotExists(target.Key),
             };
@@ -148,6 +151,7 @@ internal sealed class KeyImage
             "zset" => Condition.SortedSetLengthEqual(current.Key, current.Scored?.Count ?? 0),
             "stream" => Condition.StreamLengthEqual(current.Key, current.Entries?.Count ?? 0),
             "setmember" => Condition.SetContains(current.Key, current.Part),
+            "zsetmember" => Condition.SortedSetContains(current.Key, current.Part),
             "hashfield" => Condition.HashEqual(current.Key, current.Part, current.Value),
             _ => throw new MaintenanceRefusedException($"The image holds the unknown type '{current.Type}'."),
         };
@@ -173,6 +177,12 @@ internal sealed class KeyImage
             return await db.SetContainsAsync(key, target.Part).WaitAsync(cancellationToken).ConfigureAwait(false)
                 ? new KeyImage { Key = key, Part = target.Part, Type = "setmember", Value = target.Part }
                 : null;
+        }
+
+        if (target.PartKind == "zsetmember")
+        {
+            var score = await db.SortedSetScoreAsync(key, target.Part).WaitAsync(cancellationToken).ConfigureAwait(false);
+            return score is { } found ? new KeyImage { Key = key, Part = target.Part, Type = "zsetmember", Value = found.ToString("R", CultureInfo.InvariantCulture) } : null;
         }
 
         if (target.PartKind == "hashfield")
@@ -254,6 +264,9 @@ internal sealed class KeyImage
         {
             case "setmember":
                 tasks.Add(transaction.SetAddAsync(Key, Part));
+                return 0;
+            case "zsetmember":
+                tasks.Add(transaction.SortedSetAddAsync(Key, Part, double.Parse(Value!, CultureInfo.InvariantCulture)));
                 return 0;
             case "hashfield":
                 tasks.Add(transaction.HashSetAsync(Key, Part, Value));

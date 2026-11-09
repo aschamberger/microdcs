@@ -347,3 +347,23 @@ Open questions: none new. The maintainer action from S05 (ask upstream about pub
 Verified: build 0 warnings, 726 tests (662 passed, 64 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 64 passed 0 skipped (`tests` exited 0; no transport changed), `scripts/scan` clean, `zensical build`. The Sonar quality gate runs on the PR. No inspector: the project holds no state.
 Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 64 tests with 0 skipped.
 Next session pickup: S17 (Machinery Jobs processor and job DAOs; depends on S10, S16). Run `git switch main && git pull --ff-only && gh stack init s17-machinery-jobs`. `[CloudEventType(Codec = OpcUaJson)]` is rejected by MDCS010, so register `OpcUaJsonPayloadDescriptor<T>` by hand (D-35 allows it) or extend the generator. Start from the parity rows marked "moved to S17" in [job models](research/job-models.md). A store in `JobOrderState.Initial` means the order does not exist; call `JobControlValidation` first, because the decoder accepts missing ids. After a NodeSet change, regenerate the table with the command in `src/MicroDCS.JobControl/NodeSets/README.md`. After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.
+
+## S17 Machinery Jobs processor and job DAOs (2026-11-09, branch `s17-machinery-jobs`)
+
+Status: done. Previous session post-merge: verified (`ci`, `security`, `docs` green on `main` for `2beb528`, required checks unchanged). Size rule lifted by the maintainer: about 2.9k lines of C# with tests.
+Done:
+
+* `src/MicroDCS.MachineryJobs`: 13 Job Control V2 commands, station configuration, status and retained metadata events, `IJobStore` over the Valkey DAOs, acceptance check with `MicroDcs:JobAcceptance`, inspector `jobs`.
+* Wire shapes as data types in the extension NodeSet (model 1.1.0); the generator now emits descriptors for `Codec = OpcUaJson`.
+* Valkey: the order and its `start` work entry in one script, version-guarded removal with a change entry. `serve` runs the processor when its binding is configured.
+* MCP `job_orders`, `job_order`, `maint_job_delete_plan` (new maintenance target kind `zsetmember`).
+* Compose: job store, job delete and restore, MQTT end to end (store, start, cancel, configuration, retained metadata).
+* `/code-review high`: 10 findings, 8 fixed with regression tests where a test can show it. Not fixed: a command redelivered after another command wrote over the order is applied again (an operation history per order is out of proportion, D-50); stale `start` entries are not withdrawn, S19 must re-validate (D-50).
+
+Findings ([Machinery Jobs](research/machinery-jobs.md), with the Python parity list, no row open): Python never ran a recipe after Store then Start, never deleted an order, and its publisher handles only `Clear`. In `ProcessorHarness` a repeated event id stops at the dedupe layer; a redelivery test needs a store that always claims. Checked that the three redelivery tests fail without their fix.
+Decisions: D-50 (new); D-35 revised.
+Changed in the plan: index, decisions, research (`machinery-jobs.md` new, `job-models.md`), `docs/job-control.md`, `docs/processors-dotnet.md`, `docs/inspection.md`, `zensical.toml`, `CLAUDE.md`.
+Open questions: none new.
+Verified: build 0 warnings, 829 tests (745 passed, 84 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 84 passed 0 skipped (`tests` exited 0), `scripts/scan` clean, `zensical build`. `serve` with the binding against Valkey: `job_orders` and `processors_list` answered over MCP. The AOT smoke round-trips a `StoreCall` but does not run the processor. The Sonar quality gate runs on the PR.
+Post-merge checks: `ci`, `security`, `docs` green on `main`; required checks unchanged; the `integration` job runs 84 tests with 0 skipped.
+Next session pickup: S18 (job order publisher and state topics; depends on S13, S17). Run `git switch main && git pull --ff-only && gh stack init s18-job-order-publisher`. Read the change entries of `changes:{scope}`, handle both `Cancel` and `Clear` as removals (D-50), and add `publisher_status`, `maint_retained_clear` and `maint_publisher_reset`. S19 must re-read the order before acting on a `start` entry (D-50). After `scripts/aot-publish`, run `git checkout src/MicroDCS.Generators/packages.lock.json`.

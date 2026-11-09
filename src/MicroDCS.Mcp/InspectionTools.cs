@@ -85,6 +85,24 @@ internal sealed class InspectionTools
         CancellationToken cancellationToken = default) =>
         Run(service, "stream_pending", "valkey", Arguments("valkey.stream", ("scope", scope)), cancellationToken);
 
+    [McpServerTool(Name = "job_orders", ReadOnly = true, Destructive = false)]
+    [Description("Job orders of a scope with state, version, priority and last operation id. Needs the Machinery Jobs processor.")]
+    public static Task<string> JobOrders(
+        InspectionService service,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("Only orders in this state, for example Running or AllowedToStartReady; empty for all.")] string? state = null,
+        [Description("Maximum entries.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "job_orders", "jobs", Arguments("jobs.orders", limit, ("scope", scope), ("state", state)), cancellationToken);
+
+    [McpServerTool(Name = "job_order", ReadOnly = true, Destructive = false)]
+    [Description("One job order with its state, the job response and the recent changes from the change stream. Needs the Machinery Jobs processor.")]
+    public static Task<string> JobOrder(
+        InspectionService service,
+        [Description("The job order id.")] string id,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "job_order", "jobs", Arguments("jobs.order", ("id", id)), cancellationToken);
+
     [McpServerTool(Name = "inspect", ReadOnly = true, Destructive = false)]
     [Description("Generic query of any inspector (see inspectors_list), for components that have no dedicated tool yet.")]
     public static Task<string> Inspect(

@@ -42,6 +42,15 @@ internal sealed class MaintenanceTools
         CancellationToken cancellationToken = default) =>
         Run(service, "maint_purge_scope_plan", async () => Format(await operations.PlanPurgeScopeAsync(Caller, scope, allowLarge, cancellationToken).ConfigureAwait(false)));
 
+    [McpServerTool(Name = "maint_job_delete_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
+    [Description("Plans the removal of one job order with its job response and SFC state. Changes nothing; run maint_apply with the returned token to execute. Bypasses the state machine; show the plan and ask first.")]
+    public static Task<string> JobDeletePlan(
+        InspectionService service,
+        IMaintenanceOperations operations,
+        [Description("The job order id.")] string id,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "maint_job_delete_plan", async () => Format(await operations.PlanJobDeleteAsync(Caller, id, cancellationToken).ConfigureAwait(false)));
+
     [McpServerTool(Name = "maint_restore_plan", ReadOnly = true, Destructive = false, Idempotent = false)]
     [Description("Plans putting the content of a snapshot back (see maint_snapshots_list). Refuses when a target exists with different content unless overwrite is set. Changes nothing; run maint_apply with the returned token to execute.")]
     public static Task<string> RestorePlan(

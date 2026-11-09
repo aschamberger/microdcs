@@ -22,6 +22,7 @@
     <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
     <ProjectReference Include="../MicroDCS.Inspection/MicroDCS.Inspection.csproj" />
     <ProjectReference Include="../MicroDCS.JobControl/MicroDCS.JobControl.csproj" />
+    <ProjectReference Include="../MicroDCS.MachineryJobs/MicroDCS.MachineryJobs.csproj" />
     <ProjectReference Include="../MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
     <ProjectReference Include="../MicroDCS.Mcp/MicroDCS.Mcp.csproj" />
     <ProjectReference Include="../MicroDCS.Transport.Mqtt/MicroDCS.Transport.Mqtt.csproj" />

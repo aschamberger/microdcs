@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MicroDCS.Valkey/MicroDCS.Valkey.csproj" />
+    <ProjectReference Include="../../src/MicroDCS.MachineryJobs/MicroDCS.MachineryJobs.csproj" />
     <ProjectReference Include="../../src/MicroDCS.Maintenance/MicroDCS.Maintenance.csproj" />
     <ProjectReference Include="../../src/MicroDCS.Transport.Mqtt/MicroDCS.Transport.Mqtt.csproj" />
     <ProjectReference Include="../../src/MicroDCS.Transport.Nats/MicroDCS.Transport.Nats.csproj" />

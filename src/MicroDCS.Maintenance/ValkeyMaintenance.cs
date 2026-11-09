@@ -18,6 +18,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     private const string DedupeTool = "maint_dedupe_release";
     private const string PurgeTool = "maint_purge_scope";
     private const string RestoreTool = "maint_restore";
+    private const string JobDeleteTool = "maint_job_delete";
 
     // Removes the targets in one step. ARGV holds three values per key: operation, argument (set member or hash field) and the
     // fingerprint of the plan image (KeyImage.Fingerprint). Nothing is removed when any target differs from its fingerprint (RV-21).
@@ -37,6 +38,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             if type(last) == 'table' and last[1] then id = last[1][1] end
             return (tostring(redis.pcall('XLEN', key)) .. '|' .. id) == p
           elseif c == 'm' then return redis.pcall('SISMEMBER', key, arg) == 1
+          elseif c == 'M' then return type(redis.pcall('ZSCORE', key, arg)) == 'string'
           elseif c == 'f' then return redis.pcall('HGET', key, arg) == p
           end
           return false
@@ -50,6 +52,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
           local arg = ARGV[i * 3 - 1]
           if op == 'del' then removed = removed + redis.call('DEL', KEYS[i])
           elseif op == 'srem' then removed = removed + redis.call('SREM', KEYS[i], arg)
+          elseif op == 'zrem' then removed = removed + redis.call('ZREM', KEYS[i], arg)
           else removed = removed + redis.call('HDEL', KEYS[i], arg) end
         end
         return {1, removed}
@@ -136,12 +139,34 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
     }
 
     /// <inheritdoc />
+    public async ValueTask<MaintenancePlan> PlanJobDeleteAsync(string caller, string id, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        await GuardAsync(caller, JobDeleteTool, cancellationToken).ConfigureAwait(false);
+        var scope = (string?)await Database.HashGetAsync(_context.Keys.JobOrder(id), "scope").WaitAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw Refuse(caller, JobDeleteTool, $"There is no job order '{id}'.");
+        var targets = await JobTargetsAsync(id, scope, cancellationToken).ConfigureAwait(false);
+        return await CreateDeletePlanAsync(
+            caller,
+            JobDeleteTool,
+            $"id={id}",
+            $"Removes job order '{id}' of scope '{scope}', its job response and its SFC state.",
+            targets,
+            [
+                "This bypasses the OPC UA state machine and the pipeline. No status event is sent, no change entry is written, and retained topics on the broker stay (use the publisher reset to republish).",
+                "Entries of this job in the change and work streams stay.",
+            ],
+            allowLarge: false,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<MaintenancePlan> PlanRestoreAsync(string caller, string snapshotId, bool overwrite, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(snapshotId);
         await GuardAsync(caller, RestoreTool, cancellationToken).ConfigureAwait(false);
         var snapshot = await LoadSnapshotAsync(caller, snapshotId, cancellationToken).ConfigureAwait(false);
-        var targets = snapshot.Items.Select(static i => new Target(i.Key, i.Part, i.Type switch { "setmember" => "setmember", "hashfield" => "hashfield", _ => null })).ToList();
+        var targets = snapshot.Items.Select(static i => new Target(i.Key, i.Part, i.Type switch { "setmember" => "setmember", "zsetmember" => "zsetmember", "hashfield" => "hashfield", _ => null })).ToList();
         var current = await CaptureAllAsync(targets, cancellationToken).ConfigureAwait(false);
 
         var items = new List<PlanItem>();
@@ -276,7 +301,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         {
             var (target, image) = removals[i];
             keys[i] = target.Key;
-            values[(i * 3)] = target.PartKind switch { "setmember" => "srem", "hashfield" => "hdel", _ => "del" };
+            values[(i * 3)] = target.PartKind switch { "setmember" => "srem", "zsetmember" => "zrem", "hashfield" => "hdel", _ => "del" };
             values[(i * 3) + 1] = target.Part ?? string.Empty;
             values[(i * 3) + 2] = image.Fingerprint();
         }
@@ -380,6 +405,36 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         return snapshot.KeyPrefix == _context.Options.KeyPrefix
             ? snapshot
             : throw Refuse(caller, RestoreTool, $"The snapshot was taken with key prefix '{snapshot.KeyPrefix}', this instance uses '{_context.Options.KeyPrefix}'.");
+    }
+
+    /// <summary>The structures of one job order, found through the key schema.</summary>
+    private async Task<List<Target>> JobTargetsAsync(string id, string scope, CancellationToken cancellationToken)
+    {
+        var keys = _context.Keys;
+        var db = Database;
+        var targets = new List<Target>
+        {
+            new(keys.JobOrder(id)),
+            new(keys.JobOrderList(scope), id, "zsetmember"),
+            new(keys.JobResponseByOrder(id)),
+            new(keys.SfcState(id)),
+            new(keys.SfcActive(scope), id, "setmember"),
+            new(keys.SfcDue(scope), id, "zsetmember"),
+        };
+
+        var responseId = (string?)await db.StringGetAsync(keys.JobResponseByOrder(id)).WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (responseId is not null)
+        {
+            var state = (string?)await db.HashGetAsync(keys.JobResponse(responseId), "state").WaitAsync(cancellationToken).ConfigureAwait(false);
+            targets.Add(new Target(keys.JobResponse(responseId)));
+            targets.Add(new Target(keys.JobResponseList(scope), responseId, "zsetmember"));
+            if (!string.IsNullOrEmpty(state))
+            {
+                targets.Add(new Target(keys.JobResponseByState(scope, state), responseId, "setmember"));
+            }
+        }
+
+        return targets;
     }
 
     /// <summary>The structures of one scope, found through the key schema and the lists it holds.</summary>

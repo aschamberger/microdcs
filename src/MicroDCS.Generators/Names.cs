@@ -22,5 +22,7 @@ internal static class Names
     public const string JsonIgnore = "System.Text.Json.Serialization.JsonIgnoreAttribute";
     public const string JsonSerializable = "System.Text.Json.Serialization.JsonSerializableAttribute";
     public const string JsonContext = "System.Text.Json.Serialization.JsonSerializerContext";
+    public const string Encodeable = "Opc.Ua.IEncodeable";
+    public const string OpcUaJsonDescriptor = "global::MicroDCS.JobControl.Codec.OpcUaJsonPayloadDescriptor";
     public const string CancellationToken = "System.Threading.CancellationToken";
 }

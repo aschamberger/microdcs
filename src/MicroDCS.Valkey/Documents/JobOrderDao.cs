@@ -1,8 +1,12 @@
+using StackExchange.Redis;
+
 namespace MicroDCS.Valkey.Documents;
 
 /// <summary>Job order documents (R-8 to R-11). The document text is produced by the caller's codec.</summary>
 public sealed class JobOrderDao : DocumentDao
 {
+    private const int RemovalScanLength = 1000;
+
     /// <summary>Initializes a new instance of the <see cref="JobOrderDao"/> class.</summary>
     /// <param name="context">The shared context.</param>
     public JobOrderDao(ValkeyContext context)
@@ -18,20 +22,64 @@ public sealed class JobOrderDao : DocumentDao
     /// <param name="changeType">The change type written to the change stream.</param>
     /// <param name="expectedVersion">The version this write builds on, 0 to create; <see langword="null"/> overwrites unconditionally.</param>
     /// <param name="operation">An id that makes a repeated logical write recognisable (R-4); generated when absent.</param>
+    /// <param name="startRecipe">Whether the same step appends the SFC work entry that starts the recipe of this job.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     /// <returns>The result.</returns>
-    public Task<WriteResult> SaveAsync(string id, string scope, string document, double priority, string changeType, long? expectedVersion = null, string? operation = null, CancellationToken cancellationToken = default)
+    public Task<WriteResult> SaveAsync(string id, string scope, string document, double priority, string changeType, long? expectedVersion = null, string? operation = null, bool startRecipe = false, CancellationToken cancellationToken = default)
     {
         RequireText(id, nameof(id));
         RequireText(scope, nameof(scope));
         RequireText(document, nameof(document));
         var op = NewOperation(operation);
         var key = Keys.JobOrder(id);
+        RedisKey[] keys = startRecipe
+            ? [key, Keys.JobOrderList(scope), Keys.Changes(scope), Keys.Scopes(), Keys.Nudge("changes"), Keys.SfcWork(scope), Keys.Nudge("sfc")]
+            : [key, Keys.JobOrderList(scope), Keys.Changes(scope), Keys.Scopes(), Keys.Nudge("changes")];
+        var script = startRecipe ? DocumentScripts.PutJobOrderAndStart : DocumentScripts.PutJobOrder;
         return Context.WriteAsync(key, op, async _ => await Database.ScriptEvaluateAsync(
-            DocumentScripts.PutJobOrder,
-            [key, Keys.JobOrderList(scope), Keys.Changes(scope), Keys.Scopes(), Keys.Nudge("changes")],
+            script,
+            keys,
             PutArguments(expectedVersion, op, id, scope, priority, document, changeType, Timestamp(), id, Context.Options.ChangeStreamMaxLength, string.Empty, string.Empty)).ConfigureAwait(false), cancellationToken);
     }
+
+    /// <summary>Removes a job order and its list entry and appends a change entry, atomically and guarded by the version (D-34).</summary>
+    /// <param name="id">The job order id.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="changeType">The change type written to the change stream.</param>
+    /// <param name="expectedVersion">The version this removal builds on.</param>
+    /// <param name="operation">An id that makes a repeated logical write recognisable (R-4); generated when absent.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The result; not written when the version differs.</returns>
+    public Task<WriteResult> RemoveAsync(string id, string scope, string changeType, long expectedVersion, string? operation = null, CancellationToken cancellationToken = default)
+    {
+        RequireText(id, nameof(id));
+        RequireText(scope, nameof(scope));
+        var op = NewOperation(operation);
+        var key = Keys.JobOrder(id);
+        return Context.WriteAsync(key, op, async _ => await Database.ScriptEvaluateAsync(
+            DocumentScripts.RemoveJobOrder,
+            [key, Keys.JobOrderList(scope), Keys.Changes(scope), Keys.Nudge("changes")],
+            PutArguments(expectedVersion, op, id, scope, 0, string.Empty, changeType, Timestamp(), id, Context.Options.ChangeStreamMaxLength, string.Empty, string.Empty)).ConfigureAwait(false), cancellationToken);
+    }
+
+    /// <summary>Checks whether an operation removed a job order, from the change entry of the removal; the hash is gone by then.</summary>
+    /// <param name="id">The job order id.</param>
+    /// <param name="scope">The scope.</param>
+    /// <param name="operation">The operation id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns><see langword="true"/> when a recent change entry records it.</returns>
+    public async Task<bool> WasRemovedByAsync(string id, string scope, string operation, CancellationToken cancellationToken = default)
+    {
+        var entries = await Database.StreamRangeAsync(Keys.Changes(scope), "-", "+", RemovalScanLength, Order.Descending).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return entries.Any(e => e["job_order_id"] == id && e["op"] == operation);
+    }
+
+    /// <summary>Counts the job orders of a scope.</summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The count.</returns>
+    public async Task<long> CountAsync(string scope, CancellationToken cancellationToken = default) =>
+        await Database.SortedSetLengthAsync(Keys.JobOrderList(scope)).WaitAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>Reads a job order.</summary>
     /// <param name="id">The id.</param>

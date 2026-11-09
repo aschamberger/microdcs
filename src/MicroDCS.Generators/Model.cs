@@ -4,7 +4,7 @@ namespace MicroDCS.Generators;
 
 internal sealed class PayloadInfo
 {
-    public PayloadInfo(INamedTypeSymbol type, string typeId, string? schema, string fieldName, string contextAccess, List<CarriedInfo> carried)
+    public PayloadInfo(INamedTypeSymbol type, string typeId, string? schema, string fieldName, string? contextAccess, List<CarriedInfo> carried)
     {
         Type = type;
         TypeId = typeId;
@@ -22,7 +22,8 @@ internal sealed class PayloadInfo
 
     public string FieldName { get; }
 
-    public string ContextAccess { get; }
+    /// <summary>The JSON type info expression; <see langword="null"/> for an OPC UA JSON payload.</summary>
+    public string? ContextAccess { get; }
 
     public List<CarriedInfo> Carried { get; }
 }

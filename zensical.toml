@@ -45,6 +45,7 @@ nav = [
       {"Inspection and MCP" = "porting/research/inspection-mcp.md"},
       {"SFC core" = "porting/research/sfc-core.md"},
       {"Job models" = "porting/research/job-models.md"},
+      {"Machinery Jobs" = "porting/research/machinery-jobs.md"},
       {"Data layer" = "porting/research/data-layer.md"},
       {"SFC rules" = "porting/research/sfc-rules.md"},
       {"Valkey findings" = "porting/research/valkey-findings.md"},

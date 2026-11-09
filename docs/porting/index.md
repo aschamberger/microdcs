@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S17** (Machinery Jobs processor); S08 to S16 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S18** (Job order publisher and state topics); S08 to S17 are done.
 
 ## How to use these files
 
@@ -96,7 +96,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
 | [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP via AMQPNetLite.Core (clean), Zenoh library open (Zenoh-CS `Get` crash) |
 | [D-34](decisions.md#d-34) | revised | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
-| [D-35](decisions.md#d-35) | decided | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
+| [D-35](decisions.md#d-35) | revised | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
 | [D-36](decisions.md#d-36) | decided | Own `EventEnvelope`; CloudEvents SDK only behind `IEnvelopeCodec`; `IPayloadDescriptor` with Json, OpcUaJson, Binary codecs |
 | [D-37](decisions.md#d-37) | decided | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model, shutdown phases |
 | [D-38](decisions.md#d-38) | decided | Logical address with one segment rule for all transports, scope check, level-0 rejected by default, state-topic port |
@@ -112,7 +112,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-48](decisions.md#d-48) | decided | Reply addresses from peers are checked before the instance publishes to them (no `$`, no wildcards, not below an own prefix, optional allow list) |
 | [D-49](decisions.md#d-49) | decided | Credential files are read on every connect attempt; a rejected credential does not end the retries; one shared compose test per transport |
 
-Next free id: **D-50**.
+| [D-50](decisions.md#d-50) | decided | Machinery Jobs processor: V2 commands only, wire shapes in the extension NodeSet, responses with their own type id, recipe start atomic with the order on every entry into AllowedToStart |
+
+Next free id: **D-51**.
 
 ## Open questions
 
@@ -178,7 +180,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S15 | SFC core library (pure), in-memory host | S07 (parallel to S08 to S14) | done |
 | **M2 Parity gate** | | | |
 | S16 | Job models and state machine | S05, S08 | done |
-| S17 | Machinery Jobs processor and job DAOs | S10, S16 | open |
+| S17 | Machinery Jobs processor and job DAOs | S10, S16 | done |
 | S18 | Job order publisher and state topics | S13, S17 | open |
 | S19 | SFC Valkey host: work stream, outbox, due-index, push commands | S09, S15, S17 | open |
 | S20 | SFC pull events, recovery, multi-instance | S19 | open |
