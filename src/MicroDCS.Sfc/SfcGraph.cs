@@ -67,6 +67,9 @@ public sealed class SfcGraph
     /// <summary>Gets the name of the initial step.</summary>
     public string InitialStep { get; }
 
+    /// <summary>Gets the distinct event types the pull-event actions of this recipe wait for.</summary>
+    public IReadOnlyList<string> PullTypeIds => field ??= [.. Recipe.Actions.Where(static a => a.Interaction == SfcNames.PullEvent).Select(static a => a.TypeId).Distinct(StringComparer.Ordinal)];
+
     /// <summary>Gets the actions of a step in recipe order.</summary>
     /// <param name="step">The step name.</param>
     /// <returns>The actions; empty for a step without actions.</returns>

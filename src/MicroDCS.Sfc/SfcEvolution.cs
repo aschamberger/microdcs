@@ -109,15 +109,16 @@ internal sealed class SfcEvolution
             return Refuse(SfcDisposition.Absorbed, "The job is not running.");
         }
 
-        SfcActionState? waiting = _graph.Recipe.Actions
-            .Select(a => _actions[a.Name])
-            .FirstOrDefault(a => a.Status == SfcActionStatus.Waiting && string.Equals(a.TypeId, received.TypeId, StringComparison.Ordinal));
-        if (waiting is null)
+        SfcActionBlock? block = _graph.Recipe.Actions.FirstOrDefault(a =>
+            _actions[a.Name].Status == SfcActionStatus.Waiting
+            && string.Equals(a.TypeId, received.TypeId, StringComparison.Ordinal)
+            && (a.Selector is null || a.Selector.Matches(_original.JobId, received.Subject, received.CorrelationId)));
+        if (block is null)
         {
-            return Refuse(SfcDisposition.Absorbed, "No action of this job waits for the event type.");
+            return Refuse(SfcDisposition.Absorbed, "No action of this job waits for this event.");
         }
 
-        Finish(waiting, received.Outcome, null);
+        Finish(_actions[block.Name], received.Outcome, received.Error);
         Settle();
         return Applied();
     }

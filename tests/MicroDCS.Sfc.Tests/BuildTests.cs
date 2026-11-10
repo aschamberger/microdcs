@@ -172,10 +172,35 @@ public class BuildTests
 
         Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e"), Pull("y", "A", type: "t.e")])).ShouldContain("SFC011");
         Codes(Recipe(steps, [To("A", "S")], [Pull("x", "P1", type: "t.e"), Pull("y", "P2", type: "t.e")], Sim("S", ["P1"], ["P2"]))).ShouldContain("SFC011");
-        // Parameters are not a selector yet (S20): an event carries only the type, so different parameters do not help.
-        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: "left"), Pull("y", "A", type: "t.e", selector: "right")])).ShouldContain("SFC011");
+        // Parameters are not a selector: only the Selector field tells two waits apart.
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", parameter: "left"), Pull("y", "A", type: "t.e", parameter: "right")])).ShouldContain("SFC011");
         Codes(Recipe([Step("A", true), Step("B")], [To("A", "B")], [Pull("x", "A", type: "t.e"), Pull("y", "B", type: "t.e")])).ShouldBeEmpty();
     }
+
+    [Fact]
+    public void SelectorsThatDifferInALiteralSeparateWaits()
+    {
+        SfcSelector Subject(string value) => new() { Subject = value };
+
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("left")), Pull("y", "A", type: "t.e", selector: Subject("right"))])).ShouldBeEmpty();
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("same")), Pull("y", "A", type: "t.e", selector: Subject("same"))])).ShouldContain("SFC011");
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("left")), Pull("y", "A", type: "t.e")])).ShouldContain("SFC011");
+
+        // The job id can equal any literal, and one field each says nothing about the other field.
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("{jobId}")), Pull("y", "A", type: "t.e", selector: Subject("left"))])).ShouldContain("SFC011");
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("left")), Pull("y", "A", type: "t.e", selector: new() { CorrelationId = "c" })])).ShouldContain("SFC011");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("{job}")]
+    [InlineData("{jobId}-{other}")]
+    public void ABadSelectorValueIsSfc009(string value) =>
+        Codes(Recipe([Step("A", true)], [], [Pull("x", "A", selector: new() { Subject = value })])).ShouldContain("SFC009");
+
+    [Fact]
+    public void ASelectorOnAPushActionIsSfc009() =>
+        Codes(Recipe([Step("A", true)], [], [Push("x", "A") with { Selector = new() { Subject = "s" } }])).ShouldContain("SFC009");
 
     [Fact]
     public void CapabilitiesRefuseWhatTheStationCannotRun()

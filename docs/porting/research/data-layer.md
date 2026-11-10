@@ -50,6 +50,8 @@ Also found in the Python scripts: they build JSON by string concatenation (`'"' 
 | `sfc:active:{scope}` | set | job ids with running state | `sfc:activejobs:{scope}` |
 | `sfc:due:{scope}` | zset | job id, score next deadline (D-18) | new |
 | `sfc:heartbeat` | string | last sweep time (outage grace, D-18) | new |
+| `sfc:waits:{scope}:{typeId}` | zset | job id, score wait start (R-1, D-53) | new (Python scanned the active set) |
+| `sfc:event:{scope}:{source}\|{id}` | string | job id, lifetime 1 h: an applied event (D-53) | new |
 | channel `nudge:{kind}` | pub/sub | message = scope | new (D-43) |
 
 SFC key details are completed by the SFC rules below.

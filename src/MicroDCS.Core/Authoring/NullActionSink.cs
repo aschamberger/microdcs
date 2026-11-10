@@ -7,5 +7,5 @@ public sealed class NullActionSink : IActionSink
     public ValueTask CompleteAsync(ActionResponse response, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
     /// <inheritdoc />
-    public ValueTask EventReceivedAsync(EventContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    public ValueTask EventReceivedAsync(EventContext context, ActionOutcome outcome, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 }

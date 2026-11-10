@@ -254,7 +254,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             SfcJobDeleteTool,
             $"id={id}",
             $"Removes the SFC state of job '{id}' of scope '{scope}'. The job order and its response stay.",
-            [new Target(keys.SfcState(id)), new Target(keys.SfcActive(scope), id, "setmember"), new Target(keys.SfcDue(scope), id, "zsetmember")],
+            [new Target(keys.SfcState(id)), new Target(keys.SfcActive(scope), id, "setmember"), new Target(keys.SfcDue(scope), id, "zsetmember"), .. (await WaitKeysAsync(scope, cancellationToken).ConfigureAwait(false)).Select(k => new Target(k, id, "zsetmember"))],
             ["The job order keeps its state, so a running job stays Running with no recipe behind it. Work entries of this job stay and find no state."],
             allowLarge: false,
             cancellationToken).ConfigureAwait(false);
@@ -684,6 +684,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
             new(keys.SfcActive(scope), id, "setmember"),
             new(keys.SfcDue(scope), id, "zsetmember"),
         };
+        targets.AddRange((await WaitKeysAsync(scope, cancellationToken).ConfigureAwait(false)).Select(k => new Target(k, id, "zsetmember")));
 
         var responseId = (string?)await db.StringGetAsync(keys.JobResponseByOrder(id)).WaitAsync(cancellationToken).ConfigureAwait(false);
         if (responseId is not null)
@@ -749,6 +750,7 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         targets.Add(new Target(keys.SfcDead(scope)));
         targets.Add(new Target(keys.SfcActive(scope)));
         targets.Add(new Target(keys.SfcDue(scope)));
+        targets.AddRange((await WaitKeysAsync(scope, cancellationToken).ConfigureAwait(false)).Select(static k => new Target(k)));
         var sfcJobs = new HashSet<string>(StringComparer.Ordinal);
         sfcJobs.UnionWith((await Members(keys.SfcActive(scope)).ConfigureAwait(false)).Select(static v => v.ToString()));
         sfcJobs.UnionWith((await Sorted(keys.SfcDue(scope)).ConfigureAwait(false)).Select(static v => v.ToString()));
@@ -757,6 +759,20 @@ public sealed class ValkeyMaintenance : IMaintenanceOperations
         targets.Add(new Target(keys.PublisherCursors(), scope, "hashfield"));
         targets.Add(new Target(keys.Scopes(), scope, "setmember"));
         return targets;
+    }
+
+    /// <summary>The waits index keys of a scope, one per event type. The type ids are not listed anywhere else.</summary>
+    private async Task<List<string>> WaitKeysAsync(string scope, CancellationToken cancellationToken)
+    {
+        var server = _context.Multiplexer.GetServers().First(static s => s.IsConnected && !s.IsReplica);
+        var found = new List<string>();
+        await foreach (var key in server.KeysAsync(Database.Database, _context.Keys.SfcWaits(scope, "*"), 250).WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            found.Add(key.ToString());
+        }
+
+        found.Sort(StringComparer.Ordinal);
+        return found;
     }
 
     private async Task<KeyImage?[]> CaptureAllAsync(List<Target> targets, CancellationToken cancellationToken)

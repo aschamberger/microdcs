@@ -63,7 +63,11 @@ public sealed class ProcessorAttribute : Attribute
 /// a <see cref="Replies"/>, <c>Task</c>/<c>ValueTask</c> of those, <c>void</c> or <see langword="null"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class IncomingAttribute : Attribute;
+public sealed class IncomingAttribute : Attribute
+{
+    /// <summary>The outcome names this event can report when it completes an SFC <c>pull_event</c> action, returned as an <see cref="ActionOutcome"/> (D-44). The reserved outcomes need no entry.</summary>
+    public string[] Outcomes { get; init; } = [];
+}
 
 /// <summary>
 /// A type-id keyed payload factory (P-13). Used where the caller knows only a type id and free-form parameters, in

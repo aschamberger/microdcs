@@ -43,7 +43,7 @@ internal sealed class RecordingSink : IActionSink
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask EventReceivedAsync(EventContext context, CancellationToken cancellationToken)
+    public ValueTask EventReceivedAsync(EventContext context, ActionOutcome outcome, CancellationToken cancellationToken)
     {
         Events++;
         return ValueTask.CompletedTask;

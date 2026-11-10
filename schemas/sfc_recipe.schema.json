@@ -80,6 +80,26 @@
               "object",
               "null"
             ]
+          },
+          "Selector": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "Subject": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "CorrelationId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           }
         },
         "required": [

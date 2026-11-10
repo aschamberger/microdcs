@@ -497,7 +497,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
             var outcome = replies.Select(static r => r.Payload).OfType<ActionOutcome>().FirstOrDefault();
             if (!isResponse)
             {
-                await _actions.EventReceivedAsync(context, cancellationToken).ConfigureAwait(false);
+                await _actions.EventReceivedAsync(context, outcome ?? ActionOutcome.Done, cancellationToken).ConfigureAwait(false);
             }
             else if (handler.Kind == HandlerKind.Response && envelope.CausationId is { } commandId)
             {

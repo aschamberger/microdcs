@@ -452,6 +452,23 @@ public sealed class MaintenanceTests
     }
 
     [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
+    public async Task DeletingAnSfcJobAlsoRemovesItsWaits()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var env = await ValkeyTestEnvironment.CreateAsync();
+        using var rig = new Rig(env);
+        var dao = new SfcStateDao(env.Context);
+        await dao.CompareAndSetAsync("j1", "plant.a", SfcStateDocument, 0, 5000, true, [], waits: new([("t.a", 100)], []), cancellationToken: ct);
+        await dao.AddWaitingAsync("plant.a", "t.a", "other", 200, ct);
+
+        var plan = await rig.Operations.PlanSfcJobDeleteAsync("test", "j1", ct);
+        plan.Items.ShouldContain(i => i.Key.Contains("sfc:waits:", StringComparison.Ordinal));
+        await rig.Operations.ApplyAsync("test", plan.Token, ct);
+
+        (await dao.ListWaitingAsync("plant.a", "t.a", 10, ct)).Select(static w => w.JobId).ShouldBe(["other"]);
+    }
+
+    [Fact(SkipUnless = nameof(TestEndpoints.ValkeyConfigured), SkipType = typeof(TestEndpoints), Skip = ValkeyTestEnvironment.SkipReason)]
     public async Task RebuildDueIndexWritesItFromTheJobStates()
     {
         var ct = TestContext.Current.CancellationToken;

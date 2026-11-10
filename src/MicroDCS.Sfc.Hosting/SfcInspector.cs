@@ -9,7 +9,7 @@ namespace MicroDCS.Sfc.Hosting;
 
 /// <summary>
 /// Inspector <c>sfc</c> (D-19): one job, the due-index and the pending work of a scope. Read-only.
-/// Kinds: <c>sfc.job</c> (argument <c>id</c>), <c>sfc.due</c> and <c>sfc.work</c> (argument <c>scope</c>).
+/// Kinds: <c>sfc.job</c> (argument <c>id</c>), <c>sfc.due</c> and <c>sfc.work</c> (argument <c>scope</c>), <c>sfc.waits</c> (arguments <c>scope</c> and <c>type</c>).
 /// </summary>
 internal sealed class SfcInspector : IInspector
 {
@@ -36,7 +36,8 @@ internal sealed class SfcInspector : IInspector
             "sfc.job" => await JobAsync(Required(query, "id"), cancellationToken).ConfigureAwait(false),
             "sfc.due" => await DueAsync(Required(query, "scope"), Math.Max(query.Limit, 1), cancellationToken).ConfigureAwait(false),
             "sfc.work" => await WorkAsync(Required(query, "scope"), Math.Max(query.Limit, 1), cancellationToken).ConfigureAwait(false),
-            _ => throw new ArgumentException("Kind must be sfc.job, sfc.due or sfc.work.", nameof(query)),
+            "sfc.waits" => await WaitsAsync(Required(query, "scope"), Required(query, "type"), Math.Max(query.Limit, 1), cancellationToken).ConfigureAwait(false),
+            _ => throw new ArgumentException("Kind must be sfc.job, sfc.due, sfc.work or sfc.waits.", nameof(query)),
         };
         return new InspectionPage(entries, null);
     }
@@ -88,6 +89,12 @@ internal sealed class SfcInspector : IInspector
     {
         var due = await _states.ListDueAsync(scope, limit, cancellationToken).ConfigureAwait(false);
         return [.. due.Select(d => new InspectionEntry("sfc.due", d.JobId, new Dictionary<string, InspectionValue>(StringComparer.Ordinal) { ["scope"] = Identifier(scope), ["deadline"] = Public(Time(d.DeadlineMs)) }))];
+    }
+
+    private async ValueTask<IReadOnlyList<InspectionEntry>> WaitsAsync(string scope, string typeId, int limit, CancellationToken cancellationToken)
+    {
+        var waiting = await _states.ListWaitingAsync(scope, typeId, limit, cancellationToken).ConfigureAwait(false);
+        return [.. waiting.Select(w => new InspectionEntry("sfc.waits", w.JobId, new Dictionary<string, InspectionValue>(StringComparer.Ordinal) { ["scope"] = Identifier(scope), ["type"] = Identifier(typeId), ["since"] = Public(Time(w.Since)) }))];
     }
 
     private async ValueTask<IReadOnlyList<InspectionEntry>> WorkAsync(string scope, int limit, CancellationToken cancellationToken)

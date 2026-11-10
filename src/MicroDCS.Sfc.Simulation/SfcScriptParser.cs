@@ -107,9 +107,12 @@ public static class SfcScriptParser
             }
 
             string outcome = item.TryGetProperty("outcome", out JsonElement o) && o.ValueKind == JsonValueKind.String ? o.GetString()! : "ok";
-            script.Inject(new SfcEventReceived { At = atMs, TypeId = type.GetString()!, Outcome = outcome });
+            script.Inject(new SfcEventReceived { At = atMs, TypeId = type.GetString()!, Outcome = outcome, Subject = OptionalText(item, "subject"), CorrelationId = OptionalText(item, "correlationId") });
         }
     }
+
+    private static string? OptionalText(JsonElement item, string name) =>
+        item.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     private static SfcReply ParseReply(JsonElement element)
     {

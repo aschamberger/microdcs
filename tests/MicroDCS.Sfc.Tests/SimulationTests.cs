@@ -117,6 +117,15 @@ public class SimulationTests
     }
 
     [Fact]
+    public void AScriptedReplyMatchesTheSelectorOfThePullAction()
+    {
+        var recipe = Graph(Recipe([Step("A", true)], [], [Pull("p", "A", 30, selector: new() { Subject = "st-1", CorrelationId = "{jobId}" })]));
+        var sim = new SfcSimulation(recipe, new SfcScript());
+
+        sim.Run().ShouldBe(SfcRunEnd.Completed);
+    }
+
+    [Fact]
     public void TheTimeLimitStopsARunBeforeAPendingDeadline()
     {
         var recipe = Graph(Recipe([Step("A", true)], [], [Pull("p", "A", 30)]));

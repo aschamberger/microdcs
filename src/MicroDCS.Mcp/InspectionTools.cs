@@ -128,6 +128,16 @@ internal sealed class InspectionTools
         CancellationToken cancellationToken = default) =>
         Run(service, "sfc_due", "sfc", Arguments("sfc.due", limit, ("scope", scope)), cancellationToken);
 
+    [McpServerTool(Name = "sfc_waits", ReadOnly = true, Destructive = false)]
+    [Description("The jobs of a scope waiting for an event type, oldest wait first; an entry can be stale, sfc_job shows the state. Needs the SFC host.")]
+    public static Task<string> SfcWaits(
+        InspectionService service,
+        [Description("Scope, dotted form.")] string scope,
+        [Description("Event type id.")] string type,
+        [Description("Maximum entries, default 50.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        Run(service, "sfc_waits", "sfc", Arguments("sfc.waits", limit, ("scope", scope), ("type", type)), cancellationToken);
+
     [McpServerTool(Name = "sfc_work_pending", ReadOnly = true, Destructive = false)]
     [Description("The SFC work stream of a scope: length, dead entries, the last sweep, and the entries a consumer holds with idle time and delivery count. Needs the SFC host.")]
     public static Task<string> SfcWorkPending(

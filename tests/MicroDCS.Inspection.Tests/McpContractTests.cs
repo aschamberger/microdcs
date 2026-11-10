@@ -24,7 +24,7 @@ public sealed class McpContractTests
         var names = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToList();
 
         names.ShouldBe(
-            ["app_status", "config_effective", "dedupe_lookup", "inspect", "inspectors_list", "job_order", "job_orders", "pipeline_recent", "processors_list", "publisher_status", "sfc_due", "sfc_dryrun", "sfc_explain", "sfc_job", "sfc_work_pending", "stream_pending", "valkey_document", "valkey_keys"],
+            ["app_status", "config_effective", "dedupe_lookup", "inspect", "inspectors_list", "job_order", "job_orders", "pipeline_recent", "processors_list", "publisher_status", "sfc_due", "sfc_dryrun", "sfc_explain", "sfc_job", "sfc_waits", "sfc_work_pending", "stream_pending", "valkey_document", "valkey_keys"],
             ignoreOrder: true);
     }
 
