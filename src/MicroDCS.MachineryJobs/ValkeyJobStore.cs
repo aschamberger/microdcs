@@ -77,7 +77,14 @@ public sealed class ValkeyJobStore : IJobStore
             write.ChangeType,
             write.ExpectedVersion,
             write.Operation,
-            write.Recipe switch { JobRecipeWork.Start => "start", JobRecipeWork.Cancel => "cancel", _ => null },
+            write.Recipe switch
+            {
+                JobRecipeWork.Start => "start",
+                JobRecipeWork.Cancel => "cancel",
+                JobRecipeWork.Hold => "hold",
+                JobRecipeWork.Release => "release",
+                _ => null,
+            },
             cancellationToken).ConfigureAwait(false);
         return result.Written;
     }

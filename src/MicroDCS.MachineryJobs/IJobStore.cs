@@ -37,6 +37,12 @@ public enum JobRecipeWork
 
     /// <summary>The job was aborted or stopped: end the recipe.</summary>
     Cancel,
+
+    /// <summary>The job was interrupted (Pause): hold the recipe at the next step boundary.</summary>
+    Hold,
+
+    /// <summary>The job left Interrupted for Running (Resume): release the recipe.</summary>
+    Release,
 }
 
 /// <summary>The lists of what a station may use.</summary>

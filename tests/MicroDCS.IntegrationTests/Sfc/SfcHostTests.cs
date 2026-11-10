@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Text;
 using MicroDCS.App.Greetings;
 using MicroDCS.Core.Authoring;
 using MicroDCS.Core.Hosting;
 using MicroDCS.Core.Inspection;
 using MicroDCS.IntegrationTests.Mqtt;
+using MicroDCS.JobControl.Codec;
 using MicroDCS.JobControl.Model;
 using MicroDCS.JobControl.StateMachine;
 using MicroDCS.MachineryJobs;
@@ -17,6 +19,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MQTTnet;
+using Opc.Ua;
 
 namespace MicroDCS.IntegrationTests.Sfc;
 
@@ -368,6 +371,141 @@ public sealed class SfcHostTests
         await EventuallyAsync(async () => (await rig.StateAsync("job-3"))?.Status == SfcJobStatus.Cancelled, "the recipe to end");
         (await rig.States.ListDueAsync(Scope, 10, Ct)).ShouldBeEmpty();
         (await rig.OrderStateAsync("job-3")).ShouldBe(JobOrderState.Aborted);
+    }
+
+    /// <summary>Waits briefly and fails when the equipment receives a command in that time.</summary>
+    private static async Task NoCommandAsync(Rig rig, TimeSpan quiet, string why)
+    {
+        using var window = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        window.CancelAfter(quiet);
+        MqttApplicationMessage? unexpected = null;
+        try
+        {
+            unexpected = await rig.Equipment.ReceiveAsync(window.Token);
+        }
+        catch (OperationCanceledException) when (!Ct.IsCancellationRequested)
+        {
+            // Quiet for the whole window, as expected.
+        }
+
+        unexpected.ShouldBeNull($"no command expected: {why}, got {(unexpected is null ? string.Empty : MqttTestClient.Property(unexpected, "mdcsactionkey"))}");
+    }
+
+    private static Task SendMesAsync<T>(Rig rig, string id, string type, T call)
+        where T : class, IEncodeable =>
+        rig.Equipment.PublishEventAsync($"{rig.Prefix}-mes/site/area/commands", id, type, Scope, Encoding.UTF8.GetString(OpcUaJsonCodec.Encode(call)), rig.Prefix + "-client/replies", Ct);
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task APausedRecipeSendsNothingUntilResumeAndThenCompletesTheJob()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("hold-1", Recipe(timeoutSeconds: 2, maxAttempts: 1));
+        var first = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(first, "mdcsactionkey").ShouldBe("hold-1:a1");
+        await EventuallyAsync(async () => await rig.OrderStateAsync("hold-1") == JobOrderState.Running, "the job to run");
+
+        await SendMesAsync(rig, "mes-pause", JobControlTypes.Pause, new PauseCall { JobOrderID = "hold-1" });
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-1"))?.IsHeld == true, "the recipe to be held");
+        (await rig.OrderStateAsync("hold-1")).ShouldBe(JobOrderState.Suspended);
+        (await rig.States.ListDueAsync(Scope, 10, Ct)).ShouldBeEmpty();
+
+        // Longer than the only attempt of a1: without the hold the job would fault and abort here.
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(3), "the deadline of a held job does not expire");
+        (await rig.StateAsync("hold-1")).ShouldNotBeNull().Status.ShouldBe(SfcJobStatus.Running);
+
+        // Equipment finishes what it started: the answer is recorded, the recipe stays at its step boundary.
+        await rig.AnswerAsync(first);
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-1"))?.Actions["a1"].Status == SfcActionStatus.Completed, "the answer to be recorded");
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(1), "a held recipe does not enter its next step");
+        (await rig.StateAsync("hold-1")).ShouldNotBeNull().ActiveSteps.ShouldBe(["s1"]);
+
+        await SendMesAsync(rig, "mes-resume", JobControlTypes.Resume, new ResumeCall { JobOrderID = "hold-1" });
+        var second = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(second, "mdcsactionkey").ShouldBe("hold-1:a2");
+        await rig.AnswerAsync(second);
+
+        await EventuallyAsync(async () => await rig.OrderStateAsync("hold-1") == JobOrderState.Completed, "the job to complete");
+        (await rig.StateAsync("hold-1")).ShouldNotBeNull().Status.ShouldBe(SfcJobStatus.Completed);
+    }
+
+    private static async Task SetOrderAsync(Rig rig, string job, JobOrderState state, string operation, JobRecipeWork work)
+    {
+        var order = (await rig.Jobs.GetOrderAsync(job, Ct)).ShouldNotBeNull();
+        (await rig.Jobs.SaveOrderAsync(new JobOrderWrite(order.Order, state, Scope, operation, order.Version, "op-" + operation + Guid.NewGuid().ToString("N"), work), Ct)).ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task ADispatchThatReachesAHeldJobIsSentOnReleaseAndOnlyOnce()
+    {
+        await using var rig = await Rig.StartAsync();
+        var stream = rig.Context.Keys.SfcWork(Scope);
+        var state = rig.Context.Keys.SfcState("hold-2");
+        await rig.StartJobAsync("hold-2", Recipe(timeoutSeconds: 4));
+        var first = await rig.Equipment.ReceiveAsync(Ct);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("hold-2") == JobOrderState.Running, "the job to run");
+        var dispatch = (await rig.Context.Database.StreamRangeAsync(stream)).Single(static e => e["action"] == SfcWork.DispatchPrefix + "a1");
+
+        await SetOrderAsync(rig, "hold-2", JobOrderState.Suspended, "Pause", JobRecipeWork.Hold);
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-2"))?.IsHeld == true, "the recipe to be held");
+
+        // As if the first dispatch had waited in the stream until the hold: no marker, and the entry reaches a consumer while held. The hold outlasts
+        // the first deadline.
+        await rig.Context.Database.HashDeleteAsync(state, "sent:a1");
+        await rig.Context.Database.StreamAddAsync(stream, dispatch.Values);
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(4.5), "a dispatch of a held job is not sent");
+        (await rig.StateAsync("hold-2")).ShouldNotBeNull().Actions["a1"].Attempt.ShouldBe(1);
+
+        await SetOrderAsync(rig, "hold-2", JobOrderState.Running, "Resume", JobRecipeWork.Release);
+        var again = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(again, "id").ShouldBe(MqttTestClient.Property(first, "id"));
+        var released = (await rig.StateAsync("hold-2")).ShouldNotBeNull();
+        released.Actions["a1"].Attempt.ShouldBe(1);
+        released.Status.ShouldBe(SfcJobStatus.Running);
+
+        // A redelivered dispatch of a command that went out does not reach the equipment again.
+        await rig.Context.Database.StreamAddAsync(stream, dispatch.Values);
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(1), "each command id is sent once");
+
+        // An entry from before the hold carries the old deadline, which has passed; the moved deadline in the state still lets it out.
+        await rig.Context.Database.HashDeleteAsync(state, "sent:a1");
+        await rig.Context.Database.StreamAddAsync(stream, dispatch.Values);
+        MqttTestClient.Property(await rig.Equipment.ReceiveAsync(Ct), "id").ShouldBe(MqttTestClient.Property(first, "id"));
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AHoldEntryThatArrivesAfterTheResumeLeavesTheRecipeReleased()
+    {
+        await using var rig = await Rig.StartAsync();
+        var stream = rig.Context.Keys.SfcWork(Scope);
+        await rig.StartJobAsync("hold-4", Recipe());
+        await rig.Equipment.ReceiveAsync(Ct);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("hold-4") == JobOrderState.Running, "the job to run");
+        await SetOrderAsync(rig, "hold-4", JobOrderState.Suspended, "Pause", JobRecipeWork.Hold);
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-4"))?.IsHeld == true, "the recipe to be held");
+
+        // The order runs again, but its release entry went to a consumer that read the order before the Resume; then a stale hold entry arrives.
+        await SetOrderAsync(rig, "hold-4", JobOrderState.Running, "Resume", JobRecipeWork.None);
+        await rig.Context.Database.StreamAddAsync(stream, [new("job_id", "hold-4"), new("action", SfcWork.Hold), new("scope", Scope)]);
+
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-4"))?.IsHeld == false, "the recipe to follow the running order");
+        (await rig.States.ListDueAsync(Scope, 10, Ct)).ShouldHaveSingleItem().JobId.ShouldBe("hold-4");
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AStopOfAPausedJobEndsItsRecipe()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("hold-3", Recipe());
+        await rig.Equipment.ReceiveAsync(Ct);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("hold-3") == JobOrderState.Running, "the job to run");
+        await SendMesAsync(rig, "mes-pause-3", JobControlTypes.Pause, new PauseCall { JobOrderID = "hold-3" });
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-3"))?.IsHeld == true, "the recipe to be held");
+
+        await SendMesAsync(rig, "mes-stop-3", JobControlTypes.Stop, new StopCall { JobOrderID = "hold-3" });
+
+        await EventuallyAsync(async () => (await rig.StateAsync("hold-3"))?.Status == SfcJobStatus.Cancelled, "the recipe to end");
+        (await rig.StateAsync("hold-3")).ShouldNotBeNull().HeldAt.ShouldBeNull();
+        (await rig.States.ListActiveAsync(Scope, Ct)).ShouldBeEmpty();
     }
 
     [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]

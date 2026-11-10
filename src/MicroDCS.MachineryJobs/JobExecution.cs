@@ -103,7 +103,9 @@ public sealed class JobExecution
                 await _store.SaveResponseAsync(response, scope, cancellationToken).ConfigureAwait(false);
             }
 
-            var write = new JobOrderWrite(existing.Order, transition.State, scope, operation.ToString(), existing.Version, operationId, JobRecipeWork.None);
+            // The internal Hold interrupts the order like a Pause, so it holds the recipe too (D-52).
+            var recipe = operation == JobOrderOperation.Hold ? JobRecipeWork.Hold : JobRecipeWork.None;
+            var write = new JobOrderWrite(existing.Order, transition.State, scope, operation.ToString(), existing.Version, operationId, recipe);
             if (await _store.SaveOrderAsync(write, cancellationToken).ConfigureAwait(false))
             {
                 Log.Applied(_logger, operation, id, scope, transition.State);

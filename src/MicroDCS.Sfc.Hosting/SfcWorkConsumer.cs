@@ -35,6 +35,9 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
     private readonly ILogger<SfcWorkConsumer> _logger;
     private readonly string _consumer;
     private readonly bool _enabled;
+    // Rounds of reading the order and aligning the hold before the entry is left for a redelivery.
+    private const int MaxAlignRounds = 4;
+
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextClaim = new(StringComparer.Ordinal);
 
     public SfcWorkConsumer(
@@ -200,6 +203,10 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             case SfcWork.Cancel:
                 await _runner.RunAsync(jobId, new SfcCancel { At = at, Reason = entry[SfcWork.ReasonField].HasValue ? entry[SfcWork.ReasonField].ToString() : "job ended" }, entryId, null, cancellationToken).ConfigureAwait(false);
                 break;
+            case SfcWork.Hold:
+            case SfcWork.Release:
+                await AlignHoldAsync(jobId, scope, entryId, cancellationToken).ConfigureAwait(false);
+                break;
             case SfcWork.Tick:
                 await TickAsync(jobId, scope, entry, entryId, at, cancellationToken).ConfigureAwait(false);
                 break;
@@ -262,6 +269,47 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         {
             Log.RecipeStarted(_logger, jobId, scope);
         }
+    }
+
+    /// <summary>
+    /// A <c>hold</c> or <c>release</c> entry (D-52). Both align the recipe with the order as it is now: held while the order is interrupted, released
+    /// when it runs. The entries of one job can reach two consumers in either order, and the order can change between the read and the write, so the
+    /// alignment reads the order again after its own write and repeats until both agree; the last writer always sees the latest order. The time is the
+    /// server's, not the entry's: entries taken out of order would pair a hold with the release of another Pause, and the hold length would be wrong.
+    /// </summary>
+    private async ValueTask AlignHoldAsync(string jobId, string scope, string entryId, CancellationToken cancellationToken)
+    {
+        for (var round = 0; round < MaxAlignRounds; round++)
+        {
+            var order = await _jobs.GetOrderAsync(jobId, cancellationToken).ConfigureAwait(false);
+            bool hold;
+            if (order is not null && string.Equals(order.Scope, scope, StringComparison.Ordinal) && order.State is JobOrderState.Held or JobOrderState.Suspended or JobOrderState.Running)
+            {
+                hold = order.State is not JobOrderState.Running;
+            }
+            else
+            {
+                // Ended, aborted or removed: the cancel entry of that transition ends the recipe.
+                Log.HoldSkipped(_logger, jobId, order?.State ?? JobOrderState.Removed);
+                return;
+            }
+
+            var document = await _states.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (document is null || SfcJobRunner.Parse(document) is not { IsEnded: false } state || state.IsHeld == hold)
+            {
+                return;
+            }
+
+            var now = await _states.ServerTimeAsync(cancellationToken).ConfigureAwait(false);
+            SfcEvent input = hold ? new SfcHold { At = now } : new SfcRelease { At = now };
+            var result = await _runner.RunAsync(jobId, input, string.Create(CultureInfo.InvariantCulture, $"{entryId}:align{round}"), null, cancellationToken).ConfigureAwait(false);
+            if (result.Status == SfcRunStatus.Applied)
+            {
+                Log.HoldChanged(_logger, jobId, hold);
+            }
+        }
+
+        throw new SfcContentionException($"The hold of job '{jobId}' did not settle; the order kept changing.");
     }
 
     private async ValueTask<(SfcGraph? Graph, string Recipe, string Reason)> BuildRecipeAsync(StoredJobOrder order, string scope, CancellationToken cancellationToken)
@@ -474,7 +522,7 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             return;
         }
 
-        var document = await _states.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        var (document, sent) = await _states.GetWithSentAsync(jobId, command.Action, cancellationToken).ConfigureAwait(false);
         var state = document is null ? null : SfcJobRunner.Parse(document);
         if (state is null || state.IsEnded || !state.Actions.TryGetValue(command.Action, out var action)
             || action.Status != SfcActionStatus.Dispatched || !string.Equals(action.CommandId, command.CommandId, StringComparison.Ordinal))
@@ -484,8 +532,26 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             return;
         }
 
+        // Costs no attempt: the release issues the command again with its id and moves its deadline (D-52).
+        if (state.IsHeld)
+        {
+            Log.DispatchSkipped(_logger, command.Action, jobId, "the job is held");
+            return;
+        }
+
+        // Each command id goes out once: a release issues every open command again, and some of them were sent before the hold. The start time tells a
+        // re-stored job id apart, whose sequence of command ids begins again.
+        var marker = string.Create(CultureInfo.InvariantCulture, $"{state.StartedAt}:{command.CommandId}");
+        if (string.Equals(sent, marker, StringComparison.Ordinal))
+        {
+            Log.DispatchSkipped(_logger, command.Action, jobId, "the command was sent already");
+            return;
+        }
+
+        // The state's deadline, not the entry's: a release moved it, and an entry written before the hold still carries the old one.
+        var deadline = action.Deadline ?? command.Deadline;
         var now = await _states.ServerTimeAsync(cancellationToken).ConfigureAwait(false);
-        var remaining = TimeSpan.FromMilliseconds(command.Deadline - now);
+        var remaining = TimeSpan.FromMilliseconds(deadline - now);
         if (remaining <= TimeSpan.Zero)
         {
             Log.DispatchSkipped(_logger, command.Action, jobId, "the deadline has passed");
@@ -495,7 +561,7 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         // A timeout shorter than the grace must still reach the equipment, so the grace only applies where the time allows it.
         var expiry = remaining > _options.ExpiryGrace ? remaining - _options.ExpiryGrace : remaining;
 
-        _pending.Add(command.CommandId, new PendingCommand(jobId, command.ActionKey, command.Round, command.Deadline));
+        _pending.Add(command.CommandId, new PendingCommand(jobId, command.ActionKey, command.Round, deadline));
         try
         {
             await _commands.DispatchAsync(
@@ -520,11 +586,15 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             _pending.Remove(command.CommandId);
             SfcTelemetry.DispatchDropped.Add(1);
             Log.DispatchQueueFull(_logger, command.Action, jobId);
+            return;
         }
         catch
         {
             _pending.Remove(command.CommandId);
             throw;
         }
+
+        // After the command is queued: a crash before this line sends the command id again on redelivery (receivers deduplicate by id), never loses it.
+        await _states.MarkSentAsync(jobId, state.Scope, command.Action, marker, cancellationToken).ConfigureAwait(false);
     }
 }

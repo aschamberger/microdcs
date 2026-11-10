@@ -22,7 +22,7 @@ public sealed class JobOrderDao : DocumentDao
     /// <param name="changeType">The change type written to the change stream.</param>
     /// <param name="expectedVersion">The version this write builds on, 0 to create; <see langword="null"/> overwrites unconditionally.</param>
     /// <param name="operation">An id that makes a repeated logical write recognisable (R-4); generated when absent.</param>
-    /// <param name="recipeWork">The SFC work action the same step appends for this job (<c>start</c> or <c>cancel</c>); <see langword="null"/> for none.</param>
+    /// <param name="recipeWork">The SFC work action the same step appends for this job (<c>start</c>, <c>cancel</c>, <c>hold</c> or <c>release</c>); <see langword="null"/> for none.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     /// <returns>The result.</returns>
     public Task<WriteResult> SaveAsync(string id, string scope, string document, double priority, string changeType, long? expectedVersion = null, string? operation = null, string? recipeWork = null, CancellationToken cancellationToken = default)

@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S20a** (SFC hold and release); S08 to S20 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S21** (HTTP surface and observability); S08 to S20a are done.
 
 ## How to use these files
 
@@ -114,7 +114,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 
 | [D-50](decisions.md#d-50) | decided | Machinery Jobs processor: V2 commands only, wire shapes in the extension NodeSet, responses with their own type id, recipe start atomic with the order on every entry into AllowedToStart |
 | [D-51](decisions.md#d-51) | decided | Job order publisher: separate Deployment by role, poller hand-off, lease as a guard, order topic without state, ids limited to the segment rule, rebuild from documents |
-| [D-52](decisions.md#d-52) | decided | SFC host: own project, job order transitions as work entries, Abort and Stop end the recipe |
+| [D-52](decisions.md#d-52) | revised | SFC host: own project, job order transitions as work entries, Abort and Stop end the recipe, Pause and Resume hold and release it (S20a) |
 | [D-53](decisions.md#d-53) | decided | SFC pull events: `Selector` field, waits index oldest first, one event one job; the recovery scan resends nothing with a deadline; replica tests with real containers |
 
 Next free id: **D-54**.
@@ -187,7 +187,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S18 | Job order publisher and state topics | S13, S17 | done |
 | S19 | SFC Valkey host: work stream, outbox, due-index, push commands | S09, S15, S17 | done |
 | S20 | SFC pull events, recovery, multi-instance | S19 | done |
-| S20a | SFC hold and release: MES Pause and Resume hold the recipe at the next step boundary | S20 | open |
+| S20a | SFC hold and release: MES Pause and Resume hold the recipe at the next step boundary | S20 | done |
 | S21 | HTTP surface and observability | S17 | open |
 | S22 | Container, Kubernetes, supply chain, security review | S21 | open |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |

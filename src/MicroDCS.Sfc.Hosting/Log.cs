@@ -12,6 +12,12 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Information, Message = "Skipped the start of job {JobId}: its order is not allowed to start ({State})")]
     public static partial void StartSkipped(ILogger logger, string jobId, JobOrderState state);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Left the hold of the recipe of job {JobId} as it is: the job order is {State}")]
+    public static partial void HoldSkipped(ILogger logger, string jobId, JobOrderState state);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Recipe of job {JobId} held: {Held}")]
+    public static partial void HoldChanged(ILogger logger, string jobId, bool held);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Refused the recipe of job {JobId}: {Reason}")]
     public static partial void RecipeRefused(ILogger logger, string jobId, string reason);
 

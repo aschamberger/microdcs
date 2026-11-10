@@ -21,6 +21,11 @@ public abstract class DocumentDao
     private protected static async Task<StoredDocument?> ReadAsync(IDatabase database, string key, string id, CancellationToken cancellationToken)
     {
         var entries = await database.HashGetAllAsync(key).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return FromEntries(id, entries);
+    }
+
+    private protected static StoredDocument? FromEntries(string id, HashEntry[] entries)
+    {
         if (entries.Length == 0)
         {
             return null;

@@ -161,13 +161,32 @@ public sealed class ProcessorTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Pausing_a_running_job_does_not_end_its_recipe()
+    public async Task Pause_holds_the_recipe_and_Resume_releases_it()
     {
         await _store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-1" }, JobOrderState.Running, "site.area", "Run", 0, "seed", JobRecipeWork.None), Ct);
 
         (await SendAsync<PauseCall, PauseResponse>(new PauseCall { JobOrderID = "job-1" })).ShouldBe(Success);
+        (await SendAsync<PauseCall, PauseResponse>(new PauseCall { JobOrderID = "job-1" })).ShouldBe(InvalidStatus);
+        (await SendAsync<ResumeCall, ResumeResponse>(new ResumeCall { JobOrderID = "job-1" })).ShouldBe(Success);
 
+        _store.RecipeWork.ShouldBe(["Hold:job-1", "Release:job-1"]);
         _store.RecipeCancels.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Abort")]
+    [InlineData("Stop")]
+    public async Task Ending_a_paused_job_queues_the_end_of_its_recipe(string command)
+    {
+        await _store.SaveOrderAsync(new JobOrderWrite(new JobOrder { Id = "job-1" }, JobOrderState.Running, "site.area", "Run", 0, "seed", JobRecipeWork.None), Ct);
+        await SendAsync<PauseCall, PauseResponse>(new PauseCall { JobOrderID = "job-1" });
+
+        var status = command == "Abort"
+            ? await SendAsync<AbortCall, AbortResponse>(new AbortCall { JobOrderID = "job-1" })
+            : await SendAsync<StopCall, StopResponse>(new StopCall { JobOrderID = "job-1" });
+
+        status.ShouldBe(Success);
+        _store.RecipeWork.ShouldBe(["Hold:job-1", "Cancel:job-1"]);
     }
 
     [Fact]

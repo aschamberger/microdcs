@@ -23,7 +23,7 @@ Names follow IEC 61131-3 (clause 6.6, sequential function chart) wherever the st
 | sequence loop, sequence skip | transitions back to an earlier step, or past steps; no extra element | transitions |
 | evolution of the chart (enabling and clearing of transitions) | `IRecipeInterpreter.Evolve`, `SfcEvolution` | n/a |
 
-Not in the standard, added by MicroDCS: outcomes, `Priority` (vendors resolve competing transitions differently, for example left to right), push and pull interactions, deadlines and attempts (`TimeoutSeconds` is the deadline of one attempt and is unrelated to the `L` qualifier), and the host-side events `Tick`, `Resume` and `Cancel`. The function is called `Evolve`, not `Step` (a step is an SFC element and `Step` is a reserved word in some .NET languages, CA1716) and not `Evaluate` (too generic: it does not say that the chart evolves).
+Not in the standard, added by MicroDCS: outcomes, `Priority` (vendors resolve competing transitions differently, for example left to right), push and pull interactions, deadlines and attempts (`TimeoutSeconds` is the deadline of one attempt and is unrelated to the `L` qualifier), and the host-side events `Tick`, `Resume`, `Cancel`, `Hold` and `Release`. The function is called `Evolve`, not `Step` (a step is an SFC element and `Step` is a reserved word in some .NET languages, CA1716) and not `Evaluate` (too generic: it does not say that the chart evolves).
 
 ## Using the core
 
@@ -77,6 +77,15 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 * `SfcResume` re-emits open work that `SfcSnapshot.LiveWork` does not contain. A re-dispatch uses up an attempt.
 * `SfcCancel` cancels open work and ends the job (`SfcCancelled`).
 
+## Hold and release
+
+`SfcHold` holds a running job at the next step boundary, `SfcRelease` ends the hold (MES Pause and Resume, D-52). This is the usual ISA-88 meaning of pause. The equipment is not told to stop: a command that is out runs to its end.
+
+* While held, no transition fires and nothing is dispatched, re-sends included. A response to a command that is out, or an event for a wait that began before the hold, is recorded on its action. A failure is recorded too, and routed on release.
+* Deadlines do not expire during a hold. `NextDeadline` is empty, so the host has no due-index entry for the job, and a tick or a resume is absorbed.
+* On release, every open deadline moves by the length of the hold (as with an outage), so the hold costs no attempt. Every open push attempt is issued again with its command id and attempt number; the host sends each command id once. Then the transitions that became possible fire.
+* `SfcCancel` ends a held job as usual. A second hold, or a release of a job that is not held, is absorbed.
+
 `SfcStepResult.Disposition` says `Applied`, `Absorbed` (duplicate or late) or `Rejected` (contradiction), with a reason.
 
 ## Build errors
@@ -105,7 +114,7 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 
 ## State and commands
 
-`SfcState` is a versioned JSON document (`format` 1) with the job identity, the pinned recipe hash, the active steps, one record per action, a sequence counter and the fault. Command ids are `{actionKey}#{sequence}`, so replaying the same events on the same state gives byte-identical results. The schema is [`schemas/sfc_state.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_state.schema.json).
+`SfcState` is a versioned JSON document (`format` 1, minor 2) with the job identity, the pinned recipe hash, the active steps, one record per action, a sequence counter, the start time, the time of a hold (`heldAt`, while held) and the fault. Command ids are `{actionKey}#{sequence}`, so replaying the same events on the same state gives byte-identical results. The schema is [`schemas/sfc_state.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_state.schema.json).
 
 Commands are inert data: `StartWork` (`PushCommand` or `AwaitEvent`, with the deadline and the recipe parameters) and `CancelWork` (`redispatch`, `teardown` or the cancel reason). The host applies them in order and idempotently by action key. The continuation is `SfcDefer`, `SfcComplete`, `SfcFault` or `SfcCancelled`; faults carry a code (`timeout`, `error`, `no_transition`, `propagation_limit`) and are verdicts, not policy.
 
@@ -143,7 +152,9 @@ For each event the host loads the state, calls the core, and stores the new stat
 |---|---|---|
 | `start` | The job order script, on every entry into AllowedToStart | Re-reads the order and starts the recipe if the order is still allowed to start. A job without a usable recipe is aborted. |
 | `cancel` | The job order script on Abort and Stop, or the `sfc_abort` tool | Ends the recipe; open work is withdrawn. |
-| `dispatch:{action}` | A step | Sends one push command, only while that attempt is the open one. |
+| `hold` | The job order script when the order enters Interrupted (Pause) | Holds the recipe at the next step boundary. |
+| `release` | The job order script when the order goes from Interrupted to Running (Resume) | Releases the recipe. |
+| `dispatch:{action}` | A step, or a release | Sends one push command, only while that attempt is the open one and the job is not held. Each command id is sent once. |
 | `job` | A step | Applies job order transitions: start of execution, complete (with the job response) or abort. |
 | `tick` | The due-index sweep, or the `sfc_tick` tool | Fires expired deadlines. |
 | `resume` | The `sfc_redispatch` tool, or the recovery scan | Issues an open action again. |
@@ -152,6 +163,8 @@ For each event the host loads the state, calls the core, and stores the new stat
 A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, and after `MaxDeliveries` it moves to `sfc:dead:{scope}` with the reason. `sfc_work_pending` shows both; `maint_stream_requeue_plan` and `maint_stream_ack_plan` act on them.
 
 **Push commands and responses.** The command goes through the `[Outgoing]` factory of its type id, as a command on that processor's binding, with the action key as `mdcsactionkey`. The instance that sent it waits on its own reply address (D-9). The `[OnResponse]` handler returns an `ActionOutcome` that a recipe can name in a condition; the outcome names are declared on the factory, and `done` is the default. An error event from the peer or `ActionOutcome.Failed` is the reserved outcome `error`.
+
+**Pause and Resume.** A `hold` or `release` entry reads the order and aligns the recipe with it: held while the order is Interrupted (Held or Suspended), released when it is Running. The two entries of a Pause and a Resume can reach two consumers in either order, so the entry does not decide by its name; after its write it reads the order again and repeats until both agree. The hold length is measured with the server clock when the hold and the release are applied. A `dispatch` entry that reaches a consumer while the job is held is not sent and costs no attempt; the release issues the command again. After a command is queued, a marker `sent:{action}` in the state hash records its id, so a command sent before the hold, or a redelivered entry, does not reach the equipment again. A crash between the queue and the marker can send a command id twice (receivers deduplicate by id), never lose it. A dispatch takes the deadline from the state, which a release has moved. `sfc_job` shows `heldSince`.
 
 **Deadlines.** Every instance sweeps the due-index of every scope; the script pops each job once. A sweep that finds a heartbeat gap above `OutageThreshold` moves every open deadline by the gap instead of expiring it, so a platform outage does not abort running jobs.
 

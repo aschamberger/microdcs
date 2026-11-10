@@ -8,7 +8,7 @@ Python workflow follows at the end and is replaced as the port proceeds.
 
 | Tool | Version | Notes |
 |---|---|---|
-| .NET SDK | 10.0.403 (pinned in `global.json`, `rollForward: latestPatch`) | `dotnet-install.sh` or a package manager |
+| .NET SDK | 10.0.403 (pinned in `global.json`, `rollForward: patch`: CI installs exactly this version, the Docker SDK image is pinned by digest to the same one; a patch upgrade changes `global.json`, the lock files and the image digest in one PR) | `dotnet-install.sh` or a package manager |
 | Native AOT prerequisites (Linux) | `clang`, `zlib1g-dev` | Needed for a host AOT publish (`scripts/aot-publish`); the container build brings its own |
 | Docker with Compose v2 | recent | Dev stack and the integration test harness (D-15) |
 | Python 3 | any 3.x | Only for the docs site (zensical) |

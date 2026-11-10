@@ -29,6 +29,8 @@ internal static class SfcWork
 
     public const string Start = "start";
     public const string Cancel = "cancel";
+    public const string Hold = "hold";
+    public const string Release = "release";
     public const string Tick = "tick";
     public const string Resume = "resume";
     public const string Job = "job";
