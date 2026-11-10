@@ -88,9 +88,16 @@ public static class SfcExplainer
             text.Append('\n');
         }
 
-        text.Append(state.NextDeadline is long next
-            ? string.Create(CultureInfo.InvariantCulture, $"next deadline {next} (the sweep wakes the job then)\n")
-            : "no open deadline\n");
+        if (state.IsHeld)
+        {
+            text.Append(CultureInfo.InvariantCulture, $"held since {state.HeldAt} (MES Pause): no transition fires and nothing is dispatched; deadlines move by the length of the hold on release\n");
+        }
+        else
+        {
+            text.Append(state.NextDeadline is long next
+                ? string.Create(CultureInfo.InvariantCulture, $"next deadline {next} (the sweep wakes the job then)\n")
+                : "no open deadline\n");
+        }
         foreach (string step in state.ActiveSteps)
         {
             string waiting = string.Join(", ", graph.ActionsOf(step).Where(a => state.Actions.TryGetValue(a.Name, out SfcActionState? s) && s.IsOpen).Select(static a => $"'{a.Name}'"));

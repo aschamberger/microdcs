@@ -21,6 +21,9 @@ internal sealed class InMemoryJobStore : IJobStore
 
     public List<string> RecipeCancels { get; } = [];
 
+    /// <summary>Every recipe work a write queued, as <c>{work}:{id}</c>.</summary>
+    public List<string> RecipeWork { get; } = [];
+
     /// <summary>Runs after an order is read, to change something in the middle of a publisher round.</summary>
     public Action? AfterOrderRead { get; set; }
 
@@ -56,6 +59,11 @@ internal sealed class InMemoryJobStore : IJobStore
 
         _orders[write.Order.Id] = new StoredJobOrder(write.Order, write.State, write.Scope, current + 1, write.Operation);
         Changes.Add($"{write.ChangeType}:{write.Order.Id}");
+        if (write.Recipe != JobRecipeWork.None)
+        {
+            RecipeWork.Add($"{write.Recipe}:{write.Order.Id}");
+        }
+
         if (write.Recipe == JobRecipeWork.Start)
         {
             RecipeStarts.Add(write.Order.Id);

@@ -8,7 +8,7 @@ Background for [D-52](../decisions.md#d-52) (S19). The host is the thin part aro
 2. Call `Evolve` with the event.
 3. If the core applied it, one compare-and-set stores the state, the due-index entry and the active-set entry, and appends the work entries. A lost race reads again.
 
-Work entries: `start`, `cancel`, `tick`, `resume`, `dispatch:{action}` and `job` (the job order transitions of one step). A wait is state and a withdrawn attempt concerns only its sender, so neither becomes an entry.
+Work entries: `start`, `cancel`, `hold`, `release`, `tick`, `resume`, `event`, `dispatch:{action}` and `job` (the job order transitions of one step). A wait is state and a withdrawn attempt concerns only its sender, so neither becomes an entry.
 
 ## Findings
 
@@ -19,6 +19,18 @@ Work entries: `start`, `cancel`, `tick`, `resume`, `dispatch:{action}` and `job`
 * A tick that finds nothing writes nothing, so the host puts the job back on the index; otherwise a moved deadline would never fire.
 * Pending entries are not removed on a response or a re-dispatch. They hold the round, which tells a late answer to an earlier pass of a loop from an answer to the current one. They run out 60 s after their deadline.
 * A step that cannot be done with what is stored (recipe missing, state unreadable, contention) on the response path is logged, not raised: a fault on MQTT stops the host (D-27), and a redelivery would fail the same way. The deadline settles the action.
+
+## Hold and release (S20a)
+
+Python never held a recipe (H-19), so this part is new behaviour. Design notes:
+
+* **Where the hold lives.** In the core state (`heldAt`, format 1.2), not in the host. The core already owns deadlines, and the release reuses the outage rule: open deadlines move by the length of the hold. `NextDeadline` is empty while held, so the compare-and-set takes the job off the due-index and no tick is queued. Tick and resume of a held job are absorbed; a tick that was queued before the hold finds nothing to do.
+* **What is recorded.** Responses to commands that are out, and events for waits that began before the hold (maintainer's choice in S20a), are recorded on their actions; the step stays active until the release. The waits index keeps a held job, so its event is not dropped. A recorded failure is routed on release.
+* **Order of the entries.** A Pause and a Resume write `hold` and `release` entries in the order script. Two consumers can take them in either order, and a Pause, Resume, Pause can leave the last entry in front. Each entry reads the order and aligns the recipe with it (Interrupted means held), then reads the order again after its write and repeats until both agree (at most four rounds, then the entry is left for a redelivery). The read is not atomic with the write, so a single pass could apply a hold the order had already left; the last writer always sees the latest order. The time is the server clock when the hold or release is applied, not the entry time: entries taken out of order would pair a hold with the release of another Pause (`/code-review` finding). Held and Suspended both count as Interrupted: the internal `Hold` operation is a constraint, not a decision, but the recipe cannot run on either way.
+* **Which commands the release sends.** The routing map (`SfcPendingCommands`) is in-process, so no instance knows whether another one sent a command. The core re-issues every open push attempt with its command id and attempt. The dispatch reads the marker `sent:{action} = {startedAt}:{commandId}` together with the state (one `HGETALL`) and skips the send when it matches; after the command is queued it writes the marker (a script that writes only while the state exists). The compare-and-set of the state writes only its own fields, so the marker lives as long as the job and goes with its delete and its snapshot. The start time tells apart a re-stored job id, whose command ids begin again at `#1`. The deadline of the send comes from the state, because a dispatch entry from before the hold carries the old one.
+* **Side effect.** A dispatch entry redelivered after its command was queued and marked no longer sends the command again. A crash between the queue and the marker sends the command id twice on redelivery, as before S20a; receivers deduplicate by id. The first version wrote the marker before the queue, which could lose a command on a crash (`/code-review` finding).
+
+Not chosen: dropping events during a hold and re-adding the wait on release (an answer from equipment that finishes its work would be lost and the action would time out); a set of skipped dispatches per job written by the consumer (a consumer that reads the held state, then loses the race against the release, would add its entry after the release read the set, and the command would wait for its deadline); a marker key with a time to live (a hold can outlast any fixed lifetime).
 
 ## Python parity list: host part of `sfc_engine.py` and the tests
 
@@ -44,7 +56,7 @@ Rows S-1 to S-40 of [SFC rules](sfc-rules.md) hold the decisions from S07. This 
 | H-16 | Job complete writes `{job}-response` in `Ended_Completed` | `_complete_job` | kept (S-26); the response carries the start time now, and is written before the state |
 | H-17 | Job fail triggers `Abort`, writes no response | `_fail_job` | kept (S-27) |
 | H-18 | MES Abort or Stop leaves the recipe running and commanding equipment | `process_abort`, `process_stop` | changed (D-52): the order write queues a `cancel` entry |
-| H-19 | Pause and Resume do not touch the recipe | `process_pause` | kept in S19; changed in S20a: the recipe is held at the next step boundary (D-52) |
+| H-19 | Pause and Resume do not touch the recipe | `process_pause`, `process_resume` (both only `_handle_existing_job_transition`) | changed in S20a (D-52): Pause writes a `hold` and Resume a `release` entry in the order script; the recipe is held at the next step boundary, responses and events are still recorded, deadlines do not expire, nothing is dispatched until the release |
 | H-20 | Recovery scan at start, `resume` per active job; skips ended jobs | `_recovery_scan`, `_handle_resume`, `test_recovery_scan_*` | changed (D-53): only running jobs are listed; the scan resends nothing with a deadline and repairs the indexes; a job that cannot be evaluated is logged, not sent to the dead stream |
 | H-21 | Pull dispatch marks the action waiting; no routing entry | `_dispatch_pull_event`, `test_dispatch_pull_event_*` | kept: a wait is state, and the waits index is written in the same compare-and-set |
 | H-24 | Pull event as a work item, any replica; scope from the subject | `pull_event_handler` | changed: scope from the address (D-38); only queued when a job waits for the type |

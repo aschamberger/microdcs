@@ -65,6 +65,13 @@ public sealed class SfcStateDao : DocumentDao
         return {1, nextVersion, ARGV[2]}
         """;
 
+    /// <summary>KEYS: state hash. ARGV: scope, field, marker. Writes only while the state exists in the scope, so a deleted job is not brought back as a stub.</summary>
+    private const string MarkSentScript = """
+        if redis.call('HGET', KEYS[1], 'scope') ~= ARGV[1] then return 0 end
+        redis.call('HSET', KEYS[1], ARGV[2], ARGV[3])
+        return 1
+        """;
+
     private const string DeleteScript = """
         if redis.call('EXISTS', KEYS[1]) == 1 and redis.call('HGET', KEYS[1], 'scope') ~= ARGV[2] then return 2 end
         redis.call('DEL', KEYS[1])
@@ -343,6 +350,40 @@ public sealed class SfcStateDao : DocumentDao
     /// <returns>A task.</returns>
     public async Task RemoveWaitingAsync(string scope, string typeId, string jobId, CancellationToken cancellationToken = default) =>
         await Database.SortedSetRemoveAsync(Keys.SfcWaits(scope, typeId), jobId).WaitAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Reads a job's state together with the sent marker of one action, in one read (D-52).</summary>
+    /// <param name="jobId">The job id.</param>
+    /// <param name="action">The action name.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The document, or <see langword="null"/>, and the marker of the action, or <see langword="null"/>.</returns>
+    public async Task<(StoredDocument? Document, string? SentMarker)> GetWithSentAsync(string jobId, string action, CancellationToken cancellationToken = default)
+    {
+        RequireText(jobId, nameof(jobId));
+        var entries = await Database.HashGetAllAsync(Keys.SfcState(jobId)).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var field = SentField(action);
+        var marker = entries.FirstOrDefault(e => e.Name == field).Value;
+        return (FromEntries(jobId, entries), marker.HasValue ? marker.ToString() : null);
+    }
+
+    /// <summary>
+    /// Records that the command of an action was queued (D-52). The marker lives in a field <c>sent:{action}</c> of the state hash, which the
+    /// compare-and-set leaves alone, so it lasts as long as the job and goes with its delete. A release issues every open command again, and the marker
+    /// keeps the ones that went out before the hold from reaching the equipment twice. It is written after the command is queued: a crash in between
+    /// can send a command id twice (receivers deduplicate by CloudEvent id), but never loses it.
+    /// </summary>
+    /// <param name="jobId">The job id.</param>
+    /// <param name="scope">The scope of the job.</param>
+    /// <param name="action">The action name.</param>
+    /// <param name="marker">Identifies the command, unique across runs of the job id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>A task.</returns>
+    public async Task MarkSentAsync(string jobId, string scope, string action, string marker, CancellationToken cancellationToken = default)
+    {
+        RequireText(jobId, nameof(jobId));
+        await Database.ScriptEvaluateAsync(MarkSentScript, [Keys.SfcState(jobId)], [scope, SentField(action), marker]).WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string SentField(string action) => "sent:" + action;
 
     /// <summary>Tells whether an event was already applied to a job.</summary>
     /// <param name="scope">The scope.</param>

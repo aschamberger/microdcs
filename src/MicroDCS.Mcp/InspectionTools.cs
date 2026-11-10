@@ -112,7 +112,7 @@ internal sealed class InspectionTools
         Run(service, "publisher_status", "publisher", Arguments("publisher.status", ("scope", scope)), cancellationToken);
 
     [McpServerTool(Name = "sfc_job", ReadOnly = true, Destructive = false)]
-    [Description("The SFC execution state of one job: status, active steps, each action with attempt, round, deadline and outcome, the next deadline and a fault if there is one. Needs the SFC host.")]
+    [Description("The SFC execution state of one job: status, active steps, each action with attempt, round, deadline and outcome, the next deadline, since when the job is held (MES Pause) and a fault if there is one. Needs the SFC host.")]
     public static Task<string> SfcJob(
         InspectionService service,
         [Description("The job id.")] string id,

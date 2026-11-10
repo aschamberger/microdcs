@@ -14,6 +14,8 @@ namespace MicroDCS.Sfc;
 [JsonDerivedType(typeof(SfcTick), "tick")]
 [JsonDerivedType(typeof(SfcResume), "resume")]
 [JsonDerivedType(typeof(SfcCancel), "cancel")]
+[JsonDerivedType(typeof(SfcHold), "hold")]
+[JsonDerivedType(typeof(SfcRelease), "release")]
 public abstract record SfcEvent
 {
     /// <summary>Gets the event time in epoch milliseconds.</summary>
@@ -102,3 +104,15 @@ public sealed record SfcCancel : SfcEvent
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 }
+
+/// <summary>
+/// Holds the job at the next step boundary (MES Pause, D-52). While held no transition fires and nothing is dispatched; responses and events for work
+/// already out are recorded, and open deadlines do not expire. A second hold is absorbed.
+/// </summary>
+public sealed record SfcHold : SfcEvent;
+
+/// <summary>
+/// Releases a held job (MES Resume, D-52): open deadlines move by the length of the hold, push commands of open attempts are issued again with their command
+/// id (the host sends each command id once), and transitions that became possible fire. A release of a job that is not held is absorbed.
+/// </summary>
+public sealed record SfcRelease : SfcEvent;

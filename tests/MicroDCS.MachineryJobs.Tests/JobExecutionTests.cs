@@ -35,6 +35,17 @@ public sealed class JobExecutionTests
     }
 
     [Fact]
+    public async Task AnInternalHoldAlsoHoldsTheRecipe()
+    {
+        await SeedAsync(JobOrderState.Running);
+
+        var result = await Execution().ApplyAsync("job", Scope, JobOrderOperation.Hold, "op-1", Ct);
+
+        result.ShouldBe(new JobExecutionResult(JobExecutionStatus.Applied, JobOrderState.Held));
+        _store.RecipeWork.ShouldBe(["Hold:job"]);
+    }
+
+    [Fact]
     public async Task CompleteWritesTheJobResponse()
     {
         await SeedAsync(JobOrderState.Running);

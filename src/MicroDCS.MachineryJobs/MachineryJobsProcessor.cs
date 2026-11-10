@@ -345,11 +345,24 @@ public sealed partial class MachineryJobsProcessor
     private static bool IsAllowedToStart(JobOrderState state) =>
         state is JobOrderState.AllowedToStartWaiting or JobOrderState.AllowedToStartReady or JobOrderState.AllowedToStartLoaded;
 
+    private static bool IsInterrupted(JobOrderState state) => state is JobOrderState.Held or JobOrderState.Suspended;
+
     private static JobRecipeWork RecipeWorkOf(JobOrderOperation operation, JobOrderState from, JobOrderState to)
     {
         if (IsAllowedToStart(to) && !IsAllowedToStart(from))
         {
             return JobRecipeWork.Start;
+        }
+
+        // Pause holds the recipe at the next step boundary, Resume releases it (D-52). Python left the recipe running.
+        if (IsInterrupted(to) && !IsInterrupted(from))
+        {
+            return JobRecipeWork.Hold;
+        }
+
+        if (IsInterrupted(from) && to == JobOrderState.Running)
+        {
+            return JobRecipeWork.Release;
         }
 
         // The recipe must not keep commanding equipment for a job the MES ended (D-52). Python left it running.

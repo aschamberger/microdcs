@@ -36,7 +36,8 @@ internal static class DocumentScripts
 
     /// <summary>
     /// <see cref="PutJobOrder"/> plus an SFC work entry in the same step: <c>start</c>, so an order that reached AllowedToStart cannot be left
-    /// without its entry (D-50), or <c>cancel</c>, so a recipe cannot outlive an Abort or Stop (D-52). ARGV 13 is the action.
+    /// without its entry (D-50), <c>cancel</c>, so a recipe cannot outlive an Abort or Stop (D-52), or <c>hold</c> and <c>release</c>, so a recipe follows
+    /// Pause and Resume (D-52). ARGV 13 is the action.
     /// KEYS: document, list, changes, scopes, change nudge channel, work stream, work nudge channel.
     /// </summary>
     public const string PutJobOrderAndWork = Guard + StoreJobOrder + """

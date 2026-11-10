@@ -78,6 +78,7 @@ internal sealed class SfcInspector : IInspector
             ["actions"] = Public(actions),
             ["sequence"] = Public(Number(state.Sequence)),
             ["nextDeadline"] = Public(state.NextDeadline is { } next ? Time(next) : string.Empty),
+            ["heldSince"] = Public(state.IsHeld && state.HeldAt is { } held ? Time(held) : string.Empty),
             ["faultCode"] = Public(state.FaultCode ?? string.Empty),
             ["faultMessage"] = Identifier(state.FaultMessage ?? string.Empty),
             ["errors"] = new InspectionValue(string.Join("; ", state.Actions.Values.Where(static a => a.Error is not null).Select(static a => $"{a.Name}: {a.Error}")), Sensitivity.Payload),

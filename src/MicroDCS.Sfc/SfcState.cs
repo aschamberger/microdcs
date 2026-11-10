@@ -98,7 +98,7 @@ public sealed record SfcState
     public const int CurrentFormat = 1;
 
     /// <summary>The current minor format number.</summary>
-    public const int CurrentFormatMinor = 1;
+    public const int CurrentFormatMinor = 2;
 
     /// <summary>Gets the major format number.</summary>
     [JsonPropertyName("format")]
@@ -144,6 +144,10 @@ public sealed record SfcState
     [JsonPropertyName("startedAt")]
     public long? StartedAt { get; init; }
 
+    /// <summary>Gets the time the job was held in epoch milliseconds while it is held (additive, format 1.2, D-52).</summary>
+    [JsonPropertyName("heldAt")]
+    public long? HeldAt { get; init; }
+
     /// <summary>Gets the fault code when the job ended with a fault.</summary>
     [JsonPropertyName("faultCode")]
     public string? FaultCode { get; init; }
@@ -152,13 +156,17 @@ public sealed record SfcState
     [JsonPropertyName("faultMessage")]
     public string? FaultMessage { get; init; }
 
-    /// <summary>Gets the earliest open deadline in epoch milliseconds, or <see langword="null"/> when none is open.</summary>
+    /// <summary>Gets a value indicating whether the job is running and held (D-52).</summary>
+    [JsonIgnore]
+    public bool IsHeld => HeldAt is not null && Status == SfcJobStatus.Running;
+
+    /// <summary>Gets the earliest open deadline in epoch milliseconds, or <see langword="null"/> when none is open or the job is held (deadlines do not expire during a hold).</summary>
     [JsonIgnore]
     public long? NextDeadline
     {
         get
         {
-            if (IsEnded)
+            if (IsEnded || IsHeld)
             {
                 return null;
             }

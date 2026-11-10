@@ -14,6 +14,7 @@ internal sealed class SfcEvolution
     private string? _current;
     private long _sequence;
     private long? _startedAt;
+    private long? _heldAt;
     private string? _faultCode;
     private string? _faultMessage;
     private SfcContinuation _continuation = new SfcDefer();
@@ -32,9 +33,12 @@ internal sealed class SfcEvolution
         _sequence = state.Sequence;
         _faultCode = state.FaultCode;
         _faultMessage = state.FaultMessage;
+        _heldAt = state.HeldAt;
     }
 
     private bool IsRunning => _status == SfcJobStatus.Running;
+
+    private bool IsHeld => IsRunning && _heldAt is not null;
 
     internal SfcStepResult Run(SfcEvent input) => input switch
     {
@@ -45,6 +49,8 @@ internal sealed class SfcEvolution
         SfcTick t => Tick(t),
         SfcResume => Resume(),
         SfcCancel c => Cancel(c),
+        SfcHold => Hold(),
+        SfcRelease => Release(),
         _ => Refuse(SfcDisposition.Rejected, "Unknown event kind."),
     };
 
@@ -130,6 +136,12 @@ internal sealed class SfcEvolution
             return Refuse(SfcDisposition.Absorbed, "The job is not running.");
         }
 
+        // Deadlines do not expire during a hold; the release moves them by its length, which covers any outage inside the hold too.
+        if (IsHeld)
+        {
+            return Refuse(SfcDisposition.Absorbed, "The job is held.");
+        }
+
         bool changed = false;
         if (tick.OutageMs > 0)
         {
@@ -159,6 +171,11 @@ internal sealed class SfcEvolution
         if (!IsRunning)
         {
             return Refuse(SfcDisposition.Absorbed, "The job is not running.");
+        }
+
+        if (IsHeld)
+        {
+            return Refuse(SfcDisposition.Absorbed, "The job is held; the release issues its open work.");
         }
 
         bool changed = false;
@@ -202,16 +219,67 @@ internal sealed class SfcEvolution
 
         CancelOpenWork(cancel.Reason ?? "cancelled");
         _status = SfcJobStatus.Cancelled;
+        _heldAt = null;
         _active.Clear();
         _continuation = new SfcCancelled();
         return Applied();
     }
 
+    private SfcStepResult Hold()
+    {
+        if (!IsRunning)
+        {
+            return Refuse(SfcDisposition.Absorbed, "The job is not running.");
+        }
+
+        if (IsHeld)
+        {
+            return Refuse(SfcDisposition.Absorbed, "The job is held already.");
+        }
+
+        _heldAt = _at;
+        return Applied();
+    }
+
+    /// <summary>
+    /// Ends a hold. Open deadlines move by its length (the mechanism of the outage rule, D-18), so the hold costs no attempt. Every open push attempt is
+    /// issued again with its command id: the host skipped the ones that reached it during the hold, and sends each command id once (D-52).
+    /// </summary>
+    private SfcStepResult Release()
+    {
+        if (!IsHeld)
+        {
+            return Refuse(SfcDisposition.Absorbed, IsRunning ? "The job is not held." : "The job is not running.");
+        }
+
+        long held = Math.Max(0, _at - (_heldAt ?? _at));
+        _heldAt = null;
+        foreach (SfcActionBlock assoc in _graph.Recipe.Actions)
+        {
+            SfcActionState action = _actions[assoc.Name];
+            if (!action.IsOpen || action.Deadline is not long deadline)
+            {
+                continue;
+            }
+
+            action = action with { Deadline = deadline + held };
+            _actions[assoc.Name] = action;
+            if (action.Status == SfcActionStatus.Dispatched)
+            {
+                _commands.Add(NewStartWork(assoc, SfcWorkKind.PushCommand, action.CommandId ?? NextCommandId(assoc), action.Attempt, action.Deadline ?? _at));
+            }
+        }
+
+        Settle();
+        return Applied();
+    }
+
     // ── Steps, divergences, routing ────────────────────────────────────────
 
+    /// <summary>Clears what can be cleared. A held job records outcomes but stays at its step boundary until the release.</summary>
     private void Settle()
     {
-        while (IsRunning)
+        while (IsRunning && !IsHeld)
         {
             string? done = _active.FirstOrDefault(IsStepDone);
             if (done is null)
@@ -503,12 +571,15 @@ internal sealed class SfcEvolution
     {
         State = _original with
         {
+            // A write in this version can add fields of this version, so it carries this version's minor number.
+            FormatMinor = Math.Max(_original.FormatMinor, SfcState.CurrentFormatMinor),
             Status = _status,
             Current = _current,
             ActiveSteps = [.. _active],
             Actions = _actions,
             Sequence = _sequence,
             StartedAt = _startedAt ?? _original.StartedAt,
+            HeldAt = _status == SfcJobStatus.Running ? _heldAt : null,
             FaultCode = _faultCode,
             FaultMessage = _faultMessage,
         },

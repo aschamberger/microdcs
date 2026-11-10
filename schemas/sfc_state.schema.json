@@ -106,6 +106,12 @@
         "null"
       ]
     },
+    "heldAt": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "faultCode": {
       "type": [
         "string",
