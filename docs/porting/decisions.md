@@ -509,6 +509,8 @@ Decision: `IInspector` (name, `InspectAsync(InspectionQuery)` returning a capped
 
 Consequences: `MicroDCS.Core/Inspection` holds the abstractions; S11 builds the adapters and the first inspectors. Open: probes on a separate port if a deployment needs them; S21 refines the REST contract.
 
+Revised 2026-11-10 (S21): **no `/metrics` endpoint**; metrics leave by OTLP only and a Prometheus server scrapes an OpenTelemetry Collector (the ASP.NET Core Prometheus exporter is a prerelease package; maintainer's choice). The REST contract is refined in [D-54](#d-54): read-only `/api/v1/jobs`, off by default (`ApiEnabled`). Readiness now asks the checks registered in the application (it looked in the listener's own host before, so it always answered ready).
+
 ## D-41 Documents are versioned hashes with explicit indexes {#d-41}
 
 Status: decided (2026-11-08, S07). Answers Q-DATA-1. Background: [data layer](research/data-layer.md).
@@ -759,3 +761,17 @@ Consequences: `IActionSink.EventReceivedAsync` takes the handler's `ActionOutcom
 
 Not chosen: `Parameters` as the selector (two meanings for one field); scanning the active set per event (every incoming event would read every running job); resending on restart as in Python; in-process hosts for the kill tests (no real process death).
 
+## D-54 HTTP surface and telemetry {#d-54}
+
+Status: decided (2026-11-10, S21; maintainer chose OTLP only and a read-only jobs API). Answers Q-OPS-1 and the OpenTelemetry coverage question. Background: [HTTP surface and observability](research/http-observability.md).
+
+Decision:
+
+* **OTLP only.** `MicroDCS.Telemetry` (`AddMicroDcsTelemetry`) adds the OpenTelemetry SDK with the OTLP exporter for the signals that have an endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT` or a signal endpoint); without one the SDK is not added. All other settings are the standard `OTEL_*` variables. Sources and meters by the pattern `MicroDCS*`, plus `NATS.Net`, the .NET runtime and ASP.NET Core meters. No instrumentation packages. Console logging stays next to the OTLP log exporter.
+* **Spans:** the pipeline's consumer span gets `messaging.system` and `messaging.destination.subscription.name` (`InboundMessage.Subscription`, set by MQTT and NATS). A producer span `send {type}` is current while `PublishAsync` and command dispatch build the envelope, so `traceparent` always names a span. The SFC host has one span per work entry (`MicroDCS.Sfc`), and a dispatched command is its child. Health probes are not recorded. **No Valkey spans:** StackExchange.Redis has no instrumentation and the contrib package is not stable.
+* **Readiness:** `transports` (every transport connected; ready without a role) from `AddMicroDcs`, `valkey` (`PING`) from `AddMicroDcsValkey`. `503` names the failing checks, never their error text. Liveness stays "the process answers" (D-27).
+* **REST:** `GET /api/v1/jobs?scope=&state=&limit=`, `GET /api/v1/jobs/{id}` (order, response state, recipe state), `GET /api/v1/openapi.json`; read-only, off by default (`Management:ApiEnabled`), through `InspectionService` (audit, cap, redaction), stable DTOs with source-generated JSON, RFC 9457 problems, 429 with `Retry-After`. Rate-limit windows per caller, so REST polling does not starve MCP. MES commands stay on the message bus. The OpenAPI document is checked in and embedded; a test compares its paths with the routes.
+
+Consequences: `AddHealthChecks` adds a hosted service (`HealthCheckPublisherHostedService`), so code that took the single hosted service now picks `MicroDcsHostedService` by type. The compose profile `app` sends telemetry to the Aspire dashboard and enables the API. Probes and the manifest are S22.
+
+Not chosen: the Prometheus exporter (prerelease) or an own Prometheus text writer (maintainer chose OTLP only); per-command Valkey spans through the StackExchange.Redis profiling API (after-the-fact sessions, not live spans); REST write routes for MES commands (a second command path next to the bus, needs token scopes).

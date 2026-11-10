@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -146,18 +147,38 @@ public sealed class ManagementServer : IHostedService, IAsyncDisposable
         return context.Response.WriteAsync(text, context.RequestAborted);
     }
 
-    private static async Task ReadyAsync(HttpContext context)
+    /// <summary>The body of <c>/health/ready</c>: <c>ready</c>, or <c>not ready:</c> and the names of the failing checks (never their exception text).</summary>
+    internal static (int Status, string Text) Readiness(HealthReport? report)
     {
-        // Health checks are optional: an application that registered some gets them here.
-        var checks = context.RequestServices.GetService<HealthCheckService>();
-        var healthy = checks is null || (await checks.CheckHealthAsync(context.RequestAborted).ConfigureAwait(false)).Status == HealthStatus.Healthy;
-        await WriteTextAsync(context, healthy ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable, healthy ? "ready" : "not ready").ConfigureAwait(false);
+        if (report is null || report.Status == HealthStatus.Healthy)
+        {
+            return (StatusCodes.Status200OK, "ready");
+        }
+
+        var failing = report.Entries.Where(static e => e.Value.Status != HealthStatus.Healthy).Select(static e => e.Key).Order(StringComparer.Ordinal);
+        return (StatusCodes.Status503ServiceUnavailable, "not ready: " + string.Join(", ", failing));
+    }
+
+    private async Task ReadyAsync(HttpContext context)
+    {
+        // The checks are registered in the application (AddMicroDcs, AddMicroDcsValkey), not in the listener's own small host.
+        var checks = _services.GetService<HealthCheckService>();
+        var report = checks is null ? null : await checks.CheckHealthAsync(context.RequestAborted).ConfigureAwait(false);
+        var (status, text) = Readiness(report);
+        await WriteTextAsync(context, status, text).ConfigureAwait(false);
     }
 
     // expected is the SHA-256 of the token and is set exactly when the listener is not on loopback.
     private async Task Guard(HttpContext context, RequestDelegate next, bool loopback, byte[]? expected)
     {
         var health = context.Request.Path.StartsWithSegments("/health", StringComparison.Ordinal);
+        if (health && Activity.Current is { } probe)
+        {
+            // Probes run every few seconds; their spans would bury the useful ones (D-54).
+            probe.IsAllDataRequested = false;
+            probe.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
+        }
+
         if (loopback && !IsLoopbackHost(context.Request.Host))
         {
             Log.RequestRejected(_logger, "host header is not a loopback name");

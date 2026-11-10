@@ -1,0 +1,123 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MicroDCS management API",
+    "version": "1.0.0",
+    "description": "Read-only job state queries and health probes on the management listener (D-40, D-54). Off loopback every route except /health/* needs a bearer token.",
+    "license": { "name": "MIT", "identifier": "MIT" }
+  },
+  "security": [{ "bearer": [] }],
+  "paths": {
+    "/health/live": {
+      "get": {
+        "summary": "Liveness: the process answers.",
+        "security": [],
+        "responses": { "200": { "description": "Live.", "content": { "text/plain": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Readiness: transports connected and Valkey answers.",
+        "security": [],
+        "responses": {
+          "200": { "description": "Ready.", "content": { "text/plain": { "schema": { "type": "string" } } } },
+          "503": { "description": "Not ready; the body names the failing checks.", "content": { "text/plain": { "schema": { "type": "string" } } } }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "summary": "This document.",
+        "responses": { "200": { "description": "The OpenAPI document.", "content": { "application/json": {} } } }
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "summary": "Job orders of a scope.",
+        "parameters": [
+          { "name": "scope", "in": "query", "required": true, "schema": { "type": "string" }, "description": "The scope, for example plant/line1." },
+          { "name": "state", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Only orders in this state (Job Control V2 name, case-insensitive)." },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1 }, "description": "At most this many orders; default and maximum are MicroDcs:Management:MaxResults." }
+        ],
+        "responses": {
+          "200": { "description": "The orders.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobList" } } } },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "description": "Missing or wrong bearer token." },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "429": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}": {
+      "get": {
+        "summary": "One job order with its response state and recipe state.",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "The job.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobDetail" } } } },
+          "401": { "description": "Missing or wrong bearer token." },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "429": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } },
+    "responses": {
+      "Problem": { "description": "RFC 9457 problem details.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+    },
+    "schemas": {
+      "JobSummary": {
+        "type": "object",
+        "required": ["id", "scope", "state", "version", "priority"],
+        "properties": {
+          "id": { "type": "string" },
+          "scope": { "type": "string" },
+          "state": { "type": "string" },
+          "version": { "type": "integer" },
+          "priority": { "type": "integer" }
+        }
+      },
+      "JobList": {
+        "type": "object",
+        "required": ["jobs"],
+        "properties": { "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/JobSummary" } } }
+      },
+      "RecipeState": {
+        "type": "object",
+        "required": ["status", "activeSteps"],
+        "properties": {
+          "status": { "type": "string" },
+          "current": { "type": "string" },
+          "activeSteps": { "type": "array", "items": { "type": "string" } },
+          "nextDeadline": { "type": "string" },
+          "heldSince": { "type": "string" },
+          "faultCode": { "type": "string" }
+        }
+      },
+      "JobDetail": {
+        "type": "object",
+        "required": ["id", "scope", "state", "version", "priority"],
+        "properties": {
+          "id": { "type": "string" },
+          "scope": { "type": "string" },
+          "state": { "type": "string" },
+          "version": { "type": "integer" },
+          "priority": { "type": "integer" },
+          "responseState": { "type": "string" },
+          "recipe": { "$ref": "#/components/schemas/RecipeState" }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "title", "status", "detail"],
+        "properties": {
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}

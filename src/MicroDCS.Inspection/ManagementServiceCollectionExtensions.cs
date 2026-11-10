@@ -7,7 +7,7 @@ namespace MicroDCS.Inspection;
 public static class ManagementServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds the inspection service, the event injector and the management listener. Nothing listens unless
+    /// Adds the inspection service, the event injector, the management listener and its REST API module (<c>ApiEnabled</c>). Nothing listens unless
     /// <c>MicroDcs:Management:Enabled</c> is true. Call after <c>AddMicroDcs</c> so the listener starts after the core.
     /// </summary>
     /// <param name="services">The services.</param>
@@ -19,6 +19,7 @@ public static class ManagementServiceCollectionExtensions
         services.TryAddSingleton<EventInjector>();
         services.TryAddSingleton<ManagementServer>();
         services.AddHostedService(static sp => sp.GetRequiredService<ManagementServer>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IManagementModule, RestApiModule>());
         return services;
     }
 }

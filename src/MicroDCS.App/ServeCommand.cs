@@ -5,6 +5,7 @@ using MicroDCS.MachineryJobs;
 using MicroDCS.Maintenance;
 using MicroDCS.Mcp;
 using MicroDCS.Sfc.Hosting;
+using MicroDCS.Telemetry;
 using MicroDCS.Transport.Mqtt;
 using MicroDCS.Transport.Nats;
 using MicroDCS.Valkey;
@@ -15,7 +16,7 @@ namespace MicroDCS.App;
 
 /// <summary>
 /// <c>microdcs serve</c>: the processors whose bindings are configured, on the transport each binding names (<c>mqtt</c>, <c>nats</c> or <c>memory</c>), with Valkey
-/// (and the maintenance operations) when <c>MicroDcs:Valkey:ConnectionString</c> is set and the management listener when <c>MicroDcs:Management:Enabled</c> is true.
+/// (and the maintenance operations) when <c>MicroDcs:Valkey:ConnectionString</c> is set the management listener when <c>MicroDcs:Management:Enabled</c> is true, and OpenTelemetry over OTLP when an OTLP endpoint is configured.
 /// The greetings demo runs unless only the Machinery Jobs binding is configured; that binding needs Valkey and otherwise ends the start (D-27), and it also runs the recipes of its jobs through the SFC host.
 /// Configuration comes from environment variables with the prefix <c>APP_</c> and <c>__</c> as separator (D-39).
 /// </summary>
@@ -26,6 +27,9 @@ internal static class ServeCommand
         var builder = Host.CreateApplicationBuilder(args);
         builder.Configuration.AddEnvironmentVariables("APP_");
 
+        // OTLP export when an OTEL_EXPORTER_OTLP_*ENDPOINT variable is set (D-54); the host reads unprefixed environment variables too.
+        // Before AddMicroDcs: hosted services start in order, and the providers must listen before the transports deliver.
+        builder.Services.AddMicroDcsTelemetry(builder.Configuration);
         builder.Services.AddMicroDcs(builder.Configuration);
         var bindings = builder.Configuration.GetSection("MicroDcs:Bindings");
         var machineryJobs = bindings.GetSection(MachineryJobsProcessor.BindingId).Exists();

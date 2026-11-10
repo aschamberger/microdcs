@@ -14,7 +14,8 @@ switch (args)
         var valkey = await ValkeySmoke.RunAsync(Console.Out).ConfigureAwait(false);
         var inspection = await InspectionSmoke.RunAsync(Console.Out).ConfigureAwait(false);
         var jobControl = JobControlSmoke.Run(Console.Out);
-        return cloudEvents + host + valkey + inspection + jobControl == 0 ? 0 : 1;
+        var telemetry = await TelemetrySmoke.RunAsync(Console.Out).ConfigureAwait(false);
+        return cloudEvents + host + valkey + inspection + jobControl + telemetry == 0 ? 0 : 1;
     default:
         await Console.Error.WriteLineAsync("usage: microdcs smoke | serve").ConfigureAwait(false);
         return 2;

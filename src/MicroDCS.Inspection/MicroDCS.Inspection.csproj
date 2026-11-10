@@ -6,4 +6,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../MicroDCS.Core/MicroDCS.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The REST contract (D-54); a test compares its paths with the mapped routes. -->
+    <EmbeddedResource Include="openapi.json" LogicalName="MicroDCS.Inspection.openapi.json" />
+  </ItemGroup>
 </Project>

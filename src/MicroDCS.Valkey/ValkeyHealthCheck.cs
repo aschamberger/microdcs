@@ -5,6 +5,9 @@ namespace MicroDCS.Valkey;
 /// <summary>Health check that pings Valkey. It reports the round trip time, never the connection string.</summary>
 public sealed class ValkeyHealthCheck : IHealthCheck
 {
+    /// <summary>The registration name of the readiness check (D-54).</summary>
+    public const string Name = "valkey";
+
     private readonly ValkeyContext _context;
 
     /// <summary>Initializes a new instance of the <see cref="ValkeyHealthCheck"/> class.</summary>

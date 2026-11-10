@@ -124,7 +124,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
     {
         ArgumentNullException.ThrowIfNull(message);
         Interlocked.Increment(ref _inFlight);
-        using var activity = StartActivity(message);
+        using var activity = StartActivity(message, _options.Bindings.TryGetValue(message.BindingId, out var bound) ? bound.Transport : null);
         var started = _time.GetTimestamp();
         try
         {
@@ -166,22 +166,33 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
             throw new InvalidOperationException($"No binding publishes the intent '{intent}'" + (options?.BindingId is { } id ? $" on binding '{id}'." : "."));
         }
 
-        var envelope = _envelopes.Build(payload, options, request: null);
-        var messages = new List<OutboundMessage>(targets.Count);
-        foreach (var target in targets)
+        using var activity = StartProducerActivity();
+        try
         {
-            if (!queues.Accepts(target, envelope.Type))
+            var envelope = _envelopes.Build(payload, options, request: null);
+            TagProducer(activity, envelope);
+            var messages = new List<OutboundMessage>(targets.Count);
+            foreach (var target in targets)
             {
-                Log.OutgoingFiltered(_logger, envelope.Id, envelope.Type, target);
-                continue;
+                if (!queues.Accepts(target, envelope.Type))
+                {
+                    Log.OutgoingFiltered(_logger, envelope.Id, envelope.Type, target);
+                    continue;
+                }
+
+                messages.Add(CreateOutbound(target, envelope, intent, options?.Retain ?? false));
             }
 
-            messages.Add(CreateOutbound(target, envelope, intent, options?.Retain ?? false));
+            // All or nothing (D-28 revised): a full queue on one binding must not leave the event on the others.
+            queues.EnqueueAll(messages);
+            return ValueTask.CompletedTask;
         }
-
-        // All or nothing (D-28 revised): a full queue on one binding must not leave the event on the others.
-        queues.EnqueueAll(messages);
-        return ValueTask.CompletedTask;
+        catch (Exception ex)
+        {
+            // A refused publish (full queue, invalid scope) must not show as a successful send in the trace.
+            activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -201,16 +212,28 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
             throw new InvalidOperationException($"The outgoing factory for the type '{typeId}' must produce exactly one payload.");
         }
 
-        var envelope = _envelopes.Build(
-            produced[0].Payload,
-            new PublishOptions { Subject = request.Scope, EventId = request.CommandId, ActionKey = request.ActionKey, CorrelationId = request.CorrelationId, ExpiryInterval = request.ExpiryInterval, BindingId = processor.BindingId },
-            request: null);
-        if (!queues.Accepts(processor.BindingId, envelope.Type))
+        // The producer span is current while the envelope is built, so traceparent names it; a command the SFC host dispatches
+        // from its work stream otherwise has no trace context at all (D-54).
+        using var activity = StartProducerActivity();
+        try
         {
-            throw new InvalidOperationException($"The outgoing type filter of binding '{processor.BindingId}' refuses the type '{typeId}'.");
-        }
+            var envelope = _envelopes.Build(
+                produced[0].Payload,
+                new PublishOptions { Subject = request.Scope, EventId = request.CommandId, ActionKey = request.ActionKey, CorrelationId = request.CorrelationId, ExpiryInterval = request.ExpiryInterval, BindingId = processor.BindingId },
+                request: null);
+            TagProducer(activity, envelope);
+            if (!queues.Accepts(processor.BindingId, envelope.Type))
+            {
+                throw new InvalidOperationException($"The outgoing type filter of binding '{processor.BindingId}' refuses the type '{typeId}'.");
+            }
 
-        queues.Enqueue(processor.BindingId, CreateOutbound(processor.BindingId, envelope, Intent.Command, retain: false));
+            queues.Enqueue(processor.BindingId, CreateOutbound(processor.BindingId, envelope, Intent.Command, retain: false));
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
+            throw;
+        }
     }
 
     private (ProcessorDescriptor Processor, HandlerDescriptor Factory)? FindFactory(string typeId)
@@ -330,7 +353,26 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
         _services.GetService<IHostApplicationLifetime>()?.StopApplication();
     }
 
-    private static Activity? StartActivity(InboundMessage message)
+    private static Activity? StartProducerActivity()
+    {
+        var activity = PipelineTelemetry.Source.StartActivity("send", ActivityKind.Producer);
+        activity?.SetTag("messaging.operation.type", "send");
+        return activity;
+    }
+
+    private static void TagProducer(Activity? activity, EventEnvelope envelope)
+    {
+        if (activity is null)
+        {
+            return;
+        }
+
+        activity.DisplayName = "send " + envelope.Type;
+        activity.SetTag("messaging.message.id", envelope.Id);
+        activity.SetTag("cloudevents.type", envelope.Type);
+    }
+
+    private static Activity? StartActivity(InboundMessage message, string? transport)
     {
         var envelope = message.Envelope;
         ActivityContext parent = default;
@@ -346,6 +388,8 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
             activity.SetTag("messaging.message.id", envelope.Id);
             activity.SetTag("microdcs.binding", message.BindingId);
             activity.SetTag("cloudevents.type", envelope.Type);
+            activity.SetTag("messaging.system", transport);
+            activity.SetTag("messaging.destination.subscription.name", message.Subscription);
         }
 
         return activity;

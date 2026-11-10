@@ -392,7 +392,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 await foreach (var message in consumer.ConsumeAsync(_inSerializer, new NatsJSConsumeOpts { MaxMsgs = 1 }, cycle.Token).ConfigureAwait(false))
                 {
                     Interlocked.Increment(ref _received);
-                    var delivery = new NatsDelivery(info.BindingId, InboundKind.Request, message.Subject, message.Headers, message.Data, (long)(message.Metadata?.NumDelivered ?? 1), message);
+                    var delivery = new NatsDelivery(info.BindingId, InboundKind.Request, message.Subject, message.Headers, message.Data, (long)(message.Metadata?.NumDelivered ?? 1), message, info.Consumer);
 
                     // From here until it is settled the message is kept in progress, also while it waits for a worker.
                     _outstanding[delivery] = 0;
@@ -436,7 +436,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             await foreach (var message in subscription.Msgs.ReadAllAsync(token).ConfigureAwait(false))
             {
                 Interlocked.Increment(ref _received);
-                await _inbox!.Writer.WriteAsync(new NatsDelivery(bindingId, InboundKind.Response, message.Subject, message.Headers, message.Data, 1, null), token).ConfigureAwait(false);
+                await _inbox!.Writer.WriteAsync(new NatsDelivery(bindingId, InboundKind.Response, message.Subject, message.Headers, message.Data, 1, null, subscription.Subject), token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -507,6 +507,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             Address = address,
             ReplyTo = replyTo,
             Redelivered = delivery.NumDelivered > 1,
+            Subscription = delivery.Subscription,
         };
         var outcome = await _handler!.HandleAsync(inbound, _stopping.Token).ConfigureAwait(false);
         return outcome switch
@@ -729,6 +730,7 @@ internal enum Disposition
 /// <param name="Data">The payload.</param>
 /// <param name="NumDelivered">How often the server delivered the message (1 for plain messages).</param>
 /// <param name="Message">The JetStream message to acknowledge, or <see langword="null"/> for a plain message.</param>
+/// <param name="Subscription">The durable consumer or the reply subscription that received it (telemetry).</param>
 internal sealed record NatsDelivery(
     string BindingId,
     InboundKind Kind,
@@ -736,7 +738,8 @@ internal sealed record NatsDelivery(
     NatsHeaders? Headers,
     byte[]? Data,
     long NumDelivered,
-    INatsJSMsg<byte[]>? Message);
+    INatsJSMsg<byte[]>? Message,
+    string? Subscription = null);
 
 internal sealed record NatsStreamPlan(string Name, string Subject);
 

@@ -7,13 +7,13 @@ The inspection layer shows the live state of a running application: processors, 
 | Layer | Package | Content |
 |---|---|---|
 | Contract | `MicroDCS.Core` | `IInspector`, `InspectionEntry`, `Sensitivity`, `Redaction`; inspectors for `app`, `processors` and `pipeline`. |
-| Service and listener | `MicroDCS.Inspection` | `InspectionService` (result cap, redaction, rate limit, audit), the management listener, `/health/live`, `/health/ready`. |
+| Service and listener | `MicroDCS.Inspection` | `InspectionService` (result cap, redaction, rate limit, audit), the management listener, `/health/live`, `/health/ready` and the read-only REST API under `/api/v1` ([HTTP surface and observability](observability.md)). |
 | Valkey inspector | `MicroDCS.Valkey` | `valkey` inspector: keys by kind and scope, documents, dedupe state, streams. No raw commands. |
 | MQTT inspector | `MicroDCS.Transport.Mqtt` | `transport.mqtt` inspector: connection state, counters, subscriptions ([MQTT transport](mqtt-transport.md)). Read it with the tool `inspect`. |
 | NATS inspector | `MicroDCS.Transport.Nats` | `transport.nats` inspector: connection state, counters (including redelivered and poisoned), consumers ([NATS transport](nats-transport.md)). Read it with the tool `inspect`. |
 | MCP adapter | `MicroDCS.Mcp` | Tools under `/mcp` (optional; production applications do not reference it). |
 
-Every stateful component registers its own `IInspector`; the MCP tools call `InspectionService`, never the REST API.
+Every stateful component registers its own `IInspector`; the MCP tools and the REST API both call `InspectionService`, not each other.
 
 ## Enable it
 
@@ -47,12 +47,13 @@ docker compose --profile app up -d --build --wait
 |---|---|---|---|
 | `MicroDcs:Management:Enabled` | bool | `false` | Start the management listener. |
 | `MicroDcs:Management:Url` | URL | `http://127.0.0.1:8081` | Listen URL. Anything but a loopback address needs `BearerTokenFile`. |
+| `MicroDcs:Management:ApiEnabled` | bool | `false` | Serve the read-only REST API under `/api/v1` ([HTTP surface](observability.md)). Needs `Enabled`. |
 | `MicroDcs:Management:McpEnabled` | bool | `false` | Serve the read tools under `/mcp`. Needs `Enabled`. |
 | `MicroDcs:Management:WriteEnabled` | bool | `false` | Register the write tool `inject_event`. Needs `McpEnabled`. |
 | `MicroDcs:Management:IncludePayloads` | bool | `false` | Show `Payload` values (document bodies) in results. Needs `Enabled`. |
 | `MicroDcs:Management:BearerTokenFile` | path | none | File with the bearer token, at least 16 characters. Required for a non-loopback `Url`; `/health/*` stays open for probes. |
 | `MicroDcs:Management:MaxResults` | int | 100 | Cap of entries per result. Values are cut at 2000 characters. |
-| `MicroDcs:Management:RequestsPerMinute` | int | 120 | Tool calls per minute; more are refused. |
+| `MicroDcs:Management:RequestsPerMinute` | int | 120 | Calls per minute and caller (REST and MCP have separate windows); more are refused (REST answers 429). |
 | `MicroDcs:Management:DecisionBufferSize` | int | 200 | Pipeline decisions kept in the ring buffer (zero while the listener is off). |
 
 Invalid combinations end the process at start (D-27). A listener that cannot bind ends it too.

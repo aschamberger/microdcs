@@ -59,6 +59,7 @@ public static class ValkeyServiceCollectionExtensions
         services.TryAddSingleton<ValkeyStreams>();
         services.TryAddSingleton<ValkeyIndexMaintenance>();
         services.TryAddSingleton<ValkeyHealthCheck>();
+        services.AddMicroDcsHealthCheck<ValkeyHealthCheck>(ValkeyHealthCheck.Name);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IInspector, ValkeyInspector>());
         services.TryAddSingleton<ValkeyPoller>();
         services.AddHostedService(static sp => sp.GetRequiredService<ValkeyPoller>());

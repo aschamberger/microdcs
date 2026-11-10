@@ -431,6 +431,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 Address = address,
                 ReplyTo = string.IsNullOrEmpty(message.ResponseTopic) ? null : new ReplyAddress(message.ResponseTopic),
                 Redelivered = message.Dup,
+                Subscription = match.Filter,
             };
             var outcome = await _handler!.HandleAsync(inbound, _stopping.Token).ConfigureAwait(false);
             fault |= outcome == DeliveryOutcome.Fault;
