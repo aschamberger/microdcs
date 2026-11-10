@@ -40,7 +40,7 @@ public sealed class HostLifecycleTests
         ["MicroDcs:Bindings:sample:Prefix"] = "test",
     };
 
-    private static IHostedService Host(ServiceProvider provider) => provider.GetServices<IHostedService>().Single();
+    private static MicroDcsHostedService Host(ServiceProvider provider) => provider.GetServices<IHostedService>().OfType<MicroDcsHostedService>().Single();
 
     [Fact]
     public async Task Hooks_run_in_order_and_shutdown_reverses_it()

@@ -28,7 +28,7 @@ internal static class HostSmoke
         services.AddLogging();
         services.AddMicroDcs(configuration).AddInMemoryTransport().AddProcessor<GreetingsProcessor>();
         using var provider = services.BuildServiceProvider();
-        var host = provider.GetServices<IHostedService>().Single();
+        var host = provider.GetServices<IHostedService>().OfType<MicroDcsHostedService>().Single();
         var transport = provider.GetRequiredService<InMemoryTransport>();
 
         await host.StartAsync(CancellationToken.None).ConfigureAwait(false);

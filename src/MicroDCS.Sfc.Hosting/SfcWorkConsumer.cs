@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using MicroDCS.Core.Authoring;
@@ -163,18 +164,52 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         var done = new List<RedisValue>(entries.Count);
         foreach (var entry in entries)
         {
+            var action = WorkAction(entry);
+            using var activity = SfcTelemetry.Source.StartActivity("sfc " + action, ActivityKind.Internal);
+            activity?.SetTag("microdcs.sfc.action", action);
+            activity?.SetTag("microdcs.job.id", entry[SfcWork.JobIdField].ToString());
+            activity?.SetTag("microdcs.scope", scope);
+            var started = _time.GetTimestamp();
+            var outcome = "ok";
             try
             {
                 await HandleAsync(scope, entry, cancellationToken).ConfigureAwait(false);
                 done.Add(entry.Id);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                // Shutdown: the entry is neither handled nor acknowledged and comes back to another consumer.
+                outcome = "cancelled";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                outcome = "failed";
+                activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
                 Log.WorkEntryFailed(_logger, ex, entry.Id.ToString(), scope);
+            }
+            finally
+            {
+                SfcTelemetry.WorkDuration.Record(
+                    _time.GetElapsedTime(started).TotalSeconds,
+                    new KeyValuePair<string, object?>("action", action),
+                    new KeyValuePair<string, object?>("outcome", outcome));
             }
         }
 
         await _streams.AcknowledgeAsync(stream, SfcWork.Group, done, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Bounded tag values: a dispatch entry names its action (dispatch:{name}), which would make one series per recipe step.
+    private static string WorkAction(StreamEntry entry)
+    {
+        var action = entry[SfcWork.ActionField].ToString();
+        if (action.StartsWith(SfcWork.DispatchPrefix, StringComparison.Ordinal))
+        {
+            return "dispatch";
+        }
+
+        return action is SfcWork.Event or SfcWork.Start or SfcWork.Cancel or SfcWork.Hold or SfcWork.Release or SfcWork.Tick or SfcWork.Resume or SfcWork.Job ? action : "unknown";
     }
 
     private async ValueTask HandleAsync(string scope, StreamEntry entry, CancellationToken cancellationToken)

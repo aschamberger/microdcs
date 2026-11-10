@@ -11,6 +11,7 @@
     <Project Path="src/MicroDCS.Sfc/MicroDCS.Sfc.csproj" />
     <Project Path="src/MicroDCS.Sfc.Hosting/MicroDCS.Sfc.Hosting.csproj" />
     <Project Path="src/MicroDCS.Sfc.Simulation/MicroDCS.Sfc.Simulation.csproj" />
+    <Project Path="src/MicroDCS.Telemetry/MicroDCS.Telemetry.csproj" />
     <Project Path="src/MicroDCS.Testing/MicroDCS.Testing.csproj" />
     <Project Path="src/MicroDCS.Transport.Mqtt/MicroDCS.Transport.Mqtt.csproj" />
     <Project Path="src/MicroDCS.Transport.Nats/MicroDCS.Transport.Nats.csproj" />

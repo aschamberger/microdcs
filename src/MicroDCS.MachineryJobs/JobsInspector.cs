@@ -8,7 +8,8 @@ namespace MicroDCS.MachineryJobs;
 
 /// <summary>
 /// Inspector <c>jobs</c> (D-19): the job orders of a scope and one order with its response and recent changes. Read-only.
-/// Kinds: <c>jobs.orders</c> (argument <c>scope</c>, optional <c>state</c>), <c>jobs.order</c> (argument <c>id</c>).
+/// Kinds: <c>jobs.orders</c> (argument <c>scope</c>, optional <c>state</c>), <c>jobs.order</c> (argument <c>id</c>, optional
+/// <c>changes=false</c> to skip the change history, which reads up to 500 stream entries).
 /// </summary>
 public sealed class JobsInspector : IInspector
 {
@@ -106,7 +107,10 @@ public sealed class JobsInspector : IInspector
         var response = await _store.GetResponseByOrderAsync(id, cancellationToken).ConfigureAwait(false);
         fields["responseId"] = Identifier(response?.Response.Id ?? string.Empty);
         fields["responseState"] = Public(response?.Response.State.ToString() ?? nameof(JobOrderState.Initial));
-        fields["changes"] = Public(await RecentChangesAsync(id, order.Scope, cancellationToken).ConfigureAwait(false));
+        if (!string.Equals(query.Argument("changes"), "false", StringComparison.OrdinalIgnoreCase))
+        {
+            fields["changes"] = Public(await RecentChangesAsync(id, order.Scope, cancellationToken).ConfigureAwait(false));
+        }
         return [new InspectionEntry("jobs.order", id, fields)];
     }
 

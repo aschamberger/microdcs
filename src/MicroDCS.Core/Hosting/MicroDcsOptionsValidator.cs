@@ -42,7 +42,7 @@ public sealed class MicroDcsOptionsValidator : IValidateOptions<MicroDcsOptions>
         Require(errors, management.DecisionBufferSize >= 0, $"{path}:DecisionBufferSize must not be negative.");
         if (!management.Enabled)
         {
-            Require(errors, !management.McpEnabled && !management.WriteEnabled && !management.IncludePayloads, $"{path}: McpEnabled, WriteEnabled and IncludePayloads need Enabled.");
+            Require(errors, !management.ApiEnabled && !management.McpEnabled && !management.WriteEnabled && !management.IncludePayloads, $"{path}: ApiEnabled, McpEnabled, WriteEnabled and IncludePayloads need Enabled.");
             return;
         }
 

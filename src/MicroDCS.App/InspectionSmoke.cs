@@ -10,7 +10,8 @@ namespace MicroDCS.App;
 
 /// <summary>
 /// Native AOT smoke check of the inspection surface (S11): the management listener (Kestrel) on a free loopback port, the MCP
-/// endpoint with source-generated tool registration, a read tool, and the write tool going through the pipeline.
+/// endpoint with source-generated tool registration, a read tool, the write tool going through the pipeline, readiness with
+/// the registered checks and the REST API (S21).
 /// </summary>
 internal static class InspectionSmoke
 {
@@ -29,6 +30,7 @@ internal static class InspectionSmoke
             ["MicroDcs:Bindings:greetings:Prefix"] = "smoke",
             ["MicroDcs:Bindings:greetings:ScopeLevels"] = "2",
             ["MicroDcs:Management:Enabled"] = "true",
+            ["MicroDcs:Management:ApiEnabled"] = "true",
             ["MicroDcs:Management:McpEnabled"] = "true",
             ["MicroDcs:Management:WriteEnabled"] = "true",
             ["MicroDcs:Management:Url"] = "http://127.0.0.1:0",
@@ -65,11 +67,19 @@ internal static class InspectionSmoke
             var injected = await Post(client, Inject).ConfigureAwait(false);
             var recent = await Post(client, Recent).ConfigureAwait(false);
 
+            // REST (S21): the embedded OpenAPI document, and the source-generated problem JSON (no jobs processor here).
+            var openApi = await client.GetStringAsync("/api/v1/openapi.json").ConfigureAwait(false);
+            using var jobs = await client.GetAsync("/api/v1/jobs?scope=a").ConfigureAwait(false);
+            var problem = await jobs.Content.ReadAsStringAsync().ConfigureAwait(false);
+
             var ok = health.IsSuccessStatusCode
                 && tools.Contains("inject_event", StringComparison.Ordinal)
                 && status.Contains("memory (AtLeastOnce)", StringComparison.Ordinal)
                 && injected.Contains("Ack", StringComparison.Ordinal)
-                && recent.Contains("Processed", StringComparison.Ordinal);
+                && recent.Contains("Processed", StringComparison.Ordinal)
+                && openApi.Contains("/api/v1/jobs/{id}", StringComparison.Ordinal)
+                && jobs.StatusCode == System.Net.HttpStatusCode.NotFound
+                && problem.Contains("\"status\":404", StringComparison.Ordinal);
             await output.WriteLineAsync(ok ? "ok   inspection-mcp" : "FAIL inspection-mcp").ConfigureAwait(false);
             return ok ? 0 : 1;
         }

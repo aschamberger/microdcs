@@ -114,6 +114,9 @@ public sealed class ManagementOptions
     /// <summary>The listen URL.</summary>
     public string Url { get; set; } = "http://127.0.0.1:8081";
 
+    /// <summary>Serve the read-only REST API under <c>/api/v1</c> (job state queries, D-54). Off by default.</summary>
+    public bool ApiEnabled { get; set; }
+
     /// <summary>Serve the read-only inspection tools over MCP (optional package, dev and test only).</summary>
     public bool McpEnabled { get; set; }
 
@@ -129,7 +132,7 @@ public sealed class ManagementOptions
     /// <summary>Hard cap of entries per tool result.</summary>
     public int MaxResults { get; set; } = 100;
 
-    /// <summary>Tool calls allowed per minute; further calls are refused.</summary>
+    /// <summary>Calls allowed per minute and caller (REST and MCP count separately); further calls are refused.</summary>
     public int RequestsPerMinute { get; set; } = 120;
 
     /// <summary>Number of pipeline decisions kept in the ring buffer (only while <see cref="Enabled"/>).</summary>

@@ -41,7 +41,7 @@ stacked-PR steps. The handoff is part of the session's own PR.
 
 ```
 src/MicroDCS.Core/          core library: envelope and codec, processor API, hosting, minimal pipeline, in-memory transport
-src/MicroDCS.Inspection/    inspection service (cap, redaction, rate limit, audit) and the management listener (D-19, D-40)
+src/MicroDCS.Inspection/    inspection service (cap, redaction, rate limit, audit), the management listener with health probes and the read-only REST API (D-19, D-40, D-54)
 src/MicroDCS.JobControl/    job models: neutral ISA-95 records, V1/V2 conversions, OPC UA JSON codec, Work Master extension, pure job state machine (D-34)
 src/MicroDCS.MachineryJobs/ Machinery Jobs processor: Job Control V2 commands, station configuration, job store over Valkey, job order publisher on state topics, inspectors (D-50, D-51)
 src/MicroDCS.Maintenance/   maintenance operations: plan/apply, snapshots, restore over Valkey (dev and test only, D-45)
@@ -51,6 +51,7 @@ src/MicroDCS.Sfc.Simulation/ in-memory SFC host: virtual clock, scripted equipme
 src/MicroDCS.Sfc.Hosting/   SFC host over Valkey: work stream, atomic step, push command dispatch, due-index sweep, inspector, operator actions (D-52)
 src/MicroDCS.Generators/    Roslyn source generator and MDCS diagnostics for processors and payloads (netstandard2.0)
 src/MicroDCS.Valkey/        Valkey layer: key schema, document DAOs with indexes, streams, dedupe (D-41 to D-43)
+src/MicroDCS.Telemetry/     OpenTelemetry over OTLP for the MicroDCS sources and meters (D-54)
 src/MicroDCS.Testing/       ProcessorHarness: drives a processor in memory with a fake clock
 src/MicroDCS.Transport.Mqtt/ MQTT 5 transport on MQTTnet: addresses, mapping, reply topic, state topics, reconnect (D-46)
 src/MicroDCS.Transport.Nats/ NATS transport on NATS.Net: JetStream consumers, inbox replies, KV state topics (D-47)

@@ -6,6 +6,7 @@ using MicroDCS.Core.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
 namespace MicroDCS.Core.Hosting;
@@ -47,6 +48,35 @@ public static class MicroDcsServiceCollectionExtensions
         services.TryAddSingleton<IEventPublisher>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.TryAddSingleton<IOutgoingCommands>(static sp => sp.GetRequiredService<MessagePipeline>());
         services.AddHostedService<MicroDcsHostedService>();
+
+        // Readiness (D-54): /health/ready on the management listener asks every registered check.
+        services.TryAddSingleton<TransportsHealthCheck>();
+        services.AddMicroDcsHealthCheck<TransportsHealthCheck>(TransportsHealthCheck.Name);
+        return services;
+    }
+
+    /// <summary>
+    /// Adds a readiness check that resolves <typeparamref name="TCheck"/> from the container (register it first). Idempotent: a
+    /// second call with the same name adds nothing, so calling a registration method twice does not break the health service with a
+    /// duplicate name.
+    /// </summary>
+    /// <typeparam name="TCheck">The registered check.</typeparam>
+    /// <param name="services">The services.</param>
+    /// <param name="name">The check name, shown by <c>/health/ready</c> when it fails.</param>
+    /// <returns>The services.</returns>
+    public static IServiceCollection AddMicroDcsHealthCheck<TCheck>(this IServiceCollection services, string name)
+        where TCheck : class, IHealthCheck
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        services.AddHealthChecks();
+        services.Configure<HealthCheckServiceOptions>(options =>
+        {
+            if (!options.Registrations.Any(r => r.Name == name))
+            {
+                options.Registrations.Add(new HealthCheckRegistration(name, static sp => sp.GetRequiredService<TCheck>(), failureStatus: null, tags: null));
+            }
+        });
         return services;
     }
 

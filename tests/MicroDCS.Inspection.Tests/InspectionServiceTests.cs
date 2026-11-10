@@ -94,4 +94,17 @@ public sealed class InspectionServiceTests
         time.Advance(TimeSpan.FromMinutes(1));
         await service.QueryAsync("test", "t", "x", new InspectionQuery(), ct);
     }
+
+    [Fact]
+    public async Task EachCallerHasItsOwnRateLimitWindow()
+    {
+        var service = Create(new FakeInspector("x"), new FakeTimeProvider(), m => m.RequestsPerMinute = 1);
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.QueryAsync("rest", "t", "x", new InspectionQuery(), ct);
+        var refused = await Should.ThrowAsync<InspectionRefusedException>(async () => await service.QueryAsync("rest", "t", "x", new InspectionQuery(), ct));
+        refused.RateLimited.ShouldBeTrue();
+
+        await service.QueryAsync("mcp", "t", "x", new InspectionQuery(), ct);
+    }
 }

@@ -72,9 +72,13 @@ services:
       APP_MicroDcs__Valkey__ConnectionString: valkey:6379
       APP_MicroDcs__Valkey__KeyPrefix: microdcs
       APP_MicroDcs__Management__Enabled: "true"
+      APP_MicroDcs__Management__ApiEnabled: "true"
       APP_MicroDcs__Management__McpEnabled: "true"
       APP_MicroDcs__Management__WriteEnabled: "true"
       APP_MicroDcs__Management__Url: http://0.0.0.0:8081
+      # Traces, metrics and logs to the Aspire dashboard (D-54).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+      OTEL_SERVICE_NAME: microdcs
       APP_MicroDcs__Management__BearerTokenFile: /run/secrets/mcp_token
       # Maintenance tools (D-45): Development only, second guard through the marker key written by `valkey-marker`.
       DOTNET_ENVIRONMENT: Development

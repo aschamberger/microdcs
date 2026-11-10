@@ -64,6 +64,9 @@ public sealed record InboundMessage
 
     /// <summary>The transport redelivered this message.</summary>
     public bool Redelivered { get; init; }
+
+    /// <summary>The subscription (topic filter, subject filter or consumer) that matched, for telemetry; <see langword="null"/> when the transport has none.</summary>
+    public string? Subscription { get; init; }
 }
 
 /// <summary>Kind of subscription a message arrived on.</summary>

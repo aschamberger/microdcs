@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S21** (HTTP surface and observability); S08 to S20a are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S22** (container, Kubernetes, supply chain, security review); S08 to S21 are done.
 
 ## How to use these files
 
@@ -101,7 +101,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-37](decisions.md#d-37) | decided | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model, shutdown phases |
 | [D-38](decisions.md#d-38) | decided | Logical address with one segment rule for all transports, scope check, level-0 rejected by default, state-topic port |
 | [D-39](decisions.md#d-39) | decided | Generic Host, `MicroDcs` options section, `APP_` + `__` environment names, binding sections, instance roles |
-| [D-40](decisions.md#d-40) | decided | Inspection contracts with sensitivity-based redaction, one management listener on loopback |
+| [D-40](decisions.md#d-40) | revised | Inspection contracts with sensitivity-based redaction, one management listener on loopback; no `/metrics` (OTLP only, S21) |
 | [D-41](decisions.md#d-41) | decided | Documents are versioned hashes with explicit indexes; no valkey-json or valkey-search |
 | [D-42](decisions.md#d-42) | decided | Key schema, job identity by id alone (no hash tags), scope registry, version-guarded idempotent writes, stream trimming rule |
 | [D-43](decisions.md#d-43) | decided | Stream consumption: pub/sub nudge plus 1 s fallback poll, one poller per instance |
@@ -116,8 +116,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-51](decisions.md#d-51) | decided | Job order publisher: separate Deployment by role, poller hand-off, lease as a guard, order topic without state, ids limited to the segment rule, rebuild from documents |
 | [D-52](decisions.md#d-52) | revised | SFC host: own project, job order transitions as work entries, Abort and Stop end the recipe, Pause and Resume hold and release it (S20a) |
 | [D-53](decisions.md#d-53) | decided | SFC pull events: `Selector` field, waits index oldest first, one event one job; the recovery scan resends nothing with a deadline; replica tests with real containers |
+| [D-54](decisions.md#d-54) | decided | HTTP surface and telemetry: OTLP only, producer and SFC spans, readiness checks for transports and Valkey, read-only `/api/v1/jobs` off by default |
 
-Next free id: **D-54**.
+Next free id: **D-55**.
 
 ## Open questions
 
@@ -144,13 +145,13 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-DATA-2~~ Client library | → D-7, D-43: no blocking reads, pub/sub nudge plus 1 s fallback poll | — |
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
 | ~~Q-DATA-4~~ High availability | → D-12 (cluster mode out of scope, islands); every write path is idempotent under unknown outcome through the operation id (R-4, S09) | — |
-| Q-OPS-1 HTTP surface | Listener layout decided in D-40 (one management listener, loopback default, `/health`, `/metrics`, `/api/v1`, `/mcp`). Open: job state query API and OpenAPI (R-19); the REST adapter was left out of S11 and comes with S21 | S21 |
+| ~~Q-OPS-1~~ HTTP surface | → D-40, D-54: health probes with registered checks, read-only `/api/v1/jobs` with an OpenAPI document, no `/metrics` | — |
 | Q-OPS-2 Container and Kubernetes | Chiseled/distroless AOT image, manifest, Zenoh native library in the image, hardening from `docs/security.md` | S22 |
 | Q-OPS-3 Security | Authn/z per transport (NATS accounts/NKeys, AMQP SASL, Zenoh ACLs), the level-0 scope rule (R-6) | S10, S22 |
 | Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
 | Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
 | ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
-| OpenTelemetry coverage | Pipeline side answered in S10: one `ActivitySource`/`Meter` named `MicroDCS`, the OTEL handler variants of Python are gone (D-37 revision). MQTTnet has no instrumentation of its own; the transport adds the counters `microdcs.mqtt.dropped` and `microdcs.mqtt.reconnects` on the same meter (S13). NATS.Net has its own `ActivitySource` and `Meter` named `NATS.Net`; the NATS transport adds `microdcs.nats.*` counters (S14, D-47). Open: StackExchange.Redis | S21 |
+| ~~OpenTelemetry coverage~~ | → D-54: OTLP export of every `MicroDCS*` source and meter, `NATS.Net`, runtime and ASP.NET Core; consumer, producer and SFC work spans; no Valkey spans (no stable StackExchange.Redis instrumentation) | — |
 | ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
 | R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
 | R-20 Multi-tenancy | NATS: one account per tenant, chosen by the credentials, tested in S14 (D-47). The other transports and the key-prefix convention in S22 | S22 |
@@ -188,7 +189,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S19 | SFC Valkey host: work stream, outbox, due-index, push commands | S09, S15, S17 | done |
 | S20 | SFC pull events, recovery, multi-instance | S19 | done |
 | S20a | SFC hold and release: MES Pause and Resume hold the recipe at the next step boundary | S20 | done |
-| S21 | HTTP surface and observability | S17 | open |
+| S21 | HTTP surface and observability | S17 | done |
 | S22 | Container, Kubernetes, supply chain, security review | S21 | open |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |
 | **M3 Extensions** | | | |

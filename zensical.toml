@@ -25,6 +25,7 @@ nav = [
     {"SFC core in .NET" = "sfc-core.md"},
     {"Job models and state machine" = "job-control.md"},
     {"Inspection and MCP" = "inspection.md"},
+    {"HTTP surface and observability" = "observability.md"},
     {"Persistence" = "persistence.md"}
   ]},
   {"Operations" = [
@@ -53,6 +54,7 @@ nav = [
       {"Valkey findings" = "porting/research/valkey-findings.md"},
       {"MQTT transport" = "porting/research/mqtt-transport.md"},
       {"NATS transport" = "porting/research/nats-transport.md"},
+      {"HTTP surface and observability" = "porting/research/http-observability.md"},
       {"Library spike" = "porting/research/library-spike.md"},
       {"OPC UA spike" = "porting/research/opcua-spike.md"},
       {"Core contracts" = "porting/research/core-contracts.md"},

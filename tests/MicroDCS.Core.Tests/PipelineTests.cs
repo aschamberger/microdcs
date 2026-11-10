@@ -267,7 +267,7 @@ internal sealed class Rig : IAsyncDisposable
 
     public required TaskCompletionSource Stopped { get; init; }
 
-    public IHostedService Host => Provider.GetServices<IHostedService>().Single();
+    public MicroDcsHostedService Host => Provider.GetServices<IHostedService>().OfType<MicroDcsHostedService>().Single();
 
     public MessagePipeline Pipeline => Provider.GetRequiredService<MessagePipeline>();
 
@@ -615,6 +615,85 @@ public sealed class PipelineTests
         activity.TraceId.ToString().ShouldBe("0af7651916cd43dd8448eb211c80319c");
         activity.ParentSpanId.ToString().ShouldBe("b7ad6b7169203331");
         rig.Transport.Published.ShouldAllBe(m => m.Envelope.TraceParent != null && m.Envelope.TraceParent.Contains("0af7651916cd43dd8448eb211c80319c", StringComparison.Ordinal));
+    }
+
+    private static (ActivityListener Listener, List<Activity> Started) ListenToPipeline()
+    {
+        // The listener is process wide and other tests run in parallel: collect under a lock and filter by this test's data.
+        var started = new List<Activity>();
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == PipelineTelemetry.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = a =>
+            {
+                lock (started)
+                {
+                    started.Add(a);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+        return (listener, started);
+    }
+
+    [Fact]
+    public async Task Processing_span_names_the_transport_and_the_subscription()
+    {
+        await using var rig = await StartRigAsync<SampleProcessor>("sample");
+        var (listener, started) = ListenToPipeline();
+        using var _ = listener;
+        var message = Request("test.hello.v1", "p/res", """{"Name":"Bob"}""", id: "sub-span") with { Subscription = "test/+/cmd" };
+
+        await rig.Transport.InjectAsync(message, TestContext.Current.CancellationToken);
+
+        Activity activity;
+        lock (started)
+        {
+            activity = started.Where(a => a.Kind == ActivityKind.Consumer && (string?)a.GetTagItem("messaging.message.id") == "sub-span").ShouldHaveSingleItem();
+        }
+
+        activity.GetTagItem("messaging.system").ShouldBe("memory");
+        activity.GetTagItem("messaging.destination.subscription.name").ShouldBe("test/+/cmd");
+    }
+
+    [Fact]
+    public async Task Event_published_outside_a_span_carries_the_trace_context_of_its_producer_span()
+    {
+        await using var rig = await StartRigAsync<SampleProcessor>("sample");
+        var (listener, started) = ListenToPipeline();
+        using var _ = listener;
+
+        await rig.Publisher.PublishAsync(new Bye("x"), Intent.Command, new PublishOptions { Subject = "p/res", EventId = "producer-span" }, TestContext.Current.CancellationToken);
+        await rig.Transport.WaitForPublishedAsync(1);
+
+        Activity producer;
+        lock (started)
+        {
+            producer = started.Where(a => a.Kind == ActivityKind.Producer && (string?)a.GetTagItem("messaging.message.id") == "producer-span").ShouldHaveSingleItem();
+        }
+
+        producer.DisplayName.ShouldStartWith("send ");
+        rig.Transport.Published.ShouldHaveSingleItem().Envelope.TraceParent.ShouldBe(producer.Id);
+    }
+
+    [Fact]
+    public async Task Refused_publish_marks_its_producer_span_as_failed()
+    {
+        await using var rig = await StartRigAsync<SampleProcessor>("sample");
+        var (listener, started) = ListenToPipeline();
+        using var _ = listener;
+
+        await Should.ThrowAsync<InvalidOperationException>(async () =>
+            await rig.Publisher.PublishAsync(new Bye("x"), Intent.Command, new PublishOptions { Subject = "pl ant/res", EventId = "refused-span" }, TestContext.Current.CancellationToken));
+
+        Activity producer;
+        lock (started)
+        {
+            producer = started.Where(a => a.Kind == ActivityKind.Producer && (string?)a.GetTagItem("messaging.message.id") == "refused-span").ShouldHaveSingleItem();
+        }
+
+        producer.Status.ShouldBe(ActivityStatusCode.Error);
     }
 
     [Fact]
