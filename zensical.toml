@@ -57,6 +57,7 @@ nav = [
       {"NATS transport" = "porting/research/nats-transport.md"},
       {"HTTP surface and observability" = "porting/research/http-observability.md"},
       {"Deployment and security review" = "porting/research/deployment-security.md"},
+      {"CI runtime review" = "porting/research/ci-runtime.md"},
       {"Library spike" = "porting/research/library-spike.md"},
       {"OPC UA spike" = "porting/research/opcua-spike.md"},
       {"Core contracts" = "porting/research/core-contracts.md"},

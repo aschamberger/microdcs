@@ -60,6 +60,7 @@ tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, JobCo
 tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
 tools/                      build-time tools: the Job Control transition table generator (D-34)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
+scripts/ci-changes          which CI jobs a pull request needs, from its changed paths (D-56)
 scripts/replica-tests       SFC replica tests: two instances of the image, killed from outside (D-53)
 scripts/k8s-test            deploy/ in a kind cluster: probes, Pod Security restricted, NetworkPolicies, Valkey ACL (S22)
 scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI
@@ -90,7 +91,8 @@ scripts/scan                          # Gitleaks (working tree), actionlint/zizm
 Integration tests run inside compose (D-15):
 `docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests`,
 then `docker compose -f compose.test.yaml down -v`. Compose exits 0 if the tests container never ran,
-so also check `docker compose -f compose.test.yaml ps -a tests` (CI does). The SFC replica tests run
+so also check `docker compose -f compose.test.yaml ps -a tests`. CI runs the same suite on the host
+against the compose services in the `dotnet` job (D-15 revised in S22a, `docs/development.md`). The SFC replica tests run
 separately: `scripts/replica-tests` (D-53). The Kubernetes manifest: `scripts/k8s-test` (kind, S22).
 AOT publish: `scripts/aot-publish src/MicroDCS.App linux-x64 <out-dir>` (fails on every trim/AOT
 warning except the allowlisted `CloudNative.CloudEvents*` ones), then `<out-dir>/microdcs smoke`.

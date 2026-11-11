@@ -2,6 +2,12 @@
 # Native AOT publish with the D-14 warning allowlist. The project sets PublishAot itself (a global
 # -p:PublishAot=true would also apply to referenced libraries and break the locked restore).
 #
+# Restore runs first without a RID and the publish with --no-restore, as in the Dockerfile: a restore
+# under `dotnet publish -r <rid>` passes the RID to every referenced project and writes it into the lock
+# file of src/MicroDCS.Generators (netstandard2.0, no RIDs on purpose), which then breaks the next locked
+# restore (S22a). The src/ projects declare both RIDs (Directory.Build.props), so this restore has the
+# runtime packs. Pass --no-restore to skip it when the caller restored already.
+#
 #   scripts/aot-publish <project> <rid> <output-dir> [extra dotnet publish args...]
 #
 # Every trim/AOT warning is already an error (TreatWarningsAsErrors), except the per-assembly
@@ -18,6 +24,15 @@ shift 3
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
+
+restore=1
+for arg in "$@"; do
+  [[ $arg == --no-restore ]] && restore=0
+done
+if (( restore )); then
+  dotnet restore "$project"
+  set -- --no-restore "$@"
+fi
 
 dotnet publish "$project" -c Release -r "$rid" -o "$out" "$@" 2>&1 | tee "$log"
 

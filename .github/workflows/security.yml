@@ -120,25 +120,38 @@ jobs:
     permissions:
       contents: read
       security-events: write # SARIF upload to code scanning
+    # Documentation-only pull requests skip the image build and scan (scripts/ci-changes, D-56); the step-level gate keeps
+    # the required check reporting without a second job named "changes".
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }} # '0' as a string: 0 is falsy in expressions
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-changes "$EVENT" "$BASE" "$HEAD"
       - name: Trivy DB cache key
+        if: steps.changes.outputs.code == 'true'
         id: trivy-db
         run: |
           echo "key=trivy-db-$(date --utc +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           mkdir -p scan-results
       # Restore only: trivy-fs saves the same daily key. This job builds an image, so it must not
       # write caches (zizmor cache-poisoning).
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: steps.changes.outputs.code == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/trivy
           key: ${{ steps.trivy-db.outputs.key }}
           restore-keys: trivy-db-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - if: steps.changes.outputs.code == 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Image as a tarball, no registry push; shares the build cache with ci.yml.
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - if: steps.changes.outputs.code == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: runtime
@@ -146,13 +159,14 @@ jobs:
           outputs: type=docker,dest=scan-results/image.tar
           cache-from: type=gha,scope=runtime-linux-x64
       - name: Trivy image
+        if: steps.changes.outputs.code == 'true'
         run: scripts/scan image scan-results/image.tar
-      - if: always() && hashFiles('scan-results/trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      - if: always() && steps.changes.outputs.code == 'true' && hashFiles('scan-results/trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: scan-results/trivy-image.sarif
           category: trivy-image
-      - if: always()
+      - if: always() && steps.changes.outputs.code == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-image

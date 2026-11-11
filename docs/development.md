@@ -64,7 +64,7 @@ Images are pinned by digest; Dependabot proposes updates.
 
 `compose.test.yaml` is the integration harness ([D-15](porting/decisions.md#d-15)). The `tests`
 service builds the `tests` target of the `Dockerfile` and runs `tests/MicroDCS.IntegrationTests`
-against Valkey and Mosquitto on the compose network. CI runs the same command:
+against Valkey, Mosquitto and NATS on the compose network, all in containers:
 
 ```bash
 docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
@@ -73,13 +73,13 @@ docker compose -f compose.test.yaml cp tests:/results TestResults/compose   # TR
 docker compose -f compose.test.yaml down -v
 ```
 
-Compose exits 0 when the tests container never started (for example a dependency failed), so CI
-checks the container's own exit code too. Every service in the file must stay up until the tests
+Compose exits 0 when the tests container never started (for example a dependency failed), so
+check the container's own exit code too. Every service in the file must stay up until the tests
 end; a one-shot service would trigger `--abort-on-container-exit` early.
 
 The tests read their endpoints from `MICRODCS_TEST_VALKEY`, `MICRODCS_TEST_MQTT`, `MICRODCS_TEST_NATS`
 and `MICRODCS_TEST_VALKEY_ACL` (`host:port`). Without them a plain `dotnet test` on the host skips
-them; inside compose `--fail-skips on` turns a skip into a failure. `valkey-acl` is a second Valkey
+them; `--fail-skips on` (inside compose, and in CI) turns a skip into a failure. `valkey-acl` is a second Valkey
 that requires authentication: with it configured, the Valkey tests run the production code as an
 island ACL user with the rule from [Deployment](deployment.md#tenancy), so a command the rule does
 not grant fails a test, and the password rotation test runs there. For fast iteration on the host:
@@ -93,13 +93,33 @@ MICRODCS_TEST_VALKEY=localhost:6380 MICRODCS_TEST_VALKEY_ACL=localhost:6381 \
 
 The test ports (6380, 6381, 1884, 4223) are offset from the dev stack, so both can run at the same time.
 
+CI runs the suite this way, on the host against the compose services, in the `dotnet` job together with the unit
+tests, so the integration coverage reaches SonarQube Cloud (`--filter-not-trait Category=Replica --fail-skips on`).
+The `integration` job runs `scripts/replica-tests`, which also builds the `tests` image (D-15 revised in S22a).
+A test that waits for a timeout it does not assert costs the whole run that time: stop a host in a test with a short
+grace period, because shutdown waits for the expiry timers of open commands until the grace period ends (D-37).
+
+## CI
+
+`ci.yml` and `security.yml` decide per pull request what has to run (`scripts/ci-changes`, [D-56](porting/decisions.md#d-56)):
+
+| Change | Runs on the pull request |
+|---|---|
+| Documentation only (`docs/`, `overrides/`, `.claude/`, `zensical.toml`, top-level `*.md`, `LICENSE`) | `dotnet` builds and runs the SonarQube Cloud analysis (its check is required); everything else reports a skip |
+| Code | plus tests, format, NuGet audit, `container (linux-x64)`, `integration` (replica tests), `trivy-image` |
+| Image inputs (`Dockerfile`, `global.json`, `Directory.*.props`, `nuget.config`, `ci.yml`, the publish scripts) | plus `container (linux-arm64)` and `kubernetes` |
+| Manifest or what the kind test exercises (`deploy/`, `tests/k8s/`, `scripts/k8s-test`, `src/MicroDCS.App`, `src/MicroDCS.Inspection`) | plus `kubernetes` |
+
+Pushes to `main`, tags and `workflow_dispatch` run everything; a daily schedule runs both container builds and
+`kubernetes`. `scripts/ci-changes pull_request <base> <head>` prints the decision locally.
+
 ## Kubernetes Test
 
 `scripts/k8s-test` applies `deploy/` with the overlay in `tests/k8s` to a kind cluster and checks
 the probes, Pod Security `restricted`, the NetworkPolicies, the management token and the Valkey ACL
 ([Deployment](deployment.md#kind-test)). It needs Docker, `kind` and `kubectl`;
 `scripts/k8s-test install ~/.local/bin` installs the pinned versions with checksum checks.
-`KEEP_CLUSTER=1` keeps the cluster for debugging. CI runs it in the `kubernetes` job.
+`KEEP_CLUSTER=1` keeps the cluster for debugging. CI runs it in the `kubernetes` job ([CI](#ci)).
 
 ## Security Scanning
 

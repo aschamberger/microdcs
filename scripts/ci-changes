@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Which CI work a change needs (S22a, D-56). Prints `name=true|false` lines; in CI they go to $GITHUB_OUTPUT.
+#
+#   scripts/ci-changes <event> [<base> <head>]
+#
+# Pull requests compare <base>...<head> (the merge base, so a stacked PR sees only its own commits). Every other event
+# (push to main or a tag, schedule, workflow_dispatch) runs everything; publishing depends on that.
+#
+#   code   anything outside the documentation-only paths: build, tests, Sonar coverage, images
+#   image  the image definition or its inputs (Dockerfile, SDK, packages, ci.yml): the linux-arm64 build on a PR
+#   k8s    the manifest, the kind test or what it exercises (management listener, App): the kubernetes job on a PR
+#
+# Documentation-only paths are a short allowlist on purpose; a path missing here only costs a full run.
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: $0 <event> [<base> <head>]" >&2
+  exit 2
+fi
+event=$1
+
+emit() {
+  if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+    echo "$1=$2" >> "$GITHUB_OUTPUT"
+  fi
+  echo "$1=$2"
+}
+
+if [[ $event != pull_request ]]; then
+  emit code true
+  emit image true
+  emit k8s true
+  exit 0
+fi
+
+if [[ $# -lt 3 ]]; then
+  echo "ci-changes: pull_request needs <base> <head>" >&2
+  exit 2
+fi
+mapfile -t files < <(git diff --name-only "$2...$3")
+printf 'changed: %s\n' "${files[@]}" >&2
+
+matches() { # <file> <extended regex>
+  [[ $1 =~ $2 ]]
+}
+
+docs_only='^(docs/|overrides/|\.claude/|zensical\.toml$|LICENSE$|[^/]+\.md$)'
+image='^(Dockerfile$|\.dockerignore$|global\.json$|nuget\.config$|Directory\.(Build|Packages)\.props$|\.github/workflows/ci\.yml$|scripts/(aot-publish|ci-changes)$)'
+k8s='^(deploy/|tests/k8s/|scripts/k8s-test$|src/MicroDCS\.(App|Inspection)/)'
+
+code=false image_changed=false k8s_changed=false
+for file in "${files[@]}"; do
+  if ! matches "$file" "$docs_only"; then code=true; fi
+  if matches "$file" "$image"; then image_changed=true; fi
+  if matches "$file" "$k8s"; then k8s_changed=true; fi
+done
+# The image inputs also change what the kind test runs.
+if [[ $image_changed == true ]]; then k8s_changed=true; fi
+
+emit code "$code"
+emit image "$image_changed"
+emit k8s "$k8s_changed"

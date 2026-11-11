@@ -1,9 +1,13 @@
-# .NET CI: build, tests with coverage, SonarQube Cloud analysis (D-20), format, NuGet audit,
-# Native AOT container image with the CloudEvents smoke check (D-14), the compose integration
-# harness (D-15) and the Kubernetes manifest in kind (S22). Gitleaks and Trivy run in security.yml.
+# .NET CI: build, unit and integration tests with coverage against the compose.test.yaml services, SonarQube Cloud analysis
+# (D-20), format, NuGet audit, Native AOT container image with the CloudEvents smoke check (D-14), the SFC replica tests
+# (D-53) and the Kubernetes manifest in kind (S22). Gitleaks and Trivy run in security.yml.
 # Pushes to main and v* tags publish the multi-arch image to GHCR, signed and with SBOM attestations
 # (cosign keyless, D-55); pull requests never publish.
-# Job names are required checks on `main` (dotnet, container (linux-x64), container (linux-arm64),
+# What runs on a pull request depends on the changed paths (scripts/ci-changes, D-56): documentation-only changes build and
+# analyse only; linux-arm64 and kind run when the image inputs or the manifest change, and always on main and daily.
+# Required checks must report on every PR, so a job that does not apply is skipped as a whole (reported as success), and a
+# matrix job skips its steps instead (a skipped matrix job reports under its unexpanded name).
+# Job names are required checks on `main` (changes, dotnet, container (linux-x64), container (linux-arm64),
 # integration, kubernetes); renaming a job or a matrix entry means updating the branch protection.
 # Actions are pinned by full commit SHA with the release in a comment (D-20); Dependabot bumps both.
 name: ci
@@ -14,6 +18,8 @@ on:
     tags:
       - "v*"
   pull_request:
+  schedule:
+    - cron: "41 4 * * *" # daily: the jobs a PR may skip (linux-arm64, kind) against current runners and actions
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,9 +33,38 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
 
 jobs:
+  # Decides which jobs a pull request needs (scripts/ci-changes). A required check: if it fails, the jobs that need it are
+  # skipped, and a skipped job counts as passed.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+      image: ${{ steps.changes.outputs.image }}
+      k8s: ${{ steps.changes.outputs.k8s }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }} # '0' as a string: 0 is falsy in expressions
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-changes "$EVENT" "$BASE" "$HEAD"
+
+  # Documentation-only pull requests still build and run the SonarQube Cloud analysis, because its check is required and
+  # only an analysis posts it; tests, format and audit are skipped there. Not on the schedule.
   dotnet:
     name: dotnet
+    needs: changes
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CODE: ${{ needs.changes.outputs.code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,14 +110,17 @@ jobs:
           /d:sonar.cpd.exclusions="tests/**,bench/**,tools/**,src/MicroDCS.JobControl/Conversions/JobControlConversions.cs"
           /d:sonar.cs.roslyn.ignoreIssues=true
       - run: dotnet build --no-restore --no-incremental -c Release
-      # The Valkey layer and the MQTT transport are covered by integration tests (D-15). Starting only the harness
-      # Valkey, Mosquitto and NATS here lets them run in this job too, so the coverage reaches SonarQube Cloud; the full
-      # run stays in the "integration" job.
-      - name: Start Valkey, Mosquitto and NATS for coverage
+      # The integration tests run here against the compose.test.yaml services (D-15, revised in S22a), so their coverage
+      # reaches SonarQube Cloud. `--fail-skips on` fails the run when a test skips because a service variable is missing;
+      # the replica tests need the Docker socket and run in the "integration" job.
+      - name: Start Valkey, Mosquitto and NATS
+        if: env.CODE == 'true'
         run: docker compose -f compose.test.yaml up -d --wait valkey valkey-acl mosquitto nats
-      - run: >-
+      - if: env.CODE == 'true'
+        run: >-
           dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx
           --coverage --coverage-output-format xml
+          --filter-not-trait Category=Replica --fail-skips on
         env:
           MICRODCS_TEST_VALKEY: localhost:6380
           MICRODCS_TEST_MQTT: localhost:1884
@@ -93,8 +131,10 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
-      - run: dotnet format --verify-no-changes --no-restore
+      - if: env.CODE == 'true'
+        run: dotnet format --verify-no-changes --no-restore
       - name: NuGet vulnerability audit (direct and transitive)
+        if: env.CODE == 'true'
         run: |
           dotnet package list --vulnerable --include-transitive --format json > vulnerable.json
           if jq -e '[.projects[] | select(.frameworks)] | length > 0' vulnerable.json > /dev/null; then
@@ -102,6 +142,11 @@ jobs:
             echo "::error::vulnerable NuGet packages found"
             exit 1
           fi
+      - if: failure() && env.CODE == 'true'
+        name: Service logs
+        run: |
+          mkdir -p TestResults
+          docker compose -f compose.test.yaml logs --no-color --timestamps > TestResults/services.log || true
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -111,10 +156,16 @@ jobs:
 
   # Builds the final image (scripts/aot-publish enforces the D-14 warning allowlist) and runs the
   # CloudEvents AOT smoke check in it: chiseled runtime-deps, non-root, no shell. One native runner
-  # per platform (D-32): Native AOT links for the build machine's architecture, and emulation is slow.
+  # per platform (D-32): Native AOT links for the build machine's architecture, and emulation is slow. linux-arm64 runs on a
+  # pull request only when the image inputs change (D-32 revised in S22a); otherwise its steps are skipped. linux-x64
+  # hands its image to the kubernetes job.
   container:
     name: container (${{ matrix.rid }})
+    needs: changes
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      RUN: ${{ needs.changes.outputs.code == 'true' && (matrix.rid == 'linux-x64' || needs.changes.outputs.image == 'true') }}
     strategy:
       fail-fast: false
       matrix:
@@ -124,11 +175,16 @@ jobs:
           - rid: linux-arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.RUN != 'true'
+        run: echo "::notice::not needed for this change (scripts/ci-changes)"
+      - if: env.RUN == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - if: env.RUN == 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - if: env.RUN == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: runtime
@@ -137,8 +193,10 @@ jobs:
           cache-from: ${{ !startsWith(github.ref, 'refs/tags/') && format('type=gha,scope=runtime-{0}', matrix.rid) || '' }}
           cache-to: type=gha,scope=runtime-${{ matrix.rid }},mode=max
       - name: AOT smoke check in the container
+        if: env.RUN == 'true'
         run: docker run --rm microdcs:ci smoke
       - name: Binary matches the platform
+        if: env.RUN == 'true'
         env:
           RID: ${{ matrix.rid }}
         run: |
@@ -148,32 +206,47 @@ jobs:
             *) echo "::error::$RID built an $arch image"; exit 1 ;;
           esac
       - name: Image runs as non-root without a shell
+        if: env.RUN == 'true'
         run: |
           test "$(docker image inspect microdcs:ci --format '{{.Config.User}}')" = "1654"
           if docker run --rm --entrypoint sh microdcs:ci -c true 2>/dev/null; then
             echo "::error::the runtime image contains a shell"
             exit 1
           fi
+      # The kubernetes job tests this image instead of building its own.
+      - name: Save the image for the kubernetes job
+        if: env.RUN == 'true' && matrix.rid == 'linux-x64' && needs.changes.outputs.k8s == 'true'
+        run: docker save microdcs:ci -o "$RUNNER_TEMP/microdcs-image.tar"
+      - if: env.RUN == 'true' && matrix.rid == 'linux-x64' && needs.changes.outputs.k8s == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-linux-x64
+          path: ${{ runner.temp }}/microdcs-image.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
 
-  # deploy/ in a kind cluster with the image built here (scripts/k8s-test): probes, Pod Security "restricted", NetworkPolicies
-  # and the management token. kind and kubectl are pinned with checksums in the script.
+  # deploy/ in a kind cluster with the linux-x64 image of the container job (scripts/k8s-test): probes, Pod Security
+  # "restricted", NetworkPolicies and the management token. kind and kubectl are pinned with checksums in the script.
+  # On a pull request only when the manifest, the kind test or the image inputs change (D-56); always on main and daily.
   kubernetes:
     name: kubernetes
+    needs: [changes, container]
+    if: needs.changes.outputs.k8s == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      # Reads the container job's cache; this job does not write one.
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          context: .
-          target: runtime
-          tags: microdcs:kind
-          load: true
-          cache-from: type=gha,scope=runtime-linux-x64
+          name: image-linux-x64
+          path: ${{ runner.temp }}/image
+      - name: Load the image
+        run: |
+          docker load -i "$RUNNER_TEMP/image/microdcs-image.tar"
+          docker tag microdcs:ci microdcs:kind
       - name: Install kind and kubectl
         run: |
           scripts/k8s-test install "$RUNNER_TEMP/bin"
@@ -189,38 +262,28 @@ jobs:
           path: TestResults/k8s/
           if-no-files-found: ignore
 
+  # Two replicas of the application image, killed from outside (S20, D-53), run by the `tests` image of the Dockerfile; this
+  # is also the check that the compose test image builds. The rest of the integration suite runs in the dotnet job (D-15,
+  # revised in S22a). Builds its own runtime image in parallel to the container job: waiting for that job's image would put
+  # both builds on the critical path.
   integration:
     name: integration
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compose harness (D-15)
-        run: docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
-      # compose exits 0 when the tests container never ran (for example a dependency failed to
-      # start), so check the container's own exit code as well.
-      - name: Tests container exited with 0
-        run: test "$(docker compose -f compose.test.yaml ps -a tests --format '{{.State}} {{.ExitCode}}')" = "exited 0"
-      # Two replicas of the application image, killed from outside (S20, D-53).
       - name: SFC replica tests
         run: scripts/replica-tests
-      - if: always()
-        name: Collect results and service logs
-        run: |
-          mkdir -p compose-results
-          docker compose -f compose.test.yaml cp tests:/results compose-results/ || true
-          docker compose -f compose.test.yaml logs --no-color --timestamps > compose-results/services.log || true
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-results
-          path: |
-            compose-results/
-            TestResults/replica/
+          path: TestResults/replica/
           if-no-files-found: ignore
-      - if: always()
-        run: docker compose -f compose.test.yaml down -v
 
   # Publishes the image of each platform by digest after every check passed (D-32, D-55): build (from the container job's cache on
   # main, from scratch for a release tag),
