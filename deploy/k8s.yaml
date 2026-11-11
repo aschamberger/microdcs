@@ -1,24 +1,32 @@
+# MicroDCS on Kubernetes: an example to adapt, not a chart. Apply through deploy/kustomization.yaml, which pins the image (set the
+# digest of the image you verified there):
+#
+#   kubectl apply -k deploy/ -n <namespace>
+#
+# Two Deployments of the same image, split by role (D-51):
+#   * microdcs-processor: Roles=Processor, scales horizontally. Shared MQTT subscriptions spread the commands, every replica runs the
+#     SFC host; Valkey streams and compare-and-set scripts keep the work single-owner (D-44, D-53).
+#   * microdcs-publisher: Roles=Publisher, one replica. It writes the retained state topics for the MES; a lease in Valkey keeps a
+#     second publisher (rolling update, a manual scale-up) from overwriting them (D-51).
+#
+# Before applying, create (names are the ones referenced below):
+#   * Secret microdcs-management: key `token`, the bearer token of the management listener (REST API; probes stay open, R-8).
+#   * Secret microdcs-valkey: key `password` of the Valkey ACL user `microdcs`, and key `ca.crt`, the CA of the Valkey server certificate.
+#   * Secret microdcs-mqtt: key `ca.crt`, the CA of the broker certificate. Add `password` and set APP_MicroDcs__Mqtt__Username and
+#     APP_MicroDcs__Mqtt__PasswordFile, or a client certificate, or a projected service account token for K8S-SAT (docs/security.md).
+#   * Labels on the dependencies that the NetworkPolicy allows: app.kubernetes.io/name=valkey, =mqtt-broker, =otel-collector.
+#
+# Shared settings: deploy/config.yaml. Secrets are mounted as files and read on every connect attempt, so a rotation needs no restart (D-49). Hardening and the trust
+# model: docs/security.md. Probes: /health/live and /health/ready on the management listener (D-54).
 
-
-# MicroDCS Kubernetes Deployment
-#
-# Two Deployments:
-#   1. Processor – scales horizontally with shared MQTT subscriptions and runs the SFC engine on every replica
-#   2. Publisher – single replica maintaining retained MQTT topics
-#
-# Both share the same container image, differentiated by APP_IS_PROCESSOR_INSTANCE
-# and APP_IS_PUBLISHER_INSTANCE environment variables.
-#
-# The SFC engine is not single-instance gated. It relies on Redis Streams consumer
-# groups and CAS Lua scripts for distributed execution and recovery. Equipment-side
-# command handling must be idempotent; the engine sends a stable mdcsactionkey
-# with every push_command for deduplication.
-#
-# Hardening: pods run as the distroless non-root user with a read-only root
-# filesystem and no Kubernetes API token, and a NetworkPolicy denies all ingress
-# (the MessagePack-RPC port is meant for a sidecar in the same pod). Pin the image
-# to a digest instead of :latest for production. There are no probes: the process
-# exits when Redis or MQTT is lost and Kubernetes restarts it.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: microdcs
+  labels:
+    app.kubernetes.io/name: microdcs
+automountServiceAccountToken: false
 
 ---
 apiVersion: apps/v1
@@ -26,67 +34,110 @@ kind: Deployment
 metadata:
   name: microdcs-processor
   labels:
-    app: microdcs
-    role: processor
+    app.kubernetes.io/name: microdcs
+    app.kubernetes.io/component: processor
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: microdcs
-      role: processor
+      app.kubernetes.io/name: microdcs
+      app.kubernetes.io/component: processor
   template:
     metadata:
       labels:
-        app: microdcs
-        role: processor
+        app.kubernetes.io/name: microdcs
+        app.kubernetes.io/component: processor
     spec:
+      serviceAccountName: microdcs
       automountServiceAccountToken: false
+      # Longer than MicroDcs:ShutdownGracePeriod (30 s), so the drain finishes before SIGKILL (D-37).
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
+        runAsUser: 1654 # `app` of the chiseled image
+        runAsGroup: 1654
+        fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: microdcs
-          image: aschamberger/microdcs:latest
+          image: ghcr.io/aschamberger/microdcs
+          args: ["serve"]
+          ports:
+            - name: management
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: microdcs
+          env:
+            - name: APP_MicroDcs__Roles
+              value: Processor
+            - name: APP_MicroDcs__Valkey__PasswordFile
+              value: /var/run/secrets/microdcs/valkey/password
+            - name: APP_MicroDcs__Management__BearerTokenFile
+              value: /var/run/secrets/microdcs/management/token
+            - name: POD_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          # Liveness only says the process answers; a lost dependency ends the process itself (D-27, D-54).
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Ready when every transport is connected and Valkey answers PING (D-54).
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
           resources:
             requests:
               cpu: 100m
               memory: 128Mi
+              ephemeral-storage: 16Mi
             limits:
-              cpu: 500m
+              cpu: "1"
               memory: 256Mi
-          env:
-            - name: POD_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.uid
-            - name: APP_IS_PROCESSOR_INSTANCE
-              value: "true"
-            - name: APP_IS_PUBLISHER_INSTANCE
-              value: "false"
-            - name: APP_REDIS_HOSTNAME
-              value: redis
-            - name: APP_MQTT_HOSTNAME
-              value: mqtt-broker
-            - name: APP_PROCESSING_TOPIC_PREFIXES
-              value: "greetings:app/greetings,machinery-jobs:app/jobs"
-            - name: APP_PROCESSING_RESPONSE_TOPICS
-              value: "greetings:app/greetings/responses,machinery-jobs:app/jobs/responses"
-            - name: APP_PROCESSING_SHARED_SUBSCRIPTION_NAME
-              value: "appsub"
+              ephemeral-storage: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: management
+              mountPath: /var/run/secrets/microdcs/management
+              readOnly: true
+            - name: valkey
+              mountPath: /var/run/secrets/microdcs/valkey
+              readOnly: true
+            - name: mqtt
+              mountPath: /var/run/secrets/microdcs/mqtt
+              readOnly: true
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: management
+          secret:
+            secretName: microdcs-management
+            defaultMode: 0440
+        - name: valkey
+          secret:
+            secretName: microdcs-valkey
+            defaultMode: 0440
+        - name: mqtt
+          secret:
+            secretName: microdcs-mqtt
+            defaultMode: 0440
 
 ---
 apiVersion: apps/v1
@@ -94,74 +145,214 @@ kind: Deployment
 metadata:
   name: microdcs-publisher
   labels:
-    app: microdcs
-    role: publisher
+    app.kubernetes.io/name: microdcs
+    app.kubernetes.io/component: publisher
 spec:
+  # One replica (D-51): a restart is enough failover, the MES reads the retained values meanwhile. The Valkey lease guards the overlap
+  # of a rolling update.
   replicas: 1
   selector:
     matchLabels:
-      app: microdcs
-      role: publisher
+      app.kubernetes.io/name: microdcs
+      app.kubernetes.io/component: publisher
   template:
     metadata:
       labels:
-        app: microdcs
-        role: publisher
+        app.kubernetes.io/name: microdcs
+        app.kubernetes.io/component: publisher
     spec:
+      serviceAccountName: microdcs
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
+        runAsUser: 1654 # `app` of the chiseled image
+        runAsGroup: 1654
+        fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: microdcs
-          image: aschamberger/microdcs:latest
+          image: ghcr.io/aschamberger/microdcs
+          args: ["serve"]
+          ports:
+            - name: management
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: microdcs
+          env:
+            - name: APP_MicroDcs__Roles
+              value: Publisher
+            - name: APP_MicroDcs__Valkey__PasswordFile
+              value: /var/run/secrets/microdcs/valkey/password
+            - name: APP_MicroDcs__Management__BearerTokenFile
+              value: /var/run/secrets/microdcs/management/token
+            - name: POD_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 96Mi
+              ephemeral-storage: 16Mi
             limits:
-              cpu: 250m
-              memory: 128Mi
-          env:
-            - name: POD_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.uid
-            - name: APP_IS_PROCESSOR_INSTANCE
-              value: "false"
-            - name: APP_IS_PUBLISHER_INSTANCE
-              value: "true"
-            - name: APP_REDIS_HOSTNAME
-              value: redis
-            - name: APP_MQTT_HOSTNAME
-              value: mqtt-broker
-            - name: APP_PROCESSING_TOPIC_PREFIXES
-              value: "greetings:app/greetings,machinery-jobs:app/jobs"
-            - name: APP_PUBLISHER_RETAINED_TTL_SECONDS
-              value: "172800"
+              cpu: 500m
+              memory: 192Mi
+              ephemeral-storage: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: management
+              mountPath: /var/run/secrets/microdcs/management
+              readOnly: true
+            - name: valkey
+              mountPath: /var/run/secrets/microdcs/valkey
+              readOnly: true
+            - name: mqtt
+              mountPath: /var/run/secrets/microdcs/mqtt
+              readOnly: true
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: management
+          secret:
+            secretName: microdcs-management
+            defaultMode: 0440
+        - name: valkey
+          secret:
+            secretName: microdcs-valkey
+            defaultMode: 0440
+        - name: mqtt
+          secret:
+            secretName: microdcs-mqtt
+            defaultMode: 0440
+
 
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: microdcs-processor
+  labels:
+    app.kubernetes.io/name: microdcs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: microdcs
+      app.kubernetes.io/component: processor
+
+---
+# Deny everything that the policies below do not allow, in and out.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: microdcs-deny-ingress
+  name: microdcs-default-deny
+  labels:
+    app.kubernetes.io/name: microdcs
 spec:
   podSelector:
     matchLabels:
-      app: microdcs
+      app.kubernetes.io/name: microdcs
   policyTypes:
     - Ingress
+    - Egress
+
+---
+# Egress to DNS, Valkey, the MQTT broker and the OTLP collector only. Add NATS (4222) if a binding uses it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: microdcs-egress
+  labels:
+    app.kubernetes.io/name: microdcs
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: microdcs
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: valkey
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mqtt-broker
+      ports:
+        - protocol: TCP
+          port: 1883
+        - protocol: TCP
+          port: 8883
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+
+---
+# The management port, from pods that carry the client label (an MES that reads /api/v1/jobs) and from the kubelet for the probes.
+# Most network plugins exempt kubelet traffic from policies; where yours does not, add the node CIDR here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: microdcs-management
+  labels:
+    app.kubernetes.io/name: microdcs
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: microdcs
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              microdcs.io/management-client: "true"
+      ports:
+        - protocol: TCP
+          port: 8081

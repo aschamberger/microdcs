@@ -5,7 +5,8 @@
 #
 # Host mode for fast iteration: `docker compose -f compose.test.yaml up -d valkey mosquitto`, then
 # `dotnet test` with MICRODCS_TEST_VALKEY=localhost:6380 and MICRODCS_TEST_MQTT=localhost:1884
-# (add `nats` and MICRODCS_TEST_NATS=localhost:4223 for the NATS tests)
+# (add `nats` and MICRODCS_TEST_NATS=localhost:4223 for the NATS tests, `valkey-acl` and
+# MICRODCS_TEST_VALKEY_ACL=localhost:6381 for the Valkey credential test)
 # (ports offset from the dev stack in compose.yaml so both can run at once).
 #
 # No named volumes: every run starts empty. Images are pinned by digest (Dependabot docker-compose).
@@ -21,6 +22,19 @@ services:
       - "127.0.0.1:6380:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Valkey that requires authentication: the default user has a password, so a rejected AUTH leaves the connection unusable as
+  # it would be in production (credential rotation test, D-49). The password is a test fixture.
+  valkey-acl:
+    image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+    command: valkey-server --save "" --appendonly no --requirepass harness-admin
+    ports:
+      - "127.0.0.1:6381:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "harness-admin", "--no-auth-warning", "ping"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -137,8 +151,11 @@ services:
       MICRODCS_TEST_VALKEY: valkey:6379
       MICRODCS_TEST_MQTT: mosquitto:1883
       MICRODCS_TEST_NATS: nats:4222
+      MICRODCS_TEST_VALKEY_ACL: valkey-acl:6379
     depends_on:
       valkey:
+        condition: service_healthy
+      valkey-acl:
         condition: service_healthy
       mosquitto:
         condition: service_healthy

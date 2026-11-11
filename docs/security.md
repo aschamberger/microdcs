@@ -1,196 +1,231 @@
 # Security and Authorization
 
-!!! warning "Not yet ported"
-    This page describes the archived Python implementation on the
-    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
-    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+MicroDCS does not authenticate the senders of messages itself. Identity and access control belong to the transports: the MQTT
+broker or the NATS server (client identity and topic or subject permissions) and Valkey (ACL user and network access). This page
+describes what the framework trusts, what it checks on top, and what the operator has to configure. Deployment details are in
+[Deployment](deployment.md); reporting a vulnerability is described in
+[SECURITY.md](https://github.com/aschamberger/microdcs/blob/main/SECURITY.md).
 
-MicroDCS does not authenticate or authorize callers itself. Identity and access control are
-delegated to the transports: the MQTT broker (client identity and topic ACLs), the Redis
-server (ACL user and network access) and, for MessagePack-RPC, TLS and the network. This page
-describes what the framework trusts, so that broker ACLs can be written to cover the gaps.
-
-## Trust Model
+## Trust model {#trust-model}
 
 | Boundary | Authentication | Authorization |
 |---|---|---|
-| MQTT broker | `K8S-SAT` token from `APP_MQTT_SAT_TOKEN_PATH` if the file exists; username and password (`APP_MQTT_USERNAME`, `APP_MQTT_PASSWORD_FILE`); client certificate (`APP_MQTT_TLS_CLIENT_CERT_PATH` / `_KEY_PATH`); TLS with the CA from `APP_MQTT_TLS_CERT_PATH` if the file exists | Broker topic ACLs only |
-| Redis | `APP_REDIS_USERNAME` / `APP_REDIS_PASSWORD`, optional TLS (`APP_REDIS_SSL`) | Redis ACLs, network policy |
-| MessagePack-RPC | TLS with a server certificate (`APP_MSGPACK_TLS_SERVER_CERT_PATH` / `_KEY_PATH`) if present; optional client certificates (`APP_MSGPACK_TLS_CLIENT_AUTH`) | None; any connected client can call every registered method |
+| MQTT broker | Kubernetes service account token (`K8S-SAT`, enhanced authentication) when `SatTokenFile` exists; user and password (`Username`, `PasswordFile`); client certificate (`TlsClientCertFile`, `TlsClientKeyFile`) | Broker topic ACLs |
+| NATS server | One of: user and password, `TokenFile`, `CredsFile` (JWT and NKey seed), `NKeyFile`; client certificate | Account and subject permissions; one account per tenant ([NATS transport](nats-transport.md#tenancy)) |
+| Valkey | ACL user (`User`) and `PasswordFile` | Valkey ACL rules per user, network policy |
+| Management listener | Loopback only by default; on another address a bearer token from `BearerTokenFile` on every route except `/health/*` | One token, all routes ([HTTP surface](observability.md)) |
 
-## TLS
+Credential files are read on every connect attempt, so a rotated secret is used by the next reconnect without a restart, and a
+rejected credential does not end the retries ([D-49](porting/decisions.md#d-49)). This holds for MQTT, NATS and Valkey.
 
-TLS is switched on by the presence of certificate files, so a missing secret mount results in a
-plaintext connection by default. Set `APP_MQTT_REQUIRE_TLS=true` and `APP_MSGPACK_REQUIRE_TLS=true`
-in production: startup then fails with a message naming the missing file instead of running in
-plaintext. The MQTT client needs the broker CA (`APP_MQTT_TLS_CERT_PATH`). The MessagePack-RPC
-server needs a certificate and key (`APP_MSGPACK_TLS_SERVER_CERT_PATH`,
-`APP_MSGPACK_TLS_SERVER_KEY_PATH`, by default `tls.crt` and `tls.key` as in a Kubernetes TLS
-secret). `APP_MSGPACK_TLS_CLIENT_AUTH=true` additionally requires a client certificate signed by
-the CA in `APP_MSGPACK_TLS_CERT_PATH` and implies `require_tls`.
+### What the framework trusts {#what-the-framework-trusts}
 
-**MQTT credentials.** Choose the mechanism your broker uses:
+These behaviours decide what a broker ACL has to enforce.
 
-- `K8S-SAT`: used automatically when the token file at `APP_MQTT_SAT_TOKEN_PATH` exists (Azure IoT
-  Operations). On other brokers the file does not exist and nothing is sent.
-- Username and password: set `APP_MQTT_USERNAME` and mount the password as a file for
-  `APP_MQTT_PASSWORD_FILE`. The password is not included in the logged configuration.
-- Mutual TLS: set `APP_MQTT_TLS_CLIENT_CERT_PATH` and `APP_MQTT_TLS_CLIENT_KEY_PATH`. The files are
-  checked at startup, and a client certificate without the CA (TLS off) is refused.
+1. **CloudEvent attributes come from the publisher.** `id`, `source`, `type`, `subject`, `correlationid`, `causationid` and the
+   reply address are taken from the message (MQTT user properties and response topic, NATS headers and reply subject).
+2. **The scope comes from `subject` and is checked against the address** (`ScopeCheck=Enforce`, the default, D-38). An address
+   with scope levels must match the subject's scope, otherwise the message is rejected. On a level-0 address (no scope path) a
+   message with a subject is rejected by default (`Level0Subjects=Reject`, R-6), so a client limited to its own scope cannot act on
+   another scope through the unscoped address. `ScopeCheck=Off` and `Level0Subjects=Accept` exist for deployments that rely on
+   transport ACLs alone; document that choice per binding.
+3. **Duplicate suppression is publisher-controlled** ([D-13](porting/decisions.md#d-13)). The dedupe key is `source` plus `id`.
+   A client that replays another publisher's `source` and `id` causes the genuine message to be dropped as a duplicate. Dedupe is
+   only as strong as the transport's access control: give each publisher its own identity and restrict who may publish where.
+4. **Replies go to the requester's address, after a check** ([D-48](porting/decisions.md#d-48)). A reply address with `$`, a
+   wildcard, or below one of the instance's own prefixes is refused, and `AllowedReplyPrefixes` restricts it further. The instance's
+   publish permission on the broker is still the real limit; keep it to its own prefixes and reply bases.
+5. **Recipes and job payloads are data.** A recipe runs only the steps and commands its schema allows (D-44); MicroDCS does not
+   execute code from messages.
 
-Credentials are sent in plaintext unless TLS is on; a warning is logged if they are sent without
-it. Use `APP_MQTT_REQUIRE_TLS=true` together with credentials. The SAT token, username/password
-and client certificate are independent: configure the one your broker expects.
+## TLS {#tls}
 
-## What the Framework Trusts
-
-These behaviours determine what a broker ACL has to enforce.
-
-1. **CloudEvent attributes come from the publisher.** The MQTT handler reads `id`, `source`,
-   `type`, `subject`, `correlationid` and `causationid` from the MQTT user properties.
-2. **The scope comes from `subject`, and the MQTT handler checks it against the topic.** The
-   scope is the part of `subject` before the first `/` (`@scope_from_subject`). When the topic
-   has a path between the prefix and the `[discriminator/]intent`, the subject must map to that
-   path (`.` replaced by `/`, the same mapping used when publishing), or its scope part must
-   equal it. A mismatch is logged and the message is dropped. With `app/jobs/lineA/commands`, a
-   subject of `lineB` is rejected. Nothing is verified when the subject is absent or when the
-   topic has no path (level 0), so principals allowed to publish at level 0 are not scope
-   limited. Disable the check with `APP_PROCESSING_ENFORCE_SUBJECT_TOPIC_MATCH=false`.
-   MessagePack-RPC has no topic and is not covered.
-3. **Duplicate suppression is publisher-controlled.** Incoming messages are deduplicated by
-   `source` + `id` for `APP_MQTT_DEDUPE_TTL_SECONDS`. A publisher that replays another
-   publisher's `source` and `id` causes the genuine message to be dropped as a duplicate.
-4. **Responses go to the requester's topic.** The response is published to the MQTT v5
-   `ResponseTopic` property of the request. The application's publish permission is what limits
-   where a client can direct responses.
-
-## Topic ACL Model
-
-Topics follow the structure in [Operations](operations.md#mqtt-topic-structure). With prefix `P`,
-optional discriminator `D` and intent `I`:
-
-| Direction | Application subscribes to | Application publishes to |
+| Connection | TLS on when | Fail instead of plaintext |
 |---|---|---|
-| `NORTHBOUND` (for example `machinery-jobs`) | `P[/+...]/[D/]commands` | `P/{subject-path}/[D/]data\|events\|metadata`, and responses to the request's `ResponseTopic` |
-| `SOUTHBOUND` (for example `greetings`) | `P[/+...]/[D/]data\|events\|metadata` | `P/{subject-path}/[D/]commands` |
+| MQTT | `TlsCaFile` exists (default `/var/run/certs/ca.crt`) | `RequireTls=true` |
+| NATS | `TlsCaFile` exists (default `/var/run/certs/ca.crt`) | `RequireTls=true` |
+| Valkey | `TlsCaFile` is set (the file must exist), or `ssl=true` in the connection string | `RequireTls=true` |
 
-Every binding also subscribes to its response topic `{response_topic_base}/{instance_id}`, where the
-instance id is the pod UID. With `APP_PROCESSING_SHARED_SUBSCRIPTION_NAME` set, the subscribe
-filters are wrapped in `$share/{group}/`. The publisher additionally writes retained messages
-under `P/{scope}/state-index`, `P/{scope}/order/{id}` and `P/{scope}/result/{id}`.
+MQTT and NATS switch TLS on by the presence of the CA file, so a missing secret mount means plaintext. Set `RequireTls=true` in
+production: the start then fails with a message naming the missing file (D-27). Credentials sent without TLS log a warning.
+A client certificate without TLS is refused at start. The example manifest sets `RequireTls` for MQTT and Valkey.
 
-The example deployment (`machinery-jobs` on `app/jobs`, three wildcard levels, responses on
-`app/jobs/responses`) needs these permissions:
+## Topic and subject permissions {#acl}
 
-| Principal | Connect | Subscribe | Publish |
-|---|---|---|---|
-| MicroDCS pods | yes | `app/jobs/commands`, `app/jobs/+/commands`, `app/jobs/+/+/commands`, `app/jobs/+/+/+/commands`, `app/jobs/responses/+` (and the `$share/appsub/` variants, depending on how the broker evaluates shared subscriptions) | `app/jobs/#` only |
-| MES or other job-order clients | yes | their own response topic, `app/jobs/{their scope}/#` | `app/jobs/{their scope}/commands` |
-| Equipment gateways (southbound) | yes | commands addressed to them | their `data`, `events` and `metadata` topics |
+With binding prefix `P`, scope levels `S1/S2`, optional discriminator `D` and the reply base `R`
+([MQTT transport](mqtt-transport.md#topics), [NATS transport](nats-transport.md#subjects-streams-and-consumers)):
 
-ACL rules for the application:
+| Principal | Subscribe | Publish |
+|---|---|---|
+| MicroDCS instances | the inbound intents of their bindings under `P` (as shared subscription or queue group), `R/{instance}` | `P/#` (or `P.>`), replies to the requesters' reply bases |
+| Publisher instance | none | the state topics `P/{scope}/[D/]data/...` only |
+| MES or other job-order clients | their own reply base, `P/{their scope}/#` | `P/{their scope}/[D/]commands` |
+| Equipment gateways | commands addressed to them | their `data`, `events` and `metadata` |
 
-- **Restrict the application's publish permission to its own prefixes.** Because responses go to
-  a client-chosen `ResponseTopic`, a broad publish permission lets any client make the application
-  publish to arbitrary topics.
-- **Restrict clients to their own response topic**, for example by using the client id in the
-  topic (`app/jobs/responses/{clientid}`).
-- **Scope the publish permission of each client to its own scope** (`app/jobs/{scope}/commands`).
-  The handler then guarantees that the subject, and therefore the scope the processor acts on,
-  is that scope. Do not grant publish rights on the level-0 topic (`app/jobs/commands`) to
-  scoped clients: nothing is verified there.
-- **Use unique client identities per principal.** Do not share credentials between equipment
-  gateways and job-order clients; the `source` + `id` deduplication relies on distinct publishers.
-- **Make retained topics writable only by the publisher.** Clients should have subscribe-only
-  access to `app/jobs/+/state-index`, `app/jobs/+/order/+` and `app/jobs/+/result/+`.
+Rules:
 
-The syntax of these rules is broker specific (Mosquitto ACL files, Azure IoT Operations
-`BrokerAuthorization`, EMQX or HiveMQ rules). Verify a rule set by attempting a forbidden publish
-and subscribe with a test client before relying on it.
+* **Restrict each client to its own scope.** With `ScopeCheck=Enforce` the scope a processor acts on is then the client's scope.
+  Do not grant scoped clients publish rights on the level-0 address.
+* **One identity per principal.** The dedupe key relies on distinct publishers; never share credentials between equipment
+  gateways and job-order clients.
+* **Retained state topics are written only by the publisher.** Clients get read access to `state-index`, `order/+` and
+  `result/+`.
+* Verify a rule set with a test client that attempts a forbidden publish and subscribe before relying on it.
 
-## Redis
+The syntax is broker specific (Mosquitto ACL files, NATS accounts and permissions, EMQX or HiveMQ rules).
 
-Redis holds the authoritative job and SFC execution state. Anyone who can write to it can change
-job state, so:
+## Valkey {#valkey}
 
-- allow connections only from MicroDCS pods (network policy)
-- use a dedicated ACL user limited to the keys under `APP_REDIS_KEY_PREFIX`
-- enable `APP_REDIS_SSL` and `APP_REDIS_SSL_CA_CERTS` outside a single trusted node
-- pass the password from a mounted secret with `APP_REDIS_PASSWORD_FILE` (for example
-  `/var/run/secrets/redis/password`) rather than a literal `APP_REDIS_PASSWORD` in the manifest.
-  The password is excluded from the configuration that is logged at `DEBUG`
+Valkey holds the authoritative job and recipe state; anyone who can write to it can change job state.
 
-## Logging
+* One ACL user per island, limited to the island's key prefix and channels; the rule is in [Deployment](deployment.md#tenancy).
+  MicroDCS sends no server-wide commands (`INFO`, `CONFIG`, `CLUSTER`) and uses no keys or channels outside its prefix.
+* Disable the `default` user, or give it a password nobody uses.
+* Pass the password as a mounted file (`PasswordFile`), not in the connection string.
+* TLS with `TlsCaFile` outside a single trusted node; allow connections only from MicroDCS pods (NetworkPolicy).
+* Backups and snapshots contain job data; protect them like the database.
 
-Log messages carry identifiers (job ids, CloudEvent ids, types, scopes) but not message content.
-Payloads, hidden fields and processor arguments are replaced by a `<Type: content hidden>`
-placeholder in `DEBUG` logs, `CloudEvent.data` is left out of its `repr`, and a deserialization
-error names the field instead of echoing the rejected value. Set `APP_LOGGING_LOG_PAYLOADS=true` to
-log the content while debugging; do not enable it in production, because logs are often exported to
-a collector (`OTEL_LOGS_EXPORTER`) with broader access than the application. The configuration that
-is logged at startup leaves out passwords.
+## Management listener {#management-listener}
 
-Processors you write should log payload content through `microdcs.loggable()`, which returns the
-value only when payload logging is enabled. Exception messages from your own code and from libraries
-can still contain values, so avoid logging them with `logger.exception` where the data is sensitive.
+The listener serves `/health/live`, `/health/ready`, the read-only REST API (`ApiEnabled`) and the dev MCP server (`McpEnabled`)
+([HTTP surface](observability.md), [Inspection](inspection.md#security)).
 
-## Kubernetes Hardening
+* Loopback by default. On loopback the `Host` header must name a loopback host (DNS rebinding) and a browser `Origin` that is
+  not loopback gets 403.
+* Any other address needs `BearerTokenFile`; the start fails without it (R-8). Every route except `/health/*` needs the token, so
+  the kubelet can probe without it. Rotate the token by replacing the file and restarting the pod.
+* The REST API is read-only and off by default. MES commands stay on the message bus. Every call goes through the inspection
+  service: payloads are replaced by a size marker unless `IncludePayloads` is on, results are capped (`MaxResults`), calls are
+  rate-limited per caller (`RequestsPerMinute`) and logged in the `MicroDCS.Security` category with caller and route, never results.
+* Never enable `McpEnabled`, `WriteEnabled` or the maintenance tools in production. Maintenance runs only in `Development` or
+  `Test` and can additionally require an environment marker key in Valkey (D-45).
+* The NetworkPolicy in the example manifest admits the management port only from pods labelled
+  `microdcs.io/management-client: "true"`.
 
-[deploy/k8s.yaml](https://github.com/aschamberger/microdcs/blob/main/deploy/k8s.yaml) applies these settings to both Deployments:
+## Logging {#logging}
+
+Logs carry identifiers and sizes (job ids, CloudEvent ids, types, scopes, byte counts), never message content or secrets.
+Configuration that can carry a secret (`ConnectionString`, passwords) is never logged. Exception messages from libraries can still
+contain values, so treat logs at `Debug` and below as sensitive. Telemetry
+goes over OTLP ([Observability](observability.md)); the collector usually has wider access than the application, which is one more
+reason why payloads stay out.
+
+## Container image and supply chain {#supply-chain}
+
+| Property | How |
+|---|---|
+| Minimal image | Native AOT binary in `runtime-deps:10.0-noble-chiseled`: no shell, no package manager, user `app` (1654); CI checks both (D-32) |
+| Pinned inputs | Base images and scanner containers by digest, GitHub Actions by commit SHA, NuGet packages through lock files with locked restore; Dependabot proposes updates |
+| Vulnerability gates | NuGet audit in the build, Trivy over the lock files, the Dockerfile and `deploy/`, Trivy over the image, daily on `main` (D-20) |
+| Secrets in the repository | Gitleaks over every pull request and the full history |
+| Code analysis | SonarQube Cloud quality gate on new code; workflows checked by actionlint and zizmor |
+| Signed images | Pushes to `main` and `v*` tags publish `ghcr.io/aschamberger/microdcs`; each platform image and the multi-arch index are signed with cosign keyless (Sigstore), [D-55](porting/decisions.md#d-55) |
+| SBOMs | Two CycloneDX attestations per platform image: the NuGet packages linked into the binary (from the app's lock file) and the OS packages of the image. The AOT binary hides its packages from an image scan, which is why the first one comes from the lock file |
+
+### Verifying the image {#verifying-the-image}
+
+```bash
+IMAGE=ghcr.io/aschamberger/microdcs@sha256:<digest>
+IDENTITY='^https://github.com/aschamberger/microdcs/.github/workflows/ci.yml@refs/(heads/main|tags/v.+)$'
+ISSUER=https://token.actions.githubusercontent.com
+
+cosign verify --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" "$IMAGE"
+# SBOMs are attested on the platform images (the index lists them: docker buildx imagetools inspect "$IMAGE")
+cosign verify-attestation --type cyclonedx --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" \
+  ghcr.io/aschamberger/microdcs@sha256:<platform-digest>
+```
+
+Deploy by digest (`deploy/kustomization.yaml`) and enforce the same identity in the cluster with an admission policy (Sigstore
+policy-controller or Kyverno `verifyImages`). Release images are built without build caches; `main` images reuse the caches that
+only `main` runs write.
+
+## Kubernetes hardening {#kubernetes-hardening}
+
+[`deploy/k8s.yaml`](https://github.com/aschamberger/microdcs/blob/main/deploy/k8s.yaml) applies these settings; the kind test
+(`scripts/k8s-test`) runs it in a namespace that enforces the Pod Security Standard `restricted`.
 
 | Setting | Effect |
 |---|---|
-| `runAsNonRoot`, `runAsUser: 65532` | Runs as the distroless non-root user |
-| `readOnlyRootFilesystem: true` with an `emptyDir` on `/tmp` | The container cannot modify its image |
-| `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault` | No extra privileges or capabilities |
-| `automountServiceAccountToken: false` | No Kubernetes API token in the pod. This is separate from the projected `broker-sat` token for MQTT, which you mount yourself |
-| `NetworkPolicy` `microdcs-deny-ingress` | Denies all ingress; the MessagePack-RPC port is for a sidecar in the same pod |
+| `runAsNonRoot`, user and group 1654, `seccompProfile: RuntimeDefault` | Runs as the image's non-root user |
+| `readOnlyRootFilesystem` with a size-limited `emptyDir` on `/tmp` | The container cannot change its image |
+| `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` | No extra privileges |
+| Own ServiceAccount, `automountServiceAccountToken: false` | No Kubernetes API token in the pod; a projected token for MQTT `K8S-SAT` is mounted separately |
+| Secrets as read-only files (mode 0440) | Read on every connect; no secret in environment variables or the ConfigMap |
+| CPU, memory and ephemeral-storage requests and limits | Bounded resource use per pod |
+| NetworkPolicy: default deny, egress to DNS, Valkey, the broker and the collector, ingress to the management port from labelled clients | Restricted data flow (zones and conduits below) |
 
-The container image runs with these restrictions. A read-only root filesystem is why file logging
-is off by default (`APP_LOGGING_FILENAME`). The manifest has no liveness or readiness probes, because
-the process exits when Redis or the MQTT broker is lost and Kubernetes restarts it. It uses
-`:latest` for the image: pin a digest in production. The `NetworkPolicy` only covers ingress. Add an
-egress policy limited to Redis, the MQTT broker and the OTLP endpoint once their labels are known.
+## Zones and conduits {#zones-and-conduits}
 
-## MessagePack-RPC
+A reference split along IEC 62443-3-2. Names and boundaries depend on the site; the point is which traffic crosses which boundary.
 
-The listener defaults to `localhost` and is intended for a sidecar in the same pod. There is no
-per-method authorization. If it is exposed beyond the pod, enable `APP_MSGPACK_TLS_CLIENT_AUTH`,
-restrict access with a network policy, and keep the set of registered methods minimal.
+```mermaid
+flowchart LR
+  subgraph Z3["Zone: site operations (level 3)"]
+    MES[MES]
+    OBS[Telemetry collector]
+  end
+  subgraph Z2["Zone: MicroDCS island (level 2)"]
+    P[Processors]
+    PUB[Publisher]
+    V[(Valkey)]
+    B{{Broker}}
+  end
+  subgraph Z1["Zone: equipment (level 1)"]
+    EQ[Equipment gateways]
+  end
+  MES -- "C1: commands and state topics (MQTT/NATS, TLS, per-scope ACLs)" --- B
+  MES -. "C2: read-only REST, bearer token (optional)" .-> P
+  P --- B
+  PUB --- B
+  P --- V
+  PUB --- V
+  B -- "C3: equipment commands and events (TLS, per-gateway identities)" --- EQ
+  P -. "C4: OTLP out" .-> OBS
+```
 
-## Known Gaps
+| Conduit | Crosses | Protection |
+|---|---|---|
+| C1 MES ↔ broker | site operations → island | TLS, one identity per MES client, publish limited to its scopes' `commands`, read-only on state topics |
+| C2 MES → management API | site operations → island | Off by default; bearer token, NetworkPolicy client label, read-only, rate limit, audit log |
+| C3 broker ↔ equipment | island → equipment | TLS, one identity per gateway, topic ACLs per gateway |
+| C4 OTLP | island → site operations | Outbound only; no payloads in telemetry |
+| Valkey, broker inside the island | none | NetworkPolicy, ACL user per island, TLS where the island spans nodes |
 
-| Gap | Mitigation today |
+Each island is an independent deployment with its own Valkey ([D-12](porting/decisions.md#d-12)), so a compromised island does not
+reach another island's state.
+
+## Known gaps {#known-gaps}
+
+| Gap | Mitigation |
 |---|---|
-| Subject is only checked against topics that carry a scope path | No publish rights on the level-0 topic for scoped clients |
-| Deduplication key is publisher-controlled | Distinct credentials per publisher; broker ACLs |
-| TLS and SAT silently skipped when files are missing | Set `APP_MQTT_REQUIRE_TLS` and `APP_MSGPACK_REQUIRE_TLS` so startup fails instead; the SAT token and the MQTT username and password are only protected if `require_tls` is set (a warning is logged otherwise) |
-| No per-method authorization on MessagePack-RPC | Keep it pod-local or require client certificates |
+| The dedupe key is publisher-controlled (D-13) | Distinct credentials per publisher; broker ACLs |
+| TLS on MQTT and NATS follows the presence of the CA file | `RequireTls=true` |
+| One bearer token for every management route; rotation needs a restart | Keep the API off unless the MES needs it; NetworkPolicy client label |
+| The management listener serves plain HTTP, so the bearer token crosses the pod network unencrypted | NetworkPolicy client label; a service mesh with mTLS, or keep the API off |
+| No per-processor authorization inside an instance | Bindings limit which intents an instance subscribes; broker ACLs limit who can publish them |
+| The framework does not log authentication failures of the transports | Use the broker's and Valkey's own logs |
 
-## Scanner Waivers {#scanner-waivers}
+## Scanner waivers {#scanner-waivers}
 
-This section applies to the .NET port. Gitleaks, Trivy and SonarQube Cloud run on every pull
-request, on `main` and daily ([Development](development.md#security-scanning),
-[D-20](porting/decisions.md#d-20)). Every waiver has a reason and an expiry date, and is reviewed
-in S22 and S23.
+Every waiver has a reason and an expiry date and is reviewed at S22 and S23 ([D-20](porting/decisions.md#d-20)). Reviewed in
+S22 (2026-11-11): `.trivyignore.yaml` and the Gitleaks allowlists are empty, zizmor has no ignores (the pedantic persona
+leaves two informational notes about unnamed definitions), and no SonarQube Cloud issue is accepted.
 
 | Scanner | Finding | Scope | Reason | Expires |
 |---|---|---|---|---|
 | none | | | | |
 
-## IEC 62443 Alignment
+## IEC 62443 alignment {#iec-62443}
 
-This table maps the framework to the seven foundational requirements (FR) of IEC 62443-3-3 as an
-aid for security assessments. It is not a certification and not a compliance claim: IEC 62443
-applies to the whole system and its operating processes, and most of the controls below depend on
-how you deploy MicroDCS.
+An aid for assessments along the seven foundational requirements (FR) of IEC 62443-3-3, not a certification or a compliance
+claim: IEC 62443 applies to the whole system and its operation, and most controls depend on the deployment.
 
-| FR | What MicroDCS provides | What the operator must provide |
+| FR | What MicroDCS provides | What the operator provides |
 |---|---|---|
-| 1. Identification and authentication control | MQTT: `K8S-SAT`, username and password, client certificates. MessagePack-RPC: optional client certificates. Redis: ACL user, password, TLS | One identity per principal, secret storage and rotation, broker and Redis accounts |
-| 2. Use control | Subject must match the topic scope; per-processor binding directions limit which intents are subscribed and published | Broker topic ACLs per principal and scope. There is no per-method authorization on MessagePack-RPC |
-| 3. System integrity | TLS with `require_tls`, locked and audited dependencies in CI, non-root read-only container, at-least-once processing with deduplication | Image provenance and signing, a software bill of materials, patching. Two dependencies are pinned to git commits and are not covered by `pip-audit` |
-| 4. Data confidentiality | TLS in transit, payload content kept out of logs, passwords kept out of logged configuration | Encryption of Redis data at rest and of backups, broker and Redis TLS certificates |
-| 5. Restricted data flow | Deny-ingress `NetworkPolicy`, localhost-only MessagePack-RPC by default, topic structure per processor | Zone and conduit design, an egress policy for Redis, the broker and the telemetry endpoint |
-| 6. Timely response to events | OpenTelemetry traces, metrics and logs; warnings for dropped messages and for credentials sent without TLS | A security event log and alerting. The framework does not record authentication failures itself; use the broker's audit log |
-| 7. Resource availability | Bounded queues with explicit backpressure errors, Redis timeouts, fail-fast restart, [recovery objectives](operations.md#recovery-objectives) | Capacity planning, Redis persistence and backup, broker limits such as the maximum packet size |
+| 1. Identification and authentication | MQTT: K8S-SAT, user and password, client certificates. NATS: accounts, tokens, creds, NKeys, client certificates. Valkey: ACL user. Management: bearer token. Credentials as files, re-read on reconnect | One identity per principal, secret storage and rotation, broker and Valkey accounts |
+| 2. Use control | Scope check against the address, level-0 subjects rejected, reply-address check, read-only REST, maintenance only in Development or Test | Broker and Valkey ACLs per principal and scope |
+| 3. System integrity | Signed images with SBOM attestations, pinned and scanned dependencies, non-root read-only container without shell, version-guarded idempotent writes | Admission policy that verifies signatures, patching cadence |
+| 4. Data confidentiality | TLS to broker, NATS and Valkey (`RequireTls`), payloads kept out of logs and telemetry, secrets never logged | Encryption at rest for Valkey data and backups, certificate management |
+| 5. Restricted data flow | Default-deny NetworkPolicy with explicit egress and ingress, loopback management listener by default, per-binding topic structure | Zone and conduit design, broker bridges, firewalls between levels |
+| 6. Timely response to events | OTLP traces, metrics and logs; security audit category `MicroDCS.Security`; warnings for dropped messages and credentials without TLS | Collection, alerting, a security event log |
+| 7. Resource availability | Bounded queues with explicit backpressure errors (D-28), fail-fast restart (D-27), resource limits, PodDisruptionBudget | Capacity planning, Valkey persistence and backup, broker limits |

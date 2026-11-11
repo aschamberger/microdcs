@@ -30,6 +30,7 @@ nav = [
   ]},
   {"Operations" = [
     {"Overview" = "operations.md"},
+    {"Deployment" = "deployment.md"},
     {"Security and Authorization" = "security.md"}
   ]},
   {"Port to .NET (WIP)" = [
@@ -55,6 +56,7 @@ nav = [
       {"MQTT transport" = "porting/research/mqtt-transport.md"},
       {"NATS transport" = "porting/research/nats-transport.md"},
       {"HTTP surface and observability" = "porting/research/http-observability.md"},
+      {"Deployment and security review" = "porting/research/deployment-security.md"},
       {"Library spike" = "porting/research/library-spike.md"},
       {"OPC UA spike" = "porting/research/opcua-spike.md"},
       {"Core contracts" = "porting/research/core-contracts.md"},

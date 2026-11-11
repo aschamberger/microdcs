@@ -39,8 +39,7 @@ public static class ValkeyServiceCollectionExtensions
         services.TryAddSingleton<IConnectionMultiplexer>(static sp =>
         {
             var options = sp.GetRequiredService<IOptions<ValkeyOptions>>().Value;
-            var configurationOptions = ConfigurationOptions.Parse(options.ConnectionString);
-            configurationOptions.AbortOnConnectFail = true;
+            var configurationOptions = ValkeyConnection.CreateConfiguration(options);
 
             // A singleton factory cannot await; the connect happens once, at host start, and a failure ends the process (D-27).
             var multiplexer = ConnectionMultiplexer.Connect(configurationOptions);

@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S22** (container, Kubernetes, supply chain, security review); S08 to S21 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S22a** (CI runtime review); S08 to S22 are done.
 
 ## How to use these files
 
@@ -110,15 +110,16 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-46](decisions.md#d-46) | revised | MQTT transport: one connection, QoS 1 end to end, persistent session with 1 h expiry, acknowledgement after the pipeline, per-instance reply topic, retained state topics, reconnect loop |
 | [D-47](decisions.md#d-47) | revised | NATS transport: JetStream requests with shared durable consumers (name with a filter hash), plain inbox replies, KV state topics with message TTL, nak and poison handling, `AckProgress` while queued; `Retain` is an MQTT-only hint; tenancy by account |
 | [D-48](decisions.md#d-48) | decided | Reply addresses from peers are checked before the instance publishes to them (no `$`, no wildcards, not below an own prefix, optional allow list) |
-| [D-49](decisions.md#d-49) | decided | Credential files are read on every connect attempt; a rejected credential does not end the retries; one shared compose test per transport |
+| [D-49](decisions.md#d-49) | revised | Credential files are read on every connect attempt; a rejected credential does not end the retries; one shared compose test per transport; Valkey too (S22) |
 
 | [D-50](decisions.md#d-50) | decided | Machinery Jobs processor: V2 commands only, wire shapes in the extension NodeSet, responses with their own type id, recipe start atomic with the order on every entry into AllowedToStart |
 | [D-51](decisions.md#d-51) | decided | Job order publisher: separate Deployment by role, poller hand-off, lease as a guard, order topic without state, ids limited to the segment rule, rebuild from documents |
 | [D-52](decisions.md#d-52) | revised | SFC host: own project, job order transitions as work entries, Abort and Stop end the recipe, Pause and Resume hold and release it (S20a) |
 | [D-53](decisions.md#d-53) | decided | SFC pull events: `Selector` field, waits index oldest first, one event one job; the recovery scan resends nothing with a deadline; replica tests with real containers |
 | [D-54](decisions.md#d-54) | decided | HTTP surface and telemetry: OTLP only, producer and SFC spans, readiness checks for transports and Valkey, read-only `/api/v1/jobs` off by default |
+| [D-55](decisions.md#d-55) | decided | Image publishing to GHCR from `main` and `v*` tags, cosign keyless signatures and two CycloneDX SBOM attestations per platform, manifest by role with kustomize pin, kind test in CI, Valkey island ACL user |
 
-Next free id: **D-55**.
+Next free id: **D-56**.
 
 ## Open questions
 
@@ -146,16 +147,16 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
 | ~~Q-DATA-4~~ High availability | → D-12 (cluster mode out of scope, islands); every write path is idempotent under unknown outcome through the operation id (R-4, S09) | — |
 | ~~Q-OPS-1~~ HTTP surface | → D-40, D-54: health probes with registered checks, read-only `/api/v1/jobs` with an OpenAPI document, no `/metrics` | — |
-| Q-OPS-2 Container and Kubernetes | Chiseled/distroless AOT image, manifest, Zenoh native library in the image, hardening from `docs/security.md` | S22 |
-| Q-OPS-3 Security | Authn/z per transport (NATS accounts/NKeys, AMQP SASL, Zenoh ACLs), the level-0 scope rule (R-6) | S10, S22 |
+| ~~Q-OPS-2~~ Container and Kubernetes | → D-55: signed GHCR image, manifest by role, kind test. The Zenoh native library in the image stays with S25 | — |
+| Q-OPS-3 Security | MQTT, NATS, Valkey and the management listener done and documented (`docs/security.md`, S22); the level-0 rule is D-38. Open: AMQP SASL (S24), Zenoh ACLs (S25) | S24, S25 |
 | Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
 | Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
 | ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
 | ~~OpenTelemetry coverage~~ | → D-54: OTLP export of every `MicroDCS*` source and meter, `NATS.Net`, runtime and ASP.NET Core; consumer, producer and SFC work spans; no Valkey spans (no stable StackExchange.Redis instrumentation) | — |
 | ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
-| R-12 Operational limits | Document per-transport message size limits and Kestrel request limits | S22 |
-| R-20 Multi-tenancy | NATS: one account per tenant, chosen by the credentials, tested in S14 (D-47). The other transports and the key-prefix convention in S22 | S22 |
-| R-21 Support model, zones/conduits | Language-independent documentation | S22 |
+| ~~R-12~~ Operational limits | → [Deployment](../deployment.md#limits) (S22) | — |
+| ~~R-20~~ Multi-tenancy | → [Deployment](../deployment.md#tenancy): island per tenant, NATS accounts (D-47), MQTT prefix plus ACLs, Valkey island ACL user tested (D-55) | — |
+| ~~R-21~~ Support model, zones/conduits | → [Deployment](../deployment.md#support), [Security](../security.md#zones-and-conduits) (S22) | — |
 | ~~D-11 docs update~~ | Done in S01 | — |
 | CloudEvents benchmark (R-18) | Benchmark project `bench/MicroDCS.Benchmarks` exists since S10 (baseline in [core contracts](research/core-contracts.md#s10-pipeline-python-parity-and-tests)); CI baseline and comparison in S23 | S23 |
 
@@ -190,7 +191,8 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S20 | SFC pull events, recovery, multi-instance | S19 | done |
 | S20a | SFC hold and release: MES Pause and Resume hold the recipe at the next step boundary | S20 | done |
 | S21 | HTTP surface and observability | S17 | done |
-| S22 | Container, Kubernetes, supply chain, security review | S21 | open |
+| S22 | Container, Kubernetes, supply chain, security review | S21 | done |
+| S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | open |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |
 | **M3 Extensions** | | | |
 | S24 | AMQP transport | S14 | open |

@@ -26,7 +26,9 @@ disclosing it publicly.
 
 ## Scope
 
-In scope: the MicroDCS packages, its container image and the example deployment manifests.
+In scope: the MicroDCS packages, its container image (`ghcr.io/aschamberger/microdcs`, signed with
+cosign; see [Verifying the image](docs/security.md#verifying-the-image)) and the example deployment
+manifests in `deploy/`.
 
 Out of scope: vulnerabilities in the MQTT broker, Valkey, Kubernetes or other components you deploy
 alongside it, and deployments that do not follow the hardening guidance. What the framework does and

@@ -77,17 +77,29 @@ Compose exits 0 when the tests container never started (for example a dependency
 checks the container's own exit code too. Every service in the file must stay up until the tests
 end; a one-shot service would trigger `--abort-on-container-exit` early.
 
-The tests read their endpoints from `MICRODCS_TEST_VALKEY` and `MICRODCS_TEST_MQTT` (`host:port`).
-Without them a plain `dotnet test` on the host skips them; inside compose `--fail-skips on` turns a
-skip into a failure. For fast iteration on the host:
+The tests read their endpoints from `MICRODCS_TEST_VALKEY`, `MICRODCS_TEST_MQTT`, `MICRODCS_TEST_NATS`
+and `MICRODCS_TEST_VALKEY_ACL` (`host:port`). Without them a plain `dotnet test` on the host skips
+them; inside compose `--fail-skips on` turns a skip into a failure. `valkey-acl` is a second Valkey
+that requires authentication: with it configured, the Valkey tests run the production code as an
+island ACL user with the rule from [Deployment](deployment.md#tenancy), so a command the rule does
+not grant fails a test, and the password rotation test runs there. For fast iteration on the host:
 
 ```bash
-docker compose -f compose.test.yaml up -d valkey mosquitto
-MICRODCS_TEST_VALKEY=localhost:6380 MICRODCS_TEST_MQTT=localhost:1884 \
+docker compose -f compose.test.yaml up -d valkey valkey-acl mosquitto nats
+MICRODCS_TEST_VALKEY=localhost:6380 MICRODCS_TEST_VALKEY_ACL=localhost:6381 \
+  MICRODCS_TEST_MQTT=localhost:1884 MICRODCS_TEST_NATS=localhost:4223 \
   dotnet test --project tests/MicroDCS.IntegrationTests
 ```
 
-The test ports (6380, 1884) are offset from the dev stack, so both can run at the same time.
+The test ports (6380, 6381, 1884, 4223) are offset from the dev stack, so both can run at the same time.
+
+## Kubernetes Test
+
+`scripts/k8s-test` applies `deploy/` with the overlay in `tests/k8s` to a kind cluster and checks
+the probes, Pod Security `restricted`, the NetworkPolicies, the management token and the Valkey ACL
+([Deployment](deployment.md#kind-test)). It needs Docker, `kind` and `kubectl`;
+`scripts/k8s-test install ~/.local/bin` installs the pinned versions with checksum checks.
+`KEEP_CLUSTER=1` keeps the cluster for debugging. CI runs it in the `kubernetes` job.
 
 ## Security Scanning
 

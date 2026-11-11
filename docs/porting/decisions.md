@@ -674,6 +674,8 @@ Decision:
 
 Consequences: S24 and S25 implement this and carry the same test. The harness Mosquitto has a password file with the user `rotate`; anonymous clients stay allowed. TLS client certificates are out of the rule's test: MQTT reloads them with the options, on NATS loading them is the library's matter and is not verified.
 
+Revised 2026-11-11 (S22): **Valkey follows the same rule.** `MicroDcs:Valkey` gained `User`, `PasswordFile`, `TlsCaFile` and `RequireTls` (Python parity, `RedisConfig`). StackExchange.Redis has no credential callback, so `ValkeyConnection` reads the file in `BeforeSocketConnect`, which runs before every socket connect on the options instance the multiplexer keeps. The rotation test runs against `valkey-acl`, a harness Valkey that requires authentication: on a server whose `default` user needs no password a rejected AUTH silently falls back to `default` and the test proves nothing.
+
 
 ## D-50 Machinery Jobs processor: V2 only, wire shapes in the extension NodeSet, atomic recipe start {#d-50}
 
@@ -775,3 +777,20 @@ Decision:
 Consequences: `AddHealthChecks` adds a hosted service (`HealthCheckPublisherHostedService`), so code that took the single hosted service now picks `MicroDcsHostedService` by type. The compose profile `app` sends telemetry to the Aspire dashboard and enables the API. Probes and the manifest are S22.
 
 Not chosen: the Prometheus exporter (prerelease) or an own Prometheus text writer (maintainer chose OTLP only); per-command Valkey spans through the StackExchange.Redis profiling API (after-the-fact sessions, not live spans); REST write routes for MES commands (a second command path next to the bus, needs token scopes).
+
+## D-55 Image publishing, signing and the Kubernetes manifest {#d-55}
+
+Status: decided (2026-11-11, S22; maintainer chose GHCR, cosign keyless, a kind test in CI). Answers Q-OPS-2 and R-9. Background: [deployment and security review](research/deployment-security.md).
+
+Decision:
+
+* **Publishing:** pushes to `main` and `v*` tags publish `ghcr.io/aschamberger/microdcs` from `ci.yml` after `dotnet`, `container`, `integration` and `kubernetes` passed; pull requests never publish. Each platform is built on its native runner (D-32) and pushed by digest; `publish-manifest` creates the multi-arch index. Tags: `main` and `sha-<12>` on `main`; `<version>` on a tag, plus `<major>.<minor>` and `latest` for a final release (a pre-release such as `v1.0.0-rc.1` moves neither). Release (tag) builds use no build caches.
+* **Signing and SBOMs:** cosign keyless (Sigstore, the job's OIDC token). Each platform digest is signed and carries two CycloneDX attestations: the app's NuGet closure from its lock file (the AOT binary hides it from an image scan) and the image's OS packages, both made by `scripts/scan sbom` with the Trivy gate. The index is signed too. The publish job verifies every signature and attestation against the identity `https://github.com/aschamberger/microdcs/.github/workflows/ci.yml@refs/(heads/main|tags/v.+)`. No buildx provenance or SBOM manifests.
+* **Manifest:** `deploy/k8s.yaml` (ServiceAccount, ConfigMap, processor and publisher Deployments by role, PodDisruptionBudget, three NetworkPolicies) plus `deploy/kustomization.yaml`, which pins the image. Secrets are mounted files; their paths sit in the Deployments. TLS to MQTT and Valkey is required in the example. Probes use `/health/live` and `/health/ready` on a pod-address listener with a bearer token.
+* **Verification:** `scripts/k8s-test` runs `deploy/` in kind with the overlay `tests/k8s` (Pod Security `restricted`, Valkey with the island ACL user and `default` off, NetworkPolicy probes, the management token), locally and in the CI job `kubernetes` (required check).
+* **Valkey island user:** the documented ACL rule (prefix keys and channels, data, stream, scripting and pub/sub categories, `+time`) is what the Valkey integration tests run under when `valkey-acl` is configured. `ValkeyConnection` turns off the client's tiebreaker, configuration channel and `INFO`/`CONFIG`/`CLUSTER` (one endpoint, D-12).
+
+Consequences: a new required check `kubernetes`; the GHCR package visibility is set once after the first publish; S23 pins the release digest in `deploy/kustomization.yaml`. What still needs a real cluster is listed in [Deployment](../deployment.md#not-verified).
+
+Not chosen: GitHub artifact attestations (cosign is what more admission controllers check); pushing from the `container` job (it also runs on pull requests); buildx provenance (it wraps each platform push in an index with an `unknown/unknown` entry); a Helm chart (an example to adapt is enough before the release; S26 decides on packaging).
+

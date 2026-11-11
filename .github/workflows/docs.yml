@@ -50,8 +50,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      pages: write
-      id-token: write
+      pages: write # deploy to GitHub Pages
+      id-token: write # Pages deployment verifies the workflow's OIDC token
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

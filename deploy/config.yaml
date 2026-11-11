@@ -1,0 +1,31 @@
+# Settings shared by both Deployments. Keys are environment names (prefix APP_, `__` for `:`, D-39); reference: docs/operations.md.
+# The paths of the mounted secrets are set in the Deployments, next to their volumes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microdcs
+  labels:
+    app.kubernetes.io/name: microdcs
+data:
+  APP_MicroDcs__CloudEventSource: urn:microdcs:site1
+  APP_MicroDcs__Bindings__machinery_jobs__Transport: mqtt
+  APP_MicroDcs__Bindings__machinery_jobs__Prefix: jobs
+  APP_MicroDcs__Bindings__machinery_jobs__ScopeLevels: "2"
+  APP_MicroDcs__Bindings__machinery_jobs__ReplyBase: jobs-reply
+  APP_MicroDcs__Bindings__machinery_jobs__SharedGroup: microdcs
+  APP_MicroDcs__Mqtt__Hostname: mqtt-broker
+  APP_MicroDcs__Mqtt__Port: "8883"
+  APP_MicroDcs__Mqtt__RequireTls: "true"
+  APP_MicroDcs__Mqtt__TlsCaFile: /var/run/secrets/microdcs/mqtt/ca.crt
+  APP_MicroDcs__Valkey__ConnectionString: valkey:6379
+  APP_MicroDcs__Valkey__KeyPrefix: site1
+  APP_MicroDcs__Valkey__User: microdcs
+  APP_MicroDcs__Valkey__TlsCaFile: /var/run/secrets/microdcs/valkey/ca.crt
+  APP_MicroDcs__Valkey__RequireTls: "true"
+  # The listener binds the pod address so the kubelet can probe it; everything except /health needs the bearer token (R-8,
+  # BearerTokenFile in the Deployments).
+  APP_MicroDcs__Management__Enabled: "true"
+  APP_MicroDcs__Management__Url: http://0.0.0.0:8081
+  APP_MicroDcs__Management__ApiEnabled: "false"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_SERVICE_NAME: microdcs

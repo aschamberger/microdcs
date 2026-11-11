@@ -6,6 +6,7 @@ using MicroDCS.Core.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -63,8 +64,12 @@ public sealed class ManagementServer : IHostedService, IAsyncDisposable
 
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls(_options.Url);
+
+        // The ASP.NET Core images set ASPNETCORE_HTTP_PORTS; the listener has its own URL, so the variable is not ours to apply.
+        builder.WebHost.UseSetting(WebHostDefaults.HttpPortsKey, string.Empty);
+        builder.WebHost.UseSetting(WebHostDefaults.HttpsPortsKey, string.Empty);
         builder.Logging.ClearProviders();
-        builder.Services.AddSingleton(loggerFactory);
+        builder.Services.AddSingleton<ILoggerFactory>(new ManagementLoggerFactory(loggerFactory, _services.GetService<IConfiguration>()));
         builder.Services.AddSingleton(_services.GetRequiredService<InspectionService>());
         builder.Services.AddSingleton(_services.GetRequiredService<IOptions<MicroDcsOptions>>());
         var modules = _services.GetServices<IManagementModule>().Where(m => m.IsEnabled(_services)).ToList();

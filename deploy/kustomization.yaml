@@ -1,0 +1,22 @@
+# Pins the image of deploy/k8s.yaml. Set the digest of the image you verified (docs/security.md#verifying-the-image):
+#
+#   kustomize edit set image ghcr.io/aschamberger/microdcs=ghcr.io/aschamberger/microdcs@sha256:<digest>
+#
+# Until the first release (S23) the published images are the `main` builds; the tag below is a placeholder for the digest.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - config.yaml
+  - k8s.yaml
+images:
+  - name: ghcr.io/aschamberger/microdcs
+    newTag: main
+# A tag can move, so nodes must not keep an older `main` image: pull on every start. Remove this patch once `images` pins a digest.
+patches:
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/name=microdcs
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always

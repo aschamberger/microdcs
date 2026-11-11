@@ -24,4 +24,8 @@
     <Using Include="Xunit" />
     <Using Include="Shouldly" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The island ACL rule (docs/deployment.md#tenancy); the Valkey tests run the production code as that user. -->
+    <None Include="../../deploy/valkey-island-acl.conf" Link="valkey-island-acl.conf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
