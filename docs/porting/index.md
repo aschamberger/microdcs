@@ -194,12 +194,12 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S21 | HTTP surface and observability | S17 | done |
 | S22 | Container, Kubernetes, supply chain, security review | S21 | done |
 | S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | open |
+| S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | open |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |
 | **M3 Extensions** | | | |
 | S24 | AMQP transport | S14 | open |
 | S25 | Zenoh transport and CloudEvents-over-Zenoh mapping | S14 | open |
 | S26 | Packaging, NuGet release, `dotnet new` templates | released upstream CloudEvents package | open |
-| S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | open |
 | Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S08, S26 (D-14); S06 (2026-11-08): PR #381 still open, 2.9.0 latest |
 
 Session ids were renumbered on 2026-11-07; the mapping from the old ids is in the [log](log.md).

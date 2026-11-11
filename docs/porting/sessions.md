@@ -196,6 +196,12 @@ Two Deployments by role: processors with `Roles=Processor` and one publisher wit
 
 Requested by the maintainer in S22: the CI runtime grew with every session (compose integration, replica tests, two native AOT builds, the kind job, signed publishing). Measure the wall time per job and the critical path from recent runs (`gh run view --json jobs`), then decide per job: path filters or skip rules for documentation-only and plan-only changes (keeping required checks reportable, for example a skipped job that still reports success), which jobs can share one image build (container, kubernetes, trivy-image, replica tests build the runtime image separately today), cache use (NuGet, buildx, Trivy DB) and which checks belong on `main` or a schedule instead of every pull request. Constraints: D-20 gates stay; required checks change together with the branch protection; no marketplace scanner actions. Also: `scripts/aot-publish` rewrites `src/MicroDCS.Generators/packages.lock.json` (adds the publish RID to a netstandard2.0 analyzer project), which breaks the locked restore in the Docker build until reverted (found in S22). Exit: a before/after table of the critical path, the changed workflows green, and a decision entry for the rules.
 
+### S27 SFC equipment hold
+
+Read: [D-52](decisions.md#d-52), the S20a entry in the [log](log.md), [SFC core in .NET](../sfc-core.md).
+
+Builds on the step-boundary hold of S20a: on a Pause the equipment is actually told to stop. Recipes declare hold and restart actions (the ISA-88 hold logic), as a backward-compatible extension of the recipe format with a new `dataschema` version, build-time validation and a regenerated schema. A command contract between the host and the equipment for hold, restart and "could not hold": type ids, outcomes, and what a failure or timeout of a hold action does to the job. Decide what happens to an action that is running when the hold begins, how a restart relates to its attempt and deadline, whether a recipe without hold actions keeps the S20a behaviour (default yes), and the capability flag that lets a station refuse such recipes. Compose test: a pause interrupts a running action through its hold action, and Resume restarts it to the end of the job. Record the contract as a decision (next free id).
+
 ### S23 Docs port, parity acceptance, release
 
 Port `docs/` (concepts, operations with all configuration equivalents, persistence, sfc_engine, security, your-first-processor, development), run the parity scenarios (Q-TEST-2) and the acceptance checklist ([branching](research/branching.md) item 8), benchmark baseline (R-18), review the maintenance tool group (D-19: keep as dev-profile tool or remove, per tool), update the README, remove the WIP notice. Turn `docs/porting/` into an archived design record or remove it.
@@ -217,10 +223,3 @@ First verify the S04 finding ([library spike](research/library-spike.md#zenoh-cs
 ### S26 Packaging and release
 
 Needs a released upstream CloudEvents package (D-14). NuGet package split, semver tooling, changelog, API reference generation (R-13, R-17), and a `dotnet new` template package (`MicroDCS.Templates`) replacing the Python `init` scaffolder (Dockerfile, Kubernetes manifest, `CLAUDE.md` and `.claude/` starter files, VS Code tasks and settings).
-
-### S27 SFC equipment hold
-
-Read: [D-52](decisions.md#d-52), the S20a entry in the [log](log.md), [SFC core in .NET](../sfc-core.md).
-
-Builds on the step-boundary hold of S20a: on a Pause the equipment is actually told to stop. Recipes declare hold and restart actions (the ISA-88 hold logic), as a backward-compatible extension of the recipe format with a new `dataschema` version, build-time validation and a regenerated schema. A command contract between the host and the equipment for hold, restart and "could not hold": type ids, outcomes, and what a failure or timeout of a hold action does to the job. Decide what happens to an action that is running when the hold begins, how a restart relates to its attempt and deadline, whether a recipe without hold actions keeps the S20a behaviour (default yes), and the capability flag that lets a station refuse such recipes. Compose test: a pause interrupts a running action through its hold action, and Resume restarts it to the end of the job. Record the contract as a decision (next free id).
-
