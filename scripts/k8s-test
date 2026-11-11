@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Kubernetes test of deploy/ in a kind cluster (S22): the production manifest with the overlay in tests/k8s (no TLS, no collector,
+# the image built here). Checks that both Deployments become ready through their probes in a namespace that enforces the Pod Security
+# Standard "restricted", that the NetworkPolicies allow what MicroDCS needs and nothing else, and that the management API needs the
+# bearer token.
+#
+#   scripts/k8s-test               # build the image, create the cluster, test, delete the cluster
+#   scripts/k8s-test install DIR   # install the pinned kind and kubectl into DIR (CI), checksums verified
+#
+# Environment: IMAGE_BUILT=1 skips the image build (CI builds microdcs:kind with its cache); KEEP_CLUSTER=1 keeps the cluster for
+# debugging (`kind delete cluster --name microdcs-test` removes it).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+KIND_VERSION=v0.33.0
+KIND_SHA256=aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+KUBECTL_VERSION=v1.37.2
+KUBECTL_SHA256=c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
+
+if [[ ${1:-} == install ]]; then
+  dir=${2:?usage: $0 install DIR}
+  mkdir -p "$dir"
+  curl --proto '=https' --tlsv1.2 -fsSLo "$dir/kind" "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+  curl --proto '=https' --tlsv1.2 -fsSLo "$dir/kubectl" "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
+  printf '%s  %s\n' "$KIND_SHA256" "$dir/kind" "$KUBECTL_SHA256" "$dir/kubectl" | sha256sum -c
+  chmod 0755 "$dir/kind" "$dir/kubectl"
+  exit 0
+fi
+
+cluster=microdcs-test
+ns=microdcs-test
+results=TestResults/k8s
+mkdir -p "$results"
+kc() { kubectl --context "kind-$cluster" -n "$ns" "$@"; }
+
+cleanup() {
+  status=$?
+  if kind get clusters 2>/dev/null | grep -qx "$cluster"; then
+    { kc get all,networkpolicy,events -o wide; kc logs -l app.kubernetes.io/name=microdcs --all-containers --prefix --tail=-1; } \
+      > "$results/cluster.log" 2>&1 || true
+    if [[ ${KEEP_CLUSTER:-} != 1 ]]; then
+      kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+    fi
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+
+check() { # check <description> <command...>
+  local description=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "ok: $description"
+  else
+    echo "FAILED: $description" >&2
+    return 1
+  fi
+}
+
+refused() { # refused <description> <command...>: the command must fail
+  local description=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "FAILED: $description" >&2
+    return 1
+  fi
+  echo "ok: $description"
+}
+
+# The test Valkey must run the island ACL rule that docs/deployment.md documents (deploy/valkey-island-acl.conf), with its test password.
+expected=$(grep '^user microdcs ' deploy/valkey-island-acl.conf | sed 's/>PASSWORD/>kind-valkey-password/')
+actual=$(grep -o 'user microdcs .*' tests/k8s/dependencies.yaml)
+check "tests/k8s uses the island ACL rule of deploy/valkey-island-acl.conf" test "$expected" = "$actual"
+
+if [[ ${IMAGE_BUILT:-} != 1 ]]; then
+  docker build --target runtime -t microdcs:kind .
+fi
+reused=0
+if kind get clusters 2>/dev/null | grep -qx "$cluster"; then
+  reused=1
+else
+  kind create cluster --name "$cluster" --wait 120s
+fi
+kind load docker-image microdcs:kind --name "$cluster"
+
+kubectl --context "kind-$cluster" apply -k tests/k8s
+kc rollout status deployment/valkey deployment/mqtt-broker --timeout 180s
+if [[ $reused == 1 ]]; then
+  # A kept cluster: the image tag did not change, so restart MicroDCS on the new image, and forget earlier ACL denials.
+  kc exec deploy/valkey -- valkey-cli --user admin --pass kind-admin-password --no-auth-warning ACL LOG RESET >/dev/null
+  kc rollout restart deployment/microdcs-processor deployment/microdcs-publisher
+fi
+kc rollout status deployment/microdcs-processor deployment/microdcs-publisher --timeout 180s
+kc wait --for=condition=Ready pod/netpol-probe pod/api-client pod/decoy --timeout 120s
+
+check "processor has 2 ready replicas" test "$(kc get deployment microdcs-processor -o jsonpath='{.status.readyReplicas}')" = 2
+check "publisher has 1 ready replica" test "$(kc get deployment microdcs-publisher -o jsonpath='{.status.readyReplicas}')" = 1
+# Pods of an earlier rollout (a rerun with KEEP_CLUSTER=1) may still be terminating; wait until only the current ones are left.
+for _ in $(seq 60); do
+  [[ $(kc get pods -l app.kubernetes.io/name=microdcs -o name | wc -l) -eq 4 ]] && break
+  sleep 1
+done
+# Restarts before the rollout is ready are expected: a pod that starts before Valkey accepts connections ends (fail-fast, D-27) and
+# Kubernetes starts it again. After that, nothing may restart.
+restart_counts() { kc get pods -l app.kubernetes.io/name=microdcs -o jsonpath='{range .items[*]}{.metadata.name}={.status.containerStatuses[0].restartCount}{"\n"}{end}'; }
+restarts_before=$(restart_counts)
+
+processor=$(kc get pods -l app.kubernetes.io/component=processor -o jsonpath='{.items[0].status.podIP}')
+token=kind-management-token
+
+# Egress: DNS, Valkey and the broker are allowed; anything else is not.
+check "probe reaches Valkey" kc exec netpol-probe -- nc -w 3 valkey 6379 </dev/null
+check "probe reaches the MQTT broker" kc exec netpol-probe -- nc -w 3 mqtt-broker 1883 </dev/null
+decoy=$(kc get pod decoy -o jsonpath='{.status.podIP}')
+check "decoy answers a pod without the policy" kc exec api-client -- nc -w 3 "$decoy" 8080 </dev/null
+refused "probe cannot reach the decoy (egress policy)" kc exec netpol-probe -- nc -w 3 "$decoy" 8080 </dev/null
+refused "probe cannot reach an address outside the cluster" kc exec netpol-probe -- nc -w 3 1.1.1.1 443 </dev/null
+
+# Ingress and the management listener: probes open, API only with the client label and the token.
+check "client reaches /health/ready" kc exec api-client -- wget -q -O - -T 3 "http://$processor:8081/health/ready"
+check "client reads /api/v1/jobs with the token" kc exec api-client -- wget -q -O - -T 3 --header "Authorization: Bearer $token" "http://$processor:8081/api/v1/jobs?scope=site.area"
+refused "client without the token is refused" kc exec api-client -- wget -q -O - -T 3 "http://$processor:8081/api/v1/jobs?scope=site.area"
+refused "pod without the client label cannot reach the management port" kc exec decoy -- nc -w 3 "$processor" 8081 </dev/null
+
+# Valkey's user is limited to the island's key prefix and channels (tests/k8s/dependencies.yaml, docs/deployment.md): nothing may
+# have been denied.
+acl_log=$(kc exec deploy/valkey -- valkey-cli --user admin --pass kind-admin-password --no-auth-warning ACL LOG 10)
+check "Valkey denied no command, key or channel" test -z "$acl_log"
+check "no microdcs container restarted after the rollout" test "$(restart_counts)" = "$restarts_before"
+
+echo "k8s-test passed"

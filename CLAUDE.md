@@ -61,14 +61,16 @@ tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yam
 tools/                      build-time tools: the Job Control transition table generator (D-34)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
 scripts/replica-tests       SFC replica tests: two instances of the image, killed from outside (D-53)
+scripts/k8s-test            deploy/ in a kind cluster: probes, Pod Security restricted, NetworkPolicies, Valkey ACL (S22)
 scripts/scan                Gitleaks and Trivy through compose.scan.yaml (D-20), locally and in CI
 compose.scan.yaml           digest-pinned scanner containers; configs in .gitleaks.toml, trivy.yaml, .trivyignore.yaml
-.github/workflows/          ci.yml (build, tests, Sonar, AOT image, integration), security.yml (scanners), docs.yml
+.github/workflows/          ci.yml (build, tests, Sonar, AOT image, integration, kind, signed GHCR publish), security.yml (scanners), docs.yml
 Dockerfile                  AOT publish into chiseled runtime-deps (non-root, no shell; linux-x64 and linux-arm64, D-32); `tests` target for compose
-compose.test.yaml           integration harness (D-15): Valkey, Mosquitto, NATS, tests container
+compose.test.yaml           integration harness (D-15): Valkey, Valkey with ACLs, Mosquitto, NATS, tests container
 docs/                       docs site; docs/porting/ is the port plan
 schemas/                    JSON Schemas (greetings, machinery jobs, SFC recipe, IJT)
-deploy/                     Kubernetes manifest (Python era, ported in S22)
+deploy/                     Kubernetes manifest (two Deployments by role, NetworkPolicies) and the kustomization that pins the image
+tests/k8s/                  kind overlay for scripts/k8s-test (Valkey with ACL user, Mosquitto, NetworkPolicy probes)
 compose.yaml                local dev stack: Mosquitto, NATS, Valkey (valkey-bundle), Aspire dashboard; profile `app` also runs the image with the dev MCP server
 overrides/                  Zensical template overrides (WIP announcement bar)
 .claude/                    rules, skills, hooks and shared settings for Claude Code
@@ -89,7 +91,7 @@ Integration tests run inside compose (D-15):
 `docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests`,
 then `docker compose -f compose.test.yaml down -v`. Compose exits 0 if the tests container never ran,
 so also check `docker compose -f compose.test.yaml ps -a tests` (CI does). The SFC replica tests run
-separately: `scripts/replica-tests` (D-53).
+separately: `scripts/replica-tests` (D-53). The Kubernetes manifest: `scripts/k8s-test` (kind, S22).
 AOT publish: `scripts/aot-publish src/MicroDCS.App linux-x64 <out-dir>` (fails on every trim/AOT
 warning except the allowlisted `CloudNative.CloudEvents*` ones), then `<out-dir>/microdcs smoke`.
 Container: `docker build -t microdcs . && docker run --rm microdcs`.

@@ -1,0 +1,49 @@
+# Kubernetes test of deploy/ in a kind cluster (S22): scripts/k8s-test. The production manifest is used unchanged except for what a
+# test cluster lacks: TLS on Valkey and MQTT, an OTLP collector, and a pinned published image (the locally built image is loaded into
+# kind instead). The namespace enforces the Pod Security Standard "restricted", so every pod spec here must meet it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: microdcs-test
+resources:
+  - namespace.yaml
+  - ../../deploy
+  - dependencies.yaml
+  - netpol-probe.yaml
+images:
+  - name: ghcr.io/aschamberger/microdcs
+    newName: microdcs
+    newTag: kind
+generatorOptions:
+  disableNameSuffixHash: true
+# Test fixtures, not secrets: the cluster lives for one run.
+secretGenerator:
+  - name: microdcs-management
+    literals:
+      - token=kind-management-token
+  - name: microdcs-valkey
+    literals:
+      - password=kind-valkey-password
+  - name: microdcs-mqtt
+    literals:
+      - unused=no-tls-in-the-test-cluster
+patches:
+  # The image is loaded into kind, not pulled.
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/name=microdcs
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: microdcs
+      data:
+        APP_MicroDcs__Mqtt__Port: "1883"
+        APP_MicroDcs__Mqtt__RequireTls: "false"
+        APP_MicroDcs__Valkey__RequireTls: "false"
+        APP_MicroDcs__Valkey__TlsCaFile: null
+        APP_MicroDcs__Management__ApiEnabled: "true"
+        OTEL_EXPORTER_OTLP_ENDPOINT: null

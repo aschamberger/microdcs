@@ -1,0 +1,152 @@
+# Valkey (ACL user `microdcs` with the password of the secret, default user off, as in production) and Mosquitto (anonymous, no TLS),
+# labelled as deploy/k8s.yaml's NetworkPolicy expects. Images pinned as in compose.test.yaml.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  labels:
+    app.kubernetes.io/name: valkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: valkey
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+          command: ["valkey-server", "/config/valkey.conf"]
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi, ephemeral-storage: 16Mi}
+            limits: {cpu: 500m, memory: 256Mi, ephemeral-storage: 64Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: valkey-config
+              mountPath: /config
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: valkey-config
+          configMap:
+            name: valkey
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: valkey
+data:
+  valkey.conf: |
+    save ""
+    appendonly no
+    dir /data
+    user default off
+    # Inspection of the test (ACL LOG); never used by MicroDCS.
+    user admin on >kind-admin-password ~* &* +@all
+    # deploy/valkey-island-acl.conf with the test password; scripts/k8s-test fails when the two differ.
+    user microdcs on >kind-valkey-password resetkeys ~site1:* resetchannels &site1:* -@all +@read +@write +@keyspace +@stream +@hash +@sortedset +@set +@string +@list +@scripting +@pubsub +@connection +@transaction +time -@dangerous -flushdb -select -move -copy -randomkey -dbsize -function -fcall -fcall_ro -script|flush -script|kill -pubsub -client|tracking
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+spec:
+  selector:
+    app.kubernetes.io/name: valkey
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto
+data:
+  mosquitto.conf: |
+    listener 1883
+    allow_anonymous true
+    persistence false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt-broker
+  labels:
+    app.kubernetes.io/name: mqtt-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mqtt-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mqtt-broker
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1883
+        runAsGroup: 1883
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mosquitto
+          image: eclipse-mosquitto:2@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98
+          command: ["mosquitto", "-c", "/config/mosquitto.conf"]
+          ports:
+            - containerPort: 1883
+          readinessProbe:
+            tcpSocket:
+              port: 1883
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 50m, memory: 32Mi, ephemeral-storage: 16Mi}
+            limits: {cpu: 500m, memory: 128Mi, ephemeral-storage: 64Mi}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: mosquitto
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mqtt-broker
+spec:
+  selector:
+    app.kubernetes.io/name: mqtt-broker
+  ports:
+    - port: 1883
+      targetPort: 1883

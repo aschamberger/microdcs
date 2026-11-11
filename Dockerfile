@@ -39,6 +39,9 @@ ENTRYPOINT ["dotnet", "test", "--project", "tests/MicroDCS.IntegrationTests", "-
 
 # Final stage, last in the file so it is the default target.
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled@sha256:e9346023014b406b9bc8be969b3aa4d39efa3a43b6abcc495f01be566acb10e9 AS runtime
+# Links the GHCR package to the repository (S22).
+LABEL org.opencontainers.image.source=https://github.com/aschamberger/microdcs \
+      org.opencontainers.image.licenses=MIT
 WORKDIR /app
 COPY --from=publish --chown=root:root --chmod=0555 /out/microdcs /app/microdcs
 USER $APP_UID

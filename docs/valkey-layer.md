@@ -17,7 +17,11 @@ Section `MicroDcs:Valkey`; environment names use `APP_` and `__`, for example `A
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `ConnectionString` | string | `localhost:6379` | StackExchange.Redis connection string. May contain the password; never logged |
+| `ConnectionString` | string | `localhost:6379` | StackExchange.Redis connection string. May contain the password; never logged. Prefer `PasswordFile` |
+| `User` | string | none | ACL user; overrides `user=` in the connection string |
+| `PasswordFile` | path | none | Mounted secret with the password, read before every connect attempt, so a rotated password reaches the next reconnect ([D-49](porting/decisions.md#d-49)). One trailing line break is removed. Not together with `password=` in the connection string |
+| `TlsCaFile` | path | none | PEM file of the CA of the server certificate. Turns TLS on and trusts this CA besides the system store; the file must exist. `ssl=true` in the connection string turns TLS on with the system store only |
+| `RequireTls` | bool | `false` | Fail at start when neither `TlsCaFile` nor `ssl=true` turns TLS on |
 | `KeyPrefix` | string | `microdcs` | Prefix of every key. One per island. No `*?[]\` and no trailing `:` |
 | `PollInterval` | duration | 1 s | Fallback read of all streams when no nudge arrives |
 | `ScopeRefreshInterval` | duration | 5 s | Read of the scope registry |

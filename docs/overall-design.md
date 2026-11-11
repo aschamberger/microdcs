@@ -126,7 +126,7 @@ framework's CloudEvents transports, with the protocol translation outside the fr
   every delivery with `causationid` set to the delivery's `id`, and respond before the message
   expires.
 - A gateway is one more component to deploy, secure and monitor. Its identity and topic permissions
-  are covered by the [authorization model](security.md#topic-acl-model).
+  are covered by the [authorization model](security.md#acl).
 - The system has no direct visibility of the equipment connection. Equipment availability has to be
   reported by the gateway as `events` or `data`.
 

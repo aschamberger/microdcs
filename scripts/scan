@@ -9,6 +9,8 @@
 #   scripts/scan range <a>..<b>     gitleaks over a commit range (pull requests)
 #   scripts/scan fs                 trivy: NuGet/pip vulnerabilities, Dockerfile and k8s misconfiguration
 #   scripts/scan image [tar]        trivy over an image tarball (default: build the runtime image)
+#   scripts/scan sbom <tar>         SBOMs of a published image: the app's NuGet closure (its lock file) and the image's OS
+#                                   packages, with the same gate; sbom-trivy-app.cdx.json and sbom-trivy-image.cdx.json (S22)
 #   scripts/scan workflows          actionlint and zizmor over .github/workflows (zizmor online if GH_TOKEN is set)
 #   scripts/scan all                secrets, history, workflows, fs, image
 #
@@ -84,6 +86,12 @@ case $mode in
     ;;
   fs) trivy trivy-fs fs /repo ;;
   image) image "$@" ;;
+  sbom)
+    [[ $# -eq 1 ]] || { echo "usage: $0 sbom <image tarball under scan-results/>" >&2; exit 2; }
+    # The AOT binary hides its packages from the image scan; the app's lock file lists exactly what is linked into it.
+    trivy trivy-app fs /repo/src/MicroDCS.App
+    image "$1"
+    ;;
   workflows) workflows ;;
   all)
     gitleaks_dir
@@ -92,6 +100,6 @@ case $mode in
     trivy trivy-fs fs /repo
     image
     ;;
-  help | -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help | -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "unknown mode: $mode (see $0 help)" >&2; exit 2 ;;
 esac

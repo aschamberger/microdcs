@@ -19,3 +19,5 @@ app/
 .env
 review.md
 .microdcs/
+# The island ACL rule is read by the Valkey integration tests (single source with docs/deployment.md).
+!deploy/valkey-island-acl.conf
