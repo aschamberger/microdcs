@@ -157,8 +157,7 @@ jobs:
   # Builds the final image (scripts/aot-publish enforces the D-14 warning allowlist) and runs the
   # CloudEvents AOT smoke check in it: chiseled runtime-deps, non-root, no shell. One native runner
   # per platform (D-32): Native AOT links for the build machine's architecture, and emulation is slow. linux-arm64 runs on a
-  # pull request only when the image inputs change (D-32 revised in S22a); otherwise its steps are skipped. linux-x64
-  # hands its image to the kubernetes job.
+  # pull request only when the image inputs change (D-32 revised in S22a); otherwise its steps are skipped.
   container:
     name: container (${{ matrix.rid }})
     needs: changes
@@ -213,25 +212,15 @@ jobs:
             echo "::error::the runtime image contains a shell"
             exit 1
           fi
-      # The kubernetes job tests this image instead of building its own.
-      - name: Save the image for the kubernetes job
-        if: env.RUN == 'true' && matrix.rid == 'linux-x64' && needs.changes.outputs.k8s == 'true'
-        run: docker save microdcs:ci -o "$RUNNER_TEMP/microdcs-image.tar"
-      - if: env.RUN == 'true' && matrix.rid == 'linux-x64' && needs.changes.outputs.k8s == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: image-linux-x64
-          path: ${{ runner.temp }}/microdcs-image.tar
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 1
 
-  # deploy/ in a kind cluster with the linux-x64 image of the container job (scripts/k8s-test): probes, Pod Security
-  # "restricted", NetworkPolicies and the management token. kind and kubectl are pinned with checksums in the script.
+  # deploy/ in a kind cluster with the image built here (scripts/k8s-test): probes, Pod Security "restricted", NetworkPolicies
+  # and the management token. kind and kubectl are pinned with checksums in the script.
   # On a pull request only when the manifest, the kind test or the image inputs change (D-56); always on main and daily.
+  # Builds its own image in parallel to the container job (from that job's cache where it exists): taking the container
+  # job's image would wait for both matrix legs, linux-arm64 included.
   kubernetes:
     name: kubernetes
-    needs: [changes, container]
+    needs: changes
     if: needs.changes.outputs.k8s == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -239,14 +228,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Reads the container job's cache; this job does not write one.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          name: image-linux-x64
-          path: ${{ runner.temp }}/image
-      - name: Load the image
-        run: |
-          docker load -i "$RUNNER_TEMP/image/microdcs-image.tar"
-          docker tag microdcs:ci microdcs:kind
+          context: .
+          target: runtime
+          tags: microdcs:kind
+          load: true
+          cache-from: type=gha,scope=runtime-linux-x64
       - name: Install kind and kubectl
         run: |
           scripts/k8s-test install "$RUNNER_TEMP/bin"

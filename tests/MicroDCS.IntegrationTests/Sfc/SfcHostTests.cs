@@ -160,9 +160,15 @@ public sealed class SfcHostTests
             // ends, and these recipes leave 30 s commands open. No test here asserts the shutdown, so a cancelled grace period
             // (timers cancelled, the abort path of each phase) is enough and saves 30 s per such test (S22a).
             using var grace = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await _host.StopAsync(grace.Token);
-            _host.Dispose();
-            await Equipment.DisposeAsync();
+            try
+            {
+                await _host.StopAsync(grace.Token);
+            }
+            finally
+            {
+                _host.Dispose();
+                await Equipment.DisposeAsync();
+            }
         }
     }
 

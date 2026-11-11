@@ -21,6 +21,11 @@ if [[ $# -lt 3 ]]; then
 fi
 project=$1 rid=$2 out=$3
 shift 3
+# The restore below has no RID, so it covers only the RIDs the src/ projects declare (D-32).
+case $rid in
+  linux-x64 | linux-arm64) ;;
+  *) echo "aot-publish: unsupported RID $rid (linux-x64 or linux-arm64, D-32)" >&2; exit 2 ;;
+esac
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT

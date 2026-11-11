@@ -95,7 +95,7 @@ The test ports (6380, 6381, 1884, 4223) are offset from the dev stack, so both c
 
 CI runs the suite this way, on the host against the compose services, in the `dotnet` job together with the unit
 tests, so the integration coverage reaches SonarQube Cloud (`--filter-not-trait Category=Replica --fail-skips on`).
-The `integration` job runs `scripts/replica-tests`, which also builds the `tests` image (D-15 revised in S22a).
+The `integration` job runs `scripts/replica-tests`, which also builds the `tests` image; the `tests` entrypoint itself runs only locally (D-15 revised in S22a).
 A test that waits for a timeout it does not assert costs the whole run that time: stop a host in a test with a short
 grace period, because shutdown waits for the expiry timers of open commands until the grace period ends (D-37).
 
@@ -108,7 +108,7 @@ grace period, because shutdown waits for the expiry timers of open commands unti
 | Documentation only (`docs/`, `overrides/`, `.claude/`, `zensical.toml`, top-level `*.md`, `LICENSE`) | `dotnet` builds and runs the SonarQube Cloud analysis (its check is required); everything else reports a skip |
 | Code | plus tests, format, NuGet audit, `container (linux-x64)`, `integration` (replica tests), `trivy-image` |
 | Image inputs (`Dockerfile`, `global.json`, `Directory.*.props`, `nuget.config`, `ci.yml`, the publish scripts) | plus `container (linux-arm64)` and `kubernetes` |
-| Manifest or what the kind test exercises (`deploy/`, `tests/k8s/`, `scripts/k8s-test`, `src/MicroDCS.App`, `src/MicroDCS.Inspection`) | plus `kubernetes` |
+| Manifest or what the kind test exercises (`deploy/`, `tests/k8s/`, `scripts/k8s-test`, `src/MicroDCS.App`, `src/MicroDCS.Inspection`, `*Options*.cs`, `*ServiceCollectionExtensions.cs`) | plus `kubernetes` |
 
 Pushes to `main`, tags and `workflow_dispatch` run everything; a daily schedule runs both container builds and
 `kubernetes`. `scripts/ci-changes pull_request <base> <head>` prints the decision locally.

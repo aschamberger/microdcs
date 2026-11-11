@@ -46,8 +46,8 @@ the Dockerfile does; the `src/` projects declare both RIDs, so the runtime packs
 | `dotnet` + `integration` | Run the integration suite once (host, with coverage) | yes (D-15 revised) |
 | docs-only PRs | Skip tests and images, keep the Sonar analysis | yes |
 | `container (linux-arm64)` | PRs only for image inputs; `main` and daily always | yes (D-32 revised) |
-| `kubernetes` | PRs only for manifest or image inputs; reuse the x64 image | yes |
-| `integration` | Reuse the x64 image of `container` | no: two builds in a row on the critical path |
+| `kubernetes` | PRs only for manifest, options or image inputs | yes |
+| `kubernetes`, `integration` | Reuse the x64 image of `container` | no: waits for both matrix legs (arm64 included), two builds in a row on the critical path, and a one-day artifact breaks a later re-run of the job alone (tried, dropped after `/code-review high`) |
 | `trivy-image` | Move into `ci.yml` to reuse the image | no: belongs to the daily security scan; off the critical path |
 | `dotnet` | Split format and audit into a job | no: after the test fix `dotnet` is under the container build |
 | compose test image | buildx `type=gha` cache in compose | no: needs the runtime token exposed (marketplace action) for about 30 s |

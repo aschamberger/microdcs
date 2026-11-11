@@ -8,7 +8,8 @@
 #
 #   code   anything outside the documentation-only paths: build, tests, Sonar coverage, images
 #   image  the image definition or its inputs (Dockerfile, SDK, packages, ci.yml): the linux-arm64 build on a PR
-#   k8s    the manifest, the kind test or what it exercises (management listener, App): the kubernetes job on a PR
+#   k8s    the manifest, the kind test or what it exercises (management listener, App, options and their registration):
+#          the kubernetes job on a PR
 #
 # Documentation-only paths are a short allowlist on purpose; a path missing here only costs a full run.
 set -euo pipefail
@@ -37,7 +38,10 @@ if [[ $# -lt 3 ]]; then
   echo "ci-changes: pull_request needs <base> <head>" >&2
   exit 2
 fi
-mapfile -t files < <(git diff --name-only "$2...$3")
+# Not a process substitution: a failing git diff (base not reachable, for example after a force push of a stacked base)
+# must fail the job instead of reporting "nothing changed", which would skip the required jobs as passed.
+diff=$(git diff --name-only "$2...$3")
+mapfile -t files <<< "$diff"
 printf 'changed: %s\n' "${files[@]}" >&2
 
 matches() { # <file> <extended regex>
@@ -46,7 +50,7 @@ matches() { # <file> <extended regex>
 
 docs_only='^(docs/|overrides/|\.claude/|zensical\.toml$|LICENSE$|[^/]+\.md$)'
 image='^(Dockerfile$|\.dockerignore$|global\.json$|nuget\.config$|Directory\.(Build|Packages)\.props$|\.github/workflows/ci\.yml$|scripts/(aot-publish|ci-changes)$)'
-k8s='^(deploy/|tests/k8s/|scripts/k8s-test$|src/MicroDCS\.(App|Inspection)/)'
+k8s='^(deploy/|tests/k8s/|scripts/k8s-test$|src/MicroDCS\.(App|Inspection)/|src/[^/]+/(.*/)?[^/]*(Options[^/]*|ServiceCollectionExtensions)\.cs$)'
 
 code=false image_changed=false k8s_changed=false
 for file in "${files[@]}"; do

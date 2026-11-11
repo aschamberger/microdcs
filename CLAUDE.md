@@ -57,7 +57,7 @@ src/MicroDCS.Transport.Mqtt/ MQTT 5 transport on MQTTnet: addresses, mapping, re
 src/MicroDCS.Transport.Nats/ NATS transport on NATS.Net: JetStream consumers, inbox replies, KV state topics (D-47)
 src/MicroDCS.App/           AOT application (`microdcs`); smoke checks and `serve`, which runs the processors whose bindings are configured (greetings demo, Machinery Jobs) on MQTT, NATS or in memory
 tests/MicroDCS.*.Tests/     unit tests (Core, Generators, App, Inspection, JobControl, MachineryJobs, Maintenance, Sfc, Sfc.Hosting, Valkey, Transport.Mqtt, Transport.Nats)
-tests/MicroDCS.IntegrationTests/  integration tests, run inside compose.test.yaml (skipped on the host)
+tests/MicroDCS.IntegrationTests/  integration tests against the compose.test.yaml services (skipped on the host without them)
 tools/                      build-time tools: the Job Control transition table generator (D-34)
 scripts/aot-publish         AOT publish with the D-14 warning allowlist (CI and Dockerfile use it)
 scripts/ci-changes          which CI jobs a pull request needs, from its changed paths (D-56)
