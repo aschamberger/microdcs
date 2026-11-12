@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S27** (SFC equipment hold, moved into M2 before S23); S08 to S22a are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S23** (docs port, parity acceptance, release); S08 to S22a and S27 are done.
 
 ## How to use these files
 
@@ -114,13 +114,14 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 
 | [D-50](decisions.md#d-50) | decided | Machinery Jobs processor: V2 commands only, wire shapes in the extension NodeSet, responses with their own type id, recipe start atomic with the order on every entry into AllowedToStart |
 | [D-51](decisions.md#d-51) | decided | Job order publisher: separate Deployment by role, poller hand-off, lease as a guard, order topic without state, ids limited to the segment rule, rebuild from documents |
-| [D-52](decisions.md#d-52) | revised | SFC host: own project, job order transitions as work entries, Abort and Stop end the recipe, Pause and Resume hold and release it (S20a) |
+| [D-52](decisions.md#d-52) | revised | SFC host: own project, job order transitions as work entries, Abort and Stop end the recipe, Pause and Resume hold and release it (S20a), equipment hold in D-57 (S27) |
 | [D-53](decisions.md#d-53) | decided | SFC pull events: `Selector` field, waits index oldest first, one event one job; the recovery scan resends nothing with a deadline; replica tests with real containers |
 | [D-54](decisions.md#d-54) | decided | HTTP surface and telemetry: OTLP only, producer and SFC spans, readiness checks for transports and Valkey, read-only `/api/v1/jobs` off by default |
 | [D-55](decisions.md#d-55) | decided | Image publishing to GHCR from `main` and `v*` tags, cosign keyless signatures and two CycloneDX SBOM attestations per platform, manifest by role with kustomize pin, kind test in CI, Valkey island ACL user |
 | [D-56](decisions.md#d-56) | decided | CI path rules in `scripts/ci-changes`, skips that keep required checks reportable, docs-only PRs build and analyse only, arm64 and kind on `main` and daily, kind reuses the x64 image |
+| [D-57](decisions.md#d-57) | decided | SFC equipment hold: recipe v1.1.0 with per-action `Hold` and `Restart`, hold answered `held` ends the attempt and the restart completes the action, anything else falls back to S20a, restart once with its own timeout, capability `EquipmentHold` |
 
-Next free id: **D-57**.
+Next free id: **D-58**.
 
 ## Open questions
 
@@ -194,7 +195,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S21 | HTTP surface and observability | S17 | done |
 | S22 | Container, Kubernetes, supply chain, security review | S21 | done |
 | S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | done |
-| S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | open |
+| S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | done |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |
 | **M3 Extensions** | | | |
 | S24 | AMQP transport | S14 | open |

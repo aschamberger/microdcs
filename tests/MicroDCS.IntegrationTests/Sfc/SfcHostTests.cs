@@ -43,6 +43,19 @@ public sealed class SfcHostTests
                     {"Name":"a2","Step":"s2","Qualifier":"N","Interaction":"push_command","TypeId":"{{{ByeType}}}","TimeoutSeconds":{{{timeoutSeconds}}},"MaxAttempts":{{{maxAttempts}}},"Parameters":{}}]}
         """;
 
+    private const string HoldType = "com.github.aschamberger.microdcs.test.hold.v1";
+    private const string RestartType = "com.github.aschamberger.microdcs.test.restart.v1";
+    private const string AnswerType = "com.github.aschamberger.microdcs.test.answer.v1";
+
+    /// <summary>The two-step recipe whose first action has hold logic (D-57), in the current recipe format.</summary>
+    private static string HoldableRecipe(int timeoutSeconds = 30) => $$$"""
+        {"Steps":[{"Name":"s1","Initial":true},{"Name":"s2"}],
+         "Transitions":[{"Source":"s1","Target":"s2","Condition":"true","Priority":0}],
+         "Actions":[{"Name":"a1","Step":"s1","Qualifier":"N","Interaction":"push_command","TypeId":"{{{ByeType}}}","TimeoutSeconds":{{{timeoutSeconds}}},"MaxAttempts":1,
+                     "Hold":{"TypeId":"{{{HoldType}}}","TimeoutSeconds":10},"Restart":{"TypeId":"{{{RestartType}}}","TimeoutSeconds":10}},
+                    {"Name":"a2","Step":"s2","Qualifier":"N","Interaction":"push_command","TypeId":"{{{ByeType}}}","TimeoutSeconds":{{{timeoutSeconds}}},"MaxAttempts":1}]}
+        """;
+
     private static async Task EventuallyAsync(Func<Task<bool>> condition, string what)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
@@ -94,6 +107,10 @@ public sealed class SfcHostTests
                 ["MicroDcs:Bindings:greetings:Prefix"] = prefix,
                 ["MicroDcs:Bindings:greetings:ScopeLevels"] = "2",
                 ["MicroDcs:Bindings:greetings:ReplyBase"] = prefix + "-reply",
+                [$"MicroDcs:Bindings:{HoldableEquipmentProcessor.BindingId}:Transport"] = "mqtt",
+                [$"MicroDcs:Bindings:{HoldableEquipmentProcessor.BindingId}:Prefix"] = prefix + "-eq",
+                [$"MicroDcs:Bindings:{HoldableEquipmentProcessor.BindingId}:ScopeLevels"] = "2",
+                [$"MicroDcs:Bindings:{HoldableEquipmentProcessor.BindingId}:ReplyBase"] = prefix + "-eq-reply",
                 ["MicroDcs:Mqtt:Hostname"] = broker,
                 ["MicroDcs:Mqtt:Port"] = port.ToString(CultureInfo.InvariantCulture),
                 ["MicroDcs:Mqtt:TlsCaFile"] = "/nonexistent/ca.crt",
@@ -113,6 +130,7 @@ public sealed class SfcHostTests
             builder.Configuration.AddInMemoryCollection(settings);
             builder.Services.AddMicroDcs(builder.Configuration).AddMqttTransport(builder.Configuration);
             builder.Services.AddProcessor<GreetingsProcessor>();
+            builder.Services.AddProcessor<HoldableEquipmentProcessor>();
             builder.Services.AddMicroDcsValkey(builder.Configuration);
             builder.Services.AddMachineryJobs(builder.Configuration);
             builder.Services.AddSfcHost(builder.Configuration);
@@ -120,6 +138,7 @@ public sealed class SfcHostTests
 
             var equipment = await MqttTestClient.ConnectAsync(null, Ct);
             await equipment.SubscribeAsync($"{prefix}/site/area/commands", Ct);
+            await equipment.SubscribeAsync($"{prefix}-eq/site/area/commands", Ct);
             await host.StartAsync(Ct);
             return new Rig(host, equipment, prefix);
         }
@@ -145,6 +164,10 @@ public sealed class SfcHostTests
 
         public Task AnswerAsync(MqttApplicationMessage command) =>
             Equipment.PublishEventAsync(command.ResponseTopic, Guid.NewGuid().ToString(), HelloType, Scope, "{\"Name\":\"Plant\"}", null, Ct, causationId: MqttTestClient.Property(command, "id"));
+
+        /// <summary>Answers a hold or restart command with an outcome (D-57); the causation id names the command.</summary>
+        public Task AnswerWithAsync(MqttApplicationMessage command, string outcome) =>
+            Equipment.PublishEventAsync(command.ResponseTopic, Guid.NewGuid().ToString(), AnswerType, Scope, $"{{\"Outcome\":\"{outcome}\"}}", null, Ct, causationId: MqttTestClient.Property(command, "id"));
 
         public async Task ScanAsync()
         {
@@ -438,6 +461,89 @@ public sealed class SfcHostTests
         (await rig.StateAsync("hold-1")).ShouldNotBeNull().Status.ShouldBe(SfcJobStatus.Completed);
     }
 
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task APauseHoldsRunningWorkThroughItsHoldCommandAndResumeRestartsItToTheEndOfTheJob()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("eq-1", HoldableRecipe(timeoutSeconds: 3));
+        var work = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(work, "mdcsactionkey").ShouldBe("eq-1:a1");
+        await EventuallyAsync(async () => await rig.OrderStateAsync("eq-1") == JobOrderState.Running, "the job to run");
+
+        await SendMesAsync(rig, "mes-pause", JobControlTypes.Pause, new PauseCall { JobOrderID = "eq-1" });
+        var hold = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(hold, "type").ShouldBe(HoldType);
+        MqttTestClient.Property(hold, "mdcsactionkey").ShouldBe("eq-1:a1");
+        await rig.AnswerWithAsync(hold, SfcOutcome.Held);
+        await EventuallyAsync(async () => (await rig.StateAsync("eq-1"))?.Actions["a1"].Hold == SfcHoldStatus.Held, "the work to be held");
+
+        // Longer than the only attempt of a1: the held attempt has ended, so nothing expires. A late answer to it is absorbed.
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(3.5), "held work is not sent again");
+        await rig.AnswerAsync(work);
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(0.5), "an answer to held work does not move the recipe");
+        var held = (await rig.StateAsync("eq-1")).ShouldNotBeNull();
+        held.Status.ShouldBe(SfcJobStatus.Running);
+        held.Actions["a1"].Status.ShouldBe(SfcActionStatus.Dispatched);
+
+        await SendMesAsync(rig, "mes-resume", JobControlTypes.Resume, new ResumeCall { JobOrderID = "eq-1" });
+        var restart = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(restart, "type").ShouldBe(RestartType);
+        MqttTestClient.Property(restart, "mdcsactionkey").ShouldBe("eq-1:a1");
+        await rig.AnswerWithAsync(restart, "done");
+
+        var next = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(next, "mdcsactionkey").ShouldBe("eq-1:a2");
+        await rig.AnswerAsync(next);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("eq-1") == JobOrderState.Completed, "the job to complete");
+        var done = (await rig.StateAsync("eq-1")).ShouldNotBeNull();
+        done.Status.ShouldBe(SfcJobStatus.Completed);
+        done.Actions["a1"].Restarted.ShouldBeTrue();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task WorkThatCouldNotBeHeldRunsToItsEndAndIsNotSentAgain()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.StartJobAsync("eq-2", HoldableRecipe());
+        var work = await rig.Equipment.ReceiveAsync(Ct);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("eq-2") == JobOrderState.Running, "the job to run");
+
+        await SendMesAsync(rig, "mes-pause", JobControlTypes.Pause, new PauseCall { JobOrderID = "eq-2" });
+        var hold = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(hold, "type").ShouldBe(HoldType);
+        await rig.AnswerWithAsync(hold, "not_held");
+        await EventuallyAsync(async () => (await rig.StateAsync("eq-2"))?.Actions["a1"].Hold == SfcHoldStatus.NotHeld, "the hold to be refused");
+
+        await rig.AnswerAsync(work);
+        await EventuallyAsync(async () => (await rig.StateAsync("eq-2"))?.Actions["a1"].Status == SfcActionStatus.Completed, "the answer to be recorded");
+
+        await SendMesAsync(rig, "mes-resume", JobControlTypes.Resume, new ResumeCall { JobOrderID = "eq-2" });
+        var next = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(next, "mdcsactionkey").ShouldBe("eq-2:a2");
+        await rig.AnswerAsync(next);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("eq-2") == JobOrderState.Completed, "the job to complete");
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task AHoldOfWorkThatWasNeverSentIsAnsweredByTheHostAndTheReleaseSendsTheWork()
+    {
+        await using var rig = await Rig.StartAsync();
+        var state = rig.Context.Keys.SfcState("eq-3");
+        await rig.StartJobAsync("eq-3", HoldableRecipe());
+        var work = await rig.Equipment.ReceiveAsync(Ct);
+        await EventuallyAsync(async () => await rig.OrderStateAsync("eq-3") == JobOrderState.Running, "the job to run");
+
+        // As if the dispatch of a1 had waited in the stream past the pause: no sent marker.
+        await rig.Context.Database.HashDeleteAsync(state, "sent:a1");
+        await SendMesAsync(rig, "mes-pause", JobControlTypes.Pause, new PauseCall { JobOrderID = "eq-3" });
+        await EventuallyAsync(async () => (await rig.StateAsync("eq-3"))?.Actions["a1"].Hold == SfcHoldStatus.NotHeld, "the host to answer the hold");
+        await NoCommandAsync(rig, TimeSpan.FromSeconds(0.5), "a hold of work the equipment never got is not sent");
+
+        await SendMesAsync(rig, "mes-resume", JobControlTypes.Resume, new ResumeCall { JobOrderID = "eq-3" });
+        var again = await rig.Equipment.ReceiveAsync(Ct);
+        MqttTestClient.Property(again, "id").ShouldBe(MqttTestClient.Property(work, "id"));
+    }
+
     private static async Task SetOrderAsync(Rig rig, string job, JobOrderState state, string operation, JobRecipeWork work)
     {
         var order = (await rig.Jobs.GetOrderAsync(job, Ct)).ShouldNotBeNull();
@@ -527,6 +633,18 @@ public sealed class SfcHostTests
 
         await EventuallyAsync(async () => await rig.OrderStateAsync("job-4") == JobOrderState.Aborted, "the job to abort");
         (await rig.StateAsync("job-4")).ShouldBeNull();
+    }
+
+    [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]
+    public async Task ARecipeOfFormatV10WithHoldLogicIsNotRun()
+    {
+        await using var rig = await Rig.StartAsync();
+        (await rig.Jobs.SaveWorkMasterAsync(new JobWorkMaster { Id = "wm-v10", DataSchema = SfcInterpreter.RecipeDataSchemaV10, Data = HoldableRecipe() }, Scope, Ct)).ShouldBeTrue();
+
+        await rig.StartJobAsync("eq-4", recipe: null, workMaster: "wm-v10");
+
+        await EventuallyAsync(async () => await rig.OrderStateAsync("eq-4") == JobOrderState.Aborted, "the job to abort");
+        (await rig.StateAsync("eq-4")).ShouldBeNull();
     }
 
     [Fact(SkipUnless = nameof(Configured), SkipType = typeof(SfcHostTests), Skip = Skip)]

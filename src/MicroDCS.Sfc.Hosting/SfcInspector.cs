@@ -66,7 +66,10 @@ internal sealed class SfcInspector : IInspector
             "; ",
             state.Actions.Values.Select(static a => $"{a.Name} {a.Status} attempt={a.Attempt} round={a.Round}"
                 + (a.Deadline is { } d ? $" deadline={Time(d)}" : string.Empty)
-                + (a.Outcome is { } o ? $" outcome={o}" : string.Empty)));
+                + (a.Outcome is { } o ? $" outcome={o}" : string.Empty)
+                + (a.Hold is { } h ? $" hold={h}" : string.Empty)
+                + (a.HoldDeadline is { } hd ? $" holdDeadline={Time(hd)}" : string.Empty)
+                + (a.Restarted ? " restarted" : string.Empty)));
         var fields = new Dictionary<string, InspectionValue>(StringComparer.Ordinal)
         {
             ["scope"] = Identifier(state.Scope),

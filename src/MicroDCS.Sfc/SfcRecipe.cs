@@ -97,6 +97,33 @@ public sealed record SfcActionBlock
     /// <summary>Gets which incoming events a pull event accepts besides its type (R-1); absent means every event of the type.</summary>
     [JsonPropertyName("Selector")]
     public SfcSelector? Selector { get; init; }
+
+    /// <summary>
+    /// Gets the command that holds the running work of a push command when the job is paused (ISA-88 hold logic, D-57). Set together with
+    /// <see cref="Restart"/>; absent means the work runs to its end during a pause.
+    /// </summary>
+    [JsonPropertyName("Hold")]
+    public SfcEquipmentCommand? Hold { get; init; }
+
+    /// <summary>Gets the command that restarts held work when the job is resumed; its response completes the action (D-57).</summary>
+    [JsonPropertyName("Restart")]
+    public SfcEquipmentCommand? Restart { get; init; }
+}
+
+/// <summary>A hold or restart command of a push-command action (D-57): sent with the action key of the action, so the equipment knows which work it means.</summary>
+public sealed record SfcEquipmentCommand
+{
+    /// <summary>Gets the type id of the command.</summary>
+    [JsonPropertyName("TypeId")]
+    public required string TypeId { get; init; }
+
+    /// <summary>Gets the time in seconds the equipment has to answer. The command is sent once.</summary>
+    [JsonPropertyName("TimeoutSeconds")]
+    public required int TimeoutSeconds { get; init; }
+
+    /// <summary>Gets the parameters handed to the command.</summary>
+    [JsonPropertyName("Parameters")]
+    public IReadOnlyDictionary<string, JsonElement>? Parameters { get; init; }
 }
 
 /// <summary>

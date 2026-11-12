@@ -6,14 +6,21 @@ namespace MicroDCS.Sfc;
 /// </summary>
 public sealed class SfcInterpreter : IRecipeInterpreter
 {
-    /// <summary>The <c>dataschema</c> URI that selects this interpreter on a work master.</summary>
-    public const string RecipeDataSchema = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/";
+    /// <summary>The <c>dataschema</c> URI of the current recipe format (v1.1.0 adds hold and restart commands, D-57).</summary>
+    public const string RecipeDataSchema = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/";
+
+    /// <summary>The <c>dataschema</c> URI of the first recipe format. Still accepted: v1.1.0 only adds optional fields.</summary>
+    public const string RecipeDataSchemaV10 = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/";
 
     /// <summary>The hard limit of step entries per evolution; reaching it returns a fault (D-44).</summary>
     public const int MaxStepEntriesPerEvolution = 10_000;
 
     /// <inheritdoc/>
     public string DataSchema => RecipeDataSchema;
+
+    /// <inheritdoc/>
+    public bool Accepts(string? dataSchema) =>
+        string.Equals(dataSchema, RecipeDataSchema, StringComparison.Ordinal) || string.Equals(dataSchema, RecipeDataSchemaV10, StringComparison.Ordinal);
 
     /// <inheritdoc/>
     public SfcBuildResult Build(ReadOnlyMemory<byte> recipe, SfcCapabilities capabilities) => SfcGraph.Build(recipe, capabilities);

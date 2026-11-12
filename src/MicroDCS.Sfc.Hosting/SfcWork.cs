@@ -98,7 +98,7 @@ internal static class SfcWork
             entries.Add(new SfcWorkEntry(Entry(state.JobId, state.Scope, Job, [.. extra])));
         }
 
-        foreach (var command in result.Commands.OfType<StartWork>().Where(static c => c.Work == SfcWorkKind.PushCommand))
+        foreach (var command in result.Commands.OfType<StartWork>().Where(static c => c.Work is SfcWorkKind.PushCommand or SfcWorkKind.HoldCommand or SfcWorkKind.RestartCommand))
         {
             entries.Add(new SfcWorkEntry(Entry(state.JobId, state.Scope, DispatchPrefix + command.Action, (CommandField, JsonSerializer.Serialize<SfcCommand>(command, SfcJsonContext.Default.SfcCommand)))));
         }

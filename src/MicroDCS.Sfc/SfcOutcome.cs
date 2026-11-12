@@ -12,6 +12,12 @@ public static class SfcOutcome
     /// <summary>Reserved: the response handler reported a failure.</summary>
     public const string Error = "error";
 
+    /// <summary>
+    /// The outcome a hold command answers when the equipment stopped the work of the action and can restart it (D-57). Not reserved: the hold type
+    /// declares it. Any other answer, an error or a timeout means the work could not be held.
+    /// </summary>
+    public const string Held = "held";
+
     /// <summary>Tells whether a name is one of the reserved outcomes, which every action type has.</summary>
     /// <param name="name">The outcome name.</param>
     /// <returns><see langword="true"/> for <see cref="Timeout"/> and <see cref="Error"/>.</returns>

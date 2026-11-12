@@ -33,6 +33,12 @@ public sealed class SfcHostOptions
     /// <summary>The most jobs one ordinary sweep of a scope takes.</summary>
     public int SweepLimit { get; set; } = 100;
 
+    /// <summary>
+    /// Whether recipes may declare hold and restart commands (D-57). With <see langword="false"/> such a recipe is refused (SFC015), for a station whose
+    /// equipment cannot hold its work.
+    /// </summary>
+    public bool EquipmentHold { get; set; } = true;
+
     internal bool IsValid() =>
         SweepInterval > TimeSpan.Zero && OutageThreshold > SweepInterval && MaxAttempts > 0 && ExpiryGrace >= TimeSpan.Zero
         && AutoclaimIdle > TimeSpan.Zero && MaxDeliveries > 0 && ReadCount > 0 && SweepLimit > 0;

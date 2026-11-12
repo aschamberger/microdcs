@@ -89,6 +89,29 @@
               "string",
               "null"
             ]
+          },
+          "hold": {
+            "enum": [
+              "Holding",
+              "Held",
+              "NotHeld",
+              null
+            ]
+          },
+          "holdCommandId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "holdDeadline": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restarted": {
+            "type": "boolean"
           }
         },
         "required": [

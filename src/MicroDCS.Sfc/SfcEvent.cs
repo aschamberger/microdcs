@@ -44,6 +44,10 @@ public sealed record SfcActionCompleted : SfcEvent
     /// <summary>Gets the round of the command this answers (<see cref="StartWork.Round"/>); a response of an earlier pass is absorbed. Absent means: match by action key only.</summary>
     [JsonPropertyName("round")]
     public int? Round { get; init; }
+
+    /// <summary>Gets the id of the command this answers, when the host knows it. It tells the answer to a hold command apart from the answer to the work it holds (D-57); without it the answer belongs to the open command.</summary>
+    [JsonPropertyName("commandId")]
+    public string? CommandId { get; init; }
 }
 
 /// <summary>The response handler or the equipment reported a failure; the action ends with the reserved outcome <c>error</c>.</summary>
@@ -60,6 +64,10 @@ public sealed record SfcActionFailed : SfcEvent
     /// <summary>Gets the round of the command this answers; absent means: match by action key only.</summary>
     [JsonPropertyName("round")]
     public int? Round { get; init; }
+
+    /// <summary>Gets the id of the command this answers, when the host knows it. It tells the answer to a hold command apart from the answer to the work it holds (D-57); without it the answer belongs to the open command.</summary>
+    [JsonPropertyName("commandId")]
+    public string? CommandId { get; init; }
 }
 
 /// <summary>An incoming event for a pull-event action. The host picks the job (see <see cref="SfcState.IsWaitingFor"/>).</summary>

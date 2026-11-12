@@ -4,6 +4,7 @@ using System.Text;
 using MicroDCS.Core.Authoring;
 using MicroDCS.Core.Hosting;
 using MicroDCS.Valkey.Sfc;
+using Microsoft.Extensions.Options;
 
 namespace MicroDCS.Sfc.Hosting;
 
@@ -17,21 +18,24 @@ internal sealed class SfcGraphs
     private readonly ConcurrentDictionary<string, SfcGraph> _graphs = new(StringComparer.Ordinal);
     private readonly SfcCapabilities _capabilities;
 
-    public SfcGraphs(IRecipeInterpreter interpreter, SfcStateDao states, ProcessorRegistry registry)
+    public SfcGraphs(IRecipeInterpreter interpreter, SfcStateDao states, ProcessorRegistry registry, IOptions<SfcHostOptions> options)
     {
         _interpreter = interpreter;
         _states = states;
-        _capabilities = CapabilitiesOf(registry);
+        _capabilities = CapabilitiesOf(registry, options.Value.EquipmentHold);
     }
 
     public IRecipeInterpreter Interpreter => _interpreter;
 
     /// <summary>The features of this version. Outcomes of commands come from the <c>[Outgoing]</c> factories, outcomes of pull events from the <c>[Incoming]</c> handlers.</summary>
-    public static SfcCapabilities CapabilitiesOf(ProcessorRegistry registry)
+    /// <param name="registry">The processors of this station.</param>
+    /// <param name="equipmentHold">Whether the station runs hold and restart commands (D-57); without them a recipe that declares any is refused.</param>
+    public static SfcCapabilities CapabilitiesOf(ProcessorRegistry registry, bool equipmentHold)
     {
         ArgumentNullException.ThrowIfNull(registry);
         return new SfcCapabilities(
-            SfcFeature.PushCommand | SfcFeature.PullEvent | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence,
+            SfcFeature.PushCommand | SfcFeature.PullEvent | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence
+                | (equipmentHold ? SfcFeature.EquipmentHold : SfcFeature.None),
             OutcomesOf(registry, HandlerKind.Outgoing),
             OutcomesOf(registry, HandlerKind.Incoming));
     }

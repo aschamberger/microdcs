@@ -84,6 +84,34 @@ public sealed class SfcWorkTests
     }
 
     [Fact]
+    public void HoldAndRestartCommandsBecomeDispatchEntries()
+    {
+        var state = Start(Graph()).State;
+        var result = new SfcStepResult
+        {
+            State = state,
+            Continuation = new SfcDefer(),
+            Commands =
+            [
+                new StartWork { ActionKey = "job:a1", CommandId = "job:a1#2:hold", Work = SfcWorkKind.HoldCommand, Action = "a1", TypeId = "t.hold", Round = 1, Attempt = 1, Deadline = 9 },
+                new StartWork { ActionKey = "job:a1", CommandId = "job:a1#3", Work = SfcWorkKind.RestartCommand, Action = "a1", TypeId = "t.restart", Round = 1, Attempt = 1, Deadline = 9 },
+            ],
+        };
+
+        var entries = SfcWork.EntriesOf(result, started: false);
+
+        entries.Count.ShouldBe(2);
+        entries.ShouldAllBe(static e => e.Fields.Any(static f => f.Key == SfcWork.ActionField && f.Value == SfcWork.DispatchPrefix + "a1"));
+    }
+
+    [Fact]
+    public void EquipmentHoldIsOfferedUnlessTheStationTurnsItOff()
+    {
+        SfcGraphs.CapabilitiesOf(Registry(default), equipmentHold: true).Features.HasFlag(SfcFeature.EquipmentHold).ShouldBeTrue();
+        SfcGraphs.CapabilitiesOf(Registry(default), equipmentHold: false).Features.HasFlag(SfcFeature.EquipmentHold).ShouldBeFalse();
+    }
+
+    [Fact]
     public void PendingEntriesOutliveTheirDeadlineByAMarginThenGo()
     {
         var pending = new SfcPendingCommands();
@@ -98,7 +126,7 @@ public sealed class SfcWorkTests
     [Fact]
     public void CapabilitiesComeFromTheOutgoingFactoriesAndHoldTheDefaultOutcome()
     {
-        var capabilities = SfcGraphs.CapabilitiesOf(Registry(ImmutableArray.Create("good", "bad")));
+        var capabilities = SfcGraphs.CapabilitiesOf(Registry(ImmutableArray.Create("good", "bad")), equipmentHold: true);
 
         capabilities.Outcomes["t.v1"].ShouldBe(["good", "bad", ActionOutcome.DefaultName], ignoreOrder: true);
         capabilities.IsOutcomeValid("t.v1", "good").ShouldBeTrue();
@@ -107,7 +135,7 @@ public sealed class SfcWorkTests
 
     [Fact]
     public void PullEventsAreOffered() =>
-        SfcGraphs.CapabilitiesOf(Registry(default)).Features.HasFlag(SfcFeature.PullEvent).ShouldBeTrue();
+        SfcGraphs.CapabilitiesOf(Registry(default), equipmentHold: true).Features.HasFlag(SfcFeature.PullEvent).ShouldBeTrue();
 
     [Theory]
     [InlineData(nameof(SfcHostOptions.MaxAttempts))]

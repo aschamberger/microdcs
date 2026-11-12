@@ -23,6 +23,10 @@ public static class SfcExplainer
             {
                 string attempts = action.Interaction == SfcNames.PushCommand ? $", max attempts {(action.MaxAttempts?.ToString(CultureInfo.InvariantCulture) ?? "host default")}" : string.Empty;
                 text.Append(CultureInfo.InvariantCulture, $"  action '{action.Name}': {action.Interaction} {action.TypeId}, timeout {action.TimeoutSeconds}s{attempts}\n");
+                if (action.Hold is { } hold && action.Restart is { } restart)
+                {
+                    text.Append(CultureInfo.InvariantCulture, $"    on pause: hold {hold.TypeId} (timeout {hold.TimeoutSeconds}s), on resume: restart {restart.TypeId} (timeout {restart.TimeoutSeconds}s)\n");
+                }
             }
 
             AppendTransitions(text, graph.Outgoing(stepName));
@@ -85,12 +89,20 @@ public static class SfcExplainer
                 text.Append(CultureInfo.InvariantCulture, $", outcome '{action.Outcome}'");
             }
 
+            text.Append(action.Hold switch
+            {
+                SfcHoldStatus.Holding => string.Create(CultureInfo.InvariantCulture, $", hold sent (answer due {action.HoldDeadline})"),
+                SfcHoldStatus.Held => ", held by the equipment (restarted on release)",
+                SfcHoldStatus.NotHeld => ", could not be held (runs to its end)",
+                _ => action.Restarted ? ", restarted" : string.Empty,
+            });
+
             text.Append('\n');
         }
 
         if (state.IsHeld)
         {
-            text.Append(CultureInfo.InvariantCulture, $"held since {state.HeldAt} (MES Pause): no transition fires and nothing is dispatched; deadlines move by the length of the hold on release\n");
+            text.Append(CultureInfo.InvariantCulture, $"held since {state.HeldAt} (MES Pause): no transition fires and nothing but hold commands is dispatched; deadlines move by the length of the hold on release\n");
         }
         else
         {

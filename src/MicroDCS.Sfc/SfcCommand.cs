@@ -11,6 +11,12 @@ public enum SfcWorkKind
 
     /// <summary>Wait for an incoming event; the wait itself is state, the command is for registration and inspection.</summary>
     AwaitEvent,
+
+    /// <summary>Send the hold command of a push command's work (D-57). Goes out while the job is held; its response is matched by command id.</summary>
+    HoldCommand,
+
+    /// <summary>Send the restart command of held work (D-57). Sent once; its response completes the action.</summary>
+    RestartCommand,
 }
 
 /// <summary>Inert data returned by the step function; the host applies commands in order and idempotently by action key.</summary>

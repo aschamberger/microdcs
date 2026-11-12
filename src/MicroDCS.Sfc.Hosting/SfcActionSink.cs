@@ -43,10 +43,11 @@ internal sealed class SfcActionSink : IActionSink
 
         var at = await _states.ServerTimeAsync(cancellationToken).ConfigureAwait(false);
         SfcEvent input = response.Outcome.IsFailure
-            ? new SfcActionFailed { At = at, ActionKey = actionKey!, Error = response.Outcome.Error, Round = pending?.Round }
-            : new SfcActionCompleted { At = at, ActionKey = actionKey!, Outcome = response.Outcome.Name, Round = pending?.Round };
+            ? new SfcActionFailed { At = at, ActionKey = actionKey!, Error = response.Outcome.Error, Round = pending?.Round, CommandId = response.CommandId }
+            : new SfcActionCompleted { At = at, ActionKey = actionKey!, Outcome = response.Outcome.Name, Round = pending?.Round, CommandId = response.CommandId };
 
-        // The type id of a response is not the type id of its command, so it is not passed for the contradiction check.
+        // The type id of a response is not the type id of its command, so it is not passed for the contradiction check. The command id tells the answer
+        // to a hold command apart from the answer to the work it holds (D-57).
         try
         {
             await _runner.RunAsync(jobId, input, response.EventId, liveWork: null, cancellationToken).ConfigureAwait(false);
