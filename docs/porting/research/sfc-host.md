@@ -32,6 +32,19 @@ Python never held a recipe (H-19), so this part is new behaviour. Design notes:
 
 Not chosen: dropping events during a hold and re-adding the wait on release (an answer from equipment that finishes its work would be lost and the action would time out); a set of skipped dispatches per job written by the consumer (a consumer that reads the held state, then loses the race against the release, would add its entry after the release read the set, and the command would wait for its deadline); a marker key with a time to live (a hold can outlast any fixed lifetime).
 
+## Equipment hold (S27) {#equipment-hold-s27}
+
+Python never told equipment to stop (parity row H-29), so this is new behaviour. The contract is D-57. Design notes:
+
+* **Matching by command id.** The answer to a hold command and the answer to the work it holds have the same action key. The host always knows the command id a response answers (the causation id, `ActionResponse.CommandId`), so the core gets it on `SfcActionCompleted` and `SfcActionFailed`. Hold command ids end in `:hold`. A late answer to any earlier hold is then recognised and absorbed without keeping a list of old hold ids. A response without a command id (other hosts, the simulation) belongs to the open command, as before.
+* **Deadlines while held.** S20a empties `NextDeadline` during a hold. A hold command must still expire, so `NextDeadline` while held is the earliest hold deadline, and a tick while held expires only those. An outage moves hold deadlines in both cases. The deadline of held work is cleared on `held`; the restart sets its own.
+* **Release before the answer.** The release moves the deadline of the work but does not issue it again, because the answer decides: `held` restarts at once, anything else issues the work again with its command id (the sent marker keeps it from going out twice). Recovery (`SfcResume`) skips work whose hold is open and issues a restart again with its id.
+* **Work that never went out.** A dispatch that reaches a held job is skipped (S20a), but the core counts the work as dispatched and sends a hold for it. The host compares the work's sent marker with its command id before sending the hold. If they differ, the host runs `SfcActionFailed` for the hold itself (not held), so the release sends the work. The equipment never sees a hold for work it does not know. The check is not atomic with a dispatch in flight: when one consumer has queued the work but not yet written its marker, a hold taken by another consumer in those milliseconds is answered as not held, and the work runs to its end as in S20a (`/code-review` finding, accepted: the fallback is the safe side, and closing the window would need the marker before the queue, which S20a rejected because a crash could lose the command).
+* **Late `held`.** A `held` answer to the current hold after its deadline still counts: the equipment did hold the work, and only a restart gets it going again (its command was sent already, so issuing it again would be skipped). The restart clears the hold command id, so a repeated answer is absorbed (`/code-review` finding).
+* **Format version.** A work master with `dataschema` v1.0.0 that declares hold or restart commands is refused as an unusable recipe and its job is aborted: the version says what a recipe does (`/code-review` finding).
+* **Markers.** `sent:{action}` keeps the work's command (the restart takes it over), and `sent:{action}:hold` the hold's. Action names contain no `:`, so the fields cannot clash. One `HGETALL` reads both.
+* **Compose tests** (`SfcHostTests`): a pause holds running work and resume restarts it to the end of the job, with a late answer to the held attempt absorbed; a refused hold lets the work finish without a resend; a hold of work that was never sent is answered by the host and the release sends the work.
+
 ## Python parity list: host part of `sfc_engine.py` and the tests
 
 Rows S-1 to S-40 of [SFC rules](sfc-rules.md) hold the decisions from S07. This list records what S19 and S20 did with the ones they own.
@@ -65,6 +78,7 @@ Rows S-1 to S-40 of [SFC rules](sfc-rules.md) hold the decisions from S07. This 
 | H-27 | No active job, no waiting action, unknown type: logged and ignored | `test_handle_pull_event_skips_if_no_active_jobs`, `test_handle_pull_event_ignores_unknown_type_id` | kept: dropped and counted in `microdcs.sfc.events.unmatched` |
 | H-28 | An event before its wait is lost | `_handle_pull_event` | kept: no buffering, the action times out (D-53) |
 | H-22 | Scope registered by the app wiring | `register_scope`, `test_register_scope` | dropped (S-33): scope registry |
+| H-29 | Telling equipment to hold and restart its work on a MES Pause and Resume | none: `sfc_engine.py`, `sfc_recipe_ext.py`, `processors/machinery_jobs.py` (`process_pause`, `process_resume` only change the order) and the SFC tests have no hold, restart or interrupt logic (checked in S27) | new in S27 (D-57); no Python behaviour to keep |
 | H-23 | End-to-end: StoreAndStart, command on the greetings topic, answer on the reply topic, recipe completes, job response exists | `test_app_sfc_integration.py` | kept: `ARecipeOfPushActionsRunsToTheEndAndCompletesTheJob`; the job is stored directly, the command path of the MES is covered by `MachineryJobsMqttTests` |
 
 No row is open.

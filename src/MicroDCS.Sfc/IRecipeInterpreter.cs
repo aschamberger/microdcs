@@ -23,6 +23,11 @@ public interface IRecipeInterpreter
     /// <summary>Gets the <c>dataschema</c> URI of the recipe format this interpreter handles.</summary>
     string DataSchema { get; }
 
+    /// <summary>Tells whether this interpreter runs recipes of a <c>dataschema</c> URI: the current one and earlier versions it still reads.</summary>
+    /// <param name="dataSchema">The <c>dataschema</c> of the work master.</param>
+    /// <returns><see langword="true"/> when the recipe is for this interpreter.</returns>
+    bool Accepts(string? dataSchema);
+
     /// <summary>Validates a recipe once and compiles it; capabilities refuse what the station cannot run.</summary>
     /// <param name="recipe">The recipe document.</param>
     /// <param name="capabilities">The station's capabilities.</param>

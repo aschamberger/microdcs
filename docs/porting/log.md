@@ -501,3 +501,21 @@ Verified: build 0 warnings, 1039 tests (882 passed, 157 integration skipped on t
 Open questions: none new.
 Post-merge checks: `ci` green on `main` with all jobs (push runs everything) including `publish` and `publish-manifest`; the first scheduled `ci` run (04:41 UTC) runs both container legs and `kubernetes` and skips `dotnet` and `integration`; required checks are the eleven listed in D-56 (`changes` included); `security` and `docs` green.
 Next session pickup: S27 (SFC equipment hold; depends on S20a). If S27 was started in parallel in a worktree on top of `s22a-ci-runtime`, rebase it onto `main` after this merge (`git rebase --onto main s22a-ci-runtime`) and resolve the session table and log; otherwise `git switch main && git pull --ff-only && gh stack init s27-sfc-equipment-hold`. Read the S27 block, D-52, D-17, D-44, the S20a log entry and `docs/sfc-core.md`. S27 takes decision ids from D-57. Nothing to prepare.
+
+## S27 SFC equipment hold (2026-11-12, branch `s27-sfc-equipment-hold`)
+
+Status: done. Previous session post-merge: verified (`ci`, `docs`, `security` green on `main` for `8f37d70`; required checks are the eleven of D-56). Not verifiable yet: the first scheduled `ci` run (04:41 UTC on 2026-11-13); S23 checks it.
+Done:
+
+* Recipe format v1.1.0 (`dataschema .../sfc-recipe/v1.1.0/`, v1.0.0 still read): per push action `Hold` and `Restart`, build errors SFC019 and SFC020, feature `EquipmentHold` with the setting `MicroDcs:Sfc:EquipmentHold` (default `true`), schemas regenerated, state format 1.3.
+* Core: a pause sends hold commands (`{actionKey}#{n}:hold`, own deadline that runs while held). `held` ends the attempt and the release restarts the work, once and without using an attempt. Any other answer falls back to S20a. Answers are matched by the command id the host now passes. Host: own sent marker `sent:{action}:hold`; a hold of work that never went out is answered by the host. Inspector and explainer show the hold.
+* Compose tests with a test equipment processor: hold and restart to the end of the job, a refused hold, a hold of unsent work, a v1.0.0 recipe with hold logic aborted.
+* `/code-review high`: 9 findings. 7 fixed (MCP tools refused hold recipes, a late `held` left the equipment without a restart, a v1.0.0 recipe could carry hold logic, a hold or restart answer type was accepted outside its command, the resume path was duplicated, `!` without a comment, `CapabilitiesOf` defaulted the flag on), 4 of them with a regression test. 1 accepted: the hold check against an in-flight dispatch (a few ms window falls back to not held, the safe side). 1 not changed: the two `:hold` suffixes are a command id and a hash field, different things.
+
+Findings ([SFC host](research/sfc-host.md#equipment-hold-s27), parity row H-29: Python has no hold logic, no row open): the host always knows the command id of a response (causation id), which is enough to tell a hold answer from the work's answer without a wire change.
+Decisions: D-57 new; D-52 revised.
+Changed in the plan: index (D-57, next free id D-58, S27 done, next session S23), decisions, research (`sfc-host.md`), `docs/sfc-core.md` (Equipment hold section, build errors, settings), `docs/inspection.md`.
+Verified: build 0 warnings, 1067 tests (906 passed, 161 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 157 passed 0 skipped (`tests` exited 0), `scripts/replica-tests` 4 passed, `scripts/scan` clean, `zensical build` clean. The Sonar quality gate runs on the PR.
+Open questions: none new.
+Post-merge checks: `ci` green on `main` with all jobs including `publish` and `publish-manifest`; `security` and `docs` green; required checks unchanged (eleven, D-56); the scheduled `ci` run of 2026-11-13 runs both container legs and `kubernetes`.
+Next session pickup: S23 (docs port, parity acceptance, release; all of M2 is done). Run `git switch main && git pull --ff-only && gh stack init s23-parity-release`. Read the S23 block, Q-TEST-1, Q-TEST-2, Q-TEST-3 and the "Not yet ported" pages (`docs/sfc_engine.md` and `docs/information-model-standards.md` still name recipe v1.0.0; the current one is v1.1.0, D-57). Nothing to prepare.

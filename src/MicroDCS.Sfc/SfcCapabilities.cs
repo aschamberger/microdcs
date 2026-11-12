@@ -18,6 +18,9 @@ public enum SfcFeature
 
     /// <summary>Selection divergences.</summary>
     SelectionDivergence = 8,
+
+    /// <summary>Hold and restart commands of push-command actions (D-57): a pause tells the equipment to hold its work.</summary>
+    EquipmentHold = 16,
 }
 
 /// <summary>What a station can run: features, accepted qualifiers and the outcomes its processors declare.</summary>

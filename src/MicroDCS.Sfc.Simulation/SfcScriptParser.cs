@@ -63,11 +63,12 @@ public static class SfcScriptParser
 
     private static SfcCapabilities Permissive(SfcRecipe parsed)
     {
-        HashSet<string> named = [.. parsed.Transitions.Select(static t => t.Condition).Where(static c => c != SfcOutcome.Default), "ok"];
+        HashSet<string> named = [.. parsed.Transitions.Select(static t => t.Condition).Where(static c => c != SfcOutcome.Default), "ok", SfcOutcome.Held];
         return new SfcCapabilities(
-            SfcFeature.PushCommand | SfcFeature.PullEvent | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence,
+            SfcFeature.PushCommand | SfcFeature.PullEvent | SfcFeature.SimultaneousDivergence | SfcFeature.SelectionDivergence | SfcFeature.EquipmentHold,
             parsed.Actions
-                .Select(static a => a.TypeId)
+                .SelectMany(static a => new[] { a.TypeId, a.Hold?.TypeId, a.Restart?.TypeId })
+                .OfType<string>()
                 .Distinct(StringComparer.Ordinal)
                 .ToDictionary(static t => t, _ => (IReadOnlySet<string>)named, StringComparer.Ordinal));
     }

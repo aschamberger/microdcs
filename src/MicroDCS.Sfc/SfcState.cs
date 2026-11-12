@@ -40,6 +40,19 @@ public enum SfcActionStatus
     Failed,
 }
 
+/// <summary>Where the hold of a push command's work stands (D-57).</summary>
+public enum SfcHoldStatus
+{
+    /// <summary>The hold command is out and unanswered.</summary>
+    Holding,
+
+    /// <summary>The equipment answered <c>held</c>: the attempt has ended and the release sends the restart command.</summary>
+    Held,
+
+    /// <summary>The work could not be held (another answer, an error or a timeout); it runs to its end as without hold logic.</summary>
+    NotHeld,
+}
+
 /// <summary>The execution record of one action.</summary>
 public sealed record SfcActionState
 {
@@ -79,6 +92,23 @@ public sealed record SfcActionState
     [JsonPropertyName("error")]
     public string? Error { get; init; }
 
+    /// <summary>Gets where the hold of this action's work stands during a pause; absent when no hold was sent in this pass (D-57).</summary>
+    [JsonPropertyName("hold")]
+    public SfcHoldStatus? Hold { get; init; }
+
+    /// <summary>Gets the command id of the hold command while the hold is <see cref="SfcHoldStatus.Holding"/>.</summary>
+    [JsonPropertyName("holdCommandId")]
+    public string? HoldCommandId { get; init; }
+
+    /// <summary>Gets the deadline of the hold command in epoch milliseconds; it expires also while the job is held.</summary>
+    [JsonPropertyName("holdDeadline")]
+    public long? HoldDeadline { get; init; }
+
+    /// <summary>Gets a value indicating whether the open command is a restart: it is sent once, and its response completes the action (D-57).</summary>
+    [JsonPropertyName("restarted")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Restarted { get; init; }
+
     /// <summary>Gets a value indicating whether the action waits for a response or an event.</summary>
     [JsonIgnore]
     public bool IsOpen => Status is SfcActionStatus.Dispatched or SfcActionStatus.Waiting;
@@ -98,7 +128,7 @@ public sealed record SfcState
     public const int CurrentFormat = 1;
 
     /// <summary>The current minor format number.</summary>
-    public const int CurrentFormatMinor = 2;
+    public const int CurrentFormatMinor = 3;
 
     /// <summary>Gets the major format number.</summary>
     [JsonPropertyName("format")]
@@ -160,23 +190,29 @@ public sealed record SfcState
     [JsonIgnore]
     public bool IsHeld => HeldAt is not null && Status == SfcJobStatus.Running;
 
-    /// <summary>Gets the earliest open deadline in epoch milliseconds, or <see langword="null"/> when none is open or the job is held (deadlines do not expire during a hold).</summary>
+    /// <summary>Gets the earliest open deadline in epoch milliseconds, or <see langword="null"/> when none is open. While the job is held only hold commands count (deadlines do not expire during a hold).</summary>
     [JsonIgnore]
     public long? NextDeadline
     {
         get
         {
-            if (IsEnded || IsHeld)
+            if (IsEnded)
             {
                 return null;
             }
 
+            // While held only hold commands run against the clock (D-57); the other deadlines move by the length of the hold on release.
             long? next = null;
             foreach (SfcActionState action in Actions.Values)
             {
-                if (action.IsOpen && action.Deadline is long deadline && (next is null || deadline < next))
+                if (!IsHeld && action.IsOpen && action.Deadline is long deadline && (next is null || deadline < next))
                 {
                     next = deadline;
+                }
+
+                if (action.Hold == SfcHoldStatus.Holding && action.HoldDeadline is long holdDeadline && (next is null || holdDeadline < next))
+                {
+                    next = holdDeadline;
                 }
             }
 

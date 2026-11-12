@@ -3,6 +3,9 @@ namespace MicroDCS.Sfc;
 /// <summary>One evolution step: a mutable working copy of the state, frozen into the result at the end.</summary>
 internal sealed class SfcEvolution
 {
+    /// <summary>Ends the command id of a hold command, so that its answer is told apart from the answer to the work it holds (D-57).</summary>
+    internal const string HoldIdSuffix = ":hold";
+
     private readonly SfcGraph _graph;
     private readonly SfcState _original;
     private readonly SfcSnapshot _snapshot;
@@ -43,8 +46,8 @@ internal sealed class SfcEvolution
     internal SfcStepResult Run(SfcEvent input) => input switch
     {
         SfcStart => Start(),
-        SfcActionCompleted c => Respond(c.ActionKey, c.Outcome, null, c.TypeId, c.Round),
-        SfcActionFailed f => Respond(f.ActionKey, SfcOutcome.Error, f.Error, null, f.Round),
+        SfcActionCompleted c => Respond(c.ActionKey, c.Outcome, null, c.TypeId, c.Round, c.CommandId),
+        SfcActionFailed f => Respond(f.ActionKey, SfcOutcome.Error, f.Error, null, f.Round, f.CommandId),
         SfcEventReceived e => Receive(e),
         SfcTick t => Tick(t),
         SfcResume => Resume(),
@@ -69,7 +72,7 @@ internal sealed class SfcEvolution
         return Applied();
     }
 
-    private SfcStepResult Respond(string actionKey, string outcome, string? error, string? typeId, int? round)
+    private SfcStepResult Respond(string actionKey, string outcome, string? error, string? typeId, int? round, string? commandId)
     {
         if (!IsRunning)
         {
@@ -83,7 +86,8 @@ internal sealed class SfcEvolution
             return Refuse(SfcDisposition.Rejected, "The action key does not belong to this job.");
         }
 
-        if (typeId is not null && !string.Equals(typeId, action.TypeId, StringComparison.Ordinal))
+        SfcActionBlock assoc = _graph.FindAction(name)!; // every action of the state comes from the recipe the graph was built from
+        if (typeId is not null && !IsTypeOf(assoc, action, typeId, IsHoldCommandId(commandId)))
         {
             return Refuse(SfcDisposition.Rejected, $"The response type contradicts action '{name}'.");
         }
@@ -103,10 +107,51 @@ internal sealed class SfcEvolution
             return Refuse(SfcDisposition.Rejected, $"Action '{name}' was never dispatched.");
         }
 
-        Finish(action, outcome, error);
+        if (IsHoldCommandId(commandId))
+        {
+            bool current = string.Equals(commandId, action.HoldCommandId, StringComparison.Ordinal);
+            bool held = outcome == SfcOutcome.Held && error is null;
+            if (current && action.Hold == SfcHoldStatus.Holding)
+            {
+                HoldAnswered(assoc, action, held);
+            }
+            else if (current && held && action.Hold != SfcHoldStatus.Held)
+            {
+                // The hold expired, but the equipment did hold the work: only a restart gets it going again, the work's own command was sent already.
+                HoldAnswered(assoc, action, held: true);
+            }
+            else
+            {
+                return Refuse(SfcDisposition.Absorbed, $"The hold of action '{name}' is no longer open; the answer is late.");
+            }
+
+            Settle();
+            return Applied();
+        }
+
+        // After a 'held' answer the restart owns the work (D-57): an answer to the held attempt, or to the work before the restart, is late.
+        if (action.Hold == SfcHoldStatus.Held)
+        {
+            return Refuse(SfcDisposition.Absorbed, $"The work of action '{name}' is held; its restart answers for it.");
+        }
+
+        if (action.Restarted && commandId is not null && !string.Equals(commandId, action.CommandId, StringComparison.Ordinal))
+        {
+            return Refuse(SfcDisposition.Absorbed, $"Action '{name}' was restarted; only the restart answers for it.");
+        }
+
+        WithdrawHold(action, "superseded");
+        Finish(_actions[name], outcome, error);
         Settle();
         return Applied();
     }
+
+    /// <summary>The type an answer may have: the hold type for a hold command, the restart type once restarted, else the action type.</summary>
+    private static bool IsTypeOf(SfcActionBlock assoc, SfcActionState action, string typeId, bool holdAnswer) => holdAnswer
+        ? string.Equals(typeId, assoc.Hold?.TypeId, StringComparison.Ordinal)
+        : string.Equals(typeId, assoc.TypeId, StringComparison.Ordinal) || (action.Restarted && string.Equals(typeId, assoc.Restart?.TypeId, StringComparison.Ordinal));
+
+    private static bool IsHoldCommandId(string? commandId) => commandId is not null && commandId.EndsWith(HoldIdSuffix, StringComparison.Ordinal);
 
     private SfcStepResult Receive(SfcEventReceived received)
     {
@@ -136,18 +181,18 @@ internal sealed class SfcEvolution
             return Refuse(SfcDisposition.Absorbed, "The job is not running.");
         }
 
-        // Deadlines do not expire during a hold; the release moves them by its length, which covers any outage inside the hold too.
-        if (IsHeld)
-        {
-            return Refuse(SfcDisposition.Absorbed, "The job is held.");
-        }
-
         bool changed = false;
         if (tick.OutageMs > 0)
         {
-            foreach (SfcActionState open in _actions.Values.Where(static a => a.IsOpen && a.Deadline is not null).ToList())
+            // Deadlines do not expire during a hold; the release moves them by its length, which covers any outage inside the hold too. Hold commands run
+            // against the clock while held, so an outage moves them in both cases.
+            foreach (SfcActionState open in _actions.Values.Where(a => (!IsHeld && a.IsOpen && a.Deadline is not null) || a.Hold == SfcHoldStatus.Holding).ToList())
             {
-                _actions[open.Name] = open with { Deadline = open.Deadline + tick.OutageMs };
+                _actions[open.Name] = open with
+                {
+                    Deadline = IsHeld ? open.Deadline : open.Deadline + tick.OutageMs,
+                    HoldDeadline = open.Hold == SfcHoldStatus.Holding ? open.HoldDeadline + tick.OutageMs : open.HoldDeadline,
+                };
                 changed = true;
             }
         }
@@ -155,11 +200,23 @@ internal sealed class SfcEvolution
         foreach (SfcActionBlock assoc in _graph.Recipe.Actions)
         {
             SfcActionState action = _actions[assoc.Name];
-            if (IsRunning && action.IsOpen && action.Deadline <= _at)
+            if (IsRunning && action.Hold == SfcHoldStatus.Holding && action.HoldDeadline <= _at)
+            {
+                HoldAnswered(assoc, action, held: false, reason: "timeout");
+                changed = true;
+                action = _actions[assoc.Name];
+            }
+
+            if (IsRunning && !IsHeld && action.IsOpen && action.Deadline <= _at)
             {
                 Expire(assoc, action);
                 changed = true;
             }
+        }
+
+        if (IsHeld && !changed)
+        {
+            return Refuse(SfcDisposition.Absorbed, "The job is held.");
         }
 
         Settle();
@@ -191,6 +248,14 @@ internal sealed class SfcEvolution
             {
                 case SfcActionStatus.Pending:
                     Begin(assoc, action.Attempt);
+                    changed = true;
+                    break;
+                case SfcActionStatus.Dispatched when action.Hold == SfcHoldStatus.Holding:
+                    // The answer to the hold, or its deadline, decides what happens to this work (D-57).
+                    break;
+                case SfcActionStatus.Dispatched when action.Restarted:
+                    // A restart is sent once (D-57): issue it again with its command id, the host sends each id once.
+                    ReissueOpen(assoc, action);
                     changed = true;
                     break;
                 case SfcActionStatus.Dispatched:
@@ -238,6 +303,20 @@ internal sealed class SfcEvolution
         }
 
         _heldAt = _at;
+
+        // Hold logic (D-57): the running work of a push command that declares it is told to hold. Other work runs to its end, as in S20a.
+        foreach (SfcActionBlock assoc in _graph.Recipe.Actions.Where(static a => a.Hold is not null))
+        {
+            SfcActionState action = _actions[assoc.Name];
+            if (action.Status == SfcActionStatus.Dispatched && action.Hold is not (SfcHoldStatus.Holding or SfcHoldStatus.Held))
+            {
+                string holdId = NextCommandId(assoc) + HoldIdSuffix;
+                long holdDeadline = _at + (assoc.Hold!.TimeoutSeconds * 1000L); // the filter of the loop selects actions with a hold command
+                _actions[assoc.Name] = action with { Hold = SfcHoldStatus.Holding, HoldCommandId = holdId, HoldDeadline = holdDeadline };
+                _commands.Add(NewStartWork(assoc, SfcWorkKind.HoldCommand, holdId, action.Attempt, holdDeadline));
+            }
+        }
+
         return Applied();
     }
 
@@ -264,15 +343,87 @@ internal sealed class SfcEvolution
 
             action = action with { Deadline = deadline + held };
             _actions[assoc.Name] = action;
-            if (action.Status == SfcActionStatus.Dispatched)
+            if (action.Status == SfcActionStatus.Dispatched && action.Hold != SfcHoldStatus.Holding)
             {
-                _commands.Add(NewStartWork(assoc, SfcWorkKind.PushCommand, action.CommandId ?? NextCommandId(assoc), action.Attempt, action.Deadline ?? _at));
+                // Work that could not be held runs on: issue its command again (D-52). A hold still out decides when it is answered (D-57).
+                _actions[assoc.Name] = action with { Hold = null };
+                ReissueOpen(assoc, _actions[assoc.Name]);
             }
+        }
+
+        foreach (SfcActionBlock assoc in _graph.Recipe.Actions.Where(a => _actions[a.Name].Hold == SfcHoldStatus.Held))
+        {
+            Restart(assoc, _actions[assoc.Name]);
         }
 
         Settle();
         return Applied();
     }
+
+    /// <summary>
+    /// Records the answer to a hold command (D-57). <c>held</c> ends the attempt: its command is withdrawn and the release sends the restart, at once
+    /// when the job was released before the answer. Anything else leaves the work running to its end, as without hold logic.
+    /// </summary>
+    private void HoldAnswered(SfcActionBlock assoc, SfcActionState action, bool held, string reason = "not_held")
+    {
+        string actionKey = ActionKey.Create(_original.JobId, assoc.Name);
+        if (held)
+        {
+            _commands.Add(new CancelWork { ActionKey = actionKey, CommandId = action.CommandId ?? string.Empty, Reason = "held" });
+            _actions[assoc.Name] = action with { Hold = SfcHoldStatus.Held, HoldDeadline = null, Deadline = null };
+            if (!IsHeld)
+            {
+                Restart(assoc, _actions[assoc.Name]);
+            }
+
+            return;
+        }
+
+        if (reason == "timeout")
+        {
+            _commands.Add(new CancelWork { ActionKey = actionKey, CommandId = action.HoldCommandId ?? string.Empty, Reason = reason });
+        }
+
+        _actions[assoc.Name] = action with { Hold = IsHeld ? SfcHoldStatus.NotHeld : null, HoldDeadline = null };
+        if (!IsHeld)
+        {
+            // Released before the answer: the release left this command to the answer, so it is issued now. The host sends each command id once.
+            ReissueOpen(assoc, _actions[assoc.Name]);
+        }
+    }
+
+    /// <summary>Withdraws a hold that is still out, because its work ended on its own.</summary>
+    private void WithdrawHold(SfcActionState action, string reason)
+    {
+        if (action.Hold != SfcHoldStatus.Holding)
+        {
+            return;
+        }
+
+        _commands.Add(new CancelWork { ActionKey = ActionKey.Create(_original.JobId, action.Name), CommandId = action.HoldCommandId ?? string.Empty, Reason = reason });
+        _actions[action.Name] = action with { Hold = null, HoldDeadline = null };
+    }
+
+    /// <summary>Sends the restart of held work (D-57): once, without using an attempt, with its own deadline. Its response completes the action.</summary>
+    private void Restart(SfcActionBlock assoc, SfcActionState action)
+    {
+        string commandId = NextCommandId(assoc);
+        long deadline = _at + (assoc.Restart!.TimeoutSeconds * 1000L); // only held work restarts, and the build allows a hold only together with a restart (SFC019)
+        _actions[assoc.Name] = action with
+        {
+            Status = SfcActionStatus.Dispatched,
+            CommandId = commandId,
+            Deadline = deadline,
+            Hold = null,
+            HoldCommandId = null,
+            HoldDeadline = null,
+            Restarted = true,
+        };
+        _commands.Add(NewStartWork(assoc, SfcWorkKind.RestartCommand, commandId, action.Attempt, deadline));
+    }
+
+    private void ReissueOpen(SfcActionBlock assoc, SfcActionState action) =>
+        _commands.Add(NewStartWork(assoc, action.Restarted ? SfcWorkKind.RestartCommand : SfcWorkKind.PushCommand, action.CommandId ?? NextCommandId(assoc), action.Attempt, action.Deadline ?? _at));
 
     // ── Steps, divergences, routing ────────────────────────────────────────
 
@@ -492,18 +643,32 @@ internal sealed class SfcEvolution
         CommandId = commandId,
         Work = kind,
         Action = assoc.Name,
-        TypeId = assoc.TypeId,
+        // Hold and restart work exists only for actions that declare both commands (SFC019), so the null-forgiving operators below hold.
+        TypeId = kind switch
+        {
+            SfcWorkKind.HoldCommand => assoc.Hold!.TypeId,
+            SfcWorkKind.RestartCommand => assoc.Restart!.TypeId,
+            _ => assoc.TypeId,
+        },
         Attempt = attempt,
         Round = _actions[assoc.Name].Round,
         Deadline = deadline,
-        Parameters = assoc.Parameters,
+        Parameters = kind switch
+        {
+            SfcWorkKind.HoldCommand => assoc.Hold!.Parameters,
+            SfcWorkKind.RestartCommand => assoc.Restart!.Parameters,
+            _ => assoc.Parameters,
+        },
     };
 
     private string NextCommandId(SfcActionBlock assoc) => $"{ActionKey.Create(_original.JobId, assoc.Name)}#{++_sequence}";
 
     private void Expire(SfcActionBlock assoc, SfcActionState action)
     {
-        if (assoc.Interaction == SfcNames.PushCommand)
+        WithdrawHold(action, "superseded");
+        action = _actions[assoc.Name];
+        // A pull event times out at once; a restart is sent once (D-57), so its expiry is the end of the action too.
+        if (assoc.Interaction == SfcNames.PushCommand && !action.Restarted)
         {
             Redispatch(assoc, action);
         }
@@ -549,11 +714,23 @@ internal sealed class SfcEvolution
             Outcome = outcome,
             Error = error is { Length: > 1024 } ? error[..1024] : error,
             Deadline = null,
+            Hold = null,
+            HoldDeadline = null,
         };
     }
 
     private void CancelOpenWork(string reason)
     {
+        foreach (SfcActionState holding in _actions.Values.Where(static a => a.Hold == SfcHoldStatus.Holding))
+        {
+            _commands.Add(new CancelWork
+            {
+                ActionKey = ActionKey.Create(_original.JobId, holding.Name),
+                CommandId = holding.HoldCommandId ?? string.Empty,
+                Reason = reason,
+            });
+        }
+
         foreach (SfcActionState open in _actions.Values.Where(static a => a.IsOpen))
         {
             _commands.Add(new CancelWork

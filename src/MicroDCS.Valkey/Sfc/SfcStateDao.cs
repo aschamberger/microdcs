@@ -358,11 +358,32 @@ public sealed class SfcStateDao : DocumentDao
     /// <returns>The document, or <see langword="null"/>, and the marker of the action, or <see langword="null"/>.</returns>
     public async Task<(StoredDocument? Document, string? SentMarker)> GetWithSentAsync(string jobId, string action, CancellationToken cancellationToken = default)
     {
+        var (document, markers) = await GetWithSentAsync(jobId, [action], cancellationToken).ConfigureAwait(false);
+        return (document, markers[0]);
+    }
+
+    /// <summary>
+    /// Reads a job's state document and the sent markers of several commands in one read: a hold command checks its own marker and the one of the work
+    /// it holds (D-57). A marker name is an action name or <c>{action}:hold</c>.
+    /// </summary>
+    /// <param name="jobId">The job id.</param>
+    /// <param name="markers">The marker names.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <returns>The document, or <see langword="null"/>, and the markers in the order asked, <see langword="null"/> where none is set.</returns>
+    public async Task<(StoredDocument? Document, IReadOnlyList<string?> SentMarkers)> GetWithSentAsync(string jobId, IReadOnlyList<string> markers, CancellationToken cancellationToken = default)
+    {
         RequireText(jobId, nameof(jobId));
+        ArgumentNullException.ThrowIfNull(markers);
         var entries = await Database.HashGetAllAsync(Keys.SfcState(jobId)).WaitAsync(cancellationToken).ConfigureAwait(false);
-        var field = SentField(action);
-        var marker = entries.FirstOrDefault(e => e.Name == field).Value;
-        return (FromEntries(jobId, entries), marker.HasValue ? marker.ToString() : null);
+        var values = new string?[markers.Count];
+        for (var i = 0; i < markers.Count; i++)
+        {
+            var field = SentField(markers[i]);
+            var marker = entries.FirstOrDefault(e => e.Name == field).Value;
+            values[i] = marker.HasValue ? marker.ToString() : null;
+        }
+
+        return (FromEntries(jobId, entries), values);
     }
 
     /// <summary>

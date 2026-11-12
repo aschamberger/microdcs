@@ -220,7 +220,7 @@ public class HoldTests
         string older = node.ToJsonString();
 
         json.ShouldContain("\"heldAt\":1000");
-        json.ShouldContain("\"formatMinor\":2");
+        json.ShouldContain("\"formatMinor\":3");
         back.IsHeld.ShouldBeTrue();
         JsonSerializer.Deserialize(older, SfcJsonContext.Default.SfcState)!.IsHeld.ShouldBeFalse();
     }

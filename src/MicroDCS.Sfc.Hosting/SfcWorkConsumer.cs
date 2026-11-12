@@ -361,7 +361,7 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             return (null, string.Empty, $"Work Master '{workMasterId}' is not stored for this scope");
         }
 
-        if (!string.Equals(workMaster.DataSchema, _graphs.Interpreter.DataSchema, StringComparison.Ordinal))
+        if (!_graphs.Interpreter.Accepts(workMaster.DataSchema))
         {
             return (null, string.Empty, $"Work Master '{workMasterId}' does not carry a recipe this station can interpret");
         }
@@ -372,9 +372,19 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         }
 
         var result = _graphs.Build(workMaster.Data);
-        return result.Graph is { } graph
-            ? (graph, workMaster.Data, string.Empty)
-            : (null, string.Empty, string.Join("; ", result.Errors.Select(static e => $"{e.Code}: {e.Message}")));
+        if (result.Graph is not { } graph)
+        {
+            return (null, string.Empty, string.Join("; ", result.Errors.Select(static e => $"{e.Code}: {e.Message}")));
+        }
+
+        // The version says what a recipe does: hold and restart commands came with v1.1.0 (D-57).
+        if (string.Equals(workMaster.DataSchema, SfcInterpreter.RecipeDataSchemaV10, StringComparison.Ordinal)
+            && graph.Recipe.Actions.Any(static a => a.Hold is not null || a.Restart is not null))
+        {
+            return (null, string.Empty, $"Work Master '{workMasterId}' declares hold or restart commands, which need the recipe format v1.1.0");
+        }
+
+        return (graph, workMaster.Data, string.Empty);
     }
 
     private async ValueTask TickAsync(string jobId, string scope, StreamEntry entry, string entryId, long at, CancellationToken cancellationToken)
@@ -549,6 +559,9 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
     private static bool IsNoLongerStartable(JobExecutionResult result) => result.Status == JobExecutionStatus.Missing
         || (result.Status == JobExecutionStatus.Refused && result.State is not (JobOrderState.Running or JobOrderState.Held or JobOrderState.Suspended));
 
+    /// <summary>The sent marker of a hold command is <c>sent:{action}:hold</c>; action names contain no <c>:</c>, so it cannot clash (D-57).</summary>
+    private const string HoldMarkerSuffix = ":hold";
+
     private async ValueTask DispatchAsync(string jobId, StreamEntry entry, CancellationToken cancellationToken)
     {
         if (JsonSerializer.Deserialize(entry[SfcWork.CommandField].ToString(), SfcJsonContext.Default.SfcCommand) is not StartWork command)
@@ -557,10 +570,13 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
             return;
         }
 
-        var (document, sent) = await _states.GetWithSentAsync(jobId, command.Action, cancellationToken).ConfigureAwait(false);
+        // A hold command has its own sent marker and goes out while the job is held; it holds the work whose marker is the action's (D-57).
+        var hold = command.Work == SfcWorkKind.HoldCommand;
+        var markerName = hold ? command.Action + HoldMarkerSuffix : command.Action;
+        var (document, sent) = await _states.GetWithSentAsync(jobId, hold ? [command.Action, markerName] : [command.Action], cancellationToken).ConfigureAwait(false);
         var state = document is null ? null : SfcJobRunner.Parse(document);
         if (state is null || state.IsEnded || !state.Actions.TryGetValue(command.Action, out var action)
-            || action.Status != SfcActionStatus.Dispatched || !string.Equals(action.CommandId, command.CommandId, StringComparison.Ordinal))
+            || action.Status != SfcActionStatus.Dispatched || !IsOpenCommand(action, command, hold))
         {
             // A redelivered entry of an attempt that is over: the equipment must not get it again.
             Log.DispatchSkipped(_logger, command.Action, jobId, "the attempt is no longer open");
@@ -568,23 +584,38 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         }
 
         // Costs no attempt: the release issues the command again with its id and moves its deadline (D-52).
-        if (state.IsHeld)
+        if (!hold && state.IsHeld)
         {
             Log.DispatchSkipped(_logger, command.Action, jobId, "the job is held");
             return;
         }
 
+        if (hold && !string.Equals(sent[0], SentMarker(state, action.CommandId), StringComparison.Ordinal))
+        {
+            // The work never reached the equipment (its dispatch came after the hold), so there is nothing to hold: answering 'not held' lets the
+            // release issue it.
+            Log.DispatchSkipped(_logger, command.Action, jobId, "the work it holds was not sent");
+            var at = await _states.ServerTimeAsync(cancellationToken).ConfigureAwait(false);
+            await _runner.RunAsync(
+                jobId,
+                new SfcActionFailed { At = at, ActionKey = command.ActionKey, Error = "the work was not sent", Round = command.Round, CommandId = command.CommandId },
+                entry.Id.ToString(),
+                null,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         // Each command id goes out once: a release issues every open command again, and some of them were sent before the hold. The start time tells a
         // re-stored job id apart, whose sequence of command ids begins again.
-        var marker = string.Create(CultureInfo.InvariantCulture, $"{state.StartedAt}:{command.CommandId}");
-        if (string.Equals(sent, marker, StringComparison.Ordinal))
+        var marker = SentMarker(state, command.CommandId);
+        if (string.Equals(sent[^1], marker, StringComparison.Ordinal))
         {
             Log.DispatchSkipped(_logger, command.Action, jobId, "the command was sent already");
             return;
         }
 
         // The state's deadline, not the entry's: a release moved it, and an entry written before the hold still carries the old one.
-        var deadline = action.Deadline ?? command.Deadline;
+        var deadline = (hold ? action.HoldDeadline : action.Deadline) ?? command.Deadline;
         var now = await _states.ServerTimeAsync(cancellationToken).ConfigureAwait(false);
         var remaining = TimeSpan.FromMilliseconds(deadline - now);
         if (remaining <= TimeSpan.Zero)
@@ -630,6 +661,12 @@ internal sealed class SfcWorkConsumer : IStreamConsumer
         }
 
         // After the command is queued: a crash before this line sends the command id again on redelivery (receivers deduplicate by id), never loses it.
-        await _states.MarkSentAsync(jobId, state.Scope, command.Action, marker, cancellationToken).ConfigureAwait(false);
+        await _states.MarkSentAsync(jobId, state.Scope, markerName, marker, cancellationToken).ConfigureAwait(false);
     }
+
+    private static bool IsOpenCommand(SfcActionState action, StartWork command, bool hold) => hold
+        ? action.Hold == SfcHoldStatus.Holding && string.Equals(action.HoldCommandId, command.CommandId, StringComparison.Ordinal)
+        : string.Equals(action.CommandId, command.CommandId, StringComparison.Ordinal);
+
+    private static string SentMarker(SfcState state, string? commandId) => string.Create(CultureInfo.InvariantCulture, $"{state.StartedAt}:{commandId}");
 }

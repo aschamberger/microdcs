@@ -194,6 +194,7 @@ internal static class SfcGraphValidator
             }
 
             ValidateSelector(a, errors);
+            ValidateHoldLogic(a, caps, errors);
 
             if (!caps.Handles(a.TypeId, a.Interaction))
             {
@@ -208,6 +209,45 @@ internal static class SfcGraphValidator
                 b.Kind == SfcNames.Selection ? SfcFeature.SelectionDivergence : SfcFeature.SimultaneousDivergence,
                 $"Divergence '{b.Name}' is {b.Kind}, which this station does not support.",
                 errors);
+        }
+    }
+
+    /// <summary>Hold and restart commands (D-57): both or neither, on push commands only; the station must run them and declare their types.</summary>
+    private static void ValidateHoldLogic(SfcActionBlock a, SfcCapabilities caps, List<SfcBuildError> errors)
+    {
+        if (a.Hold is null && a.Restart is null)
+        {
+            return;
+        }
+
+        if (a.Interaction != SfcNames.PushCommand)
+        {
+            errors.Add(new("SFC019", $"Action '{a.Name}' has hold or restart commands, which only a push command can use."));
+            return;
+        }
+
+        if (a.Hold is null || a.Restart is null)
+        {
+            errors.Add(new("SFC019", $"Action '{a.Name}' needs both a hold and a restart command, or neither."));
+            return;
+        }
+
+        RequireFeature(caps, SfcFeature.EquipmentHold, $"Action '{a.Name}' has hold and restart commands, which this station does not support.", errors);
+        foreach ((string what, SfcEquipmentCommand command) in new[] { ("hold", a.Hold), ("restart", a.Restart) })
+        {
+            if (command.TypeId.Length == 0 || command.TimeoutSeconds <= 0)
+            {
+                errors.Add(new("SFC019", $"The {what} command of action '{a.Name}' needs a type id and TimeoutSeconds above zero."));
+            }
+            else if (!caps.Handles(command.TypeId, SfcNames.PushCommand))
+            {
+                errors.Add(new("SFC014", $"No processor of this station declares the type '{command.TypeId}' (the {what} command of action '{a.Name}')."));
+            }
+        }
+
+        if (caps.Handles(a.Hold.TypeId, SfcNames.PushCommand) && !caps.IsOutcomeValid(a.Hold.TypeId, SfcOutcome.Held))
+        {
+            errors.Add(new("SFC020", $"The hold type '{a.Hold.TypeId}' of action '{a.Name}' does not declare the outcome '{SfcOutcome.Held}'."));
         }
     }
 
@@ -456,13 +496,13 @@ internal static class SfcGraphValidator
 
         internal Dictionary<string, SfcDivergence> Divergences { get; }
 
-        /// <summary>The action types whose outcomes decide the transitions out of a step or divergence.</summary>
+        /// <summary>The action types whose outcomes decide the transitions out of a step or divergence; a restart's response completes its action (D-57).</summary>
         internal IEnumerable<string> TypesOf(string node)
         {
             IEnumerable<string> steps = Divergences.TryGetValue(node, out SfcDivergence? divergence)
                 ? divergence.Sequences.SelectMany(static p => p)
                 : [node];
-            return steps.SelectMany(step => _actionsByStep[step]).Select(static a => a.TypeId);
+            return steps.SelectMany(step => _actionsByStep[step]).SelectMany(static a => a.Restart is { } restart ? new[] { a.TypeId, restart.TypeId } : new[] { a.TypeId });
         }
 
         internal bool CanWaitTogether(string stepA, string stepB) =>

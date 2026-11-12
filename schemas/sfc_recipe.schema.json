@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/",
+  "$id": "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/",
   "title": "SFC Recipe",
   "type": "object",
   "properties": {
@@ -100,6 +100,51 @@
                 ]
               }
             }
+          },
+          "Hold": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "TypeId": {
+                "type": "string"
+              },
+              "TimeoutSeconds": {
+                "type": "integer"
+              },
+              "Parameters": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "TypeId",
+              "TimeoutSeconds"
+            ]
+          },
+          "Restart": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "TypeId": {
+                "type": "string"
+              },
+              "TimeoutSeconds": {
+                "type": "integer"
+              },
+              "Parameters": {
+                "$ref": "#/properties/Actions/items/properties/Hold/properties/Parameters"
+              }
+            },
+            "required": [
+              "TypeId",
+              "TimeoutSeconds"
+            ]
           }
         },
         "required": [

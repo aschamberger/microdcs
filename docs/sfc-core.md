@@ -41,7 +41,7 @@ SfcStepResult r = interpreter.Evolve(graph, state, SfcSnapshot.Default, new SfcS
 
 ## Recipe
 
-The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, `Actions`, `Branches` for the divergences; `TimeoutSeconds`, `TypeId`). `dataschema` is `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/`. The C# model is the source of the JSON Schema in [`schemas/sfc_recipe.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_recipe.schema.json); a test regenerates it and fails when the file is stale (`UPDATE_SCHEMAS=1 dotnet test` rewrites it).
+The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, `Actions`, `Branches` for the divergences; `TimeoutSeconds`, `TypeId`). `dataschema` is `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/`; v1.1.0 adds the optional `Hold` and `Restart` fields. Work masters with `v1.0.0/` are still accepted, but not with those fields. The C# model is the source of the JSON Schema in [`schemas/sfc_recipe.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_recipe.schema.json); a test regenerates it and fails when the file is stale (`UPDATE_SCHEMAS=1 dotnet test` rewrites it).
 
 | Field | Meaning |
 |---|---|
@@ -54,6 +54,7 @@ The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, 
 | `Actions[].MaxAttempts` | Optional. Dispatch attempts of a push command; the host default (`Sfc:MaxAttempts`, 3) applies when absent. |
 | `Actions[].Parameters` | Handed to the command. |
 | `Actions[].Selector` | Optional, pull events only. `Subject` and `CorrelationId` must match the event exactly. The placeholder `{jobId}` stands for the job id; a recipe is shared by many jobs, so a literal cannot tell jobs apart. Without a selector any event of the type matches. |
+| `Actions[].Hold`, `Actions[].Restart` | Optional, push commands only, both or neither: the commands that hold the running work when the job is paused and restart it on resume, each with `TypeId`, `TimeoutSeconds` and `Parameters` (D-57). See [Equipment hold](#equipment-hold). |
 | `Branches[]` | A divergence: `Type` is `simultaneous` (all sequences) or `selection` (one sequence). `Branches` inside it lists the sequences, each a list of step names. |
 
 Existing Python recipes need one change: `Condition: "always"` becomes `true`, and a named condition must be an outcome that the action types declare.
@@ -79,12 +80,36 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 
 ## Hold and release
 
-`SfcHold` holds a running job at the next step boundary, `SfcRelease` ends the hold (MES Pause and Resume, D-52). This is the usual ISA-88 meaning of pause. The equipment is not told to stop: a command that is out runs to its end.
+`SfcHold` holds a running job at the next step boundary, `SfcRelease` ends the hold (MES Pause and Resume, D-52). This is the usual ISA-88 meaning of pause. Without hold logic the equipment is not told to stop: a command that is out runs to its end. An action with `Hold` and `Restart` tells the equipment to hold its work ([Equipment hold](#equipment-hold)).
 
-* While held, no transition fires and nothing is dispatched, re-sends included. A response to a command that is out, or an event for a wait that began before the hold, is recorded on its action. A failure is recorded too, and routed on release.
+* While held, no transition fires and nothing is dispatched, re-sends included, except hold commands. A response to a command that is out, or an event for a wait that began before the hold, is recorded on its action. A failure is recorded too, and routed on release.
 * Deadlines do not expire during a hold. `NextDeadline` is empty, so the host has no due-index entry for the job, and a tick or a resume is absorbed.
 * On release, every open deadline moves by the length of the hold (as with an outage), so the hold costs no attempt. Every open push attempt is issued again with its command id and attempt number; the host sends each command id once. Then the transitions that became possible fire.
 * `SfcCancel` ends a held job as usual. A second hold, or a release of a job that is not held, is absorbed.
+
+### Equipment hold {#equipment-hold}
+
+ISA-88 hold logic for push commands (D-57). An action declares a hold and a restart command:
+
+```json
+{"Name":"tighten","Step":"s1","Qualifier":"N","Interaction":"push_command","TypeId":"t.tighten","TimeoutSeconds":60,
+ "Hold":{"TypeId":"t.tighten.hold","TimeoutSeconds":10},
+ "Restart":{"TypeId":"t.tighten.restart","TimeoutSeconds":60}}
+```
+
+The contract with the equipment:
+
+| Situation | What happens |
+|---|---|
+| Pause while the command of the action is out | The hold command is sent with the same `mdcsactionkey`. Its command id ends in `:hold`. It is sent once and runs against its own `TimeoutSeconds`, also while the job is held. |
+| The equipment answers `held` | The attempt ends: its command is withdrawn (`CancelWork` reason `held`), and a later answer to it is absorbed. On resume the restart command is sent. |
+| Any other answer, an error, or no answer within the timeout | The work could not be held (a `held` that comes after the timeout still restarts it). It runs to its end as without hold logic: its answer is recorded, and on resume its command is issued again (the host sends each command id once). |
+| The work answers before the hold does | The action is done. The hold is withdrawn (reason `superseded`), and a later answer to it is absorbed. |
+| Resume before the hold is answered | The answer decides. `held` sends the restart at once; anything else lets the work run on. |
+| The restart | Sent once, with the same `mdcsactionkey`. It uses no attempt and has its own deadline (`Restart.TimeoutSeconds` from the resume). Its response completes the action, so a transition may name an outcome of the restart type. If it expires, the outcome is `timeout`. A second pause holds the restarted work the same way. |
+| Abort or Stop | Open hold and restart commands are withdrawn like any open work. The equipment is not told (D-52). |
+
+The hold type must declare the outcome `held` (SFC020). Responses are matched by the command id they answer (the causation id), so the equipment must answer with it. Pull events and push commands without hold logic keep the behaviour above.
 
 `SfcStepResult.Disposition` says `Applied`, `Absorbed` (duplicate or late) or `Rejected` (contradiction), with a reason.
 
@@ -106,17 +131,19 @@ Existing Python recipes need one change: `Condition: "always"` becomes `true`, a
 | `SFC011` | Two pull-event actions of one type that can wait together and whose selectors do not set one field to two different literals. A value with `{jobId}` separates nothing, because the job id can equal any literal. |
 | `SFC012` | A step that cannot be reached. |
 | `SFC013` | A cycle with nothing to wait for. |
-| `SFC014` | An action type that no processor of the station declares: an `[Outgoing]` factory for a push command, an `[Incoming]` handler for a pull event. |
-| `SFC015` | A feature the station does not support (push, pull, simultaneous divergence, selection divergence). |
+| `SFC014` | An action type that no processor of the station declares: an `[Outgoing]` factory for a push command, a hold or a restart, an `[Incoming]` handler for a pull event. |
+| `SFC015` | A feature the station does not support (push, pull, simultaneous divergence, selection divergence, equipment hold). |
 | `SFC016` | A condition names an outcome that no involved action type declares. |
 | `SFC017` | An empty step, divergence or action name, or an action name with `:` (the action key is `{jobId}:{action}`). |
 | `SFC018` | More than 20,000 steps, transitions, actions or divergences. |
+| `SFC019` | Hold or restart on a pull event, one without the other, or without a type id or `TimeoutSeconds` above zero. |
+| `SFC020` | A hold type that does not declare the outcome `held`. |
 
 ## State and commands
 
-`SfcState` is a versioned JSON document (`format` 1, minor 2) with the job identity, the pinned recipe hash, the active steps, one record per action, a sequence counter, the start time, the time of a hold (`heldAt`, while held) and the fault. Command ids are `{actionKey}#{sequence}`, so replaying the same events on the same state gives byte-identical results. The schema is [`schemas/sfc_state.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_state.schema.json).
+`SfcState` is a versioned JSON document (`format` 1, minor 3) with the job identity, the pinned recipe hash, the active steps, one record per action, a sequence counter, the start time, the time of a hold (`heldAt`, while held) and the fault. An action record carries the state of its equipment hold (`hold`, `holdCommandId`, `holdDeadline`, `restarted`). Command ids are `{actionKey}#{sequence}` (hold commands add `:hold`), so replaying the same events on the same state gives byte-identical results. The schema is [`schemas/sfc_state.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_state.schema.json).
 
-Commands are inert data: `StartWork` (`PushCommand` or `AwaitEvent`, with the deadline and the recipe parameters) and `CancelWork` (`redispatch`, `teardown` or the cancel reason). The host applies them in order and idempotently by action key. The continuation is `SfcDefer`, `SfcComplete`, `SfcFault` or `SfcCancelled`; faults carry a code (`timeout`, `error`, `no_transition`, `propagation_limit`) and are verdicts, not policy.
+Commands are inert data: `StartWork` (`PushCommand`, `AwaitEvent`, `HoldCommand` or `RestartCommand`, with the deadline and the recipe parameters) and `CancelWork` (`redispatch`, `teardown`, `held`, `superseded`, `timeout` or the cancel reason). The host applies them in order and idempotently by action key. The continuation is `SfcDefer`, `SfcComplete`, `SfcFault` or `SfcCancelled`; faults carry a code (`timeout`, `error`, `no_transition`, `propagation_limit`) and are verdicts, not policy.
 
 ## Simulation
 
@@ -164,7 +191,9 @@ A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, 
 
 **Push commands and responses.** The command goes through the `[Outgoing]` factory of its type id, as a command on that processor's binding, with the action key as `mdcsactionkey`. The instance that sent it waits on its own reply address (D-9). The `[OnResponse]` handler returns an `ActionOutcome` that a recipe can name in a condition; the outcome names are declared on the factory, and `done` is the default. An error event from the peer or `ActionOutcome.Failed` is the reserved outcome `error`.
 
-**Pause and Resume.** A `hold` or `release` entry reads the order and aligns the recipe with it: held while the order is Interrupted (Held or Suspended), released when it is Running. The two entries of a Pause and a Resume can reach two consumers in either order, so the entry does not decide by its name; after its write it reads the order again and repeats until both agree. The hold length is measured with the server clock when the hold and the release are applied. A `dispatch` entry that reaches a consumer while the job is held is not sent and costs no attempt; the release issues the command again. After a command is queued, a marker `sent:{action}` in the state hash records its id, so a command sent before the hold, or a redelivered entry, does not reach the equipment again. A crash between the queue and the marker can send a command id twice (receivers deduplicate by id), never lose it. A dispatch takes the deadline from the state, which a release has moved. `sfc_job` shows `heldSince`.
+**Pause and Resume.** A `hold` or `release` entry reads the order and aligns the recipe with it: held while the order is Interrupted (Held or Suspended), released when it is Running. The two entries of a Pause and a Resume can reach two consumers in either order, so the entry does not decide by its name; after its write it reads the order again and repeats until both agree. The hold length is measured with the server clock when the hold and the release are applied. A `dispatch` entry that reaches a consumer while the job is held is not sent and costs no attempt; the release issues the command again. After a command is queued, a marker `sent:{action}` in the state hash records its id, so a command sent before the hold, or a redelivered entry, does not reach the equipment again. A crash between the queue and the marker can send a command id twice (receivers deduplicate by id), never lose it. A dispatch takes the deadline from the state, which a release has moved. `sfc_job` shows `heldSince`, and per action the hold status, its deadline and whether it was restarted.
+
+**Equipment hold.** A hold command goes out while the job is held. It has its own marker, `sent:{action}:hold`. Before it is sent, the host checks the marker of the work it holds. If that work never reached the equipment (its dispatch came after the pause), the host answers the hold itself as not held, and the release sends the work. A restart is the action's command from then on and uses `sent:{action}`.
 
 **Deadlines.** Every instance sweeps the due-index of every scope; the script pops each job once. A sweep that finds a heartbeat gap above `OutageThreshold` moves every open deadline by the gap instead of expiring it, so a platform outage does not abort running jobs.
 
@@ -183,3 +212,4 @@ A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, 
 | `MaxDeliveries` | int | 5 | Deliveries of a work entry before it goes to the dead stream. |
 | `ReadCount` | int | 10 | Most work entries read at once. |
 | `SweepLimit` | int | 100 | Most jobs one ordinary sweep of a scope takes. |
+| `EquipmentHold` | bool | `true` | Whether recipes may declare hold and restart commands (D-57). With `false` such a recipe is refused (`SFC015`), for a station whose equipment cannot hold its work. |
