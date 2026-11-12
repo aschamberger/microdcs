@@ -54,4 +54,19 @@ the Dockerfile does; the `src/` projects declare both RIDs, so the runtime packs
 
 ## After
 
-Filled from the S22a pull request run and a documentation-only probe PR; see the [log](../log.md) entry.
+From the S22a pull request run (it changes `ci.yml`, so every job ran) and a documentation-only probe PR (#74, closed). Minutes:
+
+| Job | Before | After, full run | After, docs-only |
+|---|---|---|---|
+| `changes` | — | 0.0 | 0.0 |
+| `dotnet` | 6.9 to 10.7 | 3.2 | 2.3 (build and Sonar only) |
+| `integration` | 5.1 to 10.4 | 4.2 (replica tests) | skipped |
+| `container (linux-x64)` | 3.0 to 7.7 | 4.0 | steps skipped |
+| `container (linux-arm64)` | 3.3 to 6.3 | 3.3 | steps skipped |
+| `kubernetes` | 3.5 | 3.6 | skipped |
+| `trivy-image` | 2.6 to 3.9 | 3.1 | steps skipped |
+| **Critical path (`ci`)** | **8 to 11** | **4.4** | **2.5** |
+
+A code PR that touches neither the image inputs nor the manifest runs `dotnet`, `container (linux-x64)`, `integration` and
+`trivy-image`: the same 4 to 4.5 min, with three runtime image builds instead of five. The critical path is now the AOT
+image builds (`container`, the replica tests in `integration`).
