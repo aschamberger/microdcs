@@ -1,7 +1,9 @@
-# Integration test harness (D-15). Runs identically locally and in CI:
+# Integration test harness (D-15). Locally, everything in containers:
 #
 #   docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
 #   docker compose -f compose.test.yaml down -v
+#
+# CI starts valkey, valkey-acl, mosquitto and nats from this file and runs the suite on the host (D-15 revised in S22a).
 #
 # Host mode for fast iteration: `docker compose -f compose.test.yaml up -d valkey mosquitto`, then
 # `dotnet test` with MICRODCS_TEST_VALKEY=localhost:6380 and MICRODCS_TEST_MQTT=localhost:1884

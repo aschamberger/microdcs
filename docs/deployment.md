@@ -79,7 +79,8 @@ KEEP_CLUSTER=1 scripts/k8s-test  # keep the cluster for debugging; a rerun reuse
 ```
 
 It needs Docker, `kind` and `kubectl`; `scripts/k8s-test install <dir>` installs the pinned versions with checksums. CI runs it in
-the `kubernetes` job on every pull request.
+the `kubernetes` job on `main`, daily, and on pull requests that change the manifest or the image inputs
+([D-56](porting/decisions.md#d-56)).
 
 ### Not verified yet {#not-verified}
 

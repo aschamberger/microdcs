@@ -156,9 +156,19 @@ public sealed class SfcHostTests
 
         public async ValueTask DisposeAsync()
         {
-            await _host.StopAsync(CancellationToken.None);
-            _host.Dispose();
-            await Equipment.DisposeAsync();
+            // A short grace period: shutdown phase 5 (D-37) waits for the expiry timers of open commands until the grace period
+            // ends, and these recipes leave 30 s commands open. No test here asserts the shutdown, so a cancelled grace period
+            // (timers cancelled, the abort path of each phase) is enough and saves 30 s per such test (S22a).
+            using var grace = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            try
+            {
+                await _host.StopAsync(grace.Token);
+            }
+            finally
+            {
+                _host.Dispose();
+                await Equipment.DisposeAsync();
+            }
         }
     }
 

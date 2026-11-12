@@ -160,6 +160,8 @@ Decision: one compose-based setup that runs identically locally and in CI; the `
 
 Consequences: `MicroDCS.Testing` provides the in-memory transport, fake clock and processor harness; containers come from compose; Testcontainers stays optional for consumers (R-15).
 
+Revised 2026-11-11 (S22a, maintainer's choice): CI runs `tests/MicroDCS.IntegrationTests` on the host in the `dotnet` job against the `compose.test.yaml` services (`valkey`, `valkey-acl`, `mosquitto`, `nats`), with `--fail-skips on` and coverage for SonarQube Cloud; the run inside the `tests` container is no longer repeated in CI (it was the same suite a second time, about 5 min). Services, healthchecks and test code stay one setup; the compose `tests` service stays the local all-in-containers path, and CI still builds the `tests` image for the replica tests (`integration` job). [CI runtime](research/ci-runtime.md).
+
 Background: [integration test setup](research/test-setup.md).
 
 ## D-16 Python on `python-archive`, port on `main` {#d-16}
@@ -383,6 +385,8 @@ Consequences:
 * Unit and integration tests run on x64 only until a platform-specific code path appears; then add the arm64 runner to that job.
 
 Not chosen: x64 only (excludes arm64 edge devices and Graviton/Ampere hosts); QEMU in one job (slow, and emulation hides nothing the native runner would not show); cross-compilation (sysroot maintenance in the Dockerfile).
+
+Revised 2026-11-11 (S22a, maintainer's choice): `container (linux-arm64)` builds on pull requests only when the image inputs change (Dockerfile, SDK, packages, `ci.yml`, the publish scripts; D-56), and always on pushes to `main`, tags and the daily schedule. The check stays required; on other PRs its steps are skipped. A platform-specific break from a code change shows on `main` before any image is published, because `publish` needs both container builds.
 
 ## D-33 Library stack: AOT result per library, AMQP via AMQPNetLite.Core, Zenoh open {#d-33}
 
@@ -793,4 +797,24 @@ Decision:
 Consequences: a new required check `kubernetes`; the GHCR package visibility is set once after the first publish; S23 pins the release digest in `deploy/kustomization.yaml`. What still needs a real cluster is listed in [Deployment](../deployment.md#not-verified).
 
 Not chosen: GitHub artifact attestations (cosign is what more admission controllers check); pushing from the `container` job (it also runs on pull requests); buildx provenance (it wraps each platform push in an index with an `unknown/unknown` entry); a Helm chart (an example to adapt is enough before the release; S26 decides on packaging).
+
+## D-56 CI path rules, shared image and schedule {#d-56}
+
+Status: decided (2026-11-11, S22a; maintainer chose the host-only integration run, linux-arm64 and kind on `main` and the schedule, and protection changes). Background: [CI runtime](research/ci-runtime.md).
+
+Context: the PR critical path was 8 to 11 min. The integration suite ran twice (host for coverage, compose container), each about 5 min, of which 4.5 min were nine SFC host tests waiting out a 30 s command expiry in the shutdown phase of D-37; the runtime image was built five times per PR.
+
+Decision:
+
+* **Change detection:** `scripts/ci-changes` (shell, no marketplace action) classifies a PR's diff against its merge base into `code`, `image` and `k8s`; every other event runs everything. Documentation-only paths are a short allowlist (`docs/`, `overrides/`, `.claude/`, `zensical.toml`, top-level `*.md`, `LICENSE`); a path missing there only costs a full run.
+* **Skips keep the required checks reportable:** non-matrix jobs skip with a job-level `if` (reported as success), matrix jobs (`container`) skip their steps, `trivy-image` gates its steps itself. The `changes` job is a required check, because a failed `changes` would skip its dependants and a skip counts as passed; `scripts/ci-changes` fails when `git diff` fails instead of reporting no change.
+* **Documentation-only PRs** still build and run the SonarQube Cloud analysis in `dotnet` (only an analysis posts the required `SonarCloud Code Analysis` check); tests, format, audit, images and `trivy-image` are skipped. Gitleaks, workflows and trivy-fs always run.
+* **Main and schedule:** `container (linux-arm64)` and `kubernetes` run on PRs only for image inputs or the manifest and what the kind test exercises (`deploy/`, `tests/k8s/`, `scripts/k8s-test`, `src/MicroDCS.App`, `src/MicroDCS.Inspection`, option classes and service registrations); always on pushes, tags and a daily `ci` schedule (container builds and kind only).
+* **One integration run** on the host (D-15 revised); `integration` runs the replica tests, which also build the `tests` image.
+* **No shared image build:** `kubernetes`, `integration` and `trivy-image` keep their own builds (from the `container` job's buildx cache where one exists). Taking the image of `container` would wait for both matrix legs (linux-arm64 included) and put two builds in a row on the critical path; an artifact hand-off also breaks re-running one job after the artifact expired. Since `kubernetes` and linux-arm64 now run on few PRs, most PRs build the runtime image three times instead of five.
+* **Caches unchanged:** NuGet through `setup-dotnet`, buildx `type=gha` per platform, the daily Trivy DB; release (tag) builds still use none.
+
+Consequences: required checks are `changes` plus the previous ten. Test rigs must not wait out timeouts they do not assert (the SFC rig stops with a 1 s grace period). A new path that affects the image or the kind test belongs in `scripts/ci-changes`.
+
+Not chosen: `paths`/`paths-ignore` on the workflow trigger (a workflow that does not start never reports its required checks); dropping arm64 from the required checks (a PR that changes the image could merge with a broken arm64 build); a single image build feeding `integration` and `kubernetes` (tried in S22a: +2 to 3 min on the critical path, waits for the arm64 leg); moving `trivy-image` into `ci.yml` (it belongs to the daily security scan).
 

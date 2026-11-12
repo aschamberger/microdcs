@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S22a** (CI runtime review); S08 to S22 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S27** (SFC equipment hold, moved into M2 before S23); S08 to S22a are done.
 
 ## How to use these files
 
@@ -76,7 +76,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-12](decisions.md#d-12) | revised | HA is a deployment concern; cluster mode is out of scope, resilience through independent island deployments |
 | [D-13](decisions.md#d-13) | decided | Dedupe-key trust comes from transport access control |
 | [D-14](decisions.md#d-14) | revised | CloudEvents: upstream SDK, AOT-ready, fork late only if blocked |
-| [D-15](decisions.md#d-15) | decided | Docker Compose integration tests, identical locally and in CI |
+| [D-15](decisions.md#d-15) | revised | Docker Compose integration harness; CI runs the suite once on the host against the compose services (S22a) |
 | [D-16](decisions.md#d-16) | revised | Python preserved on `python-archive`; the port continues on `main` |
 | [D-17](decisions.md#d-17) | decided | SFC semantics as a pure, dependency-free core library; late-response rule and outcome-based transition conditions decided |
 | [D-18](decisions.md#d-18) | decided | SFC time model: timestamped events, absolute deadlines, shared due-index; outage grace and recipe timeout decided |
@@ -93,7 +93,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-29](decisions.md#d-29) | decided | No extra size limit on `custommetadata` (carried over from Python) |
 | [D-30](decisions.md#d-30) | decided | Comma-separated list values in configuration, if lists stay strings (carried over from Python) |
 | [D-31](decisions.md#d-31) | decided | .NET conventions: `MicroDCS` prefix, xUnit v3/MTP, Shouldly, NSubstitute, M.E.Logging and DI, style |
-| [D-32](decisions.md#d-32) | decided | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI |
+| [D-32](decisions.md#d-32) | revised | Platforms linux-x64 and linux-arm64, AOT image built natively on both in CI; arm64 on PRs only for image inputs (S22a) |
 | [D-33](decisions.md#d-33) | decided | Library stack AOT result: core stack clean, AMQP via AMQPNetLite.Core (clean), Zenoh library open (Zenoh-CS `Get` crash) |
 | [D-34](decisions.md#d-34) | revised | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
 | [D-35](decisions.md#d-35) | revised | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
@@ -118,8 +118,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-53](decisions.md#d-53) | decided | SFC pull events: `Selector` field, waits index oldest first, one event one job; the recovery scan resends nothing with a deadline; replica tests with real containers |
 | [D-54](decisions.md#d-54) | decided | HTTP surface and telemetry: OTLP only, producer and SFC spans, readiness checks for transports and Valkey, read-only `/api/v1/jobs` off by default |
 | [D-55](decisions.md#d-55) | decided | Image publishing to GHCR from `main` and `v*` tags, cosign keyless signatures and two CycloneDX SBOM attestations per platform, manifest by role with kustomize pin, kind test in CI, Valkey island ACL user |
+| [D-56](decisions.md#d-56) | decided | CI path rules in `scripts/ci-changes`, skips that keep required checks reportable, docs-only PRs build and analyse only, arm64 and kind on `main` and daily, kind reuses the x64 image |
 
-Next free id: **D-56**.
+Next free id: **D-57**.
 
 ## Open questions
 
@@ -192,13 +193,13 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S20a | SFC hold and release: MES Pause and Resume hold the recipe at the next step boundary | S20 | done |
 | S21 | HTTP surface and observability | S17 | done |
 | S22 | Container, Kubernetes, supply chain, security review | S21 | done |
-| S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | open |
+| S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | done |
+| S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | open |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |
 | **M3 Extensions** | | | |
 | S24 | AMQP transport | S14 | open |
 | S25 | Zenoh transport and CloudEvents-over-Zenoh mapping | S14 | open |
 | S26 | Packaging, NuGet release, `dotnet new` templates | released upstream CloudEvents package | open |
-| S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | open |
 | Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S08, S26 (D-14); S06 (2026-11-08): PR #381 still open, 2.9.0 latest |
 
 Session ids were renumbered on 2026-11-07; the mapping from the old ids is in the [log](log.md).
