@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S22a** (CI runtime review); S08 to S22 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S27** (SFC equipment hold, moved into M2 before S23); S08 to S22a are done.
 
 ## How to use these files
 
@@ -193,7 +193,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S20a | SFC hold and release: MES Pause and Resume hold the recipe at the next step boundary | S20 | done |
 | S21 | HTTP surface and observability | S17 | done |
 | S22 | Container, Kubernetes, supply chain, security review | S21 | done |
-| S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | open |
+| S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | done |
 | S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | open |
 | S23 | Docs port, parity acceptance, release | all of M2 | open |
 | **M3 Extensions** | | | |
