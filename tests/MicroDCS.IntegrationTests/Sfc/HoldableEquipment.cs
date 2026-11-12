@@ -44,9 +44,16 @@ public sealed partial class HoldableEquipmentProcessor
     [Outgoing(typeof(RestartWork))]
     public static RestartWork CreateRestart(CommandRequest request) => new(request.ActionKey);
 
+    /// <summary>Gets how many answers this instance handed to the recipe; makes the processor an instance type, as the host creates it.</summary>
+    public int Answers { get; private set; }
+
     /// <summary>Hands the equipment's outcome to the recipe.</summary>
     /// <param name="answer">The answer.</param>
     /// <returns>The outcome.</returns>
     [OnResponse]
-    public static ActionOutcome OnAnswer(EquipmentAnswer answer) => new(answer.Outcome);
+    public ActionOutcome OnAnswer(EquipmentAnswer answer)
+    {
+        Answers++;
+        return new(answer.Outcome);
+    }
 }
