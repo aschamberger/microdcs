@@ -142,6 +142,9 @@ internal sealed class NatsTestProxy : IAsyncDisposable
 
     public string Url => $"nats://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}";
 
+    /// <summary>While set, new connections are closed at once, so the client stays disconnected until it is cleared.</summary>
+    public bool Refusing { get; set; }
+
     public void CloseConnections()
     {
         lock (_open)
@@ -177,6 +180,12 @@ internal sealed class NatsTestProxy : IAsyncDisposable
         while (!_stop.IsCancellationRequested)
         {
             var client = await _listener.AcceptTcpClientAsync(_stop.Token);
+            if (Refusing)
+            {
+                client.Dispose();
+                continue;
+            }
+
             var upstream = new TcpClient();
             await upstream.ConnectAsync(_host, _port, _stop.Token);
             lock (_open)
