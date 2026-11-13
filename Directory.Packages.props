@@ -40,7 +40,7 @@
   <ItemGroup Label="Analyzers">
     <!-- Sonar C# rules in every build, so a local build fails on the same rules as the SonarQube Cloud
          analysis in CI (warnings are errors; S03 self-test, D-20). The CI scanner uses its own copy. -->
-    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" />
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.36.0.15337" />
   </ItemGroup>
   <ItemGroup Label="Tests">
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
