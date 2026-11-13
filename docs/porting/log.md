@@ -551,3 +551,19 @@ Findings: with NATS.Net 3.3.2, consuming from a deleted consumer never throws: "
 Changed in the plan: `research/m1-review.md` (RV-14), `docs/nats-transport.md`.
 Post-merge checks: `ci` green on `main`; the .NET 11 PR (#87) rebased onto it passes `dotnet`.
 Next session pickup: S23a, as in the S23 entry.
+
+## Dependency update: .NET 11 (2026-11-13, branch `deps-net11`)
+
+Status: done. Not a numbered session; the maintainer decided the move to .NET 11 (D-59) and asked for one PR instead of the Dependabot PRs. Previous session post-merge: S23 merged as `ac266d9`; its checks are verified by S23a.
+Done:
+
+* `net11.0`, SDK 11.0.100, images `sdk:11.0-resolute-aot` and `runtime-deps:11.0-resolute-chiseled` (Ubuntu 26.04, no `noble` for .NET 11), `Microsoft.Extensions.*` 11.0.0, the minor and patch updates of #78 (StackExchange.Redis 3.4.35, OpenTelemetry 1.21.0, OPC UA 2.0.2, xunit.v3 4.0.3), every lock file regenerated with `--force-evaluate`.
+* Framework-provided packages removed from the projects and from `Directory.Packages.props` (NU1510). Roslyn 5.9 for the generator (#79; SDK 11.0.100 ships 5.12).
+* `.github/dependabot.yml` ignores majors of `Microsoft.Extensions.*`; `docs/development.md` explains hand-made dependency PRs.
+* `scripts/bench` runs in process: BenchmarkDotNet 0.15.8 crashes on net11.0 out of process. Baseline rewritten (HandleHello 2208 B).
+
+Findings: AOT binary 39.0 MB (+0.9 MB against .NET 10), only the allowlisted CloudEvents warnings. Supersedes Dependabot #76, #78, #79, #81, #83, #84 (closed with a link to this PR).
+Decisions: D-59 new.
+Changed in the plan: index (D-59, next free id D-60), decisions, `CLAUDE.md`, `README.md`, `docs/development.md`, `docs/security.md`.
+Post-merge checks: `ci` green on `main` with all jobs including `bench`, `publish` and `publish-manifest` (images on Ubuntu 26.04, signed); `security` green (Trivy on the new base); Dependabot opens no new `Microsoft.Extensions.*` major PRs.
+Next session pickup: S23a, as in the S23 entry above.

@@ -9,6 +9,11 @@ updates:
     groups:
       nuget-minor-patch:
         update-types: ["minor", "patch"]
+    # D-59: a new .NET release is a decision and a hand-made PR (TFM, SDK, images, lock files), not a package bump.
+    # Roslyn (Microsoft.CodeAnalysis.*) is not ignored: a version above the SDK's compiler fails our own build.
+    ignore:
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
 
   # Docs build (docs/requirements.txt, hashed)
   - package-ecosystem: "pip"

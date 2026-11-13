@@ -1,7 +1,7 @@
 <Project>
   <!-- Shared settings for every project. Project-specific settings stay in the .csproj. -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

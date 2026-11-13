@@ -9,7 +9,7 @@
 #
 # The AOT SDK image carries clang and zlib for the native link; its SDK matches global.json.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-noble-aot@sha256:e5b1f5150f66079aa409eec64042a13de475530864825bf85d575188d3c8d3f9 AS restore
+FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute-aot@sha256:f3264ae0bf11e2062b9650e0822d20c999320ac1685fe3acf4b7c17d0881af85 AS restore
 ENV CI=true \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \
@@ -38,7 +38,7 @@ ENTRYPOINT ["dotnet", "test", "--project", "tests/MicroDCS.IntegrationTests", "-
             "--filter-not-trait", "Category=Image"]
 
 # Final stage, last in the file so it is the default target.
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled@sha256:e9346023014b406b9bc8be969b3aa4d39efa3a43b6abcc495f01be566acb10e9 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:11.0-resolute-chiseled@sha256:24534e1f18024d3f8026061537fa21ba424f46cc0cdab4297c5528937b1ae960 AS runtime
 # Links the GHCR package to the repository (S22).
 LABEL org.opencontainers.image.source=https://github.com/aschamberger/microdcs \
       org.opencontainers.image.licenses=MIT
