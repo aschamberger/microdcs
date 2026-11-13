@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.0.0.json",
+  "title": "SFC Recipe",
+  "type": "object",
+  "properties": {
+    "Steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string"
+          },
+          "Initial": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "Name"
+        ]
+      }
+    },
+    "Transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Source": {
+            "type": "string"
+          },
+          "Target": {
+            "type": "string"
+          },
+          "Condition": {
+            "type": "string"
+          },
+          "Priority": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "Source",
+          "Target",
+          "Condition"
+        ]
+      }
+    },
+    "Actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string"
+          },
+          "Step": {
+            "type": "string"
+          },
+          "Qualifier": {
+            "type": "string"
+          },
+          "Interaction": {
+            "type": "string"
+          },
+          "TypeId": {
+            "type": "string"
+          },
+          "TimeoutSeconds": {
+            "type": "integer"
+          },
+          "MaxAttempts": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "Parameters": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "Selector": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "Subject": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "CorrelationId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "Name",
+          "Step",
+          "Qualifier",
+          "Interaction",
+          "TypeId",
+          "TimeoutSeconds"
+        ]
+      }
+    },
+    "Branches": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string"
+          },
+          "Type": {
+            "type": "string"
+          },
+          "Branches": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "Name",
+          "Type",
+          "Branches"
+        ]
+      }
+    }
+  },
+  "required": [
+    "Steps",
+    "Transitions",
+    "Actions"
+  ]
+}

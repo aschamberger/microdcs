@@ -228,6 +228,6 @@ public class BuildTests
     [Fact]
     public void InterpreterReportsItsDataSchema()
     {
-        new SfcInterpreter().DataSchema.ShouldBe("https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/");
+        new SfcInterpreter().DataSchema.ShouldBe("https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json");
     }
 }

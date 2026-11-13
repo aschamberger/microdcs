@@ -1,0 +1,1022 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/microdcs/schemas/isa95-jobcontrol-v2/v2.0.0.json",
+  "title": "ISA-95 Job Control V2 (http://opcfoundation.org/UA/ISA95-JOBCONTROL_V2/)",
+  "$defs": {
+    "ISA95EquipmentDataType": {
+      "type": "object",
+      "title": "ISA95EquipmentDataType",
+      "properties": {
+        "ID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EquipmentUse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Quantity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EngineeringUnits": {},
+        "Properties": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PropertyDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ID"
+      ]
+    },
+    "ISA95JobOrderAndStateDataType": {
+      "type": "object",
+      "title": "ISA95JobOrderAndStateDataType",
+      "properties": {
+        "JobOrder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISA95JobOrderDataType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "State": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95StateDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "JobOrder",
+        "State"
+      ]
+    },
+    "ISA95JobOrderDataType": {
+      "type": "object",
+      "title": "ISA95JobOrderDataType",
+      "properties": {
+        "JobOrderID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "WorkMasterID": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95WorkMasterDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "StartTime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EndTime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Priority": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        },
+        "JobOrderParameters": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95ParameterDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "PersonnelRequirements": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PersonnelDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EquipmentRequirements": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95EquipmentDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "PhysicalAssetRequirements": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PhysicalAssetDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "MaterialRequirements": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95MaterialDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "JobOrderID"
+      ]
+    },
+    "ISA95JobResponseDataType": {
+      "type": "object",
+      "title": "ISA95JobResponseDataType",
+      "properties": {
+        "JobResponseID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ua_LocalizedText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "JobOrderID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "StartTime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EndTime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "JobState": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95StateDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "JobResponseData": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95ParameterDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "PersonnelActuals": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PersonnelDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EquipmentActuals": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95EquipmentDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "PhysicalAssetActuals": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PhysicalAssetDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "MaterialActuals": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95MaterialDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "JobResponseID",
+        "JobOrderID",
+        "JobState"
+      ]
+    },
+    "ISA95MaterialDataType": {
+      "type": "object",
+      "title": "ISA95MaterialDataType",
+      "properties": {
+        "MaterialClassID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "MaterialDefinitionID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "MaterialLotID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "MaterialSublotID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "MaterialUse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Quantity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EngineeringUnits": {},
+        "Properties": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PropertyDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ISA95ParameterDataType": {
+      "type": "object",
+      "title": "ISA95ParameterDataType",
+      "properties": {
+        "ID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ua_Variant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EngineeringUnits": {},
+        "Subparameters": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95ParameterDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ID",
+        "Value"
+      ]
+    },
+    "ISA95PersonnelDataType": {
+      "type": "object",
+      "title": "ISA95PersonnelDataType",
+      "properties": {
+        "ID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "PersonnelUse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Quantity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EngineeringUnits": {},
+        "Properties": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PropertyDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ID"
+      ]
+    },
+    "ISA95PhysicalAssetDataType": {
+      "type": "object",
+      "title": "ISA95PhysicalAssetDataType",
+      "properties": {
+        "ID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "PhysicalAssetUse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Quantity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EngineeringUnits": {},
+        "Properties": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PropertyDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ID"
+      ]
+    },
+    "ISA95PropertyDataType": {
+      "type": "object",
+      "title": "ISA95PropertyDataType",
+      "properties": {
+        "ID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ua_Variant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ua_LocalizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "EngineeringUnits": {},
+        "Subproperties": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95PropertyDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ID",
+        "Value"
+      ]
+    },
+    "ISA95StateDataType": {
+      "type": "object",
+      "title": "ISA95StateDataType",
+      "properties": {
+        "BrowsePath": {},
+        "StateText": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ua_LocalizedText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "StateNumber": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "BrowsePath",
+        "StateText",
+        "StateNumber"
+      ]
+    },
+    "ISA95WorkMasterDataType": {
+      "type": "object",
+      "title": "ISA95WorkMasterDataType",
+      "properties": {
+        "ID": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Description": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ua_LocalizedText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Parameters": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ISA95ParameterDataType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ID"
+      ]
+    },
+    "Ua_LocalizedText": {
+      "type": "object",
+      "properties": {
+        "Locale": {
+          "type": "string"
+        },
+        "Text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Ua_Variant": {
+      "type": "object",
+      "properties": {
+        "UaType": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31
+        },
+        "Value": true,
+        "Dimensions": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

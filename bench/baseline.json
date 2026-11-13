@@ -1,0 +1,17 @@
+{
+  "note": "Allocated bytes per operation are the gate (scripts/bench, D-58); meanNs is for reference only.",
+  "benchmarks": {
+    "DecodeEnvelope": {
+      "bytes": 2392,
+      "meanNs": 1308.6
+    },
+    "EncodeEnvelope": {
+      "bytes": 2264,
+      "meanNs": 851.2
+    },
+    "HandleHello": {
+      "bytes": 2216,
+      "meanNs": 1605.1
+    }
+  }
+}

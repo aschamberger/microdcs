@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Benchmark baseline (R-18, D-58): runs bench/MicroDCS.Benchmarks (ShortRun) and compares the allocated bytes per operation with
+# bench/baseline.json; more than 10 % (at least 64 B) above or below the baseline, or a benchmark without a result, fails
+# (below: rewrite the baseline, so it stays tight). Mean times are
+# reported, not gated: shared runners are too noisy for them.
+#
+#   scripts/bench            compare with the baseline (CI: the bench job)
+#   scripts/bench --update   rewrite the baseline after an intended change; commit bench/baseline.json
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+mode=()
+case "${1:-}" in
+  "") ;;
+  --update) mode=(--update-baseline) ;;
+  *) echo "usage: scripts/bench [--update]" >&2; exit 2 ;;
+esac
+
+artifacts=TestResults/bench
+rm -rf "$artifacts"
+dotnet run -c Release --project bench/MicroDCS.Benchmarks -- \
+  --filter '*' --job short --exporters json --artifacts "$artifacts" \
+  --baseline bench/baseline.json ${mode[@]+"${mode[@]}"}

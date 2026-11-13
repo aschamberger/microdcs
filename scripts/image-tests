@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Image tests: the SFC replica tests (S20, D-53, two instances killed from outside) and the acceptance tests
+# (S23, Q-TEST-2, the image driven over MQTT only), all against the application image in the `image` profile.
+# Not part of the main compose run, because a container that exits ends `--abort-on-container-exit`.
+# Results land in TestResults/image.
+#
+#   scripts/image-tests
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+compose=(docker compose -f compose.test.yaml --profile image)
+mkdir -p TestResults/image
+
+cleanup() {
+  "${compose[@]}" logs --no-color --timestamps > TestResults/image/services.log 2>&1 || true
+  "${compose[@]}" down -v
+}
+trap cleanup EXIT
+
+"${compose[@]}" build sfc-a image-tests
+"${compose[@]}" up -d --wait valkey mosquitto
+"${compose[@]}" up -d --no-build sfc-a sfc-b app
+"${compose[@]}" run --rm image-tests
+cat TestResults/image/sweep-latency.txt

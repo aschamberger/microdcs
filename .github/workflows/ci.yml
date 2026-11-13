@@ -1,6 +1,7 @@
 # .NET CI: build, unit and integration tests with coverage against the compose.test.yaml services, SonarQube Cloud analysis
 # (D-20), format, NuGet audit, Native AOT container image with the CloudEvents smoke check (D-14), the SFC replica tests
-# (D-53) and the Kubernetes manifest in kind (S22). Gitleaks and Trivy run in security.yml.
+# (D-53) with the acceptance tests against the image (S23), the Kubernetes manifest in kind (S22) and the benchmark baseline
+# (D-58). Gitleaks and Trivy run in security.yml.
 # Pushes to main and v* tags publish the multi-arch image to GHCR, signed and with SBOM attestations
 # (cosign keyless, D-55); pull requests never publish.
 # What runs on a pull request depends on the changed paths (scripts/ci-changes, D-56): documentation-only changes build and
@@ -120,7 +121,7 @@ jobs:
         run: >-
           dotnet test --no-build -c Release --results-directory TestResults --report-xunit-trx
           --coverage --coverage-output-format xml
-          --filter-not-trait Category=Replica --fail-skips on
+          --filter-not-trait Category=Image --fail-skips on
         env:
           MICRODCS_TEST_VALKEY: localhost:6380
           MICRODCS_TEST_MQTT: localhost:1884
@@ -252,7 +253,8 @@ jobs:
           path: TestResults/k8s/
           if-no-files-found: ignore
 
-  # Two replicas of the application image, killed from outside (S20, D-53), run by the `tests` image of the Dockerfile; this
+  # The image tests (scripts/image-tests): two replicas of the application image killed from outside (S20, D-53) and the
+  # acceptance tests that drive the image over MQTT (S23, Q-TEST-2), run by the `tests` image of the Dockerfile; this
   # is also the check that the compose test image builds. The rest of the integration suite runs in the dotnet job (D-15,
   # revised in S22a). Builds its own runtime image in parallel to the container job: waiting for that job's image would put
   # both builds on the critical path.
@@ -266,13 +268,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: SFC replica tests
-        run: scripts/replica-tests
+      - name: Image tests (SFC replicas, acceptance)
+        run: scripts/image-tests
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-results
-          path: TestResults/replica/
+          path: TestResults/image/
+          if-no-files-found: ignore
+
+  # Benchmark baseline (R-18, D-58): allocated bytes per operation of the envelope codec and the pipeline against
+  # bench/baseline.json (scripts/bench); mean times go to the job summary only. Not a required check; runs beside the others.
+  bench:
+    name: bench
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache-dependency-path: "**/packages.lock.json"
+      - name: Benchmarks against the baseline
+        run: scripts/bench
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-results
+          path: TestResults/bench/
           if-no-files-found: ignore
 
   # Publishes the image of each platform by digest after every check passed (D-32, D-55): build (from the container job's cache on

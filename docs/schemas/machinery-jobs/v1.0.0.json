@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/microdcs/schemas/machinery-jobs/v1.0.0.json",
+  "title": "MicroDCS Machinery Jobs",
+  "$defs": {
+    "ConfigJobAcceptance": {
+      "type": "object",
+      "properties": {
+        "max_downloadable_job_orders": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_downloadable_job_orders"
+      ]
+    },
+    "JobMetadata": {
+      "type": "object",
+      "properties": {
+        "modelUri": {
+          "type": "string"
+        },
+        "modelVersion": {
+          "type": "string"
+        },
+        "modelDate": {
+          "type": "string"
+        },
+        "supportedCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -75,14 +75,15 @@ services:
   # --abort-on-container-exit before the tests run, and compose then still exits 0. The AOT smoke
   # check (D-14) runs as `docker run` of the runtime image in CI instead.
 
-  # SFC replica tests (S20, D-53): scripts/replica-tests runs this profile. Separate from `tests`, because a replica
-  # that gets killed would end --abort-on-container-exit. Only this profile mounts the Docker socket.
+  # Image tests (scripts/image-tests): the SFC replica tests (S20, D-53) and the acceptance tests (S23, Q-TEST-2) run
+  # against the application image in the `image` profile. Separate from `tests`, because a replica that gets killed
+  # would end --abort-on-container-exit. Only this profile mounts the Docker socket.
   sfc-a: &replica
-    profiles: [replicas]
+    profiles: [image]
     build:
       context: .
       target: runtime
-    image: microdcs:replica-test
+    image: microdcs:image-test
     container_name: microdcs-test-sfc-a
     command: ["serve"]
     environment: &replica-environment
@@ -122,22 +123,57 @@ services:
       <<: *replica-environment
       APP_MicroDcs__InstanceId: sfc-b
 
-  replica-tests:
-    profiles: [replicas]
+  # Acceptance (S23, Q-TEST-2): the image with every role and the demo bindings, driven only over MQTT as an MES and
+  # the equipment would. The Python app tests ran against the application the same way.
+  app:
+    profiles: [image]
+    image: microdcs:image-test
+    container_name: microdcs-test-app
+    command: ["serve"]
+    environment:
+      DOTNET_ENVIRONMENT: Test
+      APP_MicroDcs__InstanceId: app
+      APP_MicroDcs__CloudEventSource: urn:it:acceptance
+      APP_MicroDcs__Bindings__machinery_jobs__Transport: mqtt
+      APP_MicroDcs__Bindings__machinery_jobs__Prefix: acc-mes
+      APP_MicroDcs__Bindings__machinery_jobs__ScopeLevels: "2"
+      APP_MicroDcs__Bindings__machinery_jobs__ReplyBase: acc-mes-reply
+      APP_MicroDcs__Bindings__greetings__Transport: mqtt
+      APP_MicroDcs__Bindings__greetings__Prefix: acc
+      APP_MicroDcs__Bindings__greetings__ScopeLevels: "2"
+      APP_MicroDcs__Bindings__greetings__ReplyBase: acc-reply
+      APP_MicroDcs__Mqtt__Hostname: mosquitto
+      APP_MicroDcs__Mqtt__Port: "1883"
+      APP_MicroDcs__Mqtt__TlsCaFile: /nonexistent/ca.crt
+      APP_MicroDcs__Mqtt__SatTokenFile: /nonexistent/sat
+      APP_MicroDcs__Valkey__ConnectionString: valkey:6379
+      APP_MicroDcs__Valkey__KeyPrefix: acc
+      APP_MicroDcs__Valkey__ScopeRefreshInterval: "00:00:00.500"
+      APP_MicroDcs__Valkey__PollInterval: "00:00:00.200"
+      APP_MicroDcs__Sfc__ExpiryGrace: "00:00:00"
+    depends_on:
+      valkey:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+
+  image-tests:
+    profiles: [image]
     build:
       context: .
       target: tests
     image: microdcs-tests:test
     entrypoint: ["dotnet", "test", "--project", "tests/MicroDCS.IntegrationTests", "-c", "Release", "--no-build",
                  "--fail-skips", "on", "--results-directory", "/results", "--report-xunit-trx",
-                 "--filter-trait", "Category=Replica"]
+                 "--filter-trait", "Category=Image"]
     environment:
       MICRODCS_TEST_VALKEY: valkey:6379
       MICRODCS_TEST_MQTT: mosquitto:1883
       MICRODCS_TEST_DOCKER: /var/run/docker.sock
+      MICRODCS_TEST_APP: acc
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./TestResults/replica:/results
+      - ./TestResults/image:/results
     depends_on:
       valkey:
         condition: service_healthy

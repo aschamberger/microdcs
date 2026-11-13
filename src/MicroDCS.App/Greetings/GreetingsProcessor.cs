@@ -7,7 +7,7 @@ namespace MicroDCS.App.Greetings;
 
 /// <summary>Greets someone. The demo payload of the framework (Python parity: <c>models/greetings.py</c>).</summary>
 /// <param name="Name">Who is greeted.</param>
-[CloudEventType("com.github.aschamberger.microdcs.greetings.hello.v1", Schema = "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/hello")]
+[CloudEventType("com.github.aschamberger.microdcs.greetings.hello.v1", Schema = GreetingsSchema.Document + "#/$defs/Hello")]
 public sealed record Hello(string Name)
 {
     /// <summary>Demonstrates a payload field that travels as a CloudEvent attribute and comes back on the response (E-4).</summary>
@@ -18,8 +18,15 @@ public sealed record Hello(string Name)
 
 /// <summary>Says goodbye. Sent as a command by the southbound side.</summary>
 /// <param name="Name">Who is told goodbye.</param>
-[CloudEventType("com.github.aschamberger.microdcs.greetings.bye.v1", Schema = "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/bye")]
+[CloudEventType("com.github.aschamberger.microdcs.greetings.bye.v1", Schema = GreetingsSchema.Document + "#/$defs/Bye")]
 public sealed record Bye(string Name);
+
+/// <summary>The schema document of the greetings payloads, served by the docs site (D-58); <c>docs/schemas/greetings/</c>.</summary>
+internal static class GreetingsSchema
+{
+    /// <summary>The document URL; each payload adds its <c>$defs</c> fragment.</summary>
+    public const string Document = "https://aschamberger.github.io/microdcs/schemas/greetings/v1.0.0.json";
+}
 
 /// <summary>JSON metadata of the greetings payloads (source generated, AOT).</summary>
 [JsonSerializable(typeof(Hello))]
@@ -79,7 +86,7 @@ public sealed partial class GreetingsProcessor(ILogger<GreetingsProcessor> logge
             Id = string.Empty,
             Source = string.Empty,
             Type = RawTypeId,
-            DataSchema = "https://aschamberger.github.io/schemas/microdcs/greetings/v1.0.0/raw",
+            DataSchema = GreetingsSchema.Document + "#/$defs/Raw",
             DataContentType = raw.DataContentType,
             Data = raw.Data,
         };

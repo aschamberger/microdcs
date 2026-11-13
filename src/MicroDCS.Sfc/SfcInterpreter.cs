@@ -7,10 +7,10 @@ namespace MicroDCS.Sfc;
 public sealed class SfcInterpreter : IRecipeInterpreter
 {
     /// <summary>The <c>dataschema</c> URI of the current recipe format (v1.1.0 adds hold and restart commands, D-57).</summary>
-    public const string RecipeDataSchema = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/";
+    public const string RecipeDataSchema = "https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json";
 
     /// <summary>The <c>dataschema</c> URI of the first recipe format. Still accepted: v1.1.0 only adds optional fields.</summary>
-    public const string RecipeDataSchemaV10 = "https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.0.0/";
+    public const string RecipeDataSchemaV10 = "https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.0.0.json";
 
     /// <summary>The hard limit of step entries per evolution; reaching it returns a fault (D-44).</summary>
     public const int MaxStepEntriesPerEvolution = 10_000;

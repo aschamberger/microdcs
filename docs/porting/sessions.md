@@ -202,9 +202,15 @@ Read: [D-52](decisions.md#d-52), the S20a entry in the [log](log.md), [SFC core 
 
 Builds on the step-boundary hold of S20a: on a Pause the equipment is actually told to stop. Recipes declare hold and restart actions (the ISA-88 hold logic), as a backward-compatible extension of the recipe format with a new `dataschema` version, build-time validation and a regenerated schema. A command contract between the host and the equipment for hold, restart and "could not hold": type ids, outcomes, and what a failure or timeout of a hold action does to the job. Decide what happens to an action that is running when the hold begins, how a restart relates to its attempt and deadline, whether a recipe without hold actions keeps the S20a behaviour (default yes), and the capability flag that lets a station refuse such recipes. Compose test: a pause interrupts a running action through its hold action, and Resume restarts it to the end of the job. Record the contract as a decision (next free id).
 
-### S23 Docs port, parity acceptance, release
+### S23 Parity acceptance
 
-Port `docs/` (concepts, operations with all configuration equivalents, persistence, sfc_engine, security, your-first-processor, development), run the parity scenarios (Q-TEST-2) and the acceptance checklist ([branching](research/branching.md) item 8), benchmark baseline (R-18), review the maintenance tool group (D-19: keep as dev-profile tool or remove, per tool), update the README, remove the WIP notice. Turn `docs/porting/` into an archived design record or remove it.
+Split from the original S23 at the maintainer's request (size rule): the parity scenarios (Q-TEST-2) and the acceptance checklist ([branching](research/branching.md) item 8), golden files of the wire format (Q-TEST-1), the benchmark baseline in CI (R-18), the review of the maintenance tool group (D-19: keep as dev-profile tool or remove, per tool). Result: [parity acceptance](research/parity-acceptance.md), [D-58](decisions.md#d-58).
+
+### S23a Docs port and release
+
+Read: [parity acceptance](research/parity-acceptance.md) (checklist), [D-16](decisions.md#d-16), [D-55](decisions.md#d-55), [D-58](decisions.md#d-58), `.claude/rules/docs.md`.
+
+Port the eleven pages that still carry "Not yet ported" (`overall-design`, `concepts`, `your-first-processor`, `machinery-jobs-mes-publishing`, `index`, `operations` with every configuration field of the options classes, `sfc_engine` (merge into `sfc-core` or replace), `technical-standards`, `information-model-standards`, `persistence`, `development`) against the code and the existing .NET pages; Python-only content goes (it stays on `python-archive`). Python sources for behaviour the pages describe: read them, do not port from the old text. Then the README, the WIP announcement bar (`overrides/`), and `docs/porting/` as an archived design record (decisions and research under a "Design record" nav section; `index`, `sessions`, `log` marked archived). Check that the schema URLs of D-58 resolve on the published site. Release: tag `v0.1.0` on `main` after the docs PR is merged; the tag publishes the signed image (D-55); verify `cosign verify` and the GitHub release notes. Exit: `zensical build` clean, no "Not yet ported" left, `v0.1.0` image signed and pullable.
 
 ## M3 Extensions (after the parity gate)
 
@@ -219,6 +225,31 @@ AMQPNetLite binding with the SDK AMQP mapping for CloudEvents, settlement semant
 Transport checklist as in S24 (D-48, D-49, workers, bounded retries).
 
 First verify the S04 finding ([library spike](research/library-spike.md#zenoh-cs-050-and-zenoh-c-1100)): `Session.Get` against a queryable crashes with `free(): invalid pointer`; suspected stale `ZGetOptions` (no `cancellation_token`). Compare every struct the transport uses with the zenoh-c headers. Then record the binding choice (`Zenoh-CS` with an upstream fix, a fork, ZenohDotNet or an own binding), including how the zenoh-c version is pinned together with the package. Then the binding and the CloudEvents-over-Zenoh mapping (attachment or structured), query/reply for commands (D-10), no-redelivery behaviour (A-5), router versus peer mode, native library in the image for both platforms (D-32).
+
+### S28 Southbound integration strategy (design)
+
+Read: [D-4](decisions.md#d-4), [D-10](decisions.md#d-10), [D-11](decisions.md#d-11), [D-15](decisions.md#d-15), [D-53](decisions.md#d-53), [D-58](decisions.md#d-58), `docs/overall-design.md` (Southbound Connectivity).
+
+Target picture (maintainer, 2026-11-12): MicroDCS talks to equipment over MQTT through an industrial gateway such as Azure IoT Operations (AIO) with its OPC UA connector; MicroDCS has no direct OPC UA interface, D-4 stays. This session decides how S29 and S30 work and how they are tested, and records it as a decision (Q-ARCH-11):
+
+* **Gateway contract.** What the target gateway puts on MQTT for an OPC UA server: topics, payload shape (OPC UA JSON or its own), CloudEvents attributes, how data changes and events arrive, and whether and how a method call goes out and its result comes back. Taken from the AIO documentation; where AIO has no method calls, what replaces them.
+* **Lightweight stand-in for compose.** AIO needs Kubernetes and Arc, too heavy for the integration tests. Candidates to check against the contract: OPC Publisher (open source container, MQTT output, method calls over its MQTT API, to be verified), another open source bridge, or a test-only bridge of our own on the UA-.NETStandard client that reproduces the AIO message shape and is never shipped. Criteria: same wire shape as the target, AOT does not matter (test container), digest-pinned image, licence.
+* **Test partners.** Job Control V2: a server built from the OPC UA SDK server example with the Job Control NodeSet. IJT: the IJT simulator on GitHub (maintainer's pointer; check licence, image or build, and which IJT version it implements).
+* **Where the translation lives.** A southbound processor in MicroDCS maps between the gateway messages and the job and tightening CloudEvents the SFC host uses (push actions out, responses and pull events in, `mdcsactionkey` kept, D-9); which of it is framework and which is example code.
+
+Output: research file with the contract and the comparison, the decision, a compose sketch of the test setup (server plus bridge per partner), and the S29/S30 blocks updated. Python: nothing to port.
+
+### S29 Job Control southbound over the gateway
+
+Read: the S28 decision, [D-34](decisions.md#d-34), [D-50](decisions.md#d-50), [D-52](decisions.md#d-52), [D-57](decisions.md#d-57).
+
+MicroDCS hands job orders to a machine that implements Job Control V2 (or Machinery Jobs) as an OPC UA server, through the gateway contract of S28: SFC push actions become the job method calls (`Store`, `StoreAndStart`, `Start`, `Stop`, `Abort`, `Pause`, `Resume`, `Cancel`, `Clear`), the machine's job state and results come back as responses and pull events. Recovery after a gateway or machine restart; the security of the MQTT side follows `docs/security.md`, the OPC UA side is the gateway's. Compose: the Job Control test server and the bridge from S28. Exit: a recipe drives a job on the test server to the end, with an inspector for the southbound state (D-19).
+
+### S30 Tightening southbound (IJT) over the gateway
+
+Read: the S28 decision, the S29 result, [D-17](decisions.md#d-17), [D-53](decisions.md#d-53), `python-archive:schemas/ijt_tightening.schema.json` (the only Python artefact: a hand-written schema of OPC 40451-1 for MQTT, no code).
+
+A tightening controller that implements OPC 40451-1 (IJT) behind the gateway, reached from an SFC recipe: select the joining program, start and abort the joining process, and take the joining results as pull events (D-53) with a CloudEvent type of their own. Decide which result fields go into the payload and how a NOK result maps to SFC outcomes (an outcome-based transition, D-17). The schema documents follow D-58, replacing the Python schema. Compose: the IJT simulator and the bridge from S28. Exit: a recipe runs a tightening on the simulator, OK and NOK take different transitions, the result is in the job response.
 
 ### S26 Packaging and release
 

@@ -14,4 +14,7 @@
     <Using Include="Xunit" />
     <Using Include="Shouldly" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/SchemaDocuments.cs" Link="Shared/SchemaDocuments.cs" />
+  </ItemGroup>
 </Project>

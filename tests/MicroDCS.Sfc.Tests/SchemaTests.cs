@@ -3,11 +3,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
 using System.Text.Json.Serialization;
+using static MicroDCS.Tests.Shared.SchemaDocuments;
 
 namespace MicroDCS.Sfc.Tests;
 
 /// <summary>
-/// The C# model is the source of the JSON Schemas (D-44). The checked-in files in <c>schemas/</c> are regenerated here and compared;
+/// The C# model is the source of the JSON Schemas (D-44). The checked-in files in <c>docs/schemas/</c> (served by the docs site, D-58) are regenerated here and compared;
 /// run with <c>UPDATE_SCHEMAS=1</c> to rewrite them after a model change (bump the format number for non-additive changes).
 /// </summary>
 public class SchemaTests
@@ -33,36 +34,21 @@ public class SchemaTests
         return result.ToJsonString(_indented).ReplaceLineEndings("\n") + "\n";
     }
 
-    private static string RepoFile(string relative)
-    {
-        string? directory = AppContext.BaseDirectory;
-        while (directory is not null && !File.Exists(Path.Combine(directory, "MicroDCS.slnx")))
-        {
-            directory = Path.GetDirectoryName(directory);
-        }
-
-        directory.ShouldNotBeNull();
-        return Path.Combine(directory, relative);
-    }
-
-    private static void AssertCheckedIn(string relative, string generated)
-    {
-        string path = RepoFile(relative);
-        if (Environment.GetEnvironmentVariable("UPDATE_SCHEMAS") == "1")
-        {
-            File.WriteAllText(path, generated);
-        }
-
-        File.ReadAllText(path).ReplaceLineEndings("\n").ShouldBe(generated, $"{relative} is out of date; run the tests with UPDATE_SCHEMAS=1.");
-    }
-
     [Fact]
     public void TheRecipeSchemaIsCurrent() =>
-        AssertCheckedIn("schemas/sfc_recipe.schema.json", Generate(typeof(SfcRecipe), SfcInterpreter.RecipeDataSchema, "SFC Recipe"));
+        AssertCheckedIn("docs/schemas/sfc-recipe/v1.1.0.json", Generate(typeof(SfcRecipe), SfcInterpreter.RecipeDataSchema, "SFC Recipe"));
 
     [Fact]
     public void TheStateSchemaIsCurrent() =>
-        AssertCheckedIn("schemas/sfc_state.schema.json", Generate(typeof(SfcState), "https://aschamberger.github.io/schemas/microdcs/sfc-state/v1.0.0/", "SFC Execution State"));
+        AssertCheckedIn("docs/schemas/sfc-state/v1.0.0.json", Generate(typeof(SfcState), "https://aschamberger.github.io/microdcs/schemas/sfc-state/v1.0.0.json", "SFC Execution State"));
+
+    [Fact]
+    public void TheFrozenRecipeSchemaOfFormatV10IsServedUnderItsDataSchema()
+    {
+        // v1.0.0 recipes are still read (D-57); the document is frozen and no longer generated.
+        using var document = JsonDocument.Parse(File.ReadAllText(RepoFile("docs/schemas/sfc-recipe/v1.0.0.json")));
+        document.RootElement.GetProperty("$id").GetString().ShouldBe(SfcInterpreter.RecipeDataSchemaV10);
+    }
 
     [Fact]
     public void EveryDocumentPropertyHasAnExplicitWireName()

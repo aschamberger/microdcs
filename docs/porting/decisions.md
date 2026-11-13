@@ -228,6 +228,8 @@ Confirmed 2026-11-08 (S11): built as decided, with these refinements. The contra
 
 Background: [inspection layer and MCP server](research/inspection-mcp.md).
 
+Reviewed 2026-11-12 (S23): every maintenance tool is kept as a dev-profile tool, `maint_sfc_rebuild_due_index_plan` included as a manual trigger beside the recovery scan of D-53 ([parity acceptance](research/parity-acceptance.md#maintenance-tool-review-d-19)).
+
 ## D-20 Security and quality scanning in CI {#d-20}
 
 Status: decided (containers).
@@ -838,4 +840,23 @@ Decision:
 
 Consequences: a recipe without hold logic behaves as in S20a. Equipment that offers hold logic answers hold and restart commands with the causation id of the command, and identifies the work by `mdcsactionkey`. `sfc_job` and `sfc_explain` show the hold state.
 
+Revised 2026-11-12 (S23, D-58): the recipe `dataschema` values are now `https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json` and `…/v1.0.0.json`; the rule is unchanged.
+
 Not chosen: a hold per step or per recipe (the equipment would have to work out which work is meant); completion by the original command's response after a restart (the equipment would have to keep the request open across the hold, and two commands would answer for one action); faulting the job when a hold fails (a pause would end a job), or a per-recipe choice (more format surface); retrying hold and restart up to `MaxAttempts` (equipment that does not answer a hold will not answer it twice; a second restart could start the work twice).
+
+## D-58 Parity acceptance: schema documents as golden files, acceptance tests against the image, benchmark gate {#d-58}
+
+Status: decided (2026-11-12, S23; the maintainer chose to serve the schemas from the docs site). Background: [parity acceptance](research/parity-acceptance.md).
+
+Context: the parity gate needs the Python integration scenarios to pass against the application (Q-TEST-2), golden files for the wire format after the clean break of D-2 (Q-TEST-1), and a benchmark baseline in CI (R-18). The `dataschema` URLs of the payloads pointed to `aschamberger.github.io/schemas/…` (and `aschamberger.github.com` for the job payloads), which nothing served, and the checked-in greetings and Machinery Jobs schemas were the Python ones.
+
+Decision:
+
+* **Schema documents.** `dataschema` is the URL of a document under the docs site, `https://aschamberger.github.io/microdcs/schemas/<name>/v<version>.json`, plus `#/$defs/<Name>` when the document holds several types. The files live in `docs/schemas/`, so the docs build publishes them with no extra step. Documents: `greetings/v1.0.0` (`Hello`, `Bye`, `Raw`), `sfc-recipe/v1.1.0` and the frozen `v1.0.0`, `sfc-state/v1.0.0`, `microdcs-jobcontrol/v1.2.0` (the extension NodeSet namespace with its model version: method calls and results, status event, state index, Work Master extension), `isa95-jobcontrol-v2/v2.0.0` (station configuration types), `machinery-jobs/v1.0.0` (the plain JSON payloads). The OPC UA documents come from `JobControlSchemas.GenerateNamespaceJson<T>()` with `$defs` sorted; the others from `JsonSchemaExporter` over the source-generated contexts. The IJT schema is dropped: no .NET payload uses it, and it stays on `python-archive`.
+* **Golden files (Q-TEST-1)** are these documents: the owning test project regenerates and compares them (`UPDATE_SCHEMAS=1` rewrites), and a test checks that every Machinery Jobs payload names a definition its document has. A non-additive change gets a new version and file; old versions stay served. A PR that touches `docs/schemas/` counts as code in `scripts/ci-changes`. Wire text written by hand is pinned once more in the acceptance test for a Store in OPC UA JSON. No separate payload fixture files.
+* **Acceptance tests (Q-TEST-2)** run against the AOT image (service `app` of the `image` profile, every role) over MQTT only. They share the trait `Category=Image` and `scripts/image-tests` (renamed from `replica-tests`) with the SFC replica tests. Each test uses its own scope and ids.
+* **Benchmark gate (R-18).** `scripts/bench` runs the BenchmarkDotNet ShortRun and fails when the allocated bytes per operation differ from `bench/baseline.json` by more than 10 % (at least 64 B) either way (a drop means rewriting the baseline, so it stays tight), or when a benchmark has no result. Mean times are reported in the job summary, not gated. Job `bench` in `ci.yml` follows the `code` path rule and is not a required check.
+
+Consequences: the `dataschema` values and the SFC recipe format markers change (D-8: nothing stored needs migrating; a work master with an old URL is refused like an unknown format). The URLs resolve once the docs site is published from `main`. A model change that alters a schema fails the tests until the document is regenerated.
+
+Not chosen: a separate repository for a user site at `aschamberger.github.io/schemas/` (one more repository to keep in step); validating payloads against the schemas at runtime or in the acceptance tests (a JSON Schema library dependency for a check the compare test already covers at the source); gating on mean times (shared runners vary by more than the regressions worth catching).

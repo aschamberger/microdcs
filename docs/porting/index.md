@@ -1,6 +1,6 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S23** (docs port, parity acceptance, release); S08 to S22a and S27 are done.
+Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S23a** (docs port, `docs/porting/` archived, release `v0.1.0`); S08 to S23 and S27 are done.
 
 ## How to use these files
 
@@ -119,9 +119,10 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-54](decisions.md#d-54) | decided | HTTP surface and telemetry: OTLP only, producer and SFC spans, readiness checks for transports and Valkey, read-only `/api/v1/jobs` off by default |
 | [D-55](decisions.md#d-55) | decided | Image publishing to GHCR from `main` and `v*` tags, cosign keyless signatures and two CycloneDX SBOM attestations per platform, manifest by role with kustomize pin, kind test in CI, Valkey island ACL user |
 | [D-56](decisions.md#d-56) | decided | CI path rules in `scripts/ci-changes`, skips that keep required checks reportable, docs-only PRs build and analyse only, arm64 and kind on `main` and daily, kind reuses the x64 image |
-| [D-57](decisions.md#d-57) | decided | SFC equipment hold: recipe v1.1.0 with per-action `Hold` and `Restart`, hold answered `held` ends the attempt and the restart completes the action, anything else falls back to S20a, restart once with its own timeout, capability `EquipmentHold` |
+| [D-57](decisions.md#d-57) | revised | SFC equipment hold: recipe v1.1.0 with per-action `Hold` and `Restart`, hold answered `held` ends the attempt and the restart completes the action, anything else falls back to S20a, restart once with its own timeout, capability `EquipmentHold` |
+| [D-58](decisions.md#d-58) | decided | Parity acceptance: `dataschema` documents served from the docs site and generated as golden files, acceptance tests against the image over MQTT, benchmark gate on allocated bytes |
 
-Next free id: **D-58**.
+Next free id: **D-59**.
 
 ## Open questions
 
@@ -144,6 +145,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-ARCH-8~~ SFC multi-instance model | → D-44 (generic CAS script, scope registry, retry limit, trimming rule D-42, id-only identity D-42) | — |
 | ~~Q-ARCH-9~~ Deployment modes | → D-51: two Deployments by role in production, single container for development and small sites | — |
 | ~~Q-ARCH-10~~ Southbound | → D-11. Remaining: CloudEvents-over-Zenoh mapping (attachment vs. structured), Zenoh query/reply for commands, router vs. peer mode | S25 |
+| Q-ARCH-11 Southbound gateway contract | Equipment is reached over MQTT through a gateway such as AIO (no OPC UA in MicroDCS, D-4 stays): the gateway's message contract for data, events and method calls, a lightweight OPC UA to MQTT stand-in for compose tests, test partners (Job Control server from the SDK example, IJT simulator), where the translation lives | S28 |
 | ~~Q-DATA-1~~ Documents and secondary indexes | → D-41, D-42: hash documents with explicit indexes, no valkey-json or valkey-search; analysis in [data layer](research/data-layer.md) | — |
 | ~~Q-DATA-2~~ Client library | → D-7, D-43: no blocking reads, pub/sub nudge plus 1 s fallback poll | — |
 | ~~Q-DATA-3~~ Valkey before the port | → D-5 | — |
@@ -151,16 +153,16 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | ~~Q-OPS-1~~ HTTP surface | → D-40, D-54: health probes with registered checks, read-only `/api/v1/jobs` with an OpenAPI document, no `/metrics` | — |
 | ~~Q-OPS-2~~ Container and Kubernetes | → D-55: signed GHCR image, manifest by role, kind test. The Zenoh native library in the image stays with S25 | — |
 | Q-OPS-3 Security | MQTT, NATS, Valkey and the management listener done and documented (`docs/security.md`, S22); the level-0 rule is D-38. Open: AMQP SASL (S24), Zenoh ACLs (S25) | S24, S25 |
-| Q-TEST-1 Test strategy | Compose setup decided (D-15), harness built in S02 (`compose.test.yaml`). Python tests are the specification for S16, S15 and S19. Open: golden-file payload fixtures with D-2; transport profiles (`nats`, `amqp`, `zenoh`) are added by their sessions | S23 |
-| Q-TEST-2 Behavioural parity | Parity scenarios of the Python integration tests as wire-level e2e tests in compose, re-specified (D-2) | S23 |
-| ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23 |
+| ~~Q-TEST-1~~ Test strategy | → D-15, D-58: compose harness; golden files are the generated schema documents in `docs/schemas/`. Transport profiles (`amqp`, `zenoh`) are added by their sessions | — |
+| ~~Q-TEST-2~~ Behavioural parity | → D-58: acceptance tests against the image over MQTT, [parity list](research/parity-acceptance.md) A-1 to A-21 | — |
+| ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23a |
 | ~~OpenTelemetry coverage~~ | → D-54: OTLP export of every `MicroDCS*` source and meter, `NATS.Net`, runtime and ASP.NET Core; consumer, producer and SFC work spans; no Valkey spans (no stable StackExchange.Redis instrumentation) | — |
 | ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
 | ~~R-12~~ Operational limits | → [Deployment](../deployment.md#limits) (S22) | — |
 | ~~R-20~~ Multi-tenancy | → [Deployment](../deployment.md#tenancy): island per tenant, NATS accounts (D-47), MQTT prefix plus ACLs, Valkey island ACL user tested (D-55) | — |
 | ~~R-21~~ Support model, zones/conduits | → [Deployment](../deployment.md#support), [Security](../security.md#zones-and-conduits) (S22) | — |
 | ~~D-11 docs update~~ | Done in S01 | — |
-| CloudEvents benchmark (R-18) | Benchmark project `bench/MicroDCS.Benchmarks` exists since S10 (baseline in [core contracts](research/core-contracts.md#s10-pipeline-python-parity-and-tests)); CI baseline and comparison in S23 | S23 |
+| ~~CloudEvents benchmark (R-18)~~ | → D-58: `scripts/bench` against `bench/baseline.json`, job `bench` | — |
 
 ## Sessions
 
@@ -196,11 +198,15 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S22 | Container, Kubernetes, supply chain, security review | S21 | done |
 | S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | done |
 | S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | done |
-| S23 | Docs port, parity acceptance, release | all of M2 | open |
+| S23 | Parity acceptance: Python scenarios against the image, schema golden files, benchmark gate, maintenance review | all of M2 | done |
+| S23a | Docs port, README, `docs/porting/` archived, release `v0.1.0` | S23 | open |
 | **M3 Extensions** | | | |
 | S24 | AMQP transport | S14 | open |
 | S25 | Zenoh transport and CloudEvents-over-Zenoh mapping | S14 | open |
 | S26 | Packaging, NuGet release, `dotnet new` templates | released upstream CloudEvents package | open |
+| S28 | Design: southbound integration strategy (gateway contract after AIO, lightweight OPC UA to MQTT bridge for compose, test partners) | S23a | open |
+| S29 | Job Control southbound over the gateway: SFC drives a machine's Job Control server | S28 | open |
+| S30 | Tightening southbound (IJT, OPC 40451-1) over the gateway: results as pull events | S28 (parallel to S29) | open |
 | Event | PR #381 merged or AOT-clean CloudEvents released | upstream | Check at S08, S26 (D-14); S06 (2026-11-08): PR #381 still open, 2.9.0 latest |
 
 Session ids were renumbered on 2026-11-07; the mapping from the old ids is in the [log](log.md).
@@ -218,5 +224,4 @@ Session ids were renumbered on 2026-11-07; the mapping from the old ids is in th
 
 ## Out of scope for porting / later
 
-* **Job spec client:** southbound implementation of the Job Control spec. Use the OPC UA library's server example as the integration-test partner.
-* **Tightening client** (IJT).
+Nothing at the moment. The Job Control and tightening (IJT) southbound became S28 to S30 on 2026-11-12, over MQTT through a gateway.

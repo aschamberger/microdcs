@@ -370,7 +370,7 @@ public class EquipmentHoldTests
     {
         Interpreter.Accepts(SfcInterpreter.RecipeDataSchema).ShouldBeTrue();
         Interpreter.Accepts(SfcInterpreter.RecipeDataSchemaV10).ShouldBeTrue();
-        Interpreter.Accepts("https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v2.0.0/").ShouldBeFalse();
+        Interpreter.Accepts("https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v2.0.0.json").ShouldBeFalse();
         Interpreter.Accepts(null).ShouldBeFalse();
     }
 }

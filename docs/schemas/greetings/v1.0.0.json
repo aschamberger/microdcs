@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aschamberger.github.io/microdcs/schemas/greetings/v1.0.0.json",
+  "title": "MicroDCS greetings",
+  "$defs": {
+    "Hello": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "Name"
+      ]
+    },
+    "Bye": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "Name"
+      ]
+    },
+    "Raw": {
+      "description": "Any JSON value."
+    }
+  }
+}

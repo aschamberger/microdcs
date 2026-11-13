@@ -94,8 +94,35 @@ MICRODCS_TEST_VALKEY=localhost:6380 MICRODCS_TEST_VALKEY_ACL=localhost:6381 \
 The test ports (6380, 6381, 1884, 4223) are offset from the dev stack, so both can run at the same time.
 
 CI runs the suite this way, on the host against the compose services, in the `dotnet` job together with the unit
-tests, so the integration coverage reaches SonarQube Cloud (`--filter-not-trait Category=Replica --fail-skips on`).
-The `integration` job runs `scripts/replica-tests`, which also builds the `tests` image; the `tests` entrypoint itself runs only locally (D-15 revised in S22a).
+tests, so the integration coverage reaches SonarQube Cloud (`--filter-not-trait Category=Image --fail-skips on`).
+The `integration` job runs `scripts/image-tests`, which also builds the `tests` image; the `tests` entrypoint itself runs
+only locally (D-15 revised in S22a).
+
+## Image Tests
+
+`scripts/image-tests` runs the tests with the trait `Category=Image` against the application image (the `image` profile
+of `compose.test.yaml`):
+
+* **SFC replicas** (D-53): two instances, killed from outside through the Docker socket.
+* **Acceptance** (S23, Q-TEST-2): the image with every role and the greetings and Machinery Jobs bindings (service
+  `app`, `MICRODCS_TEST_APP` names its topic prefix), driven only over MQTT as an MES and the equipment would. These are
+  the Python integration scenarios: greetings, the job commands, a recipe answered by the equipment, the retained topics
+  an MES reads and clears. Each test uses its own scope and ids, because job ids and dedupe claims are global.
+
+To run the acceptance tests against a local build instead of the image, start `dotnet run --project src/MicroDCS.App --
+serve` with the `app` service's settings (broker and Valkey at the host ports above) and run the class
+`AppAcceptanceTests` with `MICRODCS_TEST_APP=acc MICRODCS_TEST_MQTT=localhost:1884`.
+
+## Schemas and Benchmarks
+
+The JSON Schemas that payloads name in `dataschema` live in `docs/schemas/<name>/v<version>.json`; the docs site serves
+them at `https://aschamberger.github.io/microdcs/schemas/` (D-58). They are generated from the models and compared in the
+tests of the owning project (golden files of the wire format); `UPDATE_SCHEMAS=1 dotnet test` rewrites them. A
+non-additive change gets a new version and a new file; old versions stay.
+
+`scripts/bench` runs `bench/MicroDCS.Benchmarks` (BenchmarkDotNet ShortRun) and compares the allocated bytes per operation
+with `bench/baseline.json`: more than 10 % (at least 64 B) above or below it, or a benchmark without a result, fails (below: rewrite the baseline so it stays tight). Mean times are
+reported only, shared runners are too noisy. After an intended change, `scripts/bench --update` rewrites the baseline.
 A test that waits for a timeout it does not assert costs the whole run that time: stop a host in a test with a short
 grace period, because shutdown waits for the expiry timers of open commands until the grace period ends (D-37).
 
@@ -106,7 +133,7 @@ grace period, because shutdown waits for the expiry timers of open commands unti
 | Change | Runs on the pull request |
 |---|---|
 | Documentation only (`docs/`, `overrides/`, `.claude/`, `zensical.toml`, top-level `*.md`, `LICENSE`) | `dotnet` builds and runs the SonarQube Cloud analysis (its check is required); everything else reports a skip |
-| Code | plus tests, format, NuGet audit, `container (linux-x64)`, `integration` (replica tests), `trivy-image` |
+| Code (including `docs/schemas/`, golden files) | plus tests, format, NuGet audit, `container (linux-x64)`, `integration` (image tests), `bench`, `trivy-image` |
 | Image inputs (`Dockerfile`, `global.json`, `Directory.*.props`, `nuget.config`, `ci.yml`, the publish scripts) | plus `container (linux-arm64)` and `kubernetes` |
 | Manifest or what the kind test exercises (`deploy/`, `tests/k8s/`, `scripts/k8s-test`, `src/MicroDCS.App`, `src/MicroDCS.Inspection`, `*Options*.cs`, `*ServiceCollectionExtensions.cs`) | plus `kubernetes` |
 
