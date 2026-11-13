@@ -199,8 +199,8 @@
       },
       "Microsoft.Extensions.Primitives": {
         "type": "Transitive",
-        "resolved": "10.0.14",
-        "contentHash": "1bbZqqCJTPba3inTADExbp/9PsGVyvGOX3zr6tFr7ySCgVkX9Lpw7BV0TizktNItd3SsbUu1sQfSAYm1GZMoNw=="
+        "resolved": "11.0.0",
+        "contentHash": "HH2akbW2HeY/xeZJA5UceuQQX+1Pv/Kxrz/x4XPoH6wYDtgPIlBeOTZlQXlT+b50b1Ym/xfP+WJCX9FW4uLBXQ=="
       },
       "Microsoft.Testing.Extensions.Telemetry": {
         "type": "Transitive",
@@ -413,13 +413,13 @@
         "type": "Project",
         "dependencies": {
           "CloudNative.CloudEvents": "[2.9.0, )",
-          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.14, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Options": "[10.0.14, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[11.0.0, )"
         }
       },
       "microdcs.inspection": {
@@ -442,8 +442,8 @@
           "MicroDCS.Core": "[1.0.0, )",
           "MicroDCS.JobControl": "[1.0.0, )",
           "MicroDCS.Valkey": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[11.0.0, )"
         }
       },
       "microdcs.maintenance": {
@@ -452,12 +452,12 @@
           "MicroDCS.Core": "[1.0.0, )",
           "MicroDCS.Sfc": "[1.0.0, )",
           "MicroDCS.Valkey": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Options": "[10.0.14, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[11.0.0, )",
           "StackExchange.Redis": "[3.4.31, )"
         }
       },
@@ -481,8 +481,8 @@
           "MicroDCS.MachineryJobs": "[1.0.0, )",
           "MicroDCS.Sfc": "[1.0.0, )",
           "MicroDCS.Valkey": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )"
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[11.0.0, )"
         }
       },
       "microdcs.sfc.simulation": {
@@ -505,13 +505,13 @@
         "type": "Project",
         "dependencies": {
           "MicroDCS.Core": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Binder": "[10.0.14, )",
+          "Microsoft.Extensions.Configuration.Binder": "[11.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.14, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Options": "[10.0.14, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[11.0.0, )",
           "StackExchange.Redis": "[3.4.31, )"
         }
       },
@@ -532,12 +532,12 @@
       },
       "Microsoft.Extensions.Configuration.Binder": {
         "type": "CentralTransitive",
-        "requested": "[10.0.14, )",
-        "resolved": "10.0.14",
-        "contentHash": "brDb5kgle2iY2lWHgeV/KOqnBEpVnlMFigGJ/WW7KP9Nj6C/t53f/h5boYyVXB0bEhgpL+ctbewDJMI+zAMj1w==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "3eoaKF4Stat1PSN+KFwqmy04sM9DwGuHM1o1lHwuNFM/TqwQ+PCIvaQHS4lcT3kJl5rwvDK4w/rIlR0wc024eQ==",
         "dependencies": {
-          "Microsoft.Extensions.Configuration": "10.0.14",
-          "Microsoft.Extensions.Configuration.Abstractions": "10.0.14"
+          "Microsoft.Extensions.Configuration": "11.0.0",
+          "Microsoft.Extensions.Configuration.Abstractions": "11.0.0"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
@@ -598,15 +598,15 @@
       },
       "Microsoft.Extensions.Options.ConfigurationExtensions": {
         "type": "CentralTransitive",
-        "requested": "[10.0.14, )",
-        "resolved": "10.0.14",
-        "contentHash": "4wcIU0rE04ejEfCwHTftu9O8fgH6CRYCe+tseRapikUBn1Kic3QdO7ku22SwFyLrzdWGYPUZMEgv57ZYuuc5gA==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "s4JrxDPwxk8pE6LFVj+M5TrDHxOVIoCnQBy5lexs5uAYeggPYwAc/pSDNgVuZN14pCmZGCInygI/2ylCdLYShw==",
         "dependencies": {
-          "Microsoft.Extensions.Configuration.Abstractions": "10.0.14",
-          "Microsoft.Extensions.Configuration.Binder": "10.0.14",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.14",
-          "Microsoft.Extensions.Options": "10.0.14",
-          "Microsoft.Extensions.Primitives": "10.0.14"
+          "Microsoft.Extensions.Configuration.Abstractions": "11.0.0",
+          "Microsoft.Extensions.Configuration.Binder": "11.0.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "11.0.0",
+          "Microsoft.Extensions.Options": "11.0.0",
+          "Microsoft.Extensions.Primitives": "11.0.0"
         }
       },
       "ModelContextProtocol.AspNetCore": {
