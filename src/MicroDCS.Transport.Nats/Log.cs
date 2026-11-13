@@ -50,6 +50,9 @@ internal static partial class Log
     [LoggerMessage(EventId = 215, Level = LogLevel.Warning, Message = "Consume loop of {Consumer} failed; restarting")]
     public static partial void ConsumeFailed(ILogger logger, Exception exception, string consumer);
 
+    [LoggerMessage(EventId = 218, Level = LogLevel.Warning, Message = "Consumer {Consumer} does not answer pull requests ({Notification}); creating it again")]
+    public static partial void ConsumerNotAnswering(ILogger logger, string consumer, string notification);
+
     [LoggerMessage(EventId = 216, Level = LogLevel.Warning, Message = "Binding {Binding} publishes with retain on NATS: the flag is ignored, use a state topic (IStateTopicPort)")]
     public static partial void RetainIgnored(ILogger logger, string binding);
 

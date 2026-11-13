@@ -384,12 +384,37 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         var token = _receivingStop.Token;
         while (!token.IsCancellationRequested)
         {
+            // Set when the server stops answering the pull requests of this consumer; ends the cycle like a reconnect does.
+            using var gone = new CancellationTokenSource();
+            var reason = string.Empty;
+
             // A reconnect ends the cycle: the pull request of the old connection is gone and the library would notice only after its idle heartbeat timeout.
-            using var cycle = CancellationTokenSource.CreateLinkedTokenSource(token, Volatile.Read(ref _consumeCycle).Token);
-            try
+            using var cycle = CancellationTokenSource.CreateLinkedTokenSource(token, Volatile.Read(ref _consumeCycle).Token, gone.Token);
+            var options = new NatsJSConsumeOpts
             {
                 // One message at a time from the server (RV-20): the rest waits on the server, where AckWait has not started.
-                await foreach (var message in consumer.ConsumeAsync(_inSerializer, new NatsJSConsumeOpts { MaxMsgs = 1 }, cycle.Token).ConfigureAwait(false))
+                MaxMsgs = 1,
+
+                // A consumer deleted while a pull request is open answers "409 Consumer Deleted", and the library throws. Deleted while none
+                // is open (between pulls, or while disconnected), it does not answer at all: the library reports "no responders" and missed
+                // heartbeats as notifications and never throws, so the binding would stall until a restart (RV-14).
+                NotificationHandler = (notification, _) =>
+                {
+                    if (notification is NatsJSNoRespondersNotification or NatsJSTimeoutNotification)
+                    {
+                        reason = notification.Name;
+
+                        // On the thread pool: the cancellation ends the consume loop that is calling this handler.
+                        ThreadPool.QueueUserWorkItem(static source => CancelQuietly(source), gone, preferLocal: false);
+                    }
+
+                    return Task.CompletedTask;
+                },
+            };
+
+            try
+            {
+                await foreach (var message in consumer.ConsumeAsync(_inSerializer, options, cycle.Token).ConfigureAwait(false))
                 {
                     Interlocked.Increment(ref _received);
                     var delivery = new NatsDelivery(info.BindingId, InboundKind.Request, message.Subject, message.Headers, message.Data, (long)(message.Metadata?.NumDelivered ?? 1), message, info.Consumer);
@@ -405,7 +430,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             }
             catch (OperationCanceledException)
             {
-                // Reconnected: pull again on the new connection.
+                // Reconnected, or the consumer stopped answering (below): pull again.
             }
             catch (ChannelClosedException)
             {
@@ -415,16 +440,43 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             {
                 // The consumer vanished (server restart without persistence, inactive threshold): create it again and go on (RV-14).
                 Log.ConsumeFailed(_logger, ex, info.Consumer);
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(1), _time, token).ConfigureAwait(false);
-                    consumer = await _js!.CreateOrUpdateConsumerAsync(info.Stream, config, token).ConfigureAwait(false);
-                }
-                catch (Exception inner) when (inner is OperationCanceledException or NatsException)
-                {
-                    // Try again in the next round, unless receiving stopped.
-                }
+                consumer = await RecreateConsumerAsync(consumer, info, config, token).ConfigureAwait(false);
+                continue;
             }
+
+            // The library ends the enumeration quietly when the cycle is cancelled, so this is checked here and not in a catch.
+            if (gone.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                Log.ConsumerNotAnswering(_logger, info.Consumer, reason);
+                consumer = await RecreateConsumerAsync(consumer, info, config, token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static void CancelQuietly(CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // A notification after the cycle ended.
+        }
+    }
+
+    /// <summary>Creates the consumer again after a second; on failure keeps the old handle, and the next round tries again.</summary>
+    private async Task<INatsJSConsumer> RecreateConsumerAsync(INatsJSConsumer consumer, NatsConsumerInfo info, ConsumerConfig config, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), _time, token).ConfigureAwait(false);
+            return await _js!.CreateOrUpdateConsumerAsync(info.Stream, config, token).ConfigureAwait(false);
+        }
+        catch (Exception inner) when (inner is OperationCanceledException or NatsException)
+        {
+            // Try again in the next round, unless receiving stopped.
+            return consumer;
         }
     }
 

@@ -538,3 +538,16 @@ Verified: build 0 warnings, 1085 tests (914 passed, 171 integration skipped on t
 `/code-review high`: 9 findings, 8 fixed (raw-JSON test read the retained order before the publisher wrote it, the "index without the job" check could match a stale held index, the 30 s wait ended after the client's 15 s, the StoreAndStart retry hid other refusals and had no interval, stale schema links in `docs/sfc-core.md`, `--update` could drop a failed benchmark from the baseline, a drop in allocations did not tighten the gate, an empty array under `set -u` in old bash); not changed: the locked restore of BenchmarkDotNet's child project in CI (did not reproduce with `CI=true`).
 Post-merge checks: `ci` green on `main` with all jobs including `bench`, `integration` (image tests) and `publish`; `docs` green and `https://aschamberger.github.io/microdcs/schemas/greetings/v1.0.0.json` (and the other six) answer 200; the scheduled `ci` run of 2026-11-13 ran both container legs and `kubernetes`; required checks unchanged (eleven, D-56; `bench` is not one).
 Next session pickup: S23a (docs port and release; depends on S23). Run `git switch main && git pull --ff-only && gh stack init s23a-docs-release`. Read the S23a block, the [parity acceptance](research/parity-acceptance.md) checklist, D-16, D-55, D-58 and `.claude/rules/docs.md`. Eleven pages carry "Not yet ported"; `docs/sfc_engine.md` and `docs/information-model-standards.md` still name the old recipe URLs. The release tag `v0.1.0` goes on `main` after the S23a PR is merged. Nothing to prepare.
+
+## Fix: NATS consumer deleted while no pull is open (2026-11-13, branch `fix-nats-consumer-vanished`)
+
+Status: done. Not a numbered session; found by the .NET 11 PR, where `RV14_a_consumer_deleted_on_the_server_is_created_again` failed twice in CI (the deletion landed before the first pull request).
+Done:
+
+* `NatsTransport.ReadConsumerAsync` handles the consume notifications: "no responders" or missed heartbeats end the cycle and the consumer is created again after a second (warning event 218). The library ends `ConsumeAsync` quietly when cancelled, so the check follows the loop instead of a catch.
+* Compose test `RV14_a_consumer_deleted_while_disconnected_is_created_again_after_the_reconnect` (the test proxy can now refuse connections): fails without the fix, 3 of 3 green with it.
+
+Findings: with NATS.Net 3.3.2, consuming from a deleted consumer never throws: "no responders" at once, then timeout and "no responders" every 30 s ([M1 review](research/m1-review.md), RV-14). Only a deletion during an open pull request answers `409 Consumer Deleted`.
+Changed in the plan: `research/m1-review.md` (RV-14), `docs/nats-transport.md`.
+Post-merge checks: `ci` green on `main`; the .NET 11 PR (#87) rebased onto it passes `dotnet`.
+Next session pickup: S23a, as in the S23 entry.

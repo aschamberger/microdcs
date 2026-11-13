@@ -276,6 +276,43 @@ public sealed class NatsTransportTests
         NatsTestClient.Header(await client.ReceiveAsync(Ct), "causationid").ShouldBe("after-1");
     }
 
+    // A consumer deleted while no pull request is open (here: while the client is disconnected) gets no "409 Consumer Deleted";
+    // NATS.Net then reports only "no responders" and heartbeat timeouts as notifications and never throws. Before the fix the
+    // binding stalled until the process restarted (found with .NET 11, where RV14 hit this window in CI).
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task RV14_a_consumer_deleted_while_disconnected_is_created_again_after_the_reconnect()
+    {
+        await using var proxy = new NatsTestProxy();
+        await using var host = await NatsTestHost.StartAsync(url: proxy.Url, ct: Ct);
+        await using var client = await NatsTestClient.ConnectAsync();
+        var reply = $"{host.Prefix}-test.replies";
+        await client.SubscribeAsync(reply, Ct);
+        var consumer = host.Transport.Status.Consumers.Single(c => c.Kind == InboundKind.Request);
+        var js = new NatsJSContext(client.Connection);
+
+        proxy.Refusing = true;
+        proxy.CloseConnections();
+        await EventuallyAsync(() => !host.Transport.IsConnected);
+        (await js.DeleteConsumerAsync(consumer.Stream, consumer.Consumer, Ct)).ShouldBeTrue();
+        proxy.Refusing = false;
+
+        await EventuallyAsync(() => host.Transport.IsConnected);
+        await EventuallyAsync(() =>
+        {
+            try
+            {
+                return js.GetConsumerAsync(consumer.Stream, consumer.Consumer, Ct).AsTask().GetAwaiter().GetResult() is not null;
+            }
+            catch (NatsJSApiException)
+            {
+                return false;
+            }
+        });
+
+        await client.PublishEventAsync($"{host.Prefix}.site.area.events", "again-2", NatsTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", reply, Ct);
+        NatsTestClient.Header(await client.ReceiveAsync(Ct), "causationid").ShouldBe("again-2");
+    }
+
     [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
     public async Task Accounts_isolate_tenants_that_use_the_same_subjects()
     {
