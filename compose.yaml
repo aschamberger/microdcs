@@ -108,7 +108,7 @@ services:
         condition: service_healthy
 
   aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest@sha256:55a5a9fb88ddcff91997d6889912a19a1627e3584bd41fa5141c9db5f8376754
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest@sha256:e69a221d6d4ce3ee9bd74b9474c073dd154ef8df7eaa535c2f50f4a554adce54
     environment:
       ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
     ports:
