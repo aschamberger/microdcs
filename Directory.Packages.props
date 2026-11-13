@@ -39,7 +39,7 @@
   </ItemGroup>
   <ItemGroup Label="Generators">
     <!-- Roslyn API for MicroDCS.Generators; 4.x loads in every supported SDK. -->
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
   </ItemGroup>
   <ItemGroup Label="Analyzers">
     <!-- Sonar C# rules in every build, so a local build fails on the same rules as the SonarQube Cloud
