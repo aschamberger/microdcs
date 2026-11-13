@@ -31,7 +31,7 @@ stacked-PR steps. The handoff is part of the session's own PR.
 
 ## Tech stack
 
-* .NET 10 (SDK pinned in `global.json`), C# latest, Native AOT for the application.
+* .NET 11 (SDK pinned in `global.json`, D-59), C# latest, Native AOT for the application.
 * Central package management (`Directory.Packages.props`), lock files, NuGet audit, `nuget.config` maps everything to nuget.org.
 * Tests: xUnit v3 on Microsoft.Testing.Platform, Shouldly, NSubstitute (D-31).
 * Planned libraries (see the library table in `docs/porting/index.md`): StackExchange.Redis (Valkey), MQTTnet 5, NATS.Net, AMQPNetLite, a Zenoh binding, OPC UA UA-.NETStandard 2.x (models only, D-4), CloudNative.CloudEvents (D-14), ModelContextProtocol.AspNetCore.

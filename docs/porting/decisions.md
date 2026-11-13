@@ -860,3 +860,22 @@ Decision:
 Consequences: the `dataschema` values and the SFC recipe format markers change (D-8: nothing stored needs migrating; a work master with an old URL is refused like an unknown format). The URLs resolve once the docs site is published from `main`. A model change that alters a schema fails the tests until the document is regenerated.
 
 Not chosen: a separate repository for a user site at `aschamberger.github.io/schemas/` (one more repository to keep in step); validating payloads against the schemas at runtime or in the acceptance tests (a JSON Schema library dependency for a check the compare test already covers at the source); gating on mean times (shared runners vary by more than the regressions worth catching).
+
+## D-59 .NET 11 as the target {#d-59}
+
+Status: decided (2026-11-13, maintainer). Background: the open Dependabot PRs #76 to #84.
+
+Context: .NET 11 (STS) was released on 2026-11-10; .NET 10 (LTS) and .NET 11 are both supported until November 2028. Dependabot proposed the 11.0.0 `Microsoft.Extensions.*` packages as separate PRs, which cannot pass the locked restore on their own.
+
+Decision:
+
+* **Target `net11.0`**, SDK 11.0.100 in `global.json`, all `Microsoft.Extensions.*` at 11.0.0. Reasons: lower memory use, async and Native AOT improvements, C# 15, at the same support end date as .NET 10.
+* **Images on Ubuntu 26.04** (`sdk:11.0-resolute-aot`, `runtime-deps:11.0-resolute-chiseled`): .NET 11 publishes no `noble` variants.
+* **Package pruning:** `Microsoft.Extensions.*.Abstractions`, `Options` and `Configuration.Abstractions` are part of the .NET 11 framework (NU1510), so the projects no longer reference them.
+* **Roslyn 5.9** for `MicroDCS.Generators` (Dependabot #79): the compiler loads a generator only if its Roslyn is not newer than its own, and every SDK that builds `net11.0` has at least 5.12. The rule: at or below the Roslyn of the SDK in `global.json`; our own build fails first if a bump goes above it.
+* **Dependabot** ignores majors of `Microsoft.Extensions.*`. SDK and runtime patches, and NuGet groups that leave related packages behind, go into one hand-made PR with `dotnet restore --force-evaluate` (`docs/development.md`, Dependency Updates).
+
+Consequences: the next move (.NET 12, LTS, November 2027) is again a decision and one PR. The AOT binary grew by 0.9 MB to 39.0 MB. BenchmarkDotNet 0.15.8 does not know net11.0 for its out-of-process toolchain, so `scripts/bench` runs in process (`--inProcess`) until a release does; the allocations are unchanged except `HandleHello` (2216 to 2208 B), and the baseline was rewritten.
+
+Not chosen: staying on .NET 10 LTS (no extra support time gained, and the benefits above wait a year).
+

@@ -114,7 +114,7 @@ reason why payloads stay out.
 
 | Property | How |
 |---|---|
-| Minimal image | Native AOT binary in `runtime-deps:10.0-noble-chiseled`: no shell, no package manager, user `app` (1654); CI checks both (D-32) |
+| Minimal image | Native AOT binary in `runtime-deps:11.0-resolute-chiseled` (Ubuntu 26.04): no shell, no package manager, user `app` (1654); CI checks both (D-32) |
 | Pinned inputs | Base images and scanner containers by digest, GitHub Actions by commit SHA, NuGet packages through lock files with locked restore; Dependabot proposes updates |
 | Vulnerability gates | NuGet audit in the build, Trivy over the lock files, the Dockerfile and `deploy/`, Trivy over the image, daily on `main` (D-20) |
 | Secrets in the repository | Gitleaks over every pull request and the full history |

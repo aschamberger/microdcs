@@ -6,7 +6,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=aschamberger_microdcs&metric=coverage)](https://sonarcloud.io/summary/new_code?id=aschamberger_microdcs)
 
 > [!WARNING]
-> **Port to .NET in progress.** `main` is being rewritten in C# (.NET 10, Native AOT) and is not a
+> **Port to .NET in progress.** `main` is being rewritten in C# (.NET 11, Native AOT) and is not a
 > working product until the parity gate. The Python implementation is archived on the
 > [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch; the
 > sections below from "Quickstart" on still describe it. Plan and progress:

@@ -18,6 +18,8 @@ esac
 
 artifacts=TestResults/bench
 rm -rf "$artifacts"
+# --inProcess: BenchmarkDotNet 0.15.8 does not know net11.0 for its out-of-process toolchain (NotImplementedException in the
+# SDK validation, D-59); in process the allocations are measured the same way. Drop it with a BenchmarkDotNet that knows .NET 11.
 dotnet run -c Release --project bench/MicroDCS.Benchmarks -- \
-  --filter '*' --job short --exporters json --artifacts "$artifacts" \
+  --filter '*' --job short --inProcess --exporters json --artifacts "$artifacts" \
   --baseline bench/baseline.json ${mode[@]+"${mode[@]}"}

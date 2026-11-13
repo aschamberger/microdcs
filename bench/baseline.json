@@ -3,15 +3,15 @@
   "benchmarks": {
     "DecodeEnvelope": {
       "bytes": 2392,
-      "meanNs": 1308.6
+      "meanNs": 1306.2
     },
     "EncodeEnvelope": {
       "bytes": 2264,
-      "meanNs": 851.2
+      "meanNs": 996.5
     },
     "HandleHello": {
-      "bytes": 2216,
-      "meanNs": 1605.1
+      "bytes": 2208,
+      "meanNs": 1468.7
     }
   }
 }

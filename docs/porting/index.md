@@ -121,8 +121,9 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-56](decisions.md#d-56) | decided | CI path rules in `scripts/ci-changes`, skips that keep required checks reportable, docs-only PRs build and analyse only, arm64 and kind on `main` and daily, kind reuses the x64 image |
 | [D-57](decisions.md#d-57) | revised | SFC equipment hold: recipe v1.1.0 with per-action `Hold` and `Restart`, hold answered `held` ends the attempt and the restart completes the action, anything else falls back to S20a, restart once with its own timeout, capability `EquipmentHold` |
 | [D-58](decisions.md#d-58) | decided | Parity acceptance: `dataschema` documents served from the docs site and generated as golden files, acceptance tests against the image over MQTT, benchmark gate on allocated bytes |
+| [D-59](decisions.md#d-59) | decided | .NET 11 as the target: SDK 11.0.100, Ubuntu 26.04 images, pruned framework packages, Roslyn 5.9 for the generator (at most the SDK's), `Microsoft.Extensions.*` majors ignored, SDK bumps as one hand-made PR |
 
-Next free id: **D-59**.
+Next free id: **D-60**.
 
 ## Open questions
 

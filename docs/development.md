@@ -8,7 +8,7 @@ Python workflow follows at the end and is replaced as the port proceeds.
 
 | Tool | Version | Notes |
 |---|---|---|
-| .NET SDK | 10.0.403 (pinned in `global.json`, `rollForward: patch`: CI installs exactly this version, the Docker SDK image is pinned by digest to the same one; a patch upgrade changes `global.json`, the lock files and the image digest in one PR) | `dotnet-install.sh` or a package manager |
+| .NET SDK | 11.0.100 (pinned in `global.json`, `rollForward: patch`: CI installs exactly this version, the Docker SDK image is pinned by digest to the same one; a patch upgrade changes `global.json`, the lock files and the image digest in one PR, D-59) | `dotnet-install.sh` or a package manager |
 | Native AOT prerequisites (Linux) | `clang`, `zlib1g-dev` | Needed for a host AOT publish (`scripts/aot-publish`); the container build brings its own |
 | Docker with Compose v2 | recent | Dev stack and the integration test harness (D-15) |
 | Python 3 | any 3.x | Only for the docs site (zensical) |
@@ -17,7 +17,7 @@ Python workflow follows at the end and is replaced as the port proceeds.
 Check the toolchain:
 
 ```bash
-dotnet --info            # SDK 10.0.403 listed
+dotnet --info            # SDK 11.0.100 listed
 docker compose version
 clang --version
 ```
@@ -98,6 +98,17 @@ tests, so the integration coverage reaches SonarQube Cloud (`--filter-not-trait 
 The `integration` job runs `scripts/image-tests`, which also builds the `tests` image; the `tests` entrypoint itself runs
 only locally (D-15 revised in S22a).
 
+## Dependency Updates
+
+Dependabot opens the pull requests; some cannot pass as opened (D-59). An SDK or runtime patch (the Docker images,
+`global.json`) changes the implicit `Microsoft.NET.ILLink.Tasks` in every lock file, and a NuGet group can leave a related
+package behind, so the locked restore fails. Such updates go into one hand-made PR: bump the versions together, then
+`dotnet restore --force-evaluate` regenerates every lock file, and the usual checks run (build, tests, AOT publish, image
+tests, `scripts/bench`). Close the superseded Dependabot PRs with a link to it. Majors of `Microsoft.Extensions.*` (a new
+.NET release) are ignored in `.github/dependabot.yml`; moving to a new .NET release is a decision of its own.
+`Microsoft.CodeAnalysis.CSharp` (the generator's Roslyn) must stay at or below the Roslyn of the SDK in `global.json`,
+or the compiler skips the generator; our own build fails first.
+
 ## Image Tests
 
 `scripts/image-tests` runs the tests with the trait `Category=Image` against the application image (the `image` profile
@@ -122,7 +133,7 @@ non-additive change gets a new version and a new file; old versions stay.
 
 `scripts/bench` runs `bench/MicroDCS.Benchmarks` (BenchmarkDotNet ShortRun) and compares the allocated bytes per operation
 with `bench/baseline.json`: more than 10 % (at least 64 B) above or below it, or a benchmark without a result, fails (below: rewrite the baseline so it stays tight). Mean times are
-reported only, shared runners are too noisy. After an intended change, `scripts/bench --update` rewrites the baseline.
+reported only, shared runners are too noisy. The benchmarks run in process (`--inProcess`) until BenchmarkDotNet knows .NET 11 (D-59). After an intended change, `scripts/bench --update` rewrites the baseline.
 A test that waits for a timeout it does not assert costs the whole run that time: stop a host in a test with a short
 grace period, because shutdown waits for the expiry timers of open commands until the grace period ends (D-37).
 
@@ -258,7 +269,7 @@ set -euo pipefail
 
 # .NET SDK, same version as global.json
 curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-bash /tmp/dotnet-install.sh --version 10.0.403 --install-dir "$HOME/.dotnet"
+bash /tmp/dotnet-install.sh --version 11.0.100 --install-dir "$HOME/.dotnet"
 {
   echo 'export DOTNET_ROOT="$HOME/.dotnet"'
   echo 'export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"'
