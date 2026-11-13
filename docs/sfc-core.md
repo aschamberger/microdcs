@@ -41,7 +41,7 @@ SfcStepResult r = interpreter.Evolve(graph, state, SfcSnapshot.Default, new SfcS
 
 ## Recipe
 
-The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, `Actions`, `Branches` for the divergences; `TimeoutSeconds`, `TypeId`). `dataschema` is `https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/`; v1.1.0 adds the optional `Hold` and `Restart` fields. Work masters with `v1.0.0/` are still accepted, but not with those fields. The C# model is the source of the JSON Schema in [`schemas/sfc_recipe.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_recipe.schema.json); a test regenerates it and fails when the file is stale (`UPDATE_SCHEMAS=1 dotnet test` rewrites it).
+The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, `Actions`, `Branches` for the divergences; `TimeoutSeconds`, `TypeId`). `dataschema` is `https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json`; v1.1.0 adds the optional `Hold` and `Restart` fields. Work masters with `…/sfc-recipe/v1.0.0.json` are still accepted, but not with those fields. The C# model is the source of the JSON Schema in [`schemas/sfc-recipe/v1.1.0.json`](schemas/sfc-recipe/v1.1.0.json) (served at the `dataschema` URL, D-58); a test regenerates it and fails when the file is stale (`UPDATE_SCHEMAS=1 dotnet test` rewrites it).
 
 | Field | Meaning |
 |---|---|
@@ -141,7 +141,7 @@ The hold type must declare the outcome `held` (SFC020). Responses are matched by
 
 ## State and commands
 
-`SfcState` is a versioned JSON document (`format` 1, minor 3) with the job identity, the pinned recipe hash, the active steps, one record per action, a sequence counter, the start time, the time of a hold (`heldAt`, while held) and the fault. An action record carries the state of its equipment hold (`hold`, `holdCommandId`, `holdDeadline`, `restarted`). Command ids are `{actionKey}#{sequence}` (hold commands add `:hold`), so replaying the same events on the same state gives byte-identical results. The schema is [`schemas/sfc_state.schema.json`](https://github.com/aschamberger/microdcs/blob/main/schemas/sfc_state.schema.json).
+`SfcState` is a versioned JSON document (`format` 1, minor 3) with the job identity, the pinned recipe hash, the active steps, one record per action, a sequence counter, the start time, the time of a hold (`heldAt`, while held) and the fault. An action record carries the state of its equipment hold (`hold`, `holdCommandId`, `holdDeadline`, `restarted`). Command ids are `{actionKey}#{sequence}` (hold commands add `:hold`), so replaying the same events on the same state gives byte-identical results. The schema is [`schemas/sfc-state/v1.0.0.json`](schemas/sfc-state/v1.0.0.json).
 
 Commands are inert data: `StartWork` (`PushCommand`, `AwaitEvent`, `HoldCommand` or `RestartCommand`, with the deadline and the recipe parameters) and `CancelWork` (`redispatch`, `teardown`, `held`, `superseded`, `timeout` or the cancel reason). The host applies them in order and idempotently by action key. The continuation is `SfcDefer`, `SfcComplete`, `SfcFault` or `SfcCancelled`; faults carry a code (`timeout`, `error`, `no_transition`, `propagation_limit`) and are verdicts, not policy.
 

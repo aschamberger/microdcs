@@ -354,6 +354,27 @@ public sealed class PipelineTests
         rig.Log.Entries.ShouldBe(["hello:Bob:p"]);
     }
 
+    // Python parity (S23): test_dedupe_integration.py test_handler_waits_for_lease_then_processes.
+    [Fact]
+    public async Task A_message_whose_lease_another_worker_holds_waits_and_is_processed_once_the_lease_lapses()
+    {
+        await using var rig = await StartRigAsync<SampleProcessor>("sample");
+        var dedupe = rig.Provider.GetRequiredService<IDedupeStore>();
+        (await dedupe.ClaimAsync("urn:x", "e1", "dead-worker", TestContext.Current.CancellationToken)).ShouldBe(ClaimState.Claimed);
+
+        var delivery = rig.Transport.InjectAsync(Request("test.hello.v1", "p/res", """{"Name":"Bob"}"""), TestContext.Current.CancellationToken).AsTask();
+
+        // The 30 s lease is polled at most every second; nothing runs while it holds.
+        await rig.Time.WaitForTimerAsync(TimeSpan.FromSeconds(1));
+        delivery.IsCompleted.ShouldBeFalse();
+        rig.Log.Entries.ShouldBeEmpty();
+
+        rig.Time.Advance(TimeSpan.FromSeconds(30));
+
+        (await delivery.WaitAsync(_wait, TestContext.Current.CancellationToken)).ShouldBe(DeliveryOutcome.Ack);
+        rig.Log.Entries.ShouldBe(["hello:Bob:p"]);
+    }
+
     [Fact]
     public async Task Fault_releases_the_claim_so_the_redelivery_is_processed_at_once()
     {

@@ -16,7 +16,7 @@ namespace MicroDCS.Benchmarks;
 public class PipelineBenchmarks
 {
     private ServiceProvider _provider = null!;
-    private IHostedService _host = null!;
+    private MicroDcsHostedService _host = null!;
     private MessagePipeline _pipeline = null!;
     private CloudEventsEnvelopeCodec _codec = null!;
     private EnvelopeCarrier _carrier;
@@ -42,7 +42,7 @@ public class PipelineBenchmarks
         services.AddSingleton<ITransport, NullTransport>();
         services.AddMicroDcs(configuration).AddProcessor<BenchProcessor>();
         _provider = services.BuildServiceProvider();
-        _host = _provider.GetServices<IHostedService>().Single();
+        _host = _provider.GetServices<IHostedService>().OfType<MicroDcsHostedService>().Single();
         await _host.StartAsync(CancellationToken.None).ConfigureAwait(false);
         _pipeline = _provider.GetRequiredService<MessagePipeline>();
 

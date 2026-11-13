@@ -53,8 +53,11 @@ image='^(Dockerfile$|\.dockerignore$|global\.json$|nuget\.config$|Directory\.(Bu
 k8s='^(deploy/|tests/k8s/|scripts/k8s-test$|src/MicroDCS\.(App|Inspection)/|src/[^/]+/(.*/)?[^/]*(Options[^/]*|ServiceCollectionExtensions)\.cs$)'
 
 code=false image_changed=false k8s_changed=false
+# The schema documents under docs/ are golden files of the wire format that the tests compare (D-58): code, not documentation.
+golden='^docs/schemas/'
+
 for file in "${files[@]}"; do
-  if ! matches "$file" "$docs_only"; then code=true; fi
+  if ! matches "$file" "$docs_only" || matches "$file" "$golden"; then code=true; fi
   if matches "$file" "$image"; then image_changed=true; fi
   if matches "$file" "$k8s"; then k8s_changed=true; fi
 done

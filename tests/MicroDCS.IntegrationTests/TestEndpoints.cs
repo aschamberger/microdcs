@@ -11,6 +11,7 @@ internal static class TestEndpoints
     public const string MqttVariable = "MICRODCS_TEST_MQTT";
     public const string NatsVariable = "MICRODCS_TEST_NATS";
     public const string ValkeyAclVariable = "MICRODCS_TEST_VALKEY_ACL";
+    public const string AppVariable = "MICRODCS_TEST_APP";
 
     /// <summary>Password of the default user of the <c>valkey-acl</c> harness service (a test fixture).</summary>
     public const string ValkeyAclAdminPassword = "harness-admin";
@@ -22,6 +23,12 @@ internal static class TestEndpoints
     public static bool NatsConfigured => Nats is not null;
 
     public static bool ValkeyAclConfigured => ValkeyAcl is not null;
+
+    /// <summary>The application image runs as the <c>app</c> service of the <c>image</c> profile and the broker is reachable (S23).</summary>
+    public static bool AppConfigured => App is not null && MqttConfigured;
+
+    /// <summary>Topic prefix of the greetings binding of the <c>app</c> service; the Machinery Jobs binding uses it with <c>-mes</c>.</summary>
+    public static string? App => Environment.GetEnvironmentVariable(AppVariable) is { Length: > 0 } prefix ? prefix : null;
 
     /// <summary>
     /// The ACL rule of an island's user from <c>deploy/valkey-island-acl.conf</c> (the single source that docs/deployment.md includes), for

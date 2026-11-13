@@ -8,7 +8,7 @@
 | Conversions | `JobControlConversions`, `JobStateArray` | To and from the generated V1 and V2 types. Same-version round trips are lossless |
 | Codec | `OpcUaJsonCodec`, `OpcUaJsonPayloadDescriptor<T>` | OPC UA JSON, verbose |
 | Validation | `JobControlValidation` | Required ids; the decoder accepts missing fields |
-| Schema | `JobControlSchemas.GenerateJson<T>()` | JSON Schema for `dataschema`, generated at runtime |
+| Schema | `JobControlSchemas.GenerateJson<T>()`, `GenerateNamespaceJson<T>()` | JSON Schema of one type, or of a namespace as the `dataschema` document (`docs/schemas/microdcs-jobcontrol/`, `docs/schemas/isa95-jobcontrol-v2/`, D-58) |
 | State machine | `JobStateMachine.Apply(version, state, operation)` | Pure function, no I/O |
 
 The codec sets no size limits of its own; the transport bounds a message. It keeps the OPC UA nesting limit, and an over-deep payload is a `PayloadException`.

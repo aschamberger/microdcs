@@ -35,7 +35,7 @@ FROM restore AS tests
 RUN dotnet build tests/MicroDCS.IntegrationTests -c Release --no-restore
 ENTRYPOINT ["dotnet", "test", "--project", "tests/MicroDCS.IntegrationTests", "-c", "Release", "--no-build", \
             "--fail-skips", "on", "--results-directory", "/results", "--report-xunit-trx", \
-            "--filter-not-trait", "Category=Replica"]
+            "--filter-not-trait", "Category=Image"]
 
 # Final stage, last in the file so it is the default target.
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled@sha256:e9346023014b406b9bc8be969b3aa4d39efa3a43b6abcc495f01be566acb10e9 AS runtime

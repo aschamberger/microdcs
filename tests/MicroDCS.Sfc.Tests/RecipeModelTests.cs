@@ -36,7 +36,7 @@ public class RecipeModelTests
     [Fact]
     public void DataSchemaUriMatchesTheSchemaId()
     {
-        SfcInterpreter.RecipeDataSchema.ShouldBe("https://aschamberger.github.io/schemas/microdcs/sfc-recipe/v1.1.0/");
+        SfcInterpreter.RecipeDataSchema.ShouldBe("https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json");
     }
 
     [Fact]

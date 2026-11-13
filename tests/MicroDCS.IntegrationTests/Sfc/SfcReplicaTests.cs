@@ -16,10 +16,10 @@ using MQTTnet;
 namespace MicroDCS.IntegrationTests.Sfc;
 
 /// <summary>
-/// Two real replicas of the application image, killed from outside (S20, D-53). Runs through <c>scripts/replica-tests</c>, not in the main compose run:
-/// a container that exits would end <c>--abort-on-container-exit</c>. The settings are in the <c>replicas</c> profile of <c>compose.test.yaml</c>.
+/// Two real replicas of the application image, killed from outside (S20, D-53). Runs through <c>scripts/image-tests</c>, not in the main compose run:
+/// a container that exits would end <c>--abort-on-container-exit</c>. The settings are in the <c>image</c> profile of <c>compose.test.yaml</c>.
 /// </summary>
-[Trait("Category", "Replica")]
+[Trait("Category", "Image")]
 public sealed class SfcReplicaTests : IAsyncLifetime
 {
     private const string Skip = $"{DockerSocketVariable} is not set";

@@ -13,7 +13,6 @@ site/
 docs/
 overrides/
 deploy/
-schemas/
 app/
 *.log
 .env

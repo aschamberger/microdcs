@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aschamberger.github.io/schemas/microdcs/sfc-state/v1.0.0/",
+  "$id": "https://aschamberger.github.io/microdcs/schemas/sfc-state/v1.0.0.json",
   "title": "SFC Execution State",
   "type": "object",
   "properties": {
