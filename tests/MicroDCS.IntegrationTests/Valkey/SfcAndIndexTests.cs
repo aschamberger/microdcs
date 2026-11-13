@@ -14,7 +14,7 @@ public sealed class SfcAndIndexTests
         var ct = TestContext.Current.CancellationToken;
         using var env = await ValkeyTestEnvironment.CreateAsync();
         var dao = new SfcStateDao(env.Context);
-        SfcWaitChanges Claim() => new([], [], "urn:it|e1");
+        static SfcWaitChanges Claim() => new([], [], "urn:it|e1");
         await dao.CompareAndSetAsync("a", "s", "state", 0, null, true, [], cancellationToken: ct);
         await dao.CompareAndSetAsync("b", "s", "state", 0, null, true, [], cancellationToken: ct);
 

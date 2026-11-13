@@ -180,7 +180,7 @@ public class BuildTests
     [Fact]
     public void SelectorsThatDifferInALiteralSeparateWaits()
     {
-        SfcSelector Subject(string value) => new() { Subject = value };
+        static SfcSelector Subject(string value) => new() { Subject = value };
 
         Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("left")), Pull("y", "A", type: "t.e", selector: Subject("right"))])).ShouldBeEmpty();
         Codes(Recipe([Step("A", true)], [], [Pull("x", "A", type: "t.e", selector: Subject("same")), Pull("y", "A", type: "t.e", selector: Subject("same"))])).ShouldContain("SFC011");

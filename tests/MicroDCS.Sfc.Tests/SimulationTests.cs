@@ -158,7 +158,7 @@ public class SimulationTests
     [Fact]
     public void ARunIsDeterministic()
     {
-        string Text() => new Func<string>(() =>
+        static string Text() => new Func<string>(() =>
         {
             var sim = new SfcSimulation(Assembly(), new SfcScript().For("tighten", SfcReply.Silence(), SfcReply.Ok(delayMs: 5)));
             sim.Run();
