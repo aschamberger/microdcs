@@ -9,30 +9,30 @@
     <PackageVersion Include="CloudNative.CloudEvents" Version="2.9.0" />
     <PackageVersion Include="CloudNative.CloudEvents.SystemTextJson" Version="2.9.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
-    <PackageVersion Include="StackExchange.Redis" Version="3.4.31" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.4.35" />
     <!-- OTLP only (D-54): the SDK and the exporter, no instrumentation packages (.NET emits its own runtime and ASP.NET Core metrics). -->
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
     <PackageVersion Include="MQTTnet" Version="5.2.0.1603" />
     <PackageVersion Include="NATS.Net" Version="3.3.2" />
-    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.ISA95" Version="2.0.1" />
-    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Core.Schema" Version="2.0.1" />
-    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.SourceGeneration" Version="2.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
+    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.ISA95" Version="2.0.2" />
+    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Core.Schema" Version="2.0.2" />
+    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.SourceGeneration" Version="2.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.15" />
   </ItemGroup>
   <ItemGroup Label="Benchmarks">
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
@@ -44,10 +44,10 @@
   <ItemGroup Label="Analyzers">
     <!-- Sonar C# rules in every build, so a local build fails on the same rules as the SonarQube Cloud
          analysis in CI (warnings are errors; S03 self-test, D-20). The CI scanner uses its own copy. -->
-    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" />
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.36.0.15337" />
   </ItemGroup>
   <ItemGroup Label="Tests">
-    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.2" />
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
