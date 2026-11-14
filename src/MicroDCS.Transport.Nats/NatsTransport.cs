@@ -61,6 +61,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
     private long _received;
     private long _acknowledged;
     private long _nacked;
+    private long _retried;
     private long _poisoned;
     private long _dropped;
     private long _published;
@@ -122,6 +123,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         Interlocked.Read(ref _received),
         Interlocked.Read(ref _acknowledged),
         Interlocked.Read(ref _nacked),
+        Interlocked.Read(ref _retried),
         Interlocked.Read(ref _poisoned),
         Interlocked.Read(ref _dropped),
         Interlocked.Read(ref _published),
@@ -508,6 +510,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
             try
             {
                 var disposition = await ProcessAsync(delivery).ConfigureAwait(false);
+                disposition = await RetryWhileUnavailableAsync(delivery, disposition).ConfigureAwait(false);
                 await SettleAsync(delivery, disposition).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -524,6 +527,33 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 _outstanding.TryRemove(delivery, out _);
             }
         }
+    }
+
+    /// <summary>
+    /// D-37 (S23a): a dependency of the pipeline is unavailable (a Valkey outage), not the message. A nak would count against the consumer's
+    /// <c>MaxDeliver</c> on the server, so an outage would turn messages into poison. The worker keeps the message instead and runs it again
+    /// after <c>NakDelay</c>; the in-progress acknowledgements (RV-20) keep the server from redelivering it meanwhile. When the transport
+    /// stops, the message is naked and the server redelivers it.
+    /// </summary>
+    private async Task<Disposition> RetryWhileUnavailableAsync(NatsDelivery delivery, Disposition disposition)
+    {
+        while (disposition == Disposition.Retry && !_stopping.IsCancellationRequested)
+        {
+            Interlocked.Increment(ref _retried);
+            Log.RetryingUnavailable(_logger, delivery.Subject, _options.NakDelay);
+            try
+            {
+                await Task.Delay(_options.NakDelay, _time, _stopping.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
+            {
+                break;
+            }
+
+            disposition = await ProcessAsync(delivery).ConfigureAwait(false);
+        }
+
+        return disposition;
     }
 
     private async Task<Disposition> ProcessAsync(NatsDelivery delivery)
@@ -565,6 +595,7 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
         return outcome switch
         {
             DeliveryOutcome.Fault => Disposition.Nak,
+            DeliveryOutcome.Retry => Disposition.Retry,
             DeliveryOutcome.Drop => Disposition.Terminate,
             _ => Disposition.Ack,
         };
@@ -597,6 +628,11 @@ public sealed class NatsTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 case Disposition.Terminate:
                     await message.AckTerminateAsync(cancellationToken: CancellationToken.None).ConfigureAwait(false);
                     Interlocked.Increment(ref _acknowledged);
+                    break;
+                case Disposition.Retry:
+                    // Only when the transport stops during an outage (see RetryWhileUnavailableAsync): the server redelivers later.
+                    Interlocked.Increment(ref _nacked);
+                    await message.NakAsync(new AckOpts { NakDelay = _options.NakDelay }, CancellationToken.None).ConfigureAwait(false);
                     break;
                 default:
                     if (delivery.NumDelivered >= _options.MaxDeliver)
@@ -772,6 +808,9 @@ internal enum Disposition
     Ack,
     Terminate,
     Nak,
+
+    // A dependency was unavailable: the worker retries the message itself (RetryWhileUnavailableAsync), so an outage costs no delivery.
+    Retry,
 }
 
 /// <summary>One message taken from a consumer or the reply subscription, on its way to a worker.</summary>
@@ -818,6 +857,7 @@ internal sealed record NatsStatus(
     long Received,
     long Acknowledged,
     long Nacked,
+    long Retried,
     long Poisoned,
     long Dropped,
     long Published,

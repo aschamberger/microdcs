@@ -1,390 +1,179 @@
-# Machinery Jobs – MES Northbound Publishing
+# Machinery Jobs – MES Publishing
 
-!!! warning "Not yet ported"
-    This page describes the archived Python implementation on the
-    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
-    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
-
-This page describes the design of the northbound MQTT publishing interface that makes job order state and job response data reliably available to a Manufacturing Execution System (MES) across connectivity outages. It extends the existing `MachineryJobsCloudEventProcessor` without modifying its command handling logic and adds a dedicated publisher component that maintains retained MQTT topics per job.
+This page explains how MicroDCS keeps job order state and job responses available to the MES across connectivity
+outages, and what an MES has to do to resync. The configuration and the inspector are in
+[Job models and state machine](job-control.md#job-order-publisher).
 
 ## Background
 
-The [OPC 40001-3: Machinery Job Management](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/) specification defines two integration approaches for exposing job state to clients:
+[OPC 40001-3 Machinery Job Management](https://reference.opcfoundation.org/Machinery/Jobs/v100/docs/) offers two ways
+to expose job state to clients:
 
-- **Event-based** – Clients subscribe to `ISA95JobOrderStatusEventType` events fired on each state transition. The existing `MachineryJobsCloudEventProcessor` fully implements this mode. Events are low-latency and efficient but provide no recovery path for clients that miss messages during a connectivity outage.
-- **List/variable-based** – The `ISA95JobOrderReceiverObjectType` exposes a `JobOrderList` variable and the `ISA95JobResponseProviderObjectType` exposes a `JobOrderResponseList` variable. These always reflect current state and can be published as retained MQTT messages so that reconnecting clients receive the full picture immediately.
+* **Event-based.** Clients receive an `ISA95JobOrderStatusEventType` event on each state transition. The Machinery Jobs
+  processor publishes these as CloudEvents on its `events` address. Events are fast, but a client that misses one has no
+  way to notice.
+* **List-based.** `JobOrderList` and `JobOrderResponseList` always show the current state. MicroDCS maps them to state
+  topics, which a reconnecting client reads at once.
 
-The existing implementation covers the event-based mode. The list/variable-based mode is absent.
+### Why events alone are not enough
 
-### Why the event-based mode alone is insufficient
+The MES creates and controls job orders, but the station drives the state transitions and produces the job response
+data (serial numbers, set-point and actual torques, temperatures, machine ids). If the MES misses a status event during
+an outage, it cannot rebuild the state from its own records. In high-cadence production, dozens of jobs can end during a
+30-minute outage. The MES acknowledges a job response with `Clear`; until then the job and its response stay in Valkey,
+and the state topics show them.
 
-Job lifecycle in MicroDCS involves two distinct actors:
+### Why not one retained list
 
-- The **MES** creates and controls job order definitions (Store, StoreAndStart, Start, Abort, etc.)
-- The **DCS** drives physical state transitions and produces all job response data (process actuals, serial numbers, torque values, temperatures, machine IDs)
-
-The MES is therefore the originator of job definitions but a *consumer* of state changes and job response data that it cannot reconstruct from its own records. If the MES misses a DCS-originated status event or a job response update during a connectivity outage, it has no way to detect the gap from the event stream alone.
-
-The system must tolerate MES connectivity outages of up to 30 minutes. In high-cadence scenarios (in-house parts production, job iterations in the order of seconds), dozens of jobs can complete and accumulate response data during such an outage. The existing `Clear` method — already implemented — acts as the MES acknowledgment: the MES calls `Clear` after successfully processing a job response, which transitions the job to `EndState`. Jobs in clearable states (`Ended`, `Aborted`) therefore remain available in Redis until the MES explicitly clears them, but nothing currently exposes this durably over MQTT.
-
-### Why a single full-list retained publish does not fit
-
-Publishing the complete `JobOrderList` or `JobOrderResponseList` on every state transition is traffic-inefficient for this application:
-
-- Job order objects carry all input parameters: equipment, material, personnel, physical asset, and work master references. These are large and do not change after a job is stored.
-- Job response objects accumulate all process data over the job's lifetime. In a traceability-oriented production context (serial numbers, set-point vs. actual torques, temperatures) a single response entry can reach several kilobytes.
-
-Publishing complete lists on every transition would retransmit unchanged large payloads repeatedly. The split design below avoids this.
+Publishing the whole `JobOrderList` or `JobOrderResponseList` on every transition would resend large, mostly unchanged
+payloads. Job orders carry all their requirements; a job response in traceability-heavy production can be several
+kilobytes. MicroDCS therefore splits the state into one topic per job order, one per job response, and a small index.
 
 ## Design
 
-### Component overview
-
-The extension adds one new component — the **Job Order Publisher** — alongside the existing command processors. The publisher can run as a separate Kubernetes Deployment or co-located in the same container, controlled by `RuntimeConfig.is_processor_instance` and `RuntimeConfig.is_publisher_instance` (env vars `APP_IS_PROCESSOR_INSTANCE`, `APP_IS_PUBLISHER_INSTANCE`, both default `True`). The stream write that feeds the publisher is encapsulated in the existing DAOs, so no processor — northbound or southbound — needs to be aware of the publishing infrastructure.
-
-The `MQTTPublisher` class in `src/microdcs/mqtt.py` is registered via `MicroDCS.add_additional_task()` and runs alongside protocol handlers in the main task group. It shares the `create_mqtt_client()` connection factory with `MQTTHandler` for consistent TLS/SAT-token authentication and reconnect behaviour.
-
 ```mermaid
 flowchart TB
-  MES["MES\n(MQTT client)"]
+  MES["MES"]
 
-  subgraph Broker["MQTT broker"]
-    cmd["commands topics\n(existing)"]
-    retained["retained topics\n(new)"]
-    events["events topics\n(existing)"]
+  subgraph Broker["Broker"]
+    cmd["commands"]
+    events["events"]
+    state["state topics:<br/>state-index, order/{id}, result/{id}"]
   end
 
-  subgraph K8s["Kubernetes"]
-    subgraph NB["Processors Deployment (×N pods)"]
-      proc["Northbound MachineryJobsCloudEventProcessor"]
-      south["Southbound CloudEventProcessors"]
+  subgraph Island["MicroDCS island"]
+    subgraph Proc["microdcs-processor (N replicas)"]
+      proc["MachineryJobsProcessor"]
+      sfc["SFC host"]
     end
-    subgraph Publisher["Job Order Publisher Deployment (×1 pod)"]
-      pub["JobOrderPublisher"]
+    subgraph Pub["microdcs-publisher (1 replica)"]
+      pub["Job order publisher"]
     end
+    valkey[("Valkey:<br/>job documents,<br/>change stream per scope,<br/>sequence and cursor")]
   end
 
-  Redis[("Redis\nJobOrderAndStateDAO\nJobResponseDAO\njoborder:changes:{scope} Stream\npubseq:{scope}")]
-
-  MES -- "method call CloudEvents" --> cmd
-  cmd --> proc
-  proc -- "status events" --> events
-  events --> MES
-  proc -- "via DAO" --> Redis
-  south -- "via DAO" --> Redis
-  pub -- "XREAD BLOCK" --> Redis
-  pub -- "retained publishes" --> retained
-  retained --> MES
+  MES -- "method calls" --> cmd --> proc
+  proc -- "status events" --> events --> MES
+  proc -- "job writes + change entry<br/>(one script)" --> valkey
+  sfc -- "job transitions,<br/>job response" --> valkey
+  pub -- "reads change streams" --> valkey
+  pub -- "state topic writes" --> state --> MES
 ```
 
-### Why a separate container is recommended
+* Every write of a job order or a job response appends an entry to the scope's **change stream** in the same Valkey
+  script, so no change is lost between the write and the publish. No processor knows about the publisher.
+* The **job order publisher** reads the change streams and writes the state topics through the transport's state topic
+  port: retained messages on MQTT, a key-value bucket on NATS. A command never waits for it.
+* The publisher runs in its own Deployment with `MicroDcs:Roles=Publisher`. The processors are latency-sensitive and
+  scale out; the publisher is a single writer, throughput-oriented, and may use another broker. Separate Deployments
+  give separate restarts, limits and alerts. With `Roles=All` both run in one process
+  ([Deployment](deployment.md#shape)).
+* A lease in Valkey keeps a second publisher from writing during a rolling update. A publisher restart takes seconds; the
+  MES reads the retained values in the meantime, so no leader election is needed beyond the lease.
 
-The command processor scales horizontally and is latency-sensitive — it handles real-time commands from the MES and the DCS. The publisher is a singleton, throughput-oriented, and not latency-sensitive (MQTT retained delivery is inherently best-effort). Keeping them separate gives independent restart policies, resource limits, logging, and alerting. A bug or resource leak in the publisher does not affect command processing.
+### Topics
 
-For development and simple deployments, both roles can co-exist in a single container by leaving both `APP_IS_PROCESSOR_INSTANCE` and `APP_IS_PUBLISHER_INSTANCE` at their default value of `true`. For production, set one flag per deployment to separate concerns.
+The state topics are siblings of the processor's `data` address:
+`{Prefix}/{scope levels}/{Discriminator}/data/…`, the same address the `machinery_jobs` binding uses.
 
-### High availability
+| Topic | Payload | Written |
+|---|---|---|
+| `…/data/state-index` | `JobOrderStateIndexDataType` | After every batch of changes of the scope |
+| `…/data/order/{id}` | `ISA95JobOrderDataType`, without state | On Store, StoreAndStart and Update; removed on Cancel and Clear |
+| `…/data/result/{id}` | `ISA95JobResponseDataType` | When a job in Completed, Closed or Aborted has a response; removed on Cancel and Clear |
+| `…/events` | `ISA95JobOrderStatusEventType` CloudEvent | On each transition with an effect (not a state topic) |
+| `…/metadata` | `org.opcfoundation.Machinery.Jobs.Meta.v1`, retained | Once at start, by one replica |
 
-Leader election for the publisher is not needed. Pod restart time is 10–30 seconds. The system is already designed to tolerate 30-minute MES outages through the retained topic and sequence number scheme described below. A pod restart is two orders of magnitude smaller than the gap the recovery mechanism already handles. The retained topics are the availability story for the publisher. `replicas: 1` with no locking is the correct configuration.
+All state topic values are CloudEvents with OPC UA JSON payloads. Each has a time to live (`RetainedTtl`, 48 h by
+default): on MQTT the message expiry of the retained message, on NATS the per-message TTL in the bucket. The publisher
+refreshes every topic at half that time, so a topic disappears only when its scope is no longer served. A removed topic
+is a zero-byte retained message on MQTT and a deleted key on NATS.
 
-### Topic design
+`order/{id}` and `result/{id}` are written rarely and are large; `state-index` changes often but is small. A result is
+published once the job has ended, not while it runs, so the MES never sees a partial response.
 
-All topics are scoped per machine using the same scope identifier used as the CloudEvent `subject` in the existing processor. All retained topics carry an MQTT v5 Message Expiry Interval configured via `retained_ttl_seconds` (default: 48 hours). This removes stale topics automatically if a scope goes inactive — for example after a machine is decommissioned or a scope is renamed — without requiring explicit cleanup logic in the publisher.
+The job order id is a topic level, so it may only contain letters, digits, `_` and `-`. A Store, StoreAndStart or Update
+with another id is answered with `InvalidRequest`.
 
-| Topic | Retained | Payload | Published when |
-|---|---|---|---|
-| `{prefix}/{scope}/state-index` | Yes | State index (see below) | Every state transition |
-| `{prefix}/{scope}/order/{job_order_id}` | Yes | Full `ISA95JobOrderDataType` | On Store / StoreAndStart / Update; deleted on Clear |
-| `{prefix}/{scope}/result/{job_order_id}` | Yes | Full `ISA95JobResponseDataType` | On job reaching a clearable state (`Ended` / `Aborted`); deleted on Clear |
-| `{prefix}/{scope}/events` | No | `ISA95JobOrderStatusEventType` CloudEvent | Every state transition (existing, unchanged) |
-| `{prefix}/{scope}/commands` | No | Method call CloudEvent | From MES (existing, unchanged) |
-| `{prefix}/{scope}/metadata` | Yes | Metadata/capabilities CloudEvent | On publisher startup (existing, unchanged) |
-
-The `{prefix}` is the existing configurable MQTT topic prefix for the machinery-jobs processor (e.g. `app/jobs`, configured via `APP_PROCESSING_TOPIC_PREFIXES`). The `{scope}` is the machine scope identifier used as the CloudEvent `subject`. The retained topics for the publisher (`state-index`, `order/{id}`, `result/{id}`) are new siblings alongside the existing `events`, `commands`, and `metadata` intent topics.
-
-Deletion of retained topics on `Clear` is performed by publishing a zero-byte retained message to the same topic, which is the standard MQTT mechanism for clearing retained state.
-
-The `order/{job_order_id}` and `result/{job_order_id}` topics carry large payloads but are written rarely — once on creation, once on update, once on reaching a clearable state, and deleted on `Clear`. The `state-index` topic changes on every transition but carries a small payload (state identifiers only, not full objects).
-
-Job response data is published only when a job transitions to a clearable state (`Ended` or `Aborted`), not incrementally during execution. The publisher checks the current job state before publishing a `result/{job_order_id}` topic — `ResultUpdate` stream entries for jobs still in progress are ignored to prevent premature publication of partial results. The `result/{job_order_id}` topic therefore reflects the completed response and is not updated further before `Clear`.
-
-> **Note**: `Interrupted` (substates `Held`, `Suspended`) is **not** a clearable state — it is a resumable pause state. Jobs in `Interrupted` can resume execution via `Resume`. Only `Ended` and `Aborted` allow the `Clear` transition to `EndState`.
-
-### State index payload
-
-The state index is the high-frequency retained topic. It contains only the fields that change on transitions and the minimum needed for the MES to understand which per-job topics to fetch.
+### State index
 
 ```json
 {
-  "seq": 103,
-  "scope": "machine-42",
-  "published_at": "2026-04-11T14:23:01Z",
-  "jobs": [
-    {
-      "job_order_id": "JO-2026-0441",
-      "state": [
-        {"state_text": {"text": "Running", "locale": "en"}, "state_number": 3}
-      ],
-      "has_result": false
-    },
-    {
-      "job_order_id": "JO-2026-0442",
-      "state": [
-        {"state_text": {"text": "Ended", "locale": "en"}, "state_number": 5}
-      ],
-      "has_result": true
-    },
-    {
-      "job_order_id": "JO-2026-0443",
-      "state": [
-        {"state_text": {"text": "NotAllowedToStart", "locale": "en"}, "state_number": 1},
-        {"state_text": {"text": "Ready", "locale": "en"}, "state_number": 11}
-      ],
-      "has_result": false
-    }
+  "Sequence": "103",
+  "Scope": "plant1.line2",
+  "PublishedAt": "2026-11-13T14:23:01Z",
+  "Jobs": [
+    {"JobOrderID": "JO-0441", "State": [{"BrowsePath": {…}, "StateText": {"Locale": "en", "Text": "Running"}, "StateNumber": 3}], "HasResult": false},
+    {"JobOrderID": "JO-0442", "State": [{"BrowsePath": {…}, "StateText": {"Locale": "en", "Text": "Ended"}, "StateNumber": 5}, {"BrowsePath": {…}, "StateText": {"Locale": "en", "Text": "Completed"}, "StateNumber": 1}], "HasResult": true}
   ]
 }
 ```
 
-The `seq` field is a monotonically increasing integer per scope, stored in Redis and incremented atomically on each state-index publish. It survives publisher restarts. The `has_result` flag tells the MES whether a `result/{job_order_id}` topic exists before subscribing to it.
+* `Sequence` grows with every index of the scope and survives restarts. It is a JSON string because OPC UA JSON writes
+  every `Int64` as one.
+* `State` is the ISA-95 state array: the top-level state and, where one applies, its sub-state.
+* `HasResult` is true when the `result/{id}` topic exists.
 
-### Reconnect and resync
+The schema is [`JobOrderStateIndexDataType`](https://aschamberger.github.io/microdcs/schemas/microdcs-jobcontrol/v1.2.0.json).
 
-On MES reconnect the sequence number provides gap detection without requiring stream replay or delta reconstruction:
+### Rebuild
+
+The publisher rebuilds a scope from the stored documents (all topics and a new index with a higher `Sequence`):
+
+* on its first visit of the scope after it took the lease,
+* when its cursor in the change stream is missing,
+* when the change stream was trimmed past the cursor (`MicroDcs:Valkey:ChangeStreamMaxLength`),
+* at half the time to live, so idle orders keep their topics.
+
+Delivery is at least once: after a crash the publisher may write a topic again with the same content.
+
+## Reconnect and resync
 
 ```mermaid
 sequenceDiagram
   participant MES
-  participant Broker as MQTT broker
-  participant Redis
+  participant Broker
+  participant DCS as MicroDCS
 
-  MES->>Broker: CONNECT + SUBSCRIBE {prefix}/{scope}/state-index
-  Broker-->>MES: RETAINED state-index (seq=103, jobs=[...])
-  note over MES: last seen seq was 87 — gap detected
+  MES->>Broker: Subscribe …/data/state-index
+  Broker-->>MES: Retained state-index (Sequence 103)
+  Note over MES: Last seen was 87: changes were missed
 
-  loop for each clearable job with has_result=true not yet cleared
-    MES->>Broker: SUBSCRIBE {prefix}/{scope}/result/{id}
-    Broker-->>MES: RETAINED result/{id} (full response data)
-    note over MES: process response internally
-    MES->>Broker: PUBLISH Clear command CloudEvent
-    Broker->>Redis: routed to command processor
-    note over Redis: Clear executed, job transitions to EndState
-    Broker-->>MES: UPDATED state-index (seq=104)
+  loop each job with HasResult = true that the MES has not processed
+    MES->>Broker: Subscribe …/data/result/{id}
+    Broker-->>MES: Retained job response
+    Note over MES: Record the response
+    MES->>Broker: Clear (command CloudEvent)
+    Broker->>DCS: Clear
+    DCS-->>Broker: order/{id} and result/{id} removed,<br/>state-index (Sequence 104)
   end
 
-  note over MES: reconcile remaining queued jobs against internal state
+  Note over MES: Reconcile the other jobs in the index with its own records
 ```
 
-If the sequence number matches the MES's last-seen value, no transitions were missed and no further action is needed. If it is ahead, the MES reads the retained `order/{id}` and `result/{id}` topics for jobs listed in the state index and reconciles against its internal records.
+1. Subscribe to `state-index` and compare `Sequence` with the value last read. Equal means nothing was missed. Higher
+   means: read the index again and act on it. A rebuild also raises it.
+2. For each job with `HasResult`, read `result/{id}`, record it, then call `Clear`.
+3. Read `order/{id}` for jobs the MES does not know in the listed state, and reconcile.
 
-### Clear semantics
+On NATS the same steps use the key-value bucket (`StateBucket`): read the key, or watch it.
 
-The `Clear` method (already implemented in `MachineryJobsCloudEventProcessor`) is the MES acknowledgment that a job response has been received and processed. The MES workflow:
+## Clear and Cancel
 
-1. Job reaches a clearable state (`Ended` or `Aborted`)
-2. MES reads the retained `result/{job_order_id}` topic
-3. MES records response data internally
-4. MES calls `Clear` → command processor transitions job to `EndState` in Redis → publisher deletes the retained `order/{id}` and `result/{id}` topics → job is removed from the state-index
+`Clear` is the MES acknowledgement that it has the job response. It is allowed in Ended and Aborted. `Cancel` removes an
+order that has not started. Both delete the job order in Valkey and append a change entry; the publisher then removes
+`order/{id}` and `result/{id}` and drops the job from the index. The job response document stays in Valkey.
 
-Note: `Clear` transitions the job state machine to `EndState` but does not delete the job from Redis. Jobs in `EndState` are excluded from the state-index (they have reached their final state). The publisher treats `Clear` stream entries as a signal to remove retained topics. Redis cleanup of `EndState` jobs is a separate TTL-based or scheduled concern — the publisher and the state-index do not list them.
+During an outage the jobs wait in Ended or Aborted with their responses on the broker until the MES reconnects and
+works through them. The time to live is the safety net for a job that is never cleared, for example after a machine
+fault; as long as the publisher runs, it refreshes the topics, so they stay.
 
-During an outage, steps 1–4 are deferred. Jobs accumulate in clearable states with their response data preserved in retained topics until the MES reconnects and works through the backlog. The 48-hour TTL (default for `retained_ttl_seconds`) on retained topics acts as a safety net for the case where `Clear` is never called — for example if a job is abandoned after a machine fault.
+## MES integration checklist
 
-## Changes to existing DAOs
-
-> **Status**: Implemented. Key schema methods in `RedisKeySchema`, stream writes in `JobOrderAndStateDAO.save()` and `JobResponseDAO.save()`, `active-scopes` set update, all in `src/microdcs/redis.py`.
-
-The stream write is encapsulated in `JobOrderAndStateDAO` and `JobResponseDAO` so that no processor needs to be aware of the publishing infrastructure. Any call to `save()` on either DAO automatically appends a change record to the scope stream. This makes it structurally impossible for a new processor — northbound or southbound — to write job state without the publisher being notified.
-
-`JobOrderAndStateDAO.save()` appends a record with the transition name as `change_type`:
-
-The `xadd` is added to the same `pipeline(transaction=True)` block that already performs the JSON write and sorted-set update, so the stream entry is written atomically with the state change. If the pipeline fails, neither the state nor the stream entry is written.
-
-```python
-# Inside the existing pipeline(transaction=True) block:
-pipe.xadd(
-    self._key_schema.job_change_stream(scope),
-    {
-        "change_type": change_type,  # transition name, e.g. "Store", "Start", "Clear"
-        "job_order_id": job_order_and_state.job_order.job_order_id,
-        "scope": scope,
-        "ts": datetime.now(UTC).isoformat(),
-    },
-    maxlen=5000,
-    approximate=True,
-)
-```
-
-`JobResponseDAO.save()` appends a record with `change_type` of `ResultUpdate`, also inside its existing pipeline:
-
-```python
-# Inside the existing pipeline(transaction=True) block:
-pipe.xadd(
-    self._key_schema.job_change_stream(scope),
-    {
-        "change_type": "ResultUpdate",
-        "job_order_id": job_response.job_order_id,
-        "scope": scope,
-        "ts": datetime.now(UTC).isoformat(),
-    },
-    maxlen=5000,
-    approximate=True,
-)
-```
-
-The stream is bounded with `maxlen=5000` and `approximate=True`. At a job cadence of one job every few seconds, this covers well over 30 minutes of publisher downtime with negligible Redis memory overhead.
-
-The following Redis key schema additions are required:
-
-| Key | Type | Purpose |
-|---|---|---|
-| `joborder:changes:{scope}` | `Stream` | Change log consumed by the publisher |
-| `pubseq:{scope}` | `String (integer)` | Monotonic sequence counter per scope |
-| `publisher:stream-cursors` | `Hash` | Last-processed stream ID per scope, for publisher restart recovery |
-| `active-scopes` | `Set` | All scopes that have had at least one job stored |
-| `joborder:changes:_global` | `Stream` | Sentinel stream — every DAO save appends here for new-scope discovery |
-
-The `active-scopes` set is updated with `SADD active-scopes {scope}` inside `JobOrderAndStateDAO.save()` on the first `Store` for a new scope.
-
-In addition to `active-scopes`, a **sentinel stream** `joborder:changes:_global` receives an entry on every DAO save alongside the per-scope stream. The publisher's main XREAD loop always includes this global stream. When a message arrives on the global stream for a scope not yet tracked, the publisher adds the scope's per-scope stream to its XREAD set. This eliminates the need for periodic polling of `active-scopes` and ensures new scopes are discovered immediately.
-
-## Job Order Publisher
-
-> **Status**: Implemented. `MQTTPublisher` and `create_mqtt_client()` in `src/microdcs/mqtt.py`, `StateIndexEntry` and `StateIndex` in `src/microdcs/models/machinery_jobs_ext.py`, `PublisherConfig` and instance-role flags in `src/microdcs/__init__.py`, `JobOrderPublisher` in `src/microdcs/publishers/machinery_jobs.py`, wiring in `app/__main__.py`.
-
-The publisher is implemented as `JobOrderPublisher(MQTTPublisher)` in `src/microdcs/publishers/machinery_jobs.py`. It inherits MQTT connection lifecycle and reconnect/backoff from `MQTTPublisher` and overrides the `_run()` hook with its business logic. It has no command routing logic — it only reads from Redis and writes to MQTT.
-
-### Class hierarchy
-
-`MQTTPublisher` (in `src/microdcs/mqtt.py`) manages the MQTT connection with automatic reconnect and exposes `publish_retained()` / `delete_retained()`. Its `task()` method calls an overridable `_run()` hook inside the `async with client:` block. If `_run()` raises `MqttError`, `task()` reconnects and calls `_run()` again. A `_connected: asyncio.Event` is set while connected and cleared on disconnect.
-
-`JobOrderPublisher` extends `MQTTPublisher` — it inherits all of the above and overrides `_run()` with the XREAD loop. Because it IS a `MQTTPublisher`, the `isinstance(task, MQTTPublisher)` check in `MicroDCS.main()` naturally skips it when `is_publisher_instance=False`.
-
-### Startup
-
-1. MQTT connection established by inherited `MQTTPublisher.task()` (with reconnect/backoff)
-2. `_run()` begins: load last-processed stream IDs from `publisher:stream-cursors` via `HGETALL`
-3. Load `active-scopes` via `SMEMBERS`
-4. For each scope, publish the current state-index retained message to cover the gap during pod restart
-5. Enter the main XREAD loop
-
-### Main loop
-
-```python
-# Build stream set: per-scope streams + global sentinel stream
-streams = {f"joborder:changes:{scope}": last_id[scope] for scope in active_scopes}
-streams["joborder:changes:_global"] = last_id.get("_global", "0")
-
-results = await redis.xread(streams=streams, block=500, count=50)
-for stream, messages in results:
-    for message_id, fields in messages:
-        scope = fields["scope"]
-        if stream == "joborder:changes:_global":
-            # Discover new scope — add its per-scope stream to the XREAD set
-            if scope not in active_scopes:
-                active_scopes.add(scope)
-                last_id[scope] = "0"  # read from beginning of new scope stream
-            last_id["_global"] = message_id
-        else:
-            await dispatch(fields["change_type"], scope, fields["job_order_id"])
-            last_id[scope] = message_id
-await save_cursors()
-```
-
-### Dispatch handlers
-
-| `change_type` | Action |
+| Item | Value |
 |---|---|
-| `Store` / `StoreAndStart` | Publish retained `order/{id}` with configured TTL, update state-index |
-| `Update` | Re-publish retained `order/{id}` with configured TTL, update state-index |
-| `ResultUpdate` | Check job state — if clearable (`Ended` / `Aborted`), publish retained `result/{id}` with configured TTL and update state-index; otherwise ignore |
-| Any other transition | Update state-index only |
-| `Clear` | Zero-byte retained publish to `order/{id}` and `result/{id}`, update state-index |
-
-The state-index update always reads the full job list for the scope from `JobOrderAndStateDAO.list(scope)`, checks `JobResponseDAO` for each job to populate `has_result`, atomically increments `pubseq:{scope}` with `INCR`, and publishes the assembled payload as a retained message with a 48-hour TTL. Jobs in `EndState` are excluded from the state-index.
-
-> **Known limitation — state-index rebuild cost**: Each state-index update performs N+1 Redis reads (list + one has_result check per job). In high-cadence scenarios with many concurrent jobs this may become a bottleneck. A future optimization could cache the state index in-process and apply stream deltas incrementally instead of rebuilding from Redis on every transition.
-
-### Configuration
-
-`PublisherConfig` is a `@dataclass` on `RuntimeConfig`, parsed from environment variables with prefix `APP_PUBLISHER_`:
-
-```python
-@dataclass
-class PublisherConfig:
-    retained_ttl_seconds: int = 172800  # 48 hours
-    stream_read_count: int = 50
-    stream_block_ms: int = 500
-```
-
-| Environment variable | Default | Description |
-|---|---|---|
-| `APP_PUBLISHER_RETAINED_TTL_SECONDS` | `172800` | MQTT v5 Message Expiry Interval for retained topics (seconds) |
-| `APP_PUBLISHER_STREAM_READ_COUNT` | `50` | Max entries per XREAD batch |
-| `APP_PUBLISHER_STREAM_BLOCK_MS` | `500` | XREAD BLOCK timeout (milliseconds) |
-
-The topic prefix identifier (e.g. `"machinery-jobs"`) is passed as a constructor parameter to `JobOrderPublisher`, matching the processor pattern where `config_identifier` is provided at wiring time in `app/__main__.py`. It is resolved via `ProcessingConfig.get_topic_prefix_for_identifier()`.
-
-The publisher reuses the existing `RedisConfig` and `MQTTConfig` from `RuntimeConfig` for Redis and MQTT connections — these are not duplicated. Topic prefixes are resolved from `ProcessingConfig.topic_prefixes` using the same `get_topic_prefix_for_identifier()` mechanism as the MQTT binding. QoS 1 is hardcoded (matching the MQTT processor) and not exposed as configuration.
-
-## MES Integration Reference
-
-This section is a consumer-facing reference for MES integration teams. It summarizes the retained topic layout, payload schemas, and reconnect protocol without requiring the full design context above.
-
-### Topic layout
-
-All topics below use the configured MQTT topic prefix (e.g. `app/jobs`) and are scoped per machine via the scope identifier (CloudEvent `subject`).
-
-| Topic | Retained | QoS | Payload type | Lifecycle |
-|---|---|---|---|---|
-| `{prefix}/{scope}/state-index` | Yes | 1 | `StateIndex` (JSON) | Updated on every state transition. Carries seq number for gap detection. |
-| `{prefix}/{scope}/order/{id}` | Yes | 1 | `ISA95JobOrderAndStateDataType` (JSON) | Created on `Store`/`StoreAndStart`, updated on `Update`, deleted on `Clear`. |
-| `{prefix}/{scope}/result/{id}` | Yes | 1 | `ISA95JobResponseDataType` (JSON) | Created when job reaches `Ended` or `Aborted`, deleted on `Clear`. |
-
-All retained topics carry an MQTT v5 `MessageExpiryInterval` of 48 hours (configurable via `APP_PUBLISHER_RETAINED_TTL_SECONDS`). Topics are deleted by publishing a zero-byte retained message.
-
-### State-index payload
-
-```json
-{
-  "seq": 103,
-  "scope": "machine-42",
-  "published_at": "2026-04-11T14:23:01Z",
-  "jobs": [
-    {
-      "job_order_id": "JO-2026-0441",
-      "state": [{"state_text": {"text": "Running", "locale": "en"}, "state_number": 3}],
-      "has_result": false
-    },
-    {
-      "job_order_id": "JO-2026-0442",
-      "state": [{"state_text": {"text": "Ended", "locale": "en"}, "state_number": 5}],
-      "has_result": true
-    }
-  ]
-}
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `seq` | `int` | Monotonically increasing per scope. Compare with last-seen value to detect missed transitions. |
-| `scope` | `string` | Machine scope identifier. |
-| `published_at` | `string (ISO 8601)` | Timestamp of this state-index publish. |
-| `jobs` | `array` | Active jobs (excludes `EndState`). |
-| `jobs[].job_order_id` | `string` | The job order ID. |
-| `jobs[].state` | `array` | Current OPC UA state(s) — top-level state plus optional substates. |
-| `jobs[].has_result` | `bool` | `true` if a `result/{id}` retained topic exists for this job. |
-
-### Reconnect resync protocol
-
-When the MES reconnects after a connectivity outage:
-
-1. **Subscribe** to `{prefix}/{scope}/state-index` — the broker delivers the latest retained message immediately.
-2. **Compare `seq`** with the last value seen before disconnection. If equal, no transitions were missed.
-3. **If gap detected**, iterate over `jobs` in the state-index:
-   - For jobs with `has_result: true` not yet processed: subscribe to `{prefix}/{scope}/result/{id}`, read the retained response data.
-   - For any job whose order data needs refreshing: subscribe to `{prefix}/{scope}/order/{id}`.
-4. **Clear processed jobs** — for each job in a clearable state (`Ended`/`Aborted`) whose response has been ingested, publish a `Clear` command CloudEvent to the command topic. This transitions the job to `EndState`, removes it from the state-index, and deletes its retained topics.
-5. **Update last-seen seq** to the current value.
-
-A reference implementation of this protocol is available in `tests/integration/test_mes_integration.py` as the `MESResyncClient` class.
+| Commands | `{Prefix}/{scope levels}/{Discriminator}/commands` with the Job Control V2 method types; each call gets a response of type `….response.v2` on the caller's response topic. |
+| Status events | `…/events`, type `org.opcfoundation.ISA95-JOBCONTROL_V2.ISA95JobOrderStatusEventType.v2`. |
+| State | `…/data/state-index`, `…/data/order/{id}`, `…/data/result/{id}`, retained (MQTT) or in the key-value bucket (NATS). |
+| Encoding | CloudEvents in binary content mode, OPC UA JSON (verbose) payloads; `Int64` and `UInt64` values are strings. |
+| Broker | Retained messages must be persistent (Mosquitto `persistence true`), otherwise a broker restart empties the state until the next rebuild. |

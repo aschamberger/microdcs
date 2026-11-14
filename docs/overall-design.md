@@ -1,141 +1,155 @@
 # Overall Design
 
-!!! warning "Not yet ported"
-    This page describes the archived Python implementation on the
-    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
-    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+MicroDCS helps build OT and manufacturing control applications with event-driven, cloud-native architecture while
+staying with open standards. Instead of custom protocol glue, it uses typed CloudEvents, a transport-neutral processor
+model and payloads from standard specifications.
 
-MicroDCS is designed to help build OT and manufacturing applications with modern software architecture patterns while staying grounded in open standards. Instead of centering the system on custom protocol glue or tightly coupled device integrations, the framework uses typed events, protocol abstraction, and standard specifications to support distributed sequence control applications.
+## Design goals
 
-## Design Goals
-
-* Make manufacturing control and OT applications buildable with cloud-native and event-driven software architecture principles
-* Reduce custom integration work by relying on open standards such as MQTT v5, CloudEvents, JSON Schema, OpenTelemetry, and OPC UA companion specifications
-* Generate as much application model code as practical from standard specifications to reduce implementation effort and improve consistency
-* Keep application logic focused on typed models and processors rather than transport-specific payload handling
+* Make sequence control at ISA-95 level 2 buildable with event-driven software patterns and ordinary container
+  operations.
+* Rely on open standards (MQTT 5, NATS, CloudEvents, JSON Schema, OpenTelemetry, OPC UA companion specifications)
+  instead of own formats.
+* Take payload models from standard specifications and generate code from them where possible.
+* Keep application code on typed payloads and processors, not on transport details. Writing a processor should be easy
+  and safe ([D-25](porting/decisions.md#d-25)).
+* Run as one small Native AOT binary in a non-root container without a shell.
 
 ## Premises
 
-* The system follows an event-driven architecture, with MQTT as the primary transport rather than OPC UA client/server or OPC UA PubSub communication
-* OPC UA information models and companion specifications are used to define application semantics and payload structure over the chosen transports
-* Metadata required to identify and process payloads is carried through MQTT properties and CloudEvent attributes instead of being embedded in custom transport formats
-* Application implementations should work with generated dataclasses and processor abstractions rather than directly parsing MQTT or MessagePack payloads
-* The application assumes a UNS-style topic structure with at least `data`, `events`, and `commands` topics, with optional `metadata` topics for retained capability publication
-* The MQTT broker must be configured with retained message persistence enabled so that retained topics survive broker restarts. Without persistence, a broker restart clears all retained topics and components relying on retained state (e.g. the Job Order Publisher) lose their recovery anchor until the next publish cycle. For Mosquitto this requires `persistence true` in `mosquitto.conf`.
+* **Event-driven, over a broker.** MQTT 5 (and NATS) carry the messages, not OPC UA client/server or PubSub. OPC UA
+  information models define the semantics and the payloads ([D-4](porting/decisions.md#d-4)).
+* **Metadata in the envelope.** Everything needed to route and process a payload is a CloudEvent attribute carried as a
+  transport header. There are no custom transport frames.
+* **A UNS-style address space.** Addresses end in `data`, `events`, `commands` or `metadata`, below a prefix and the
+  scope levels ([concepts](concepts.md#intent-and-address)).
+* **Persistent broker state.** The MQTT broker must keep retained messages and sessions across restarts (Mosquitto:
+  `persistence true`). Without it, a broker restart loses the MES state topics until the next refresh, and messages of
+  a disconnected instance are lost. NATS keeps them in JetStream.
+* **Valkey is the system of record.** Job orders, SFC state, streams and dedupe claims live in one Valkey per island.
+  Valkey cluster mode is out of scope; high availability comes from independent islands
+  ([D-12](porting/decisions.md#d-12)).
+* **Fail fast.** A component that cannot start ends the process; Kubernetes restarts it
+  ([D-27](porting/decisions.md#d-27)).
 
-## Deployment Modes
+## Instance roles
 
-MicroDCS supports two deployment modes controlled by two boolean flags on `RuntimeConfig`:
+`MicroDcs:Roles` selects what an instance runs ([D-51](porting/decisions.md#d-51)):
 
-| Mode | `APP_IS_PROCESSOR_INSTANCE` | `APP_IS_PUBLISHER_INSTANCE` | Description |
-|---|---|---|---|
-| **Single-container** | `true` (default) | `true` (default) | Both processor and publisher run in the same process. Simplest setup for development and low-scale deployments. |
-| **Split processor + publisher** | `true` / `false` | `false` / `true` | Processors scale horizontally (multiple replicas) with shared MQTT subscriptions while a single publisher replica maintains retained topics. Avoids conflicting retained writes. |
+| Mode | `Roles` | Description |
+|---|---|---|
+| Single container | `All` (default) | Processors, SFC engine and publisher in one process. For development and small sites. |
+| Split | `Processor` and `Publisher` | Processor replicas scale out with shared subscriptions or a shared consumer; one publisher replica writes the state topics for the MES. A slow MES broker or a large state index then stays out of the control path. |
 
-When `is_processor_instance` is `false`, protocol handlers and bindings are not started. When `is_publisher_instance` is `false`, additional tasks that are `MQTTPublisher` instances are skipped.
+A publisher-only instance connects to the transport but does not subscribe. A lease in Valkey lets only one instance
+publish, also during a rolling update. See [Deployment](deployment.md#shape).
 
-## Three-Layer Architecture
-
-MicroDCS separates concerns into three layers. Each layer has a distinct responsibility and communicates with its neighbours via direct Python method calls (not CloudEvent round-trips):
+## Three layers
 
 ```mermaid
 flowchart LR
   mom["MOM / MES"]
-  nb["NB Protocol Layer<br/>(MachineryJobsProcessor)"]
-  sfc["SFC Orchestration Layer<br/>(SfcEngine)"]
-  sb["SB Protocol Layer<br/>(Equipment Processors)"]
-  equipment["Equipment"]
+  nb["Northbound protocol<br/>(MachineryJobsProcessor,<br/>job order publisher)"]
+  sfc["SFC orchestration<br/>(SFC core and host)"]
+  sb["Southbound protocol<br/>(equipment processors)"]
+  equipment["Equipment or gateway"]
 
-  mom -- "CloudEvents<br/>(MQTT / MsgPack-RPC)" --> nb
-  nb -. "direct call" .-> sfc
-  sfc -. "direct call" .-> nb
-  sfc -. "direct call" .-> sb
-  sb -- "CloudEvents<br/>(MQTT / MsgPack-RPC)" --> equipment
+  mom -- "CloudEvents<br/>(MQTT / NATS)" --> nb
+  nb -. "work entries in Valkey" .-> sfc
+  sfc -. "job transitions" .-> nb
+  sfc -. "IOutgoingCommands,<br/>handler outcomes" .-> sb
+  sb -- "CloudEvents<br/>(MQTT / NATS)" --> equipment
 
   style sfc fill:#3949ab,color:#fff
 ```
 
-| Layer | Responsibility | Key class |
+| Layer | Responsibility | .NET part |
 |---|---|---|
-| **NB protocol** | OPC UA Job Management state machine, CloudEvent serialization, MQTT topic structure, station configuration delivery | `MachineryJobsCloudEventProcessor` |
-| **SFC orchestration** | Recipe interpretation, step sequencing, action dispatch, multi-instance coordination via Redis consumer groups and atomic CAS | `SfcEngine` (`AdditionalTask`) |
-| **SB protocol** | Equipment-specific CloudEvent shaping, transport binding, protocol translation | Equipment `CloudEventProcessor`(s) |
+| Northbound protocol | OPC UA job state machine, job orders and responses, station configuration, state topics for the MES | `MicroDCS.MachineryJobs` |
+| SFC orchestration | Recipe interpretation, step sequencing, dispatch, deadlines, coordination across replicas | `MicroDCS.Sfc`, `MicroDCS.Sfc.Hosting` |
+| Southbound protocol | Equipment-specific CloudEvents | Application processors |
 
-The SFC engine is **not** a processor. It is an `AdditionalTask` that runs on every instance and coordinates through Redis. This means:
+The SFC engine is not a processor. The northbound processor stays a pure OPC UA protocol handler, the southbound
+processors stay pure equipment protocol handlers, and both can be tested alone. The layers meet through Valkey (the job
+order script writes SFC work atomically with the job state) and through the processor API (the SFC host sends commands
+by type id through `IOutgoingCommands` and gets outcomes back from the handlers). The SFC logic is a pure function, so a
+different execution strategy could replace it without touching a processor.
 
-- The NB processor remains a pure OPC UA protocol handler — it does not know about SFC recipes or step sequencing
-- SB processors remain pure equipment protocol handlers — they can be tested and triggered independently
-- The SFC engine can be replaced with a different execution strategy without changing any processor code
+### Several replicas
 
-### Multi-Instance Model
+The SFC host runs on every `Processor` instance. Instances share work through a Valkey stream per scope with one
+consumer group, and every change of a job's state is a compare-and-set. A crashed instance's work entries are claimed by
+another after an idle time.
 
-Unlike the publisher (single-instance to avoid duplicate retained writes), the SFC engine runs on **every** instance. Multiple instances coordinate through a Redis Stream consumer group (`XREADGROUP` + `XAUTOCLAIM`) and atomic compare-and-swap Lua scripts. This eliminates single points of failure and lets Kubernetes horizontal scaling naturally increase throughput.
+A response to a push command goes to the reply address of the instance that sent the command
+([D-9](porting/decisions.md#d-9)). If that instance is gone, the response is lost and the action's deadline makes another
+instance send the command again; equipment must therefore deduplicate on `mdcsactionkey`
+([equipment contract](sfc-engine.md#the-equipment-contract)). Pull events are written to the work stream by whichever
+instance receives them, so none is lost. See [SFC Engine](sfc-engine.md#running-on-several-replicas).
 
-Action completion routing is partially instance-affine: `push_command` response routing uses in-memory tables (`_pending_commands`) on the dispatching instance. `pull_event` routing is now stream-based and fully distributed: any live instance that receives the incoming CloudEvent writes a `pull_event:` work item to `sfc:work:{scope}`, and any consumer can complete the waiting action via `_handle_pull_event`.
+## Libraries and platform
 
-The two interaction patterns have different recovery characteristics:
+| Purpose | Library |
+|---|---|
+| Runtime | .NET 11, Native AOT, Generic Host ([D-59](porting/decisions.md#d-59)) |
+| Envelope | CloudNative.CloudEvents, behind an own `EventEnvelope` and codec ([D-14](porting/decisions.md#d-14), [D-36](porting/decisions.md#d-36)) |
+| MQTT 5 | MQTTnet |
+| NATS | NATS.Net |
+| Valkey | StackExchange.Redis, without blocking commands ([D-7](porting/decisions.md#d-7)) |
+| OPC UA models | OPC Foundation UA-.NETStandard 2.x, models only |
+| Telemetry | OpenTelemetry .NET with OTLP export |
+| MCP | ModelContextProtocol.AspNetCore (dev and test only) |
 
-- **`push_command`**: the response message is lost if delivered to the wrong instance, but the action stays `dispatched` in Redis. On restart, `_recovery_scan` → `resume` → `_handle_resume` re-dispatches the command. The equipment receives the command again and produces a new response. This is a **delay until restart** — no step is permanently missed, provided equipment tolerates re-delivery (see the [idempotency contract](sfc_engine.md#idempotency-contract)).
-- **`pull_event`**: any live instance that receives the CloudEvent writes to the Redis stream, and `XAUTOCLAIM` ensures the work item survives pod restarts. The action is completed by whichever engine instance processes the stream entry. No event is permanently lost.
+Processor wiring, payload descriptors and diagnostics come from a Roslyn source generator; JSON uses source-generated
+serializer contexts. Nothing depends on runtime reflection.
 
-See [SFC Engine Architecture](sfc_engine.md#sfc-engine-architecture) for the full multi-instance safety matrix.
-
-## Southbound Connectivity
+## Southbound connectivity
 
 ### Context
 
-MicroDCS orchestrates equipment from the SFC engine and the southbound processors. Plants run many
-industrial protocols (OPC UA client/server, Modbus, S7, vendor APIs). The framework is built on
-MQTT v5 and CloudEvents, and uses OPC UA information models as payload definitions, not as a
-transport ([Concepts](concepts.md#opc-ua-and-companion-specifications)).
+MicroDCS orchestrates equipment from the SFC engine and the southbound processors. Plants run many industrial protocols
+(OPC UA client/server, Modbus, S7, vendor APIs). The framework is built on CloudEvents over brokers and uses OPC UA
+information models as payload definitions, not as a transport.
 
 ### Decision
 
-!!! info "Updated for the .NET port"
-    This section reflects [D-11](porting/decisions.md#d-11): Zenoh is a full CloudEvents transport
-    binding with the same processor model as MQTT, NATS and AMQP. MessagePack-RPC is dropped in the
-    .NET port, so the sidecar path below no longer uses it. The Zenoh binding is built in S25.
+MicroDCS contains no southbound industrial protocol clients. Equipment is reached over the framework's CloudEvent
+transports, with the protocol translation outside the framework:
 
-MicroDCS does not contain southbound industrial protocol clients. Equipment is reached over the
-framework's CloudEvents transports, with the protocol translation outside the framework core:
-
-1. **A gateway or the equipment publishes CloudEvents on MQTT** (or another northbound-capable
-   transport such as NATS). A southbound processor subscribes to `data`, `events` and `metadata` and
-   publishes `commands` ([topic structure](operations.md#mqtt-topic-structure)). Bridges such as
-   OPC UA to MQTT gateways or edge platforms own the OT protocol.
-2. **A gateway, sidecar or the equipment speaks CloudEvents over Zenoh.** Zenoh is a full transport
-   binding: the same processors, handlers and pipeline as on MQTT, with Zenoh key expressions in
-   place of topics. It suits edge and peer-to-peer deployments and replaces the MessagePack-RPC
-   sidecar of the Python implementation. CloudEvents has no Zenoh protocol binding, so MicroDCS
-   defines its own mapping (attributes in the attachment or a structured-mode payload, query/reply
-   for commands, router or peer mode; decided in S25).
-3. **A southbound processor translates in-process.** Equipment-specific CloudEvent shaping and
-   protocol translation belong in a processor ([three-layer architecture](#three-layer-architecture)).
-   A processor may use a protocol library, but then it is application code, not part of the
-   framework.
+1. **A gateway or the equipment publishes CloudEvents on MQTT** (or NATS). A southbound processor subscribes to
+   `data`, `events` and `metadata` and publishes `commands`. Bridges such as OPC UA to MQTT gateways or edge platforms own
+   the OT protocol. The gateway contract is designed in S28 (Q-ARCH-11).
+2. **A gateway, sidecar or the equipment speaks CloudEvents over Zenoh.** Zenoh becomes a full transport binding with the
+   same processors and pipeline ([D-11](porting/decisions.md#d-11), S25). It suits edge and peer-to-peer set-ups.
+3. **A southbound processor translates in-process.** A processor may use a protocol library, but then that is
+   application code, not part of the framework.
 
 ### Consequences
 
-- The framework stays protocol-agnostic and its dependencies stay small. Protocol licences, security
-  patching and certification of the OT stack remain with the gateway.
-- The SFC engine runs on every replica ([multi-instance model](#multi-instance-model)). A direct
-  protocol connection inside each replica would make several replicas compete for the same equipment
-  session, which is another reason to keep it behind a gateway that owns the connection.
-- Commands are delivered at least once, so the gateway or equipment must follow the
-  [idempotency contract](sfc_engine.md#idempotency-contract): deduplicate on `mdcsactionkey`, answer
-  every delivery with `causationid` set to the delivery's `id`, and respond before the message
-  expires.
-- A gateway is one more component to deploy, secure and monitor. Its identity and topic permissions
-  are covered by the [authorization model](security.md#acl).
-- The system has no direct visibility of the equipment connection. Equipment availability has to be
-  reported by the gateway as `events` or `data`.
+* The framework stays protocol-agnostic and its dependencies stay small. Protocol licences, security patches and
+  certification of the OT stack stay with the gateway.
+* The SFC host runs on every replica. A direct protocol connection in each replica would let several replicas compete
+  for the same equipment session, which is another reason to keep it behind a gateway that owns the connection.
+* Commands are delivered at least once, so the gateway or the equipment must follow the
+  [equipment contract](sfc-engine.md#the-equipment-contract).
+* A gateway is one more component to deploy, secure and monitor. Its identity and topic permissions follow the
+  [authorization model](security.md#acl).
+* MicroDCS does not see the equipment connection. The gateway has to report equipment availability as `events` or
+  `data`.
 
 ### Alternatives considered
 
-- **An OPC UA client inside the framework.** Rejected because of the replica issue above and because
-  it ties the framework to one protocol and its security model.
-- **Keeping the MessagePack-RPC sidecar protocol.** Dropped in the .NET port: it duplicated what a
-  standard transport gives, and Zenoh covers the local and edge cases with the same processor model.
-- **Using OPC UA PubSub or client/server as the main transport.** Rejected in favour of MQTT with
-  CloudEvents ([design goals](#design-goals)), which fits the cloud-native deployment and
-  shared-subscription scaling.
+* **An OPC UA client inside the framework.** Rejected because of the replica issue above and because it ties the
+  framework to one protocol and its security model.
+* **The MessagePack-RPC sidecar protocol of the Python implementation.** Dropped: it duplicated what a standard
+  transport gives, and Zenoh covers the local and edge cases with the same processor model.
+* **OPC UA PubSub or client/server as the main transport.** Rejected in favour of a broker with CloudEvents, which fits
+  container deployments and scaling through shared subscriptions.
+
+## History
+
+MicroDCS started as a Python framework. The Python implementation is frozen on the
+[`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. The .NET rewrite keeps its
+behaviour where the parity tests require it, but its wire format and key schema are a clean break
+([D-2](porting/decisions.md#d-2)). The reasons, decisions and session log of the port are in the
+[design record](porting/index.md).

@@ -1,6 +1,10 @@
 # Port to .NET
 
-Status: draft v2, restructured on 2026-11-07. The Python implementation is frozen on the `python-archive` branch. Next session: **S23a** (docs port, `docs/porting/` archived, release `v0.1.0`); S08 to S23 and S27 are done.
+!!! note "Archived record of the port"
+    The port from Python to .NET reached its parity gate in S23 and was released as `v0.1.0` (S23a). This page is
+    kept as the record of how the port was planned and done. The extension sessions of M3 (S24 onwards) still use it.
+
+Status: the port is complete (S23 parity gate, S23a docs port and release `v0.1.0`). The Python implementation is frozen on the `python-archive` branch. Next session: **S24** (AMQP transport); S25 and S28 are also ready.
 
 ## How to use these files
 
@@ -80,7 +84,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-16](decisions.md#d-16) | revised | Python preserved on `python-archive`; the port continues on `main` |
 | [D-17](decisions.md#d-17) | decided | SFC semantics as a pure, dependency-free core library; late-response rule and outcome-based transition conditions decided |
 | [D-18](decisions.md#d-18) | decided | SFC time model: timestamped events, absolute deadlines, shared due-index; outage grace and recipe timeout decided |
-| [D-19](decisions.md#d-19) | decided | Inspection layer plus optional dev MCP server, built early (first slice in S11) |
+| [D-19](decisions.md#d-19) | revised | Inspection layer plus optional MCP server, built early (first slice in S11); read tools allowed in production, write group Development and Test only (S23a) |
 | [D-20](decisions.md#d-20) | decided | Gitleaks, Trivy and SonarQube Cloud in CI; scanners as pinned containers; Sonar C# rules in every build (confirmed S03) |
 | [D-21](decisions.md#d-21) | decided | OPC UA .NET stack 2.x is MIT licensed; no licence constraint from driver 1 |
 | [D-22](decisions.md#d-22) | revised | One GitHub stack per milestone, one squash-merged PR per session; post-merge checks verified by the next session |
@@ -98,7 +102,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-34](decisions.md#d-34) | revised | Job models: generated ISA-95 V1 and V2 types behind a version-neutral model, OPC UA JSON verbose, NodeSet2 Work Master extension with its own CloudEvent type, transition table generated from the NodeSet |
 | [D-35](decisions.md#d-35) | revised | Processor authoring API: `[Processor]`, `[Incoming]`/`[Outgoing]`/`[OnResponse]`/`[OnExpired]`, `[CloudEventType]`, `[CarriedAs]`, generator plus explicit registration, filters, `IActionSink` |
 | [D-36](decisions.md#d-36) | decided | Own `EventEnvelope`; CloudEvents SDK only behind `IEnvelopeCodec`; `IPayloadDescriptor` with Json, OpcUaJson, Binary codecs |
-| [D-37](decisions.md#d-37) | decided | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model, shutdown phases |
+| [D-37](decisions.md#d-37) | revised | One pipeline, thin `ITransport`, delivery profile and dedupe rule, `DeliveryOutcome` error model (with `Retry` for a failing dedupe store, S23a), shutdown phases |
 | [D-38](decisions.md#d-38) | decided | Logical address with one segment rule for all transports, scope check, level-0 rejected by default, state-topic port |
 | [D-39](decisions.md#d-39) | decided | Generic Host, `MicroDcs` options section, `APP_` + `__` environment names, binding sections, instance roles |
 | [D-40](decisions.md#d-40) | revised | Inspection contracts with sensitivity-based redaction, one management listener on loopback; no `/metrics` (OTLP only, S21) |
@@ -156,7 +160,7 @@ Each question ends in a decision or a finding recorded by its owner session. Ans
 | Q-OPS-3 Security | MQTT, NATS, Valkey and the management listener done and documented (`docs/security.md`, S22); the level-0 rule is D-38. Open: AMQP SASL (S24), Zenoh ACLs (S25) | S24, S25 |
 | ~~Q-TEST-1~~ Test strategy | → D-15, D-58: compose harness; golden files are the generated schema documents in `docs/schemas/`. Transport profiles (`amqp`, `zenoh`) are added by their sessions | — |
 | ~~Q-TEST-2~~ Behavioural parity | → D-58: acceptance tests against the image over MQTT, [parity list](research/parity-acceptance.md) A-1 to A-21 | — |
-| ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; pages are ported and the "not yet ported" notices removed | S23a |
+| ~~Q-TEST-3~~ Documentation | → D-16: no side-by-side docs; every page ported in S23a ([docs port](research/docs-port.md)) | — |
 | ~~OpenTelemetry coverage~~ | → D-54: OTLP export of every `MicroDCS*` source and meter, `NATS.Net`, runtime and ASP.NET Core; consumer, producer and SFC work spans; no Valkey spans (no stable StackExchange.Redis instrumentation) | — |
 | ~~ISA-95 via OPC UA, Work Master extension, JSON Schema generation~~ | → D-34: plain models work for V1 and V2, Work Master extension is an own NodeSet2 model, runtime schema generation replaces `dataclassgen` for job models | — |
 | ~~R-12~~ Operational limits | → [Deployment](../deployment.md#limits) (S22) | — |
@@ -200,7 +204,7 @@ Each session fits one Claude Code session. Sessions marked "parallel" can run in
 | S22a | CI runtime review: skip rules, path filters, job split and caching | S22 | done |
 | S27 | SFC equipment hold: recipe-declared hold and restart actions, command contract with the equipment | S20a | done |
 | S23 | Parity acceptance: Python scenarios against the image, schema golden files, benchmark gate, maintenance review | all of M2 | done |
-| S23a | Docs port, README, `docs/porting/` archived, release `v0.1.0` | S23 | open |
+| S23a | Docs port, README, `docs/porting/` archived, release `v0.1.0` | S23 | done |
 | **M3 Extensions** | | | |
 | S24 | AMQP transport | S14 | open |
 | S25 | Zenoh transport and CloudEvents-over-Zenoh mapping | S14 | open |

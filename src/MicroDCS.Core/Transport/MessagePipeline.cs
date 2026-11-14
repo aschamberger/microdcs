@@ -131,7 +131,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
             var result = await ProcessAsync(message, cancellationToken).ConfigureAwait(false);
             _decisions?.Record(message.BindingId, message.Envelope, result.ToString(), _time.GetElapsedTime(started), _time.GetUtcNow());
             PipelineTelemetry.Received.Add(1, new KeyValuePair<string, object?>("outcome", result.ToString()));
-            if (result is Result.Dropped or Result.Faulted)
+            if (result is Result.Dropped or Result.Faulted or Result.Unavailable)
             {
                 activity?.SetStatus(ActivityStatusCode.Error);
             }
@@ -139,6 +139,7 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
             return result switch
             {
                 Result.Faulted => DeliveryOutcome.Fault,
+                Result.Unavailable => DeliveryOutcome.Retry,
                 Result.Dropped => DeliveryOutcome.Drop,
                 _ => DeliveryOutcome.Ack,
             };
@@ -410,7 +411,17 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
         if (dedupe)
         {
             claim = _options.InstanceId + ":" + Guid.NewGuid().ToString("N");
-            if (await ClaimAsync(envelope, claim, cancellationToken).ConfigureAwait(false) == ClaimState.Done)
+            ClaimState state;
+            try
+            {
+                state = await ClaimAsync(envelope, claim, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                return await StoreUnavailableAsync(message, transport, claim, ex, "claim").ConfigureAwait(false);
+            }
+
+            if (state == ClaimState.Done)
             {
                 Log.DuplicateAcknowledged(_logger, envelope.Id, message.BindingId);
                 return Result.Duplicate;
@@ -454,10 +465,32 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
         if (dedupe)
         {
             // Before the ack: a crash in between redelivers, it never loses the message (T-3).
-            await _dedupe.MarkDoneAsync(envelope.Source, envelope.Id, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _dedupe.MarkDoneAsync(envelope.Source, envelope.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                // The handler ran, but without the mark the message stays unacknowledged and is processed again (at least once, D-37).
+                return await StoreUnavailableAsync(message, transport, claim, ex, "mark done").ConfigureAwait(false);
+            }
         }
 
         return step.Result;
+    }
+
+    /// <summary>
+    /// The dedupe store failed (a Valkey outage). Not the message's fault: the outcome is <see cref="DeliveryOutcome.Retry"/>, so a transport
+    /// that can redeliver retries without counting a poison attempt, and one that cannot ends the host instead of leaving the message
+    /// unacknowledged for good (D-27). The claim is given back where the store answers again, as after a handler fault (L-7); a claim whose
+    /// write had an unknown outcome would otherwise hold the redelivery for the whole lease.
+    /// </summary>
+    private async ValueTask<Result> StoreUnavailableAsync(InboundMessage message, ITransport? transport, string claim, Exception exception, string step)
+    {
+        Log.DedupeStoreUnavailable(_logger, exception, message.Envelope.Id, message.BindingId, step);
+        await ReleaseClaimAsync(message.Envelope, claim).ConfigureAwait(false);
+        StopUnlessRedeliverable(message.BindingId, transport);
+        return Result.Unavailable;
     }
 
     private void StopUnlessRedeliverable(string bindingId, ITransport? transport)
@@ -677,6 +710,9 @@ public sealed class MessagePipeline : IInboundHandler, IEventPublisher, IOutgoin
         Duplicate,
         Dropped,
         Faulted,
+
+        // The dedupe store failed: kept apart from handler faults in the decision log and the received counter.
+        Unavailable,
     }
 
     private readonly record struct Step(Result Result, ErrorKind? Kind = null, string? Text = null);

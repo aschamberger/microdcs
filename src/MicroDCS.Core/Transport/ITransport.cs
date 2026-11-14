@@ -38,6 +38,12 @@ public enum DeliveryOutcome
 
     /// <summary>The handler failed. Do not acknowledge; the dedupe lease lapses and the message is redelivered (D-27: the host stops when the transport cannot nack).</summary>
     Fault,
+
+    /// <summary>
+    /// A dependency of the pipeline (the dedupe store) was unavailable; the message itself is not at fault. Do not acknowledge.
+    /// A transport that can redeliver retries it without counting the attempt against its poison limit; the host stops otherwise (D-27).
+    /// </summary>
+    Retry,
 }
 
 /// <summary>A reply address in transport-native form, opaque to the pipeline (A-6). Per instance (D-9).</summary>

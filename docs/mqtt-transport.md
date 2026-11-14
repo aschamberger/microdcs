@@ -1,4 +1,4 @@
-# MQTT transport in .NET
+# MQTT transport
 
 This page describes `MicroDCS.Transport.Mqtt` ([D-46](porting/decisions.md#d-46)), the MQTT 5 binding on MQTTnet. It replaces `mqtt.py` of the Python version. Topics and payloads are a clean break ([D-2](porting/decisions.md#d-2)).
 
@@ -16,23 +16,7 @@ A binding selects the transport with `MicroDcs:Bindings:{id}:Transport = mqtt`. 
 
 Section `MicroDcs:Mqtt`; environment names use `APP_` and `__`, for example `APP_MicroDcs__Mqtt__Hostname`.
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `Hostname` | string | `localhost` | Broker host |
-| `Port` | int | 1883 | Broker port |
-| `ClientId` | string | `microdcs-{instance id}` | MQTT client id. Instances must not share one |
-| `Username` | string | none | User name |
-| `Password` | string | none | Password. Needs `Username`. Prefer `PasswordFile` |
-| `PasswordFile` | path | none | File with the password (a mounted secret); one trailing line break is removed. Not together with `Password` |
-| `SatTokenFile` | path | `/var/run/secrets/tokens/broker-sat` | Kubernetes service account token. Used as enhanced authentication (`K8S-SAT`) when the file exists |
-| `TlsCaFile` | path | `/var/run/certs/ca.crt` | CA that signed the broker certificate. When the file exists the connection uses TLS and trusts only this CA |
-| `RequireTls` | bool | false | End the start when `TlsCaFile` does not exist instead of connecting in plain text |
-| `TlsClientCertFile`, `TlsClientKeyFile` | path | none | PEM client certificate and key for mutual TLS. Set together; need TLS |
-| `SessionExpiry` | duration | 1 h | How long the broker keeps the session after a disconnect |
-| `KeepAlive` | duration | 30 s | Keep-alive period |
-| `OperationTimeout` | duration | 15 s | Timeout of connect, subscribe and publish |
-| `ReconnectMinDelay`, `ReconnectMaxDelay` | duration | 1 s, 30 s | Wait before a reconnect attempt; doubles up to the maximum |
-| `PublishQos` | int | 1 | QoS of published messages, 0 or 1. With 0 the transport declares `AtMostOnce` and the dedupe claim is skipped |
+Every field is in the [configuration reference](operations.md#config-mqtt).
 
 Binding fields used by this transport (see [Processors in .NET](processors-dotnet.md)): `Prefix`, `ScopeLevels`, `Discriminator`, `SharedGroup` and `ReplyBase` (required when the processor publishes commands). Message workers, dedupe lease and queue sizes are core options (`MicroDcs:MessageWorkers`, `DedupeLease`, `OutgoingQueueMaxSize`).
 

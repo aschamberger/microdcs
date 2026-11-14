@@ -1,8 +1,3 @@
 {% extends "base.html" %}
 
-{#- Site-wide notice while the port to .NET is in progress. Remove at the parity gate (S23). -#}
-{% block announce %}
-  Port to .NET in progress. Pages marked "Not yet ported" describe the archived Python
-  implementation (<code>python-archive</code> branch).
-  <a href="{{ 'porting/' | url }}">Plan and progress</a>
-{% endblock %}
+{#- Template overrides of the docs site. The port's announcement bar was removed in S23a. -#}

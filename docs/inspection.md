@@ -11,7 +11,7 @@ The inspection layer shows the live state of a running application: processors, 
 | Valkey inspector | `MicroDCS.Valkey` | `valkey` inspector: keys by kind and scope, documents, dedupe state, streams. No raw commands. |
 | MQTT inspector | `MicroDCS.Transport.Mqtt` | `transport.mqtt` inspector: connection state, counters, subscriptions ([MQTT transport](mqtt-transport.md)). Read it with the tool `inspect`. |
 | NATS inspector | `MicroDCS.Transport.Nats` | `transport.nats` inspector: connection state, counters (including redelivered and poisoned), consumers ([NATS transport](nats-transport.md)). Read it with the tool `inspect`. |
-| MCP adapter | `MicroDCS.Mcp` | Tools under `/mcp` (optional; production applications do not reference it). |
+| MCP adapter | `MicroDCS.Mcp` | Tools under `/mcp` (optional). Read tools may run in production; the write group only in Development and Test. |
 
 Every stateful component registers its own `IInspector`; the MCP tools and the REST API both call `InspectionService`, not each other.
 
@@ -29,6 +29,7 @@ APP_MicroDcs__Bindings__greetings__ScopeLevels=2 \
 APP_MicroDcs__Management__Enabled=true \
 APP_MicroDcs__Management__McpEnabled=true \
 APP_MicroDcs__Management__WriteEnabled=true \
+DOTNET_ENVIRONMENT=Development \
 dotnet run --project src/MicroDCS.App -- serve
 ```
 
@@ -43,18 +44,7 @@ docker compose --profile app up -d --build --wait
 
 ## Configuration
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `MicroDcs:Management:Enabled` | bool | `false` | Start the management listener. |
-| `MicroDcs:Management:Url` | URL | `http://127.0.0.1:8081` | Listen URL. Anything but a loopback address needs `BearerTokenFile`. |
-| `MicroDcs:Management:ApiEnabled` | bool | `false` | Serve the read-only REST API under `/api/v1` ([HTTP surface](observability.md)). Needs `Enabled`. |
-| `MicroDcs:Management:McpEnabled` | bool | `false` | Serve the read tools under `/mcp`. Needs `Enabled`. |
-| `MicroDcs:Management:WriteEnabled` | bool | `false` | Register the write tool `inject_event`. Needs `McpEnabled`. |
-| `MicroDcs:Management:IncludePayloads` | bool | `false` | Show `Payload` values (document bodies) in results. Needs `Enabled`. |
-| `MicroDcs:Management:BearerTokenFile` | path | none | File with the bearer token, at least 16 characters. Required for a non-loopback `Url`; `/health/*` stays open for probes. |
-| `MicroDcs:Management:MaxResults` | int | 100 | Cap of entries per result. Values are cut at 2000 characters. |
-| `MicroDcs:Management:RequestsPerMinute` | int | 120 | Calls per minute and caller (REST and MCP have separate windows); more are refused (REST answers 429). |
-| `MicroDcs:Management:DecisionBufferSize` | int | 200 | Pipeline decisions kept in the ring buffer (zero while the listener is off). |
+Every `MicroDcs:Management:*` field is in the [configuration reference](operations.md#config-management).
 
 Invalid combinations end the process at start (D-27). A listener that cannot bind ends it too.
 
@@ -67,7 +57,7 @@ All tools are read-only except the write group (`inject_event`, `sfc_tick`, `sfc
 | `inspectors_list`, `inspect` | The registered inspectors; a generic query of any of them. |
 | `app_status`, `config_effective` | Version, uptime, instance, roles, transports; the core options. |
 | `processors_list` | Processors with binding, transport, prefix, scope levels, intents and handlers. |
-| `pipeline_recent` | Counters and the last decisions (`Processed`, `Duplicate`, `Dropped`, `Faulted`) with ids and timing, no payloads. |
+| `pipeline_recent` | Counters and the last decisions (`Processed`, `Duplicate`, `Dropped`, `Faulted`, `Unavailable`) with ids and timing, no payloads. |
 | `dedupe_lookup` | State of the dedupe key of one event (`none`, `processing`, `done`) with the remaining time. |
 | `valkey_keys` | Ids of a kind in a scope: `joborder`, `jobresponse`, `workmaster`, `sfcactive`, `sfcdue`, or the `scopes`. |
 | `valkey_document` | One stored document: version, scope, state, operation id; the body is redacted by default. |
@@ -92,7 +82,10 @@ All tools are read-only except the write group (`inject_event`, `sfc_tick`, `sfc
 * `Payload` values are replaced by a size marker unless `IncludePayloads` is on.
 * Every call is logged in the `MicroDCS.Security` category with caller, tool and arguments, never results.
 * `inject_event` goes through the pipeline (claim, scope check, dispatch), never directly into Valkey. Confirm it in the client.
-* Never enable it in production manifests. The maintenance tools below are a separate dev-only group.
+* **Production.** The read tools may run in production as an operator's choice ([D-19](porting/decisions.md#d-19)): keep `IncludePayloads` off, bind the pod address only with `BearerTokenFile`, and admit the port only from the clients that need it (the NetworkPolicy of the [manifest](deployment.md#manifest)). The tools are a diagnostic surface that may change between releases; integrations use the versioned REST API.
+* **Write group only in Development and Test.** `WriteEnabled` (`inject_event`, `sfc_tick`, `sfc_redispatch`, `sfc_abort`) runs real handlers and acts on running recipes, so the start fails in any other environment (`DOTNET_ENVIRONMENT`). The maintenance tools below are a separate dev and test group with the same guard.
+* **Tool output is untrusted data.** Results carry identifiers, subjects and error texts from equipment and the MES. An agent that reads them must treat them as data, never as instructions.
+* The token is shared: the audit log names the token holder, not a person. Give each environment its own token and rotate it by replacing the file.
 
 ## Maintenance tools
 
@@ -119,14 +112,6 @@ Snapshots are JSON files with the stored text as written. They hold payload data
 
 Guards: the group needs `MicroDcs:Maintenance:Enabled` **and** the environment `Development` or `Test` (`DOTNET_ENVIRONMENT`); any other environment ends the start. Optionally `RequireEnvironmentMarker` demands the Valkey key `{prefix}:env` to hold the environment name, so a mis-pointed connection string cannot reach real data (compose profile `app` writes it with `valkey-marker`). A plan above `ItemCap` needs `allow_large`.
 
-| Setting (`MicroDcs:Maintenance:`) | Type | Default | Description |
-|---|---|---|---|
-| `Enabled` | bool | `false` | Registers the maintenance tools. Only in Development and Test. |
-| `SnapshotDirectory` | string | `.microdcs/snapshots` | Where snapshot files go (relative to the working directory). |
-| `ItemCap` | int | `100` | Largest plan without `allow_large`. |
-| `SnapshotRetention` | int | `20` | Snapshots kept; older ones are deleted after a new one. |
-| `SnapshotMaxBytes` | long | `5242880` | Largest snapshot file; a larger apply is refused. |
-| `PlanLifetime` | time span | `00:05:00` | How long a plan token works. |
-| `RequireEnvironmentMarker` | bool | `false` | Second guard through the marker key. |
+The `MicroDcs:Maintenance:*` fields are in the [configuration reference](operations.md#config-maintenance).
 
 Tests use the same `IMaintenanceOperations` API directly. Audit lines go to the `MicroDCS.Security` category: caller, tool, arguments, counts, digest, snapshot id, never payloads.

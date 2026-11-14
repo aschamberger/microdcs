@@ -1,5 +1,9 @@
 # Session log
 
+!!! note "Archived record of the port"
+    The port from Python to .NET reached its parity gate in S23 and was released as `v0.1.0` (S23a). This page is
+    kept as the record of how the port was planned and done. The extension sessions of M3 (S24 onwards) still use it.
+
 Newest entry last. Keep each entry to about 15 lines; findings that others depend on go to `research/` and are linked.
 
 Template:
@@ -567,3 +571,21 @@ Decisions: D-59 new.
 Changed in the plan: index (D-59, next free id D-60), decisions, `CLAUDE.md`, `README.md`, `docs/development.md`, `docs/security.md`.
 Post-merge checks: `ci` green on `main` with all jobs including `bench`, `publish` and `publish-manifest` (images on Ubuntu 26.04, signed); `security` green (Trivy on the new base); Dependabot opens no new `Microsoft.Extensions.*` major PRs.
 Next session pickup: S23a, as in the S23 entry above.
+
+## S23a Docs port and release (2026-11-14, branch `s23a-docs-release`)
+
+Status: done (the release `v0.1.0` is the post-merge step below). Previous session post-merge: verified (`ci` with all jobs, `security` and `docs` green on `main`; the scheduled `ci` run of 2026-11-13 ran both container legs and `kubernetes`; the seven schema URLs answer 200; required checks unchanged, eleven).
+Done:
+
+* The eleven "Not yet ported" pages rewritten against the code, Python content removed; `sfc_engine.md` became `sfc-engine.md` (concepts; reference stays `sfc-core.md`, maintainer's choice). `operations.md` is the one configuration reference for all eight options classes (scripted check: no field missing); the component pages link there. Tutorial built and run against Mosquitto, its test green.
+* README, nav ("in .NET" dropped, "Design Record" with decisions and research, `m1-review` and `parity-acceptance` added), WIP announcement removed, `index`/`sessions`/`log` marked as the archived record, `CLAUDE.md` status and `.claude/rules/docs.md`.
+* MCP in production (D-19 revised, maintainer's choice): read tools allowed behind the token; `WriteEnabled` now fails the start outside Development and Test (`McpOptionsValidator`, tests for Production and Staging, smoke and test hosts declare `Test`).
+* Fix: a failing dedupe store (Valkey outage) escaped the pipeline; MQTT left the message unacknowledged with the host running. New outcome `DeliveryOutcome.Retry`: claim given back, decision `Unavailable`, MQTT ends the host, the NATS worker keeps the message and retries it every `NakDelay` without using a delivery (event 219). Unit tests for both transport kinds, NATS compose test.
+
+Findings: [docs port](research/docs-port.md) (page map, parity list DP-1 to DP-29, none open).
+Decisions: D-37 revised (`Retry`), D-19 revised (MCP read tools in production, write group guarded).
+Changed in the plan: index (status, S23a done, Q-TEST-3 closed, D-37 row), decisions, research (`docs-port.md`), every page under `docs/` except deployment, security and observability.
+Verified: build 0 warnings, 1095 tests (922 passed, 173 integration skipped on the host), format clean, `CI=true dotnet restore`, AOT publish (allowlist only) with `smoke`, `docker build` and `docker run`, compose integration 159 passed 0 skipped (`tests` exited 0; the new NATS test failed with the first, nak-based fix), `scripts/image-tests` 14 passed, `scripts/scan` clean, `zensical build` clean with no broken internal link or anchor.
+`/code-review high`: 8 findings, 8 fixed (NATS poisoned messages during an outage, solved by retrying in the worker, claim not released after a store failure in both steps, missing outage limit in `operations.md`, duplicated catch blocks, the redeliverable path untested, a misleading log text, store faults counted as handler faults).
+Post-merge checks: `ci` green on `main` with all jobs including `publish`; `docs` green; the site has no announcement bar and `/sfc-engine/` answers 200; release `v0.1.0`: tag on the merge commit, `ci` publishes `ghcr.io/aschamberger/microdcs:0.1.0`, `0.1` and `latest`, `cosign verify` passes with the identity of `security.md`, GitHub release notes present.
+Next session pickup: S24 (AMQP transport; S25 and S28 are also ready). Run `git switch main && git pull --ff-only && gh stack init s24-amqp-transport`. Read the S24 block, D-10, D-33, D-37 (with the `Retry` outcome) and the NATS transport as the pattern. If `v0.1.0` was not tagged after the S23a merge, do that first (S23a post-merge checks). Nothing else to prepare.

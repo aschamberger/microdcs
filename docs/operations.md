@@ -1,629 +1,379 @@
 # Operations
 
-!!! warning "Not yet ported"
-    This page describes the archived Python implementation on the
-    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
-    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+This page covers running MicroDCS in production: what the dependencies need, what happens when one fails, the full
+configuration reference, backpressure, shutdown, monitoring and sizing. The Kubernetes manifest and its limits are on
+[Deployment](deployment.md), the trust model and hardening on [Security](security.md).
 
-This page covers operational concerns for running MicroDCS in production:
-configuration reference, backpressure behaviour across the processing pipeline,
-graceful shutdown, observability, and capacity planning.
+## Deployment model {#deployment-model}
 
-## Deployment Model
+An island is one independent deployment with its own Valkey: a plant area, a line or a site
+([D-12](porting/decisions.md#d-12)). Inside it the same image runs in two roles:
 
-A MicroDCS deployment has four moving parts:
-
-``` mermaid
+```mermaid
 flowchart LR
-  subgraph Pod
-    API["Sidecar container\n(e.g. FastAPI)"] -- "MessagePack-RPC\nlocalhost:8888" --> DCS["MicroDCS container\nasync event loop"]
-    DCS --- Redis[(Redis)]
+  subgraph Island
+    P["microdcs-processor<br/>Roles=Processor, 2+ replicas"]
+    U["microdcs-publisher<br/>Roles=Publisher, 1 replica"]
+    V[("Valkey")]
   end
-  DCS -- "MQTT v5" --> Broker[MQTT Broker]
+  B["MQTT broker or NATS"]
+  O["OpenTelemetry Collector"]
+  P --- V
+  U --- V
+  P -- "commands, events" --- B
+  U -- "state topics" --> B
+  P -. "OTLP" .-> O
+  U -. "OTLP" .-> O
 ```
 
-The MicroDCS container runs a single async event loop. All protocol handlers, bindings,
-and processors share this loop — isolation between them is achieved through bounded
-async queues, not separate threads or processes. Understanding where those queues sit
-and what happens when they fill is the foundation for operating the system reliably.
+Each process runs one .NET Generic Host. Transports deliver messages to a fixed number of workers per transport
+(`MessageWorkers`); outgoing events go through one bounded queue per binding. Knowing where those queues are and what
+happens when they fill is the basis for running the system ([Backpressure](#backpressure)).
 
----
+## Valkey {#valkey}
 
-## Redis Requirements
+Valkey is the system of record: job orders and responses, SFC state, work and change streams, dedupe claims and leases
+([Persistence](persistence.md)).
 
-Redis is the system of record: job orders and states, SFC execution state, work and change
-streams, and the deduplication keys all live there.
+**Version.** Plain Valkey without modules is enough; the project tests with `valkey/valkey-bundle:9`. One endpoint, no
+cluster mode. A replica with Sentinel or an operator needs no code change.
 
-**Version and modules.** Use Redis 8 or Redis Stack. The code relies on JSON documents, search
-indexes (`FT.*`), streams and Lua scripts. Managed Redis offerings without the JSON and Search
-modules do not work. Redis Cluster is not a supported topology: the Lua scripts touch several
-keys, and the search indexes span key prefixes.
-
-**Persistence baseline.** Run Redis with an append-only file and a persistent volume:
+**Persistence baseline.** Run with an append-only file on a persistent volume:
 
 ```bash
-redis-server --appendonly yes --appendfsync everysec
+valkey-server --appendonly yes --appendfsync everysec
 ```
 
-The default Redis configuration only snapshots (`save 3600 1 300 100 60 10000`) and keeps no
-AOF. After a crash it restarts from the last snapshot and silently loses every write since,
-including job orders the MES was told were stored. With `appendfsync everysec` at most about one
-second of writes can be lost. Mount the data directory (`/data` in the official image) on a
-persistent volume, otherwise a rescheduled pod starts empty.
+With only the default snapshots, a crash loses every write since the last snapshot, including job orders the MES was
+told were stored. With `appendfsync everysec` at most about one second of writes can be lost. Mount the data directory
+(`/data` in the official image) on a persistent volume, otherwise a rescheduled pod starts empty. The dev stack in
+`compose.yaml` uses these settings.
 
-A single Redis with this baseline is a reasonable starting point. A restart takes seconds, and
-the design already tolerates much longer MES outages (see
-[High availability](machinery-jobs-mes-publishing.md#high-availability)). Replication with
-Sentinel or an operator is only needed if even a short pause in sequence control is not
-acceptable. Replication is asynchronous, so a failover can still lose the last writes.
+**Access.** One ACL user per island with only the commands and keys MicroDCS needs
+([`deploy/valkey-island-acl.conf`](https://github.com/aschamberger/microdcs/blob/main/deploy/valkey-island-acl.conf),
+[Security](security.md#valkey)).
 
-**What a Redis outage does.** A lost Redis connection raises an error in the publisher or the
-SFC engine loop, which cancels the whole task group and exits the process. Kubernetes restarts
-the pod, and startup fails until Redis answers (the connection is checked once at startup), so
-replicas crash-loop with increasing back-off. On restart `_recovery_scan` resumes active jobs.
-Incoming MQTT messages that were not yet acknowledged are redelivered by the broker because
-the persistent session is kept. A message that was being processed at the crash is claimed
-again once its dedupe lease expires (`APP_MQTT_DEDUPE_LEASE_SECONDS`), so it is processed at
-least once. There is no in-process Redis reconnection.
+**What a Valkey outage does.**
 
-### Recovery Objectives
+* At start, the connection is checked once; without Valkey the process ends and Kubernetes restarts it with a growing
+  back-off ([D-27](porting/decisions.md#d-27)).
+* At runtime the client reconnects on its own. Commands sent during the outage fail after a few seconds; `/health/ready`
+  reports `valkey` as failing, so the pod leaves the Service endpoints.
+* A received message whose dedupe claim or done mark fails gets the outcome `Retry`; one whose handler fails on Valkey
+  is a `Fault`. On MQTT both end the process, and the broker redelivers the unacknowledged message to the persistent
+  session after the restart. On NATS the process keeps running: a `Retry` stays with its worker and runs again every `NakDelay`
+  until Valkey answers, without using a delivery, while a handler `Fault` counts, so a Valkey outage longer than
+  `MaxDeliver` × `NakDelay` (about 20 s by default) terminates messages whose handler needs Valkey (`microdcs.nats.poisoned`).
+  Raise `NakDelay` or `MaxDeliver` if the island must ride out longer outages.
+* The poller, the SFC sweep and the job order publisher log the error, count it (`microdcs.valkey.poll.errors`,
+  `microdcs.jobs.publisher.*`) and try again on the next round. A failed SFC work entry stays pending and is taken
+  again after `AutoclaimIdle`. A write whose outcome is unknown is checked and repeated (`WriteAttempts`).
+* After the outage the first sweep sees the heartbeat gap and moves every SFC deadline by it, so running jobs do not
+  time out because of the outage.
 
-These are design characteristics derived from the implementation and its tests. They are not
-measured service levels, so measure them in your own deployment before committing to a target.
+### Recovery objectives {#recovery-objectives}
 
-| Event | Data loss (recovery point) | Time to recover |
+These follow from the design and its tests. They are not measured service levels; measure them in your own
+deployment before you commit to a target.
+
+| Event | Data loss | Time to recover |
 |---|---|---|
-| Redis process crash, AOF `everysec` on a persistent volume | About 1 second of writes at most | Redis restart time, then the replicas restart (see below) |
-| Redis process crash, default configuration (snapshots only) | Everything since the last snapshot, up to an hour for a single change | As above |
-| Redis graceful stop and start | None | As above |
-| Redis failover to an asynchronous replica | The last writes not yet replicated | Failover time, then the replicas restart |
-| One processor pod dies | None: unacknowledged MQTT messages are redelivered and work items are re-claimed | `XAUTOCLAIM` re-delivers its SFC work after 30 seconds idle; other replicas keep serving |
-| Publisher pod dies | None | Pod restart (10 to 30 seconds); retained topics bridge the gap |
-| Push-command response delivered to another replica | None | Until the next restart re-dispatches the command (see [SFC Engine](sfc_engine.md#multi-instance-safety-summary)) |
+| Valkey crash, AOF `everysec` on a persistent volume | About 1 second of writes at most | Valkey restart, then MQTT replicas restart (see above) |
+| Valkey crash, snapshots only | Everything since the last snapshot | As above |
+| Valkey graceful stop and start | None | As above |
+| Valkey failover to an asynchronous replica | The last writes not yet replicated | Failover time |
+| A processor pod dies | None: unacknowledged messages are redelivered, work entries are claimed again | Other replicas keep serving; its SFC work is claimed after `AutoclaimIdle` (30 s), its unanswered commands are resent when their deadlines pass |
+| The publisher pod dies | None | Pod restart; the MES reads the retained state meanwhile, the lease lets the new pod take over after `LeaseTtl` (15 s) |
+| A command response is lost with its instance | None | Until the action's deadline sends the command again ([D-9](porting/decisions.md#d-9)) |
 
-After a Redis outage every replica exits and Kubernetes restarts it with growing back-off, so the
-recovery time is the Redis downtime plus pod startup plus the current back-off delay (Kubernetes
-caps it at five minutes). Messages are delivered at least once: a message in flight at a crash is
-processed again after its dedupe lease expires (`APP_MQTT_DEDUPE_LEASE_SECONDS`, 30 seconds by
-default), and commands to equipment can be repeated.
+Kubernetes caps the restart back-off at five minutes, so the time to recover from a long Valkey outage is the outage plus
+pod start plus the current back-off. Messages are delivered at least once: a message in flight at a crash is processed
+again after its dedupe lease (`DedupeLease`, 30 s) ends, and commands to equipment can be repeated.
 
----
+## Broker {#broker}
 
-## Configuration Reference
+* **MQTT 5** with retained messages and persistent sessions that survive a broker restart (Mosquitto:
+  `persistence true` and a persistent volume). Without persistence a broker restart empties the MES state topics until
+  the next refresh and loses messages for disconnected instances. Shared subscriptions (`$share/…`) must be supported.
+  Set the maximum packet size deliberately ([limits](deployment.md#limits)).
+* **NATS** with JetStream and file storage. MicroDCS creates its streams, consumers and the state bucket itself, so its
+  user needs the JetStream API permissions for them ([Security](security.md#acl)).
 
-All settings are read from environment variables with the prefix `APP_` and nested
-structure `APP_{SECTION}_{FIELD}`.
+## Configuration reference {#configuration-reference}
 
-### Redis (`APP_REDIS_*`)
+Configuration is the .NET configuration section `MicroDcs`. `microdcs serve` reads environment variables with the prefix
+`APP_` and `__` as the section separator: `MicroDcs:Valkey:KeyPrefix` is `APP_MicroDcs__Valkey__KeyPrefix`. Durations
+use the .NET `TimeSpan` format (`00:00:30`); lists are comma-separated strings without escaping
+([D-30](porting/decisions.md#d-30)). Every invalid value ends the process at start with the field name in the message
+([D-27](porting/decisions.md#d-27)). Paths to secrets point at mounted files; secrets are never logged.
 
-| Variable | Type | Default | Description |
+### Core (`MicroDcs`) {#config-core}
+
+| Name | Type | Default | Description |
 |---|---|---|---|
-| `APP_REDIS_HOSTNAME` | `str` | `localhost` | Redis server hostname |
-| `APP_REDIS_PORT` | `int` | `6379` | Redis server port |
-| `APP_REDIS_KEY_PREFIX` | `str` | `microdcs` | Prefix applied to all Redis keys |
-| `APP_REDIS_USERNAME` | `str` | `None` | Redis ACL username (optional) |
-| `APP_REDIS_PASSWORD` | `str` | `None` | Redis password (optional). Prefer `APP_REDIS_PASSWORD_FILE`; setting both is an error |
-| `APP_REDIS_PASSWORD_FILE` | `Path` | `None` | File containing the Redis password, for example a mounted Kubernetes secret. A trailing newline is ignored |
-| `APP_REDIS_SSL` | `bool` | `false` | Enable TLS for Redis connection |
-| `APP_REDIS_SSL_CA_CERTS` | `Path` | `None` | CA certificate for Redis TLS (optional) |
-| `APP_REDIS_SOCKET_TIMEOUT` | `float` | `10.0` | Seconds before a Redis read or write times out; must exceed the longest blocking stream read (2 s) |
-| `APP_REDIS_SOCKET_CONNECT_TIMEOUT` | `float` | `5.0` | Seconds before opening a Redis connection times out |
-| `APP_REDIS_SOCKET_KEEPALIVE` | `bool` | `true` | Enable TCP keep-alive on Redis connections |
-| `APP_REDIS_HEALTH_CHECK_INTERVAL` | `int` | `30` | Seconds of idleness after which a pooled connection is checked with `PING` before reuse (`0` disables) |
+| `CloudEventSource` | string | none, required | `source` of events this application creates. |
+| `InstanceId` | string | `POD_ID` or a generated id | Instance id: part of the dedupe token, the reply address and `service.instance.id`. |
+| `Roles` | `Processor`, `Publisher`, `All`, `None` | `All` | What this instance runs ([instance roles](overall-design.md#instance-roles)). |
+| `MessageExpiry` | duration | none | Expiry interval of created events. A command with an expiry and a reply address starts a local timer that `[OnExpired]` answers. |
+| `ShutdownGracePeriod` | duration | 30 s | Time for in-flight work on shutdown. |
+| `OutgoingQueueMaxSize` | int | 1000 | Upper bound of any outgoing queue ([D-28](porting/decisions.md#d-28)). |
+| `MessageWorkers` | int | 5 | Parallel workers per transport. |
+| `DedupeLease` | duration | 30 s | Lease of a dedupe claim; must exceed the slowest handler. |
+| `DedupeRetention` | duration | 10 min | How long a processed event stays a duplicate. Keep it above the broker's redelivery window. |
+| `StartLeaseTtl` | duration | 30 s | Lifetime of the lease of an `[OnStarted(Singleton = true)]` hook. |
 
-### MQTT (`APP_MQTT_*`)
+### Bindings (`MicroDcs:Bindings:{id}`) {#config-bindings}
 
-| Variable | Type | Default | Description |
+`{id}` is the processor's binding id (`[Processor(Id = …)]`): `greetings` and `machinery_jobs` in `microdcs serve`.
+
+| Name | Type | Default | Description |
 |---|---|---|---|
-| `APP_MQTT_HOSTNAME` | `str` | `localhost` | MQTT broker hostname |
-| `APP_MQTT_PORT` | `int` | `1883` | MQTT broker port |
-| `APP_MQTT_IDENTIFIER` | `str` | `app_client` | MQTT client identifier |
-| `APP_MQTT_SAT_TOKEN_PATH` | `Path` | `/var/run/secrets/tokens/broker-sat` | Path to SAT token for broker auth |
-| `APP_MQTT_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate for TLS connections |
-| `APP_MQTT_REQUIRE_TLS` | `bool` | `false` | Fail at startup if the CA certificate is missing instead of connecting in plaintext |
-| `APP_MQTT_USERNAME` | `str` | `None` | MQTT username (optional) |
-| `APP_MQTT_PASSWORD` | `str` | `None` | MQTT password (optional). Prefer `APP_MQTT_PASSWORD_FILE`; setting both is an error |
-| `APP_MQTT_PASSWORD_FILE` | `Path` | `None` | File containing the MQTT password, for example a mounted Kubernetes secret. A trailing newline is ignored |
-| `APP_MQTT_TLS_CLIENT_CERT_PATH` | `Path` | `None` | Client certificate for mutual TLS; requires `APP_MQTT_TLS_CLIENT_KEY_PATH` and TLS to be on |
-| `APP_MQTT_TLS_CLIENT_KEY_PATH` | `Path` | `None` | Private key for the client certificate |
-| `APP_MQTT_MESSAGE_WORKERS` | `int` | `5` | Concurrent tasks processing incoming messages |
-| `APP_MQTT_DEDUPE_TTL_SECONDS` | `int` | `600` | How long Redis remembers a processed message (seconds) |
-| `APP_MQTT_DEDUPE_LEASE_SECONDS` | `int` | `30` | Lease a worker holds on a message while processing it; must exceed the slowest handler. An expired lease lets another worker process the message again |
-| `APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE` | `int` | `5` | Per-binding outgoing queue capacity |
-| `APP_MQTT_SESSION_EXPIRY_INTERVAL` | `int` | `4294967295` | MQTT v5 session expiry interval in seconds (`2³²−1` = never expire) |
+| `Transport` | string | `mqtt` | `mqtt`, `nats` or `memory`; the transport must be registered. |
+| `Prefix` | string | none, required | Address prefix; `/`-separated segments of letters, digits, `_` and `-`. |
+| `ScopeLevels` | int | 0 | Scope levels below the prefix. |
+| `Discriminator` | string | none | Separates processors that share a prefix; prefix and discriminator together are unique. |
+| `ReplyBase` | string | none | Base of this instance's reply address (`{ReplyBase}/{InstanceId}`). Required when the processor sends commands. |
+| `SharedGroup` | string | none | Competing-consumer group: MQTT shared subscription or NATS shared consumer. Without it every instance receives every message. |
+| `ScopeCheck` | `Enforce`, `Off` | `Enforce` | Compare the subject's scope with the address scope ([D-38](porting/decisions.md#d-38)). |
+| `Level0Subjects` | `Reject`, `Accept` | `Reject` | Subjects on addresses without scope levels. |
+| `OutgoingQueueSize` | int | 0 | Outgoing queue of the binding; 0 means `OutgoingQueueMaxSize`, a larger value ends the start. |
+| `OutgoingTypeFilter` | string | none | Comma-separated event type ids or patterns (`*`, `?`) the binding may publish; empty allows all. |
+| `AllowedReplyPrefixes` | string | none | Comma-separated prefixes a peer's reply address must start with; empty allows every address the built-in rules accept ([D-48](porting/decisions.md#d-48)). |
 
-### MessagePack RPC (`APP_MSGPACK_*`)
+### MQTT (`MicroDcs:Mqtt`) {#config-mqtt}
 
-| Variable | Type | Default | Description |
+| Name | Type | Default | Description |
 |---|---|---|---|
-| `APP_MSGPACK_HOSTNAME` | `str` | `localhost` | RPC server listen address |
-| `APP_MSGPACK_PORT` | `int` | `8888` | RPC server listen port |
-| `APP_MSGPACK_TLS_CERT_PATH` | `Path` | `/var/run/certs/ca.crt` | CA certificate used to verify client certificates (with `TLS_CLIENT_AUTH`) |
-| `APP_MSGPACK_TLS_SERVER_CERT_PATH` | `Path` | `/var/run/certs/tls.crt` | Server certificate; TLS is enabled when this file exists |
-| `APP_MSGPACK_TLS_SERVER_KEY_PATH` | `Path` | `/var/run/certs/tls.key` | Private key for the server certificate |
-| `APP_MSGPACK_REQUIRE_TLS` | `bool` | `false` | Fail at startup if the server certificate or key is missing instead of listening in plaintext |
-| `APP_MSGPACK_TLS_CLIENT_AUTH` | `bool` | `false` | Require a client certificate; implies `REQUIRE_TLS` |
-| `APP_MSGPACK_KEEP_ALIVE` | `bool` | `true` | Enable TCP keep-alive on client connections |
-| `APP_MSGPACK_MAX_QUEUED_CONNECTIONS` | `int` | `100` | TCP backlog for the RPC server socket |
-| `APP_MSGPACK_MAX_CONCURRENT_REQUESTS` | `int` | `10` | Per-client concurrent RPC request cap (semaphore) |
-| `APP_MSGPACK_MAX_BUFFER_SIZE` | `int` | `8388608` | Max msgpack unpacker buffer (8 MB) |
-| `APP_MSGPACK_BINDING_OUTGOING_QUEUE_SIZE` | `int` | `5` | Per-binding outgoing queue capacity |
+| `Hostname` | string | `localhost` | Broker host. |
+| `Port` | int | 1883 | Broker port. |
+| `ClientId` | string | `microdcs-{instance id}` | MQTT client id; instances must not share one. |
+| `Username` | string | none | User name. |
+| `Password` | string | none | Password; needs `Username`. Prefer `PasswordFile`. |
+| `PasswordFile` | path | none | File with the password; one trailing line break is removed. Not together with `Password`. |
+| `SatTokenFile` | path | `/var/run/secrets/tokens/broker-sat` | Kubernetes service account token, used as enhanced authentication (`K8S-SAT`) when the file exists. |
+| `TlsCaFile` | path | `/var/run/certs/ca.crt` | CA of the broker certificate. When the file exists the connection uses TLS and trusts only this CA. |
+| `RequireTls` | bool | `false` | End the start when `TlsCaFile` does not exist instead of connecting in plain text. |
+| `TlsClientCertFile`, `TlsClientKeyFile` | path | none | PEM client certificate and key for mutual TLS; set together, need TLS. |
+| `SessionExpiry` | duration | 1 h | How long the broker keeps the session after a disconnect. |
+| `KeepAlive` | duration | 30 s | Keep-alive period. |
+| `OperationTimeout` | duration | 15 s | Timeout of connect, subscribe and publish. |
+| `ReconnectMinDelay`, `ReconnectMaxDelay` | duration | 1 s, 30 s | Wait before a reconnect attempt; doubles up to the maximum. |
+| `PublishQos` | int | 1 | QoS of published messages, 0 or 1. With 0 the transport is at-most-once and the dedupe claim is skipped. |
 
-### Processing (`APP_PROCESSING_*`)
+Details: [MQTT transport](mqtt-transport.md).
 
-| Variable | Type | Default | Description |
+### NATS (`MicroDcs:Nats`) {#config-nats}
+
+| Name | Type | Default | Description |
 |---|---|---|---|
-| `APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED` | `bool` | `false` | Use OTEL-instrumented handlers at runtime |
-| `APP_PROCESSING_CLOUDEVENT_SOURCE` | `str` | `None` | CloudEvent `source` attribute for outgoing events |
-| `APP_PROCESSING_MESSAGE_EXPIRY_INTERVAL` | `int` | `None` | Default message expiry interval (seconds) |
-| `APP_PROCESSING_SHARED_SUBSCRIPTION_NAME` | `str` | `None` | MQTT shared subscription group name |
-| `APP_PROCESSING_TOPIC_PREFIXES` | `set[str]` | `∅` | Comma-separated `name:prefix` pairs for topic routing |
-| `APP_PROCESSING_TOPIC_WILDCARD_LEVELS` | `set[str]` | `∅` | Comma-separated `name:levels` pairs for subscription wildcards |
-| `APP_PROCESSING_TOPIC_DISCRIMINATORS` | `set[str]` | `∅` | Comma-separated `name:discriminator` pairs — inserts a fixed path segment before the intent (e.g. a schema version) |
-| `APP_PROCESSING_RESPONSE_TOPICS` | `set[str]` | `∅` | Comma-separated response topic names |
-| `APP_PROCESSING_SHUTDOWN_GRACE_PERIOD` | `int` | `30` | Seconds to wait for in-flight work during shutdown |
-| `APP_PROCESSING_BINDING_OUTGOING_QUEUE_MAX_SIZE` | `int` | `1000` | Global upper cap on any binding's outgoing queue |
-| `APP_PROCESSING_POST_START_LOCK_TTL` | `int` | `30` | TTL (seconds) for the distributed `post_start` Redis lock; controls how long a crashed instance blocks other replicas |
-| `APP_PROCESSING_ENFORCE_SUBJECT_TOPIC_MATCH` | `bool` | `true` | Drop incoming MQTT messages whose CloudEvent `subject` does not match the scope in the topic (see [Security](security.md#what-the-framework-trusts)) |
+| `Url` | string | `nats://localhost:4222` | Server URL; several separated by commas. |
+| `ClientName` | string | `microdcs-{instance id}` | Connection name shown by the server. |
+| `Username`, `Password` | string | none | User and password. Prefer `PasswordFile`. |
+| `PasswordFile` | path | none | File with the password. Not together with `Password`. |
+| `TokenFile` | path | none | File with an authentication token. |
+| `CredsFile` | path | none | `.creds` file (JWT and NKey seed); it selects the account. |
+| `NKeyFile` | path | none | File with an NKey seed. |
+| `TlsCaFile` | path | `/var/run/certs/ca.crt` | CA of the server certificate. When the file exists the connection uses TLS and trusts only this CA. |
+| `RequireTls` | bool | `false` | End the start when `TlsCaFile` does not exist. |
+| `TlsClientCertFile`, `TlsClientKeyFile` | path | none | PEM client certificate and key for mutual TLS. |
+| `JetStreamDomain` | string | none | JetStream domain (leaf nodes). |
+| `StreamPrefix` | string | `MDCS` | Prefix of the stream names. |
+| `StreamMaxAge` | duration | 24 h | How long a stream keeps an unacknowledged message; zero is unlimited. |
+| `Replicas` | int | 1 | Replicas of streams, consumers and the state bucket (1 to 5). |
+| `ConsumerInactiveThreshold` | duration | 1 h | The server removes a consumer no client used for this long. |
+| `AckWait` | duration | 30 s | Time the server waits for an acknowledgement before it redelivers. |
+| `MaxDeliver` | int | 5 | Delivery attempts; the last failed one terminates the message. |
+| `NakDelay` | duration | 5 s | Wait before a failed message is redelivered. |
+| `StateBucket` | string | `microdcs-state` | Key-value bucket for state topics. |
+| `OperationTimeout` | duration | 15 s | Timeout of connect, set-up and publish round trips. |
+| `ReconnectMinDelay`, `ReconnectMaxDelay` | duration | 1 s, 30 s | Wait between reconnect attempts. |
 
-### Logging (`APP_LOGGING_*`)
+Use one authentication method. Details: [NATS transport](nats-transport.md).
 
-| Variable | Type | Default | Description |
+### Valkey (`MicroDcs:Valkey`) {#config-valkey}
+
+| Name | Type | Default | Description |
 |---|---|---|---|
-| `APP_LOGGING_LEVEL` | `str` | `INFO` | Root log level |
-| `APP_LOGGING_FILENAME` | `str` | `None` | Also write logs to this file (overwritten at start). Off by default so the container can run with a read-only root filesystem; logs go to stdout and stderr |
-| `APP_LOGGING_FORMAT` | `str` | `%(asctime)s - %(name)s - %(levelname)s - %(message)s` | Log record format |
-| `APP_LOGGING_LOG_PAYLOADS` | `bool` | `false` | Include message payloads in `DEBUG` logs and in deserialization errors. Off by default because payloads can contain production data; the VS Code run tasks turn it on |
-| `APP_LOGGING_DISABLE_IF_OTEL_ENABLED` | `bool` | `true` | Leave logging to OpenTelemetry when `OTEL_LOGS_EXPORTER` is set |
+| `ConnectionString` | string | `localhost:6379` | StackExchange.Redis connection string. `microdcs serve` uses Valkey only when it is set. Never logged; prefer `PasswordFile` for the password. |
+| `User` | string | none | ACL user; overrides `user=` in the connection string. |
+| `PasswordFile` | path | none | Password file, read before every connect attempt so a rotated password reaches the next reconnect ([D-49](porting/decisions.md#d-49)). Not together with `password=` in the connection string. |
+| `TlsCaFile` | path | none | PEM CA of the server certificate; turns TLS on and trusts this CA besides the system store. `ssl=true` in the connection string uses the system store only. |
+| `RequireTls` | bool | `false` | End the start when neither `TlsCaFile` nor `ssl=true` turns TLS on. |
+| `KeyPrefix` | string | `microdcs` | Prefix of every key, one per island. No `*?[]\` and no trailing `:`. |
+| `PollInterval` | duration | 1 s | Fallback read of all streams when no nudge arrives. |
+| `ScopeRefreshInterval` | duration | 5 s | Read of the scope registry. |
+| `WriteAttempts` | int | 4 | Attempts of a write whose outcome is unknown after a connection error. |
+| `WriteRetryDelay` | duration | 100 ms | Pause before such a write is checked and repeated. |
+| `ChangeStreamMaxLength` | int | 5000 | Approximate length of each change stream. |
 
----
+Details: [Valkey layer](valkey-layer.md).
 
-## MQTT Topic Structure
+### Job acceptance (`MicroDcs:JobAcceptance`) {#config-job-acceptance}
 
-MicroDCS derives all subscribe and publish topics automatically from the processing
-configuration. Understanding the topic layout helps when integrating with external
-MQTT clients, debugging message routing, or planning namespace partitioning across
-multiple deployed processors.
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `CheckEquipmentId` | bool | `true` | Equipment requirements must be in the scope's list. |
+| `CheckMaterialClassId` | bool | `true` | Material classes must be in the scope's list. |
+| `CheckMaterialDefinitionId` | bool | `true` | Material definitions must be in the scope's list. |
+| `CheckPersonnelId` | bool | `true` | Personnel requirements must be in the scope's list. |
+| `CheckPhysicalAssetId` | bool | `true` | Physical asset requirements must be in the scope's list. |
+| `CheckWorkMaster` | bool | `true` | Work Masters must be known in the scope. |
+| `CheckMaxDownloadableJobOrders` | bool | `true` | Limit the number of job orders of a scope. |
+| `MaxDownloadableJobOrders` | int | 0 | Limit for a scope without its own; 0 means no limit. A limit set through `config.jobacceptance` always applies, also 0, which accepts nothing. |
 
-### Topic Anatomy
+Details: [Machinery Jobs processor](job-control.md#machinery-jobs-processor).
 
-Subscribe and publish topics share the same structural pattern, but they differ in
-what fills the wildcard/subject position:
+### Job order publisher (`MicroDcs:JobPublisher`) {#config-job-publisher}
 
-**Subscribe topics** (derived at binding creation, fixed for the lifetime of the connection):
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `RetainedTtl` | duration | 48 h | How long a state topic stays when nothing refreshes it; topics are refreshed at half of this. At least 2 s. |
+| `ReadCount` | int | 50 | Most change entries per scope in one round. |
+| `LeaseTtl` | duration | 15 s | Lifetime of the publisher lease, renewed at a third of it. At least 3 s. |
 
-```
-{prefix}[/+...N][/{discriminator}]/{intent}
-```
+Details: [Machinery Jobs – MES Publishing](machinery-jobs-mes-publishing.md).
 
-**Publish topics** (derived per outgoing message when `mqtt_path_from_subject=True`):
+### SFC host (`MicroDcs:Sfc`) {#config-sfc}
 
-```
-{prefix}[/{subject-path}][/{discriminator}]/{intent}
-```
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `Enabled` | bool | `true` | Whether this instance runs recipes. |
+| `SweepInterval` | duration | 1 s | Time between due-index sweeps. |
+| `OutageThreshold` | duration | 30 s | Heartbeat gap that counts as a platform outage. Above `SweepInterval` and `MicroDcs:Valkey:PollInterval`. |
+| `MaxAttempts` | int | 3 | Dispatch attempts of a push action whose recipe sets none. |
+| `ExpiryGrace` | duration | 2 s | How long before the deadline the wire expiry of a command ends. |
+| `AutoclaimIdle` | duration | 30 s | How long a work entry stays with a consumer before another takes it over. |
+| `MaxDeliveries` | int | 5 | Deliveries of a work entry before it goes to the dead stream. |
+| `ReadCount` | int | 10 | Most work entries read at once. |
+| `SweepLimit` | int | 100 | Most jobs one sweep of a scope takes. |
+| `EquipmentHold` | bool | `true` | Whether recipes may declare hold and restart commands; with `false` such a recipe is refused (`SFC015`). |
 
-| Segment | Source | Required |
-|---|---|---|
-| `{prefix}` | `APP_PROCESSING_TOPIC_PREFIXES` — the `prefix` part of a `name:prefix` entry | Yes |
-| `/+...N` | Single-level wildcards, one per wildcard level (`APP_PROCESSING_TOPIC_WILDCARD_LEVELS`) — subscribe only | No |
-| `/{subject-path}` | CloudEvent `subject` attribute, dots replaced with `/` — publish only, when `mqtt_path_from_subject=True` | No |
-| `/{discriminator}` | `APP_PROCESSING_TOPIC_DISCRIMINATORS` — the `discriminator` part of a `name:discriminator` entry | No |
-| `/{intent}` | Message intent: `data`, `events`, `commands`, or `metadata` | Yes |
+Details: [SFC core](sfc-core.md#the-valkey-host).
 
-**Examples** with prefix `factory/line1`, discriminator `v2`, wildcard level 1, and subject `station.A`:
+### Management listener (`MicroDcs:Management`) {#config-management}
 
-| Context | Resulting topic |
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `Enabled` | bool | `false` | Start the management listener (health probes). |
+| `Url` | URL | `http://127.0.0.1:8081` | Listen URL. Anything but a loopback address needs `BearerTokenFile`. |
+| `ApiEnabled` | bool | `false` | Serve the read-only REST API under `/api/v1`. |
+| `McpEnabled` | bool | `false` | Serve the read-only MCP tools under `/mcp`; allowed in production behind the token. |
+| `WriteEnabled` | bool | `false` | Register the write group (`inject_event`, SFC operator actions). Needs `McpEnabled`; only in Development and Test. |
+| `IncludePayloads` | bool | `false` | Show payload values in tool results. |
+| `BearerTokenFile` | path | none | Bearer token file, at least 16 characters. Required off loopback; `/health/*` stays open. |
+| `MaxResults` | int | 100 | Cap of entries per result. |
+| `RequestsPerMinute` | int | 120 | Calls per minute and caller; more are refused. |
+| `DecisionBufferSize` | int | 200 | Pipeline decisions kept for inspection. |
+
+Details: [HTTP surface](observability.md), [Inspection and MCP](inspection.md).
+
+### Maintenance (`MicroDcs:Maintenance`) {#config-maintenance}
+
+Development and Test environments only ([D-45](porting/decisions.md#d-45)).
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `Enabled` | bool | `false` | Registers the maintenance tools; in any other environment the start ends. |
+| `SnapshotDirectory` | string | `.microdcs/snapshots` | Where snapshot files go. |
+| `ItemCap` | int | 100 | Largest plan without `allow_large`. |
+| `SnapshotRetention` | int | 20 | Snapshots kept. |
+| `SnapshotMaxBytes` | long | 5242880 | Largest snapshot file; a larger apply is refused. |
+| `PlanLifetime` | duration | 5 min | How long a plan token works. |
+| `RequireEnvironmentMarker` | bool | `false` | Also require the Valkey key `{prefix}:env` to hold the environment name. |
+
+### Environment variables without prefix {#config-environment}
+
+| Name | Description |
 |---|---|
-| Subscribe, no discriminator | `factory/line1/events`, `factory/line1/+/events` |
-| Subscribe, with discriminator | `factory/line1/v2/events`, `factory/line1/+/v2/events` |
-| Publish, no discriminator | `factory/line1/station/A/commands` |
-| Publish, with discriminator | `factory/line1/station/A/v2/commands` |
+| `DOTNET_ENVIRONMENT` | `Production` (default), `Development` or `Test`; the MCP write group and the maintenance tools need one of the latter two. |
+| `POD_ID` | Instance id when `MicroDcs:InstanceId` is not set (the manifest maps the pod name). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` and the other `OTEL_*` variables | OpenTelemetry export ([telemetry](observability.md#telemetry)). Without an endpoint nothing is exported. |
+| `OTEL_SERVICE_NAME` | `service.name`, default `microdcs`. |
 
-### Processor Binding Direction
+## Backpressure {#backpressure}
 
-The processor's binding direction (`NORTHBOUND` or `SOUTHBOUND`, set by the
-`@processor_config` decorator) determines which intents are subscribed to and which
-are published on:
+### Queues {#queues}
 
-| Direction | Subscribes to | Publishes to |
-|---|---|---|
-| `SOUTHBOUND` | `data`, `events`, `metadata` | `commands` |
-| `NORTHBOUND` | `commands` | `data`, `events`, `metadata` |
-
-A southbound processor typically represents DCS-side logic that reacts to equipment
-telemetry and issues commands back. A northbound processor represents MES-side logic
-that issues commands down to the DCS and receives confirmations and telemetry back up.
-
-### Wildcard Subscriptions
-
-`APP_PROCESSING_TOPIC_WILDCARD_LEVELS` controls how many single-level `+` wildcards
-are appended between the prefix and the intent when subscribing. This allows a single
-binding to receive messages from multiple topic subtrees — for example, across several
-stations under a shared line prefix.
-
-With `name:N` where N is the number of wildcard levels, the binding subscribes to:
-
-```
-{prefix}/{intent}               # level 0 (always included)
-{prefix}/+/{intent}             # level 1
-{prefix}/+/+/{intent}           # level 2
-...
-{prefix}/+/...+/{intent}        # level N
-```
-
-If a discriminator is configured, it is inserted before `{intent}` at every level:
-
-```
-{prefix}/{discriminator}/{intent}
-{prefix}/+/{discriminator}/{intent}
-```
-
-### Response Topics
-
-`APP_PROCESSING_RESPONSE_TOPICS` configures the backchannel topic used for
-request-reply patterns (e.g. command acknowledgement). The actual subscribed response
-topic is `{response_topic_base}/{processor_instance_id}`, making it unique per
-processor instance.
-
-When a processor publishes a `COMMAND` intent message, the MQTT binding automatically
-sets the MQTT v5 `ResponseTopic` property to this response topic, so the downstream
-device or service knows where to send its reply.
-
-### Shared Subscriptions
-
-`APP_PROCESSING_SHARED_SUBSCRIPTION_NAME` wraps every subscribe topic in an MQTT v5
-shared subscription group:
-
-```
-$share/{group}/{prefix}/.../{intent}
-```
-
-This distributes incoming messages across all instances in the group (round-robin at
-the broker), enabling horizontal scaling without duplicate delivery. The response topic
-is never wrapped in a shared subscription — replies must arrive at the specific
-instance that issued the command.
-
-### Discriminators and Namespace Partitioning
-
-`APP_PROCESSING_TOPIC_DISCRIMINATORS` inserts a fixed segment immediately before the
-intent in both subscribe and publish topics. Its primary use cases are:
-
-- **Schema versioning** — e.g. discriminator `v2` separates messages with a new
-  payload schema from the existing `v1` traffic on the same prefix without requiring
-  a prefix rename.
-- **Application partitioning** — e.g. discriminator `sfc` vs `qa` on the same line
-  prefix routes different application concerns to different processors.
-
-At binding creation time, MicroDCS checks that no two processors registered against
-the same `ProcessingConfig` share an identical `prefix + discriminator` combination.
-If they do, a **warning** is logged — this is not an error because intentional fan-out
-routing (delivering the same message to multiple processors) is a supported pattern.
-
-```
-WARNING: Processors 'jobs' and 'greetings' share the same topic routing key
-         'factory/line1'. Incoming messages matching this key will be
-         delivered to both processors.
-```
-
-### Configuration Example
-
-The following shows a complete environment variable setup for two processors sharing
-the same line prefix but separated by discriminator:
-
-```bash
-# Two processors, same line prefix, different discriminators
-APP_PROCESSING_TOPIC_PREFIXES=jobs:factory/line1,greetings:factory/line1
-APP_PROCESSING_TOPIC_WILDCARD_LEVELS=jobs:1,greetings:1
-APP_PROCESSING_TOPIC_DISCRIMINATORS=jobs:machinery-jobs,greetings:greetings
-APP_PROCESSING_RESPONSE_TOPICS=jobs:factory/responses,greetings:factory/responses
-```
-
-Results for the `jobs` processor (SOUTHBOUND, subscribes to data/events/metadata):
-
-```
-Subscribe: factory/line1/machinery-jobs/data
-           factory/line1/machinery-jobs/events
-           factory/line1/machinery-jobs/metadata
-           factory/line1/+/machinery-jobs/data
-           factory/line1/+/machinery-jobs/events
-           factory/line1/+/machinery-jobs/metadata
-Publish:   factory/line1/{subject-path}/machinery-jobs/commands
-Response:  factory/responses/{instance-id}
-```
-
----
-
-## Backpressure
-
-### Queue Boundaries
-
-The pipeline from an incoming MQTT message to a dispatched processor, and from a
-processor response to a published outgoing message, crosses several bounded queues.
-Each queue has a distinct fill condition and a distinct consequence when full.
-
-| Queue | Config variable | Default | Fills when | Producer behaviour when full |
-|---|---|---|---|---|
-| MQTT binding outgoing | `APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE` | `5` | A single binding's outgoing events accumulate faster than the handler drains them | **Raises `RuntimeError`** — the producer is not blocked, the error propagates to the caller |
-| MessagePack binding outgoing | `APP_MSGPACK_BINDING_OUTGOING_QUEUE_SIZE` | `5` | Outgoing notification frames queue faster than connected clients consume them | **Raises `RuntimeError`** — same behaviour as MQTT binding queues |
-| MessagePack concurrent requests | `APP_MSGPACK_MAX_CONCURRENT_REQUESTS` | `10` | More than N simultaneous `publish` RPC calls arrive from the same client | Server stops reading from the socket — TCP-level backpressure to the client |
-
-!!! note "Global queue cap"
-    All per-binding queue sizes are subject to `APP_PROCESSING_BINDING_OUTGOING_QUEUE_MAX_SIZE`
-    (default `1000`). If a protocol-level setting exceeds this cap, it is silently reduced
-    to the cap value with a warning log. If the protocol-level setting is `0`, the cap value
-    is used as the effective size.
-
-### Isolation
-
-The binding-level queues (`APP_MQTT_BINDING_OUTGOING_QUEUE_SIZE`,
-`APP_MSGPACK_BINDING_OUTGOING_QUEUE_SIZE`) are per-binding instances. A slow or
-saturated binding does not affect other bindings — a tightening controller processor
-that falls behind does not block a QA camera processor from publishing its results.
-
-### Tuning Signals
-
-Before a queue fills, it will show up as latency — the time between an MQTT message
-arriving and the processor dispatching it, or between a processor returning a response
-and the outgoing publish completing. Monitor these latencies under load to establish
-a baseline. A latency spike that precedes a queue-full `RuntimeError` is the signal
-to act.
-
-**`APP_MQTT_MESSAGE_WORKERS`** (default `5`) controls how many concurrent asyncio tasks
-process incoming MQTT messages. This is the most important concurrency knob — if
-processing latency is high but the event loop is not saturated, increasing workers
-allows more messages to be dispatched in parallel.
-
-**`APP_MSGPACK_MAX_CONCURRENT_REQUESTS`** is both a backpressure mechanism and a
-resource bound. If a sidecar is legitimately sending bursts above this limit, increase
-the limit before increasing queue sizes — the concurrent request cap is the first gate.
-
-**`APP_MSGPACK_MAX_QUEUED_CONNECTIONS`** (default `100`) caps the TCP backlog for
-incoming sidecar connections. If multiple sidecar replicas connect simultaneously at
-startup, connections beyond this limit are refused at the kernel level.
-
-**`APP_MQTT_DEDUPE_TTL_SECONDS`** (default `600`) controls how long Redis remembers
-processed message IDs. After a broker reconnect, messages replayed within this window
-are deduplicated. If your broker's session expiry exceeds this TTL, you may see
-duplicate processing after reconnects.
-
-**`APP_MQTT_DEDUPE_LEASE_SECONDS`** (default `30`) is how long a worker owns a message
-while it is being processed. If the worker dies, the message becomes available again
-when the lease expires, so a redelivered message waits at most this long before it is
-processed. Set it above the slowest message handler: a handler that outlives the lease
-lets a second worker process the same message concurrently.
-
-Redis operation latency is a secondary signal: slow `await` on DAO calls inside a
-processor handler holds the worker for that message and reduces effective throughput
-even if the queues are not full.
-
-### Known Failure Modes
-
-**MQTT broker unreachable during a burst**
-
-The MQTT handler retries with backoff. Messages that were produced by processors and
-placed on the binding outgoing queue during the disconnected period accumulate there.
-Because binding queues use `put_nowait()`, once full they raise `RuntimeError` rather
-than blocking. Operators should monitor broker connectivity and alert before the
-reconnect window exceeds the time it takes to fill the binding outgoing queue at peak
-publish rate.
-
-**Redis connection loss**
-
-Processor handlers that persist state via DAOs (`JobOrderAndStateDAO`,
-`WorkMasterDAO`, `JobResponseDAO`, etc.) do so inside the handler coroutine. If Redis
-becomes unreachable, DAO calls raise connection errors that propagate up and fail the
-message processing for that event. The MQTT handler does not retry failed messages —
-unacknowledged QoS 1 messages will be redelivered by the broker. Monitor Redis
-connectivity and command latency as part of pre-startup health checks and runtime
-alerting.
-
-**Redis slow under load**
-
-A Redis latency spike translates directly into a reduction in effective
-`message_workers` throughput, because workers are occupied waiting on Redis while MQTT
-messages accumulate on the incoming queue. This is distinct from a full connection loss
-— operations complete, but slowly.
-
-**Sidecar RPC client faster than the DCS event loop**
-
-The `APP_MSGPACK_MAX_CONCURRENT_REQUESTS` cap prevents a fast sidecar (e.g. a
-FastAPI container receiving a burst of HTTP requests) from overwhelming the MicroDCS
-event loop with simultaneous `publish` RPC calls. If the sidecar regularly hits this
-cap, the right response is to increase the cap *and* profile the processors being
-called — a processor that holds the loop for a long time under load is the root cause,
-not the cap itself.
-
----
-
-## Graceful Shutdown
-
-When the process receives `SIGTERM` or `SIGINT`, the `SystemEventTaskGroup` initiates
-graceful shutdown:
-
-1. **Signal received** — no new messages are accepted from protocol handlers.
-2. **Grace period starts** — controlled by `APP_PROCESSING_SHUTDOWN_GRACE_PERIOD`
-   (default `30` seconds).
-3. **In-flight work completes** — message workers finish processing their current
-   message, including any pending Redis DAO operations.
-4. **Expiration tasks cancel** — outstanding CloudEvent expiration timers are
-   cancelled without triggering expiry callbacks.
-5. **Binding queues drain** — outgoing messages already enqueued are published.
-6. **Handler connections close** — MQTT client disconnects cleanly; MessagePack RPC
-   server stops accepting new connections and closes existing ones.
-7. **Process exits** — if work does not complete within the grace period, remaining
-   tasks are cancelled and the process exits.
-
-In Kubernetes, ensure the pod's `terminationGracePeriodSeconds` exceeds
-`APP_PROCESSING_SHUTDOWN_GRACE_PERIOD` by at least a few seconds to allow for signal
-propagation delay.
-
----
-
-## Observability
-
-MicroDCS emits OpenTelemetry traces and metrics through `OTELInstrumented` handler
-variants. This section documents what the instrumentation emits, how to interpret it
-operationally, and how to get started with a working setup.
-
-### Signal Inventory
-
-#### MQTT Handler (`OTELInstrumentedMQTTHandler`)
-
-| Signal | Type | Measures | Key Attributes |
+| Queue | Bound | Fills when | When full |
 |---|---|---|---|
-| `process MQTT {topic}` | Span (CONSUMER) | Time from message receipt to processor dispatch completion | `messaging.system`, `messaging.operation.type`, `messaging.destination.name`, `messaging.mqtt.qos`, `messaging.message.id` |
-| `messaging.process.counter` | Counter | Total MQTT messages processed | `messaging.system`, `messaging.destination.name`, `status` (success/error) |
-| `messaging.process.duration` | Histogram | MQTT message processing time (milliseconds) | `messaging.system`, `messaging.destination.name`, `status` (success/error) |
+| Inbound, per transport | `MessageWorkers` workers and a buffer of twice that many messages | Handlers are slower than the arrival rate | The transport stops taking messages: MQTT leaves them with the broker, NATS pulls no more; NATS sends "in progress" for queued messages so they are not redelivered |
+| Outgoing, per binding | `OutgoingQueueSize`, at most `OutgoingQueueMaxSize` (1000) | The transport is slower than the producers, or reconnecting | The publish throws `OutboundQueueFullException` ([D-28](porting/decisions.md#d-28)); an event for several bindings is enqueued on all or none |
 
-#### MessagePack Handler (`OTELInstrumentedMessagePackHandler`)
+Queues are per binding: a slow binding does not stop the others from publishing. While a transport reconnects, its
+queue keeps accepting until it is full; a reconnect that takes longer than filling the queue at peak rate turns into
+errors at the producers. The SFC host treats a full queue as backpressure: the command is not sent and the next attempt
+follows at the deadline.
 
-| Signal | Type | Measures | Key Attributes |
-|---|---|---|---|
-| `{rpc.method}` | Span (CONSUMER) | Time from RPC call receipt to response | `rpc.system`, `rpc.service`, `rpc.method`, `network.transport`, `server.address`, `server.port` |
-| `rpc.server.call.count` | Counter | Total MessagePack RPC calls processed | `rpc.system`, `rpc.service`, `rpc.method`, `status` (success/error) |
-| `rpc.server.call.duration` | Histogram | RPC call processing time (milliseconds) | `rpc.system`, `rpc.service`, `rpc.method`, `status` (success/error) |
+### Tuning signals {#tuning}
 
-All signal names and attributes follow
-[OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/).
+Before a queue fills it shows as latency. Watch `microdcs.sfc.work.duration` and the duration of the `process {type}`
+spans per type, and `microdcs.outbound.rejected` for refused publishes.
 
-!!! note "Manual instrumentation"
-    There is currently no OpenTelemetry auto-instrumentation library for `aiomqtt`.
-    The `OTELInstrumentedMQTTHandler` and `OTELInstrumentedMessagePackHandler` provide
-    manual instrumentation that wraps the handler's message processing and RPC dispatch
-    loops. This means OTEL signals cover application-level processing but not low-level
-    MQTT client operations (connect, subscribe, ping). If an auto-instrumentation
-    library for aiomqtt becomes available in the future, it can be layered on top.
+* `MessageWorkers` is the main concurrency setting. Raise it when processing is slow but CPU is idle (handlers wait on
+  Valkey or the equipment).
+* `DedupeLease` must exceed the slowest handler, otherwise a redelivery can run beside the first attempt.
+* `DedupeRetention` must exceed the window in which the broker can redeliver (session expiry, `AckWait` times
+  `MaxDeliver`), otherwise a late redelivery is processed again.
+* Valkey latency reduces throughput directly: a worker waits on each call. Watch it on the Valkey side; MicroDCS has no
+  Valkey spans.
 
-### Operational Questions
+## Graceful shutdown {#shutdown}
 
-**Is the system healthy?**
+On `SIGTERM` the host runs these phases, logged as `Shutdown phase {Phase}`:
 
-A healthy system shows:
+1. `stop-receiving`: transports stop taking messages.
+2. `drain`: in-flight messages finish.
+3. `drain-outgoing`: the outgoing queues are published.
+4. `stop-transports`: connections close.
+5. `expiries`: pending command expiry timers are awaited.
+6. `processors`: the `[OnShutdown]` hooks run.
 
-- `messaging.process.duration` histogram completing within the expected command →
-  response round-trip budget for the station. At ISA-95 Level 2, a typical tightening
-  command cycle is O(seconds); a QA camera pull event may be O(tens of seconds).
-  Establish baselines per `messaging.destination.name` during commissioning.
-- `messaging.process.counter` with `status=error` at zero or near-zero. A rising
-  error count indicates processor exceptions or infrastructure failures.
-- Span error rate low and stable. A sudden spike in errored spans after a deployment
-  indicates a regression in processor logic.
+When `ShutdownGracePeriod` ends, the remaining phases run without waiting and the rest is cancelled. Unacknowledged
+messages are redelivered after the restart. Set the pod's `terminationGracePeriodSeconds` a few seconds above
+`ShutdownGracePeriod` (the manifest uses 45 s for 30 s).
 
-**Is something slow?**
+## Monitoring {#monitoring}
 
-Look at the `messaging.process.duration` histogram broken down by
-`messaging.destination.name` (topic). A latency increase on a specific topic without
-a corresponding infrastructure issue points to processor logic. A latency increase
-that affects all topics simultaneously points to the event loop being held — check for
-a processor handler that does synchronous I/O or CPU-bound work without `await`.
+Telemetry leaves the process over OTLP ([HTTP surface and observability](observability.md)). Useful questions:
 
-For RPC calls, `rpc.server.call.duration` broken down by `rpc.method` provides the
-same signal for the MessagePack path.
+**Is it healthy?** `/health/ready` is ready on every pod. `microdcs.messages.received` with `outcome` `Faulted`,
+`Unavailable` (the dedupe store failed) or `Dropped` is near zero. `microdcs.sfc.work.dead` does not grow. Pod restarts are rare.
 
-**Is something stuck?**
+**Is something slow?** Compare the `process {type}` span durations per type with the baseline from commissioning. A rise
+on one type points at its handler or its equipment; a rise everywhere points at Valkey or the host.
 
-Symptoms of a stuck system:
+**Is something stuck?** The MCP read tools `sfc_job`, `sfc_due`, `sfc_waits` and `sfc_work_pending` (when
+`McpEnabled`), or `GET /api/v1/jobs/{id}`, show where a job waits. A growing `microdcs.sfc.events.unmatched` means events
+arrive that no job waits for (a selector or type mismatch).
 
-- `messaging.process.counter` rate drops to zero while the broker reports queued
-  messages — indicates the handler is not consuming.
-- RPC spans show increasing duration without completing — the processor may be
-  blocked on an external dependency (Redis, equipment).
-- Kubernetes liveness probe failures — if the event loop is blocked, health endpoints
-  stop responding.
+### Alert suggestions {#alerts}
 
-### Getting Started
+Starting points; tune them during commissioning.
 
-To enable OTEL instrumentation, set `APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED=true`
-and configure the standard OpenTelemetry environment variables for your collector:
-
-```bash
-APP_PROCESSING_OTEL_INSTRUMENTATION_ENABLED=true
-OTEL_SERVICE_NAME=microdcs.app
-OTEL_TRACES_EXPORTER=otlp        # or "console" for local debugging
-OTEL_METRICS_EXPORTER=otlp
-OTEL_LOGS_EXPORTER=otlp
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-```
-
-In the application wiring, register both the plain and instrumented handler variants.
-The framework selects the instrumented variant at runtime when
-`otel_instrumentation_enabled` is `true`:
-
-```python
-from microdcs.mqtt import MQTTHandler, OTELInstrumentedMQTTHandler
-from microdcs.msgpack import MessagePackHandler, OTELInstrumentedMessagePackHandler
-
-microdcs.register_protocol_handler(
-    MQTTHandler(...),
-    OTELInstrumentedMQTTHandler(...),
-)
-microdcs.register_protocol_handler(
-    MessagePackHandler(...),
-    OTELInstrumentedMessagePackHandler(...),
-)
-```
-
-The non-instrumented handler variants (`MQTTHandler`, `MessagePackHandler`) remain
-available for local development where an OTEL collector is not present.
-
-### Alert Recommendations
-
-The following alert thresholds provide a starting point. Tune them during
-commissioning based on observed baselines.
-
-| Condition | Suggested threshold | Rationale |
+| Condition | Threshold | Why |
 |---|---|---|
-| `messaging.process.duration` p95 | > 2× baseline for 5 min | Processing is degrading; investigate before queues fill |
-| `messaging.process.counter{status=error}` rate | > 0 sustained for 2 min | Processor exceptions need immediate attention |
-| `rpc.server.call.duration` p95 | > 2× baseline for 5 min | Sidecar-facing latency is rising |
-| Redis command latency p95 | > 50 ms for 5 min | DAO calls are slowing down workers |
-| MQTT broker disconnection | Any occurrence | Outgoing events will queue; reconnect should complete before queue fills |
-| Pod restart count | > 2 in 10 min | Crash loop — check logs for startup failures |
+| `/health/ready` failing | Longer than 1 min | A transport or Valkey is gone. |
+| `microdcs.messages.received{outcome=Faulted}` | Above 0 for 2 min | Handler errors; on MQTT each one restarts the pod. |
+| `microdcs.messages.received{outcome=Unavailable}` | Any | The dedupe store (Valkey) failed; messages are retried. |
+| `microdcs.outbound.rejected` | Any | A queue is full; events are refused. |
+| `microdcs.sfc.work.dead` | Any | Work failed `MaxDeliveries` times; a job is stuck. |
+| `microdcs.sfc.outages` | Any | A platform outage moved the deadlines. |
+| `microdcs.nats.poisoned` | Any | A message failed `MaxDeliver` times and was dropped. |
+| `microdcs.valkey.poll.errors` | Rising for 1 min | Valkey is unreachable or slow. |
+| Pod restarts | More than 2 in 10 min | Crash loop; read the start error. |
 
----
+## Capacity planning {#capacity}
 
-## Capacity Planning
+**Message workers.** Throughput per instance is about `MessageWorkers / average handler time`. With 5 workers and 200 ms
+per message (Valkey calls included) that is 25 messages per second. Add workers or replicas (with `SharedGroup`) above
+that.
 
-### Sizing Message Workers
+**Outgoing queues.** Size a binding's queue for its bursts: `burst rate × publish latency`, plus the reconnect time you
+want to bridge. A processor that fans out (several events per message) needs proportionally more. Memory is about
+queue length times the largest message.
 
-`APP_MQTT_MESSAGE_WORKERS` (default `5`) determines how many messages can be
-processed concurrently. The effective throughput is:
+**Replicas.** Processor replicas share requests through `SharedGroup` and SFC work through the work stream; one
+publisher replica is enough. Valkey is usually the limit of an island; split a large site into several islands.
 
-```
-throughput = message_workers / avg_processing_latency_seconds  [messages/s]
-```
-
-For example, with 5 workers and 200 ms average processing time (including Redis
-round-trips): 5 / 0.2 = 25 messages/s. If your peak arrival rate exceeds this,
-either increase workers or reduce processing latency.
-
-### Sizing Binding Outgoing Queues
-
-The binding outgoing queue must absorb bursts where a processor produces events faster
-than the handler can publish them. Size it to cover the burst duration:
-
-```
-queue_size >= burst_rate_msg_per_s × publish_latency_s
-```
-
-The default of `5` is conservative. For processors that emit multiple outgoing events
-per incoming event (e.g. fan-out patterns), increase proportionally.
-
-Remember that `APP_PROCESSING_BINDING_OUTGOING_QUEUE_MAX_SIZE` (default `1000`) is the
-hard upper cap — any per-protocol value above this is silently reduced.
-
-### Sizing MQTT Shared Queues
-
-For production deployments where the defaults of `0` (unbounded) are not acceptable:
-
-- **Incoming queue**: size to accommodate `burst_duration × arrival_rate`. A queue of
-  100–500 handles typical industrial burst profiles where equipment reports in batches.
-- **Outgoing queue**: size based on peak processor output rate and publish latency.
-  Usually smaller than incoming since publish is fast when the broker is healthy.
-
-### MessagePack Concurrency
-
-`APP_MSGPACK_MAX_CONCURRENT_REQUESTS` (default `10`) should match the sidecar's
-expected parallelism. If the sidecar spawns up to N concurrent HTTP handlers that each
-call the RPC server, set this to at least N. Going higher than needed wastes no
-resources (it's a semaphore, not pre-allocated).
+**Memory.** Roughly `MessageWorkers` × largest inbound message + queued outgoing messages × largest outbound message,
+plus the runtime ([resources](deployment.md#resources)).

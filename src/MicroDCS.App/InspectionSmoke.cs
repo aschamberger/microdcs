@@ -38,6 +38,7 @@ internal static class InspectionSmoke
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new SmokeEnvironment { EnvironmentName = "Test" }); // the write tool is refused in Production (D-19)
         services.AddMicroDcs(configuration).AddInMemoryTransport().AddProcessor<GreetingsProcessor>();
         services.AddMicroDcsManagement().AddMicroDcsMcp();
         var provider = services.BuildServiceProvider();

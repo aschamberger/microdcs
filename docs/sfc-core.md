@@ -1,6 +1,6 @@
-# SFC core in .NET
+# SFC core
 
-This page describes `MicroDCS.Sfc` and `MicroDCS.Sfc.Simulation` (decisions [D-17](porting/decisions.md#d-17), [D-18](porting/decisions.md#d-18) and [D-44](porting/decisions.md#d-44)). The core is the sequence logic of the SFC engine as one pure function. It replaces the logic part of `sfc_engine.py`; [the Valkey host](#the-valkey-host) runs it. The older page [SFC Engine](sfc_engine.md) still describes the Python design.
+This page describes `MicroDCS.Sfc` and `MicroDCS.Sfc.Simulation` (decisions [D-17](porting/decisions.md#d-17), [D-18](porting/decisions.md#d-18) and [D-44](porting/decisions.md#d-44)). The core is the sequence logic of the SFC engine as one pure function. [The Valkey host](#the-valkey-host) runs it. The concepts are on [SFC Engine](sfc-engine.md).
 
 ```text
 (graph, state, snapshot, event)  ->  (next state, continuation, commands)
@@ -10,7 +10,7 @@ The core reads no clock, does no I/O and keeps no memory between calls. `MicroDC
 
 ## Terms
 
-Names follow IEC 61131-3 (clause 6.6, sequential function chart) wherever the standard has a word for the thing. I could not read the standard text itself; the terms below are confirmed from PLCopen and vendor documents. Recipe wire names are unchanged from the Python schema, so a few C# names differ from the JSON names.
+Names follow IEC 61131-3 (clause 6.6, sequential function chart) wherever the standard has a word for the thing. The terms below are confirmed from PLCopen and vendor documents, not from the standard text. The recipe wire names are older than the C# names, so a few of them differ.
 
 | IEC 61131-3 term | .NET name | Recipe wire name |
 |---|---|---|
@@ -41,7 +41,7 @@ SfcStepResult r = interpreter.Evolve(graph, state, SfcSnapshot.Default, new SfcS
 
 ## Recipe
 
-The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, `Actions`, `Branches` for the divergences; `TimeoutSeconds`, `TypeId`). `dataschema` is `https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json`; v1.1.0 adds the optional `Hold` and `Restart` fields. Work masters with `…/sfc-recipe/v1.0.0.json` are still accepted, but not with those fields. The C# model is the source of the JSON Schema in [`schemas/sfc-recipe/v1.1.0.json`](schemas/sfc-recipe/v1.1.0.json) (served at the `dataschema` URL, D-58); a test regenerates it and fails when the file is stale (`UPDATE_SCHEMAS=1 dotnet test` rewrites it).
+The wire format uses PascalCase names (`Steps`, `Transitions`, `Actions`, `Branches` for the divergences; `TimeoutSeconds`, `TypeId`). `dataschema` is `https://aschamberger.github.io/microdcs/schemas/sfc-recipe/v1.1.0.json`; v1.1.0 adds the optional `Hold` and `Restart` fields. Work masters with `…/sfc-recipe/v1.0.0.json` are still accepted, but not with those fields. The C# model is the source of the JSON Schema in [`schemas/sfc-recipe/v1.1.0.json`](schemas/sfc-recipe/v1.1.0.json) (served at the `dataschema` URL, D-58); a test regenerates it and fails when the file is stale (`UPDATE_SCHEMAS=1 dotnet test` rewrites it).
 
 | Field | Meaning |
 |---|---|
@@ -57,7 +57,7 @@ The wire format is the Python recipe: PascalCase names (`Steps`, `Transitions`, 
 | `Actions[].Hold`, `Actions[].Restart` | Optional, push commands only, both or neither: the commands that hold the running work when the job is paused and restart it on resume, each with `TypeId`, `TimeoutSeconds` and `Parameters` (D-57). See [Equipment hold](#equipment-hold). |
 | `Branches[]` | A divergence: `Type` is `simultaneous` (all sequences) or `selection` (one sequence). `Branches` inside it lists the sequences, each a list of step names. |
 
-Existing Python recipes need one change: `Condition: "always"` becomes `true`, and a named condition must be an outcome that the action types declare.
+A named condition must be an outcome that the action types declare; the default condition is `true`.
 
 ## Semantics
 
@@ -160,7 +160,7 @@ Replies are chosen by how often the equipment is asked about an action, so re-di
 
 ## MCP tools
 
-Two read-only tools in the dev MCP server (see [Inspection and MCP](inspection.md)) run the core on text you pass in. Nothing is sent or stored.
+Two read-only tools of the MCP server (see [Inspection and MCP](inspection.md)) run the core on text you pass in. Nothing is sent or stored.
 
 | Tool | Does |
 |---|---|
@@ -201,15 +201,4 @@ A failed entry stays pending, another pass takes it over after `AutoclaimIdle`, 
 
 **Recovery.** Each instance runs a scan when it first sees a scope, and queues a check of every running job there. The scan does not resend commands: the sweep owns every action with a deadline, and a resend on each restart would use up attempts. It re-issues only work that never got a deadline and puts back lost index entries. An instance that dies with an unanswered command does not lose it: another instance sends it again when the deadline passes.
 
-| Setting (`MicroDcs:Sfc:`) | Type | Default | Description |
-|---|---|---|---|
-| `Enabled` | bool | `true` | Whether this instance runs recipes. |
-| `SweepInterval` | duration | 1 s | Time between due-index sweeps. |
-| `OutageThreshold` | duration | 30 s | Heartbeat gap that counts as a platform outage. Must be above `SweepInterval` and `MicroDcs:Valkey:PollInterval`, which paces the sweep. |
-| `MaxAttempts` | int | 3 | Dispatch attempts of a push action whose recipe sets none. |
-| `ExpiryGrace` | duration | 2 s | How long before the deadline the wire expiry of a command ends. |
-| `AutoclaimIdle` | duration | 30 s | How long a work entry stays with a consumer before another one takes it over. |
-| `MaxDeliveries` | int | 5 | Deliveries of a work entry before it goes to the dead stream. |
-| `ReadCount` | int | 10 | Most work entries read at once. |
-| `SweepLimit` | int | 100 | Most jobs one ordinary sweep of a scope takes. |
-| `EquipmentHold` | bool | `true` | Whether recipes may declare hold and restart commands (D-57). With `false` such a recipe is refused (`SFC015`), for a station whose equipment cannot hold its work. |
+The settings (`MicroDcs:Sfc:*`: sweep interval, outage threshold, attempts, expiry grace, autoclaim idle, deliveries, read and sweep limits, `EquipmentHold`) are in the [configuration reference](operations.md#config-sfc).
