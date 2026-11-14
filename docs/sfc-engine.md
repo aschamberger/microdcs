@@ -99,7 +99,7 @@ flowchart TD
 
 The recipe is checked when the job starts, against what the station offers: the action types its processors handle,
 the outcome names they declare, and the features it supports. A recipe that fails is refused with a build error, and the
-job is aborted. `sfc_explain` and `sfc_dryrun` in the dev MCP server check and simulate a recipe without a running job
+job is aborted. `sfc_explain` and `sfc_dryrun` of the MCP server check and simulate a recipe without a running job
 ([SFC core](sfc-core.md#mcp-tools)).
 
 ### Outcomes and transitions

@@ -87,7 +87,7 @@ Valkey holds the authoritative job and recipe state; anyone who can write to it 
 
 ## Management listener {#management-listener}
 
-The listener serves `/health/live`, `/health/ready`, the read-only REST API (`ApiEnabled`) and the dev MCP server (`McpEnabled`)
+The listener serves `/health/live`, `/health/ready`, the read-only REST API (`ApiEnabled`) and the MCP tools (`McpEnabled`)
 ([HTTP surface](observability.md), [Inspection](inspection.md#security)).
 
 * Loopback by default. On loopback the `Host` header must name a loopback host (DNS rebinding) and a browser `Origin` that is
@@ -97,8 +97,10 @@ The listener serves `/health/live`, `/health/ready`, the read-only REST API (`Ap
 * The REST API is read-only and off by default. MES commands stay on the message bus. Every call goes through the inspection
   service: payloads are replaced by a size marker unless `IncludePayloads` is on, results are capped (`MaxResults`), calls are
   rate-limited per caller (`RequestsPerMinute`) and logged in the `MicroDCS.Security` category with caller and route, never results.
-* Never enable `McpEnabled`, `WriteEnabled` or the maintenance tools in production. Maintenance runs only in `Development` or
-  `Test` and can additionally require an environment marker key in Valkey (D-45).
+* The read-only MCP tools (`McpEnabled`) may run in production behind the token, with `IncludePayloads` off; their output is
+  untrusted data for an agent ([Inspection](inspection.md#security)). The write group (`WriteEnabled`) and the maintenance tools
+  run only in `Development` or `Test`: the start fails elsewhere (D-19, D-45). Maintenance can additionally require an
+  environment marker key in Valkey.
 * The NetworkPolicy in the example manifest admits the management port only from pods labelled
   `microdcs.io/management-client: "true"`.
 

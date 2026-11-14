@@ -257,8 +257,8 @@ Details: [SFC core](sfc-core.md#the-valkey-host).
 | `Enabled` | bool | `false` | Start the management listener (health probes). |
 | `Url` | URL | `http://127.0.0.1:8081` | Listen URL. Anything but a loopback address needs `BearerTokenFile`. |
 | `ApiEnabled` | bool | `false` | Serve the read-only REST API under `/api/v1`. |
-| `McpEnabled` | bool | `false` | Serve the MCP tools under `/mcp` (dev and test). |
-| `WriteEnabled` | bool | `false` | Register the write tool `inject_event`. Needs `McpEnabled`. |
+| `McpEnabled` | bool | `false` | Serve the read-only MCP tools under `/mcp`; allowed in production behind the token. |
+| `WriteEnabled` | bool | `false` | Register the write group (`inject_event`, SFC operator actions). Needs `McpEnabled`; only in Development and Test. |
 | `IncludePayloads` | bool | `false` | Show payload values in tool results. |
 | `BearerTokenFile` | path | none | Bearer token file, at least 16 characters. Required off loopback; `/health/*` stays open. |
 | `MaxResults` | int | 100 | Cap of entries per result. |
@@ -285,7 +285,7 @@ Development and Test environments only ([D-45](porting/decisions.md#d-45)).
 
 | Name | Description |
 |---|---|
-| `DOTNET_ENVIRONMENT` | `Production` (default), `Development` or `Test`; the maintenance tools need one of the latter two. |
+| `DOTNET_ENVIRONMENT` | `Production` (default), `Development` or `Test`; the MCP write group and the maintenance tools need one of the latter two. |
 | `POD_ID` | Instance id when `MicroDcs:InstanceId` is not set (the manifest maps the pod name). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` and the other `OTEL_*` variables | OpenTelemetry export ([telemetry](observability.md#telemetry)). Without an endpoint nothing is exported. |
 | `OTEL_SERVICE_NAME` | `service.name`, default `microdcs`. |
@@ -342,8 +342,8 @@ Telemetry leaves the process over OTLP ([HTTP surface and observability](observa
 **Is something slow?** Compare the `process {type}` span durations per type with the baseline from commissioning. A rise
 on one type points at its handler or its equipment; a rise everywhere points at Valkey or the host.
 
-**Is something stuck?** `sfc_job`, `sfc_due`, `sfc_waits` and `sfc_work_pending` in the dev MCP server, or
-`GET /api/v1/jobs/{id}` in production, show where a job waits. A growing `microdcs.sfc.events.unmatched` means events
+**Is something stuck?** The MCP read tools `sfc_job`, `sfc_due`, `sfc_waits` and `sfc_work_pending` (when
+`McpEnabled`), or `GET /api/v1/jobs/{id}`, show where a job waits. A growing `microdcs.sfc.events.unmatched` means events
 arrive that no job waits for (a selector or type mismatch).
 
 ### Alert suggestions {#alerts}

@@ -84,7 +84,7 @@ Full text in [decisions.md](decisions.md). Status: **decided**, **proposal** (di
 | [D-16](decisions.md#d-16) | revised | Python preserved on `python-archive`; the port continues on `main` |
 | [D-17](decisions.md#d-17) | decided | SFC semantics as a pure, dependency-free core library; late-response rule and outcome-based transition conditions decided |
 | [D-18](decisions.md#d-18) | decided | SFC time model: timestamped events, absolute deadlines, shared due-index; outage grace and recipe timeout decided |
-| [D-19](decisions.md#d-19) | decided | Inspection layer plus optional dev MCP server, built early (first slice in S11) |
+| [D-19](decisions.md#d-19) | revised | Inspection layer plus optional MCP server, built early (first slice in S11); read tools allowed in production, write group Development and Test only (S23a) |
 | [D-20](decisions.md#d-20) | decided | Gitleaks, Trivy and SonarQube Cloud in CI; scanners as pinned containers; Sonar C# rules in every build (confirmed S03) |
 | [D-21](decisions.md#d-21) | decided | OPC UA .NET stack 2.x is MIT licensed; no licence constraint from driver 1 |
 | [D-22](decisions.md#d-22) | revised | One GitHub stack per milestone, one squash-merged PR per session; post-merge checks verified by the next session |

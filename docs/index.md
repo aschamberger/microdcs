@@ -20,19 +20,21 @@ MicroDCS is pre-1.0 (0.1.x): interfaces can still change between releases.
 8. [Operations](operations.md), [Deployment](deployment.md) and [Security](security.md): running MicroDCS in
    production.
 
-## What MicroDCS provides
+## Features
 
-* A processor model with attributes and a source generator: typed handlers, no reflection, compile-time diagnostics.
-* One message pipeline for all transports, with deduplication, scope checks, error events and bounded outgoing queues.
-* MQTT 5 and NATS JetStream transports; AMQP 1.0 and Zenoh are planned.
-* OPC UA Machinery Jobs (ISA-95 Job Control V2) as a ready processor, with station configuration and a job order state
-  machine generated from the NodeSet.
-* An SFC engine that runs IEC 61131-3 style recipes from the Work Master, shared by all replicas through Valkey.
-* State topics for the MES with a sequence-numbered state index for resync after an outage.
-* Read-only inspection, health probes, a REST API for job state, and a development MCP server with inspection and
-  maintenance tools.
+* Processor model with attributes and a Roslyn source generator: typed handlers, no reflection, compile-time
+  diagnostics, Native AOT throughout.
+* One message pipeline for every transport: deduplication in Valkey, scope checks, error events, bounded outgoing
+  queues, request/response with expiry.
+* Transports: MQTT 5 (MQTTnet) and NATS JetStream; AMQP 1.0 and Zenoh are planned.
+* OPC UA Machinery Jobs (ISA-95 Job Control V2) as a ready processor: job order state machine generated from the
+  NodeSet, station configuration from the MES, status events, state topics with a sequence-numbered index for resync.
+* SFC engine: IEC 61131-3 style recipes from the Work Master, push commands and pull events, deadlines and retries,
+  pause and equipment hold, shared by all replicas through Valkey.
+* Read-only inspection, health probes, a REST API for job state, and an MCP server with read tools (write and
+  maintenance tools in development and test only).
 * OpenTelemetry traces and metrics over OTLP.
-* A signed container image with SBOMs, and an example Kubernetes manifest.
+* Signed multi-platform container image (linux-x64, linux-arm64) with SBOMs, and an example Kubernetes manifest.
 
 ## Repository
 

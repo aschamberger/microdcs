@@ -45,8 +45,11 @@ workspace/
 </Project>
 ```
 
-The generator is referenced as an analyzer. It wires the processor at build time and reports mistakes while you type
-(`MDCS001` to `MDCS012`).
+The generator is a compiler plugin, not a runtime library: `OutputItemType="Analyzer"` loads it into the C# compiler,
+and `ReferenceOutputAssembly="false"` keeps it out of your application. While your code compiles, it reads the
+processor's attributes and generates the code that connects handlers to CloudEvent types, so nothing is discovered by
+reflection at runtime. Its checks show up in the editor as errors `MDCS001` to `MDCS012`, for example a processor class
+that is not `partial` ([diagnostics](processors-dotnet.md#diagnostics)).
 
 ## Step 2: the payloads
 

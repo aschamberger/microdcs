@@ -160,7 +160,7 @@ Replies are chosen by how often the equipment is asked about an action, so re-di
 
 ## MCP tools
 
-Two read-only tools in the dev MCP server (see [Inspection and MCP](inspection.md)) run the core on text you pass in. Nothing is sent or stored.
+Two read-only tools of the MCP server (see [Inspection and MCP](inspection.md)) run the core on text you pass in. Nothing is sent or stored.
 
 | Tool | Does |
 |---|---|

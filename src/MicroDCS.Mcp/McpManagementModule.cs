@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace MicroDCS.Mcp;
@@ -47,7 +48,33 @@ internal sealed class McpManagementModule : IManagementModule
         application.GetService<IOptions<MaintenanceOptions>>()?.Value.Enabled == true;
 }
 
-/// <summary>Registration of the MCP adapter (explicit, D-39). Dev and test applications only.</summary>
+/// <summary>
+/// D-19 (revised S23a): the read tools may run in production, behind the bearer token off loopback. The write group (<c>inject_event</c>, the SFC
+/// operator actions) runs real handlers and commands, so <c>WriteEnabled</c> is refused outside the environments Development and Test, like the
+/// maintenance group (D-45). An application without a host environment counts as Production.
+/// </summary>
+internal sealed class McpOptionsValidator(IServiceProvider services) : IValidateOptions<MicroDcsOptions>
+{
+    public ValidateOptionsResult Validate(string? name, MicroDcsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!options.Management.WriteEnabled)
+        {
+            return ValidateOptionsResult.Success;
+        }
+
+        var environment = services.GetService<IHostEnvironment>()?.EnvironmentName ?? Environments.Production;
+        return IsAllowedEnvironment(environment)
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail($"MicroDcs:Management:WriteEnabled is only allowed in the environments Development and Test, not '{environment}'.");
+    }
+
+    internal static bool IsAllowedEnvironment(string environmentName) =>
+        string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Registration of the MCP adapter (explicit, D-39). The read tools may run in production; the write group only in Development and Test.</summary>
 public static class McpServiceCollectionExtensions
 {
     /// <summary>Adds the MCP module to the management listener. It serves nothing unless <c>MicroDcs:Management:McpEnabled</c> is true.</summary>
@@ -57,6 +84,7 @@ public static class McpServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IManagementModule, McpManagementModule>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<MicroDcsOptions>, McpOptionsValidator>());
         return services;
     }
 }

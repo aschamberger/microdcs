@@ -1,5 +1,6 @@
 using MicroDCS.Maintenance;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -92,6 +93,35 @@ public sealed class McpContractTests
         await using var client = await ConnectAsync(app, ct);
 
         (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ShouldContain("inject_event");
+    }
+
+    // D-19 revised (S23a): read tools are allowed in production, the write group is not.
+    [Fact]
+    public async Task ReadToolsRunInProductionWithoutTheWriteGroup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var app = await TestApp.StartAsync([], ct, s => s.AddSingleton<IHostEnvironment>(new FakeEnvironment(Environments.Production)));
+        await using var client = await ConnectAsync(app, ct);
+
+        var tools = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToList();
+
+        tools.ShouldContain("app_status");
+        tools.ShouldNotContain("inject_event");
+    }
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    public async Task WriteGroupIsRefusedOutsideDevelopmentAndTest(string environment)
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var error = await Should.ThrowAsync<OptionsValidationException>(async () =>
+        {
+            await using var app = await TestApp.StartAsync(new() { ["MicroDcs:Management:WriteEnabled"] = "true" }, ct, s => s.AddSingleton<IHostEnvironment>(new FakeEnvironment(environment)));
+        });
+
+        error.Message.ShouldContain("WriteEnabled is only allowed in the environments Development and Test");
     }
 
     [Fact]

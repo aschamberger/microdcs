@@ -24,8 +24,9 @@ its state in Valkey, and reports through OpenTelemetry. It runs as a Native AOT 
   NodeSet, station configuration from the MES, status events, state topics with a sequence-numbered index for resync.
 * SFC engine: IEC 61131-3 style recipes from the Work Master, push commands and pull events, deadlines and retries,
   pause and equipment hold, shared by all replicas through Valkey.
-* Read-only inspection, health probes, a REST API for job state, and a development MCP server with inspection and
-  maintenance tools.
+* Read-only inspection, health probes, a REST API for job state, and an MCP server with read tools (write and
+  maintenance tools in development and test only).
+* OpenTelemetry traces and metrics over OTLP.
 * Signed multi-platform container image (linux-x64, linux-arm64) with SBOMs, and an example Kubernetes manifest.
 
 ## Quickstart

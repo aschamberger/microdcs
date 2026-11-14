@@ -230,6 +230,8 @@ Background: [inspection layer and MCP server](research/inspection-mcp.md).
 
 Reviewed 2026-11-12 (S23): every maintenance tool is kept as a dev-profile tool, `maint_sfc_rebuild_due_index_plan` included as a manual trigger beside the recovery scan of D-53 ([parity acceptance](research/parity-acceptance.md#maintenance-tool-review-d-19)).
 
+Revised 2026-11-14 (S23a, maintainer's choice): the **read tools may run in production** as an operator's choice (off by default, bearer token off loopback, payloads redacted, rate limit and audit as before); they stay a diagnostic surface without version guarantee, integrations use the REST API. The **write group** (`WriteEnabled`: `inject_event`, `sfc_tick`, `sfc_redispatch`, `sfc_abort`) now has the environment guard of the maintenance group: `McpOptionsValidator` in `MicroDCS.Mcp` fails the start outside `Development` and `Test` (an application without a host environment counts as Production). Before, the docs said "never in production" for all of MCP, which no decision required and no code enforced. Tool output is untrusted data for an agent (identifiers, subjects and error texts from equipment and MES).
+
 ## D-20 Security and quality scanning in CI {#d-20}
 
 Status: decided (containers).

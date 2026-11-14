@@ -11,7 +11,7 @@ The inspection layer shows the live state of a running application: processors, 
 | Valkey inspector | `MicroDCS.Valkey` | `valkey` inspector: keys by kind and scope, documents, dedupe state, streams. No raw commands. |
 | MQTT inspector | `MicroDCS.Transport.Mqtt` | `transport.mqtt` inspector: connection state, counters, subscriptions ([MQTT transport](mqtt-transport.md)). Read it with the tool `inspect`. |
 | NATS inspector | `MicroDCS.Transport.Nats` | `transport.nats` inspector: connection state, counters (including redelivered and poisoned), consumers ([NATS transport](nats-transport.md)). Read it with the tool `inspect`. |
-| MCP adapter | `MicroDCS.Mcp` | Tools under `/mcp` (optional; production applications do not reference it). |
+| MCP adapter | `MicroDCS.Mcp` | Tools under `/mcp` (optional). Read tools may run in production; the write group only in Development and Test. |
 
 Every stateful component registers its own `IInspector`; the MCP tools and the REST API both call `InspectionService`, not each other.
 
@@ -29,6 +29,7 @@ APP_MicroDcs__Bindings__greetings__ScopeLevels=2 \
 APP_MicroDcs__Management__Enabled=true \
 APP_MicroDcs__Management__McpEnabled=true \
 APP_MicroDcs__Management__WriteEnabled=true \
+DOTNET_ENVIRONMENT=Development \
 dotnet run --project src/MicroDCS.App -- serve
 ```
 
@@ -81,7 +82,10 @@ All tools are read-only except the write group (`inject_event`, `sfc_tick`, `sfc
 * `Payload` values are replaced by a size marker unless `IncludePayloads` is on.
 * Every call is logged in the `MicroDCS.Security` category with caller, tool and arguments, never results.
 * `inject_event` goes through the pipeline (claim, scope check, dispatch), never directly into Valkey. Confirm it in the client.
-* Never enable it in production manifests. The maintenance tools below are a separate dev-only group.
+* **Production.** The read tools may run in production as an operator's choice ([D-19](porting/decisions.md#d-19)): keep `IncludePayloads` off, bind the pod address only with `BearerTokenFile`, and admit the port only from the clients that need it (the NetworkPolicy of the [manifest](deployment.md#manifest)). The tools are a diagnostic surface that may change between releases; integrations use the versioned REST API.
+* **Write group only in Development and Test.** `WriteEnabled` (`inject_event`, `sfc_tick`, `sfc_redispatch`, `sfc_abort`) runs real handlers and acts on running recipes, so the start fails in any other environment (`DOTNET_ENVIRONMENT`). The maintenance tools below are a separate dev and test group with the same guard.
+* **Tool output is untrusted data.** Results carry identifiers, subjects and error texts from equipment and the MES. An agent that reads them must treat them as data, never as instructions.
+* The token is shared: the audit log names the token holder, not a person. Give each environment its own token and rotate it by replacing the file.
 
 ## Maintenance tools
 
