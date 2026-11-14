@@ -1,163 +1,116 @@
 # Technical Standards
 
-!!! warning "Not yet ported"
-    This page describes the archived Python implementation on the
-    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
-    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
-
-MicroDCS is built around open standards for messaging, payload modeling, observability, and industrial domain semantics. This page summarizes the main standards used by the framework and explains how they are applied in the current architecture.
-
-## MQTT v5
-
-MQTT v5 is the primary transport for event-driven communication in MicroDCS. The framework uses MQTT features not just for message delivery, but also for request-response flows, delivery coordination, scaling, and time-bounded processing.
-
-Standard: [MQTT Version 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
-
-### [Request / Response](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901252)
-
-MQTT v5 supports request-response interaction through `Response Topic` and `Correlation Data`. The `Request Response Information` and `Response Information` fields standardize the communication channel, but not the full response-handling behavior. In practice, brokers such as Mosquitto transport these attributes without managing the response flow for the application. MicroDCS therefore creates an instance-specific response channel and subscribes to it at startup to handle error and correlation backchannels. Published request-response messages are also expected to target topics with active subscribers, which corresponds to successful delivery with `PUBACK=0x00`.
-
-> The MQTT `Correlation Data` field in request/response flows carries the CE `id` of the originating request event. Because a request is a root event it has no `causationid`, so the mapper falls back to `id` (see [CloudEvents MQTT mapping](#mqtt-and-messagepack) below). The responder echoes `Correlation Data` back unchanged, allowing the requester to match the response to its original request.
-
-```mermaid
-  sequenceDiagram
-  autonumber
-      participant Device
-      participant Device Connector
-      participant Broker
-      participant DCS
-      Note over Device, Device Connector: Device Connector is optional
-      Device Connector->>Broker: Subscribe<br/>[topic: mydevice/event]
-      DCS->>Broker: Subscribe<br/>[topic: +/event]
-      DCS->>Broker: Subscribe<br/>[topic: dcs/errors/<dcs_id>]
-      Device->>Device Connector: Request<br/>[any protocol]
-      Device Connector->>Broker: Request<br/>[topic: mydevice/event<br/>responsetopic: mydevice/command<br/>correlationdata: <cid>]
-      Broker->>DCS: Request [topic: mydevice/event<br/>responsetopic: mydevice/command<br/>correlationdata: <cid>]
-      DCS->>Broker: Response [topic: mydevice/command<br/>responsetopic:dcs/errors/<dcs_id><br/>correlationdata: <cid>]
-      opt Error Response
-        Broker->>DCS: Error Response [topic:dcs/errors/<dcs_id><br/>correlationdata: <cid>]
-      end
-      Broker->>Device Connector: Response [topic: mydevice/command<br/>responsetopic:dcs/errors/<dcs_id><br/>correlationdata: <cid>]
-      Device Connector->>Device: Response<br/>[any protocol]
-```
-
-### [Message Expiry Interval](https://www.emqx.com/en/blog/mqtt-message-expiry-interval)
-
-MQTT v5 introduced `Message Expiry Interval` so publishers can set a bounded lifetime for time-sensitive messages. This helps reclaim control over message flow once a message is no longer useful. Depending on timing and broker behavior, the broker may discard the message before delivery, or the receiver may discard it after inspecting the remaining interval.
-
-```mermaid
-  sequenceDiagram
-      participant Publisher
-      participant Broker
-      participant Subscriber
-      activate Broker
-      activate Publisher
-      activate Subscriber
-      Subscriber->>Broker: Disconnect
-      deactivate Subscriber
-      Publisher->>Broker: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 10]
-      activate Publisher
-      Publisher->>Publisher: MessageExpirationTask<br/>[correlationdata: <cid>,<br/>timer: 10]
-      Note over Broker: After 10s
-      Publisher->>Publisher: HandleExpiration
-      deactivate Publisher
-      Publisher->>Broker: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 60]
-      activate Publisher
-      Publisher->>Publisher: MessageExpirationTask<br/>[correlationdata: <cid><br/>timer: 60]
-      Note over Broker: After 30s
-      Subscriber->>Broker: Connect
-      activate Subscriber
-      Broker->>Subscriber: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 30]
-      Subscriber->>Broker: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 60]
-      Broker->>Publisher: Publish<br/>[topic: demo<br/>correlationdata: <cid><br/>messageexpiryinterval: 60]
-      Publisher->>Publisher: StopExpirationTask
-      deactivate Publisher
-      deactivate Subscriber
-      deactivate Publisher
-      deactivate Broker
-```
-
-### [Shared Subscriptions](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901250)
-
-To achieve higher availability or scale out processing across multiple container instances or MQTT clients, MicroDCS can use MQTT v5 shared subscriptions. A shared subscription is identified through a special topic-filter format: `$share/{ShareName}/{filter}`.
-
-* `$share` is a literal string that marks the Topic Filter as being a Shared Subscription Topic Filter.
-* `{ShareName}` is a character string that does not include "/", "+" or "#"
-* `{filter}` The remainder of the string has the same syntax and semantics as a Topic Filter in a non-shared subscription.
-
-With QoS 1, shared subscriptions provide load balancing so each message is delivered to one client in the shared group. They do not eliminate duplicate delivery, however. Publishers may resend when acknowledgments are missing, so consumers still need deduplication based on message identity or payload semantics.
-
-### [Quality of Service](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901234)
-
-The QoS level used to deliver an Application Message outbound to the Client could differ from that of the inbound Application Message.
-
-Setting a response topic in the application sets QoS=1 (at least once delivery) where we want to make sure it arrives at the destination, otherwise its a QoS=0 (at most once delivery) notification that can be lost.
-
-### [Retained Messages](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901104)
-
-MQTT retained messages allow the broker to store the last message published to a topic with the `RETAIN` flag set. When a new client subscribes to that topic, the broker delivers the stored message immediately — the subscriber does not need to wait for the next publish.
-
-MicroDCS uses retained messages for the northbound MES publishing interface. The Job Order Publisher maintains per-job and per-scope retained topics so that a reconnecting MES client can recover full state without replaying the event stream.
-
-Retained topics use MQTT v5 `MessageExpiryInterval` to auto-expire stale data (default 48 hours, configurable via `APP_PUBLISHER_RETAINED_TTL_SECONDS`). Deleting a retained topic is done by publishing a zero-byte retained message to the same topic, which instructs the broker to discard the stored message.
-
-See [Machinery Jobs – MES Northbound Publishing](machinery-jobs-mes-publishing.md) for the full topic layout and payload schemas.
-
-## MessagePack-RPC
-
-MessagePack-RPC is supported as an additional transport option where a lightweight binary RPC channel is preferred.
-MicroDCS also supports outgoing CloudEvents over MessagePack by publishing RPC `NOTIFICATION` frames to connected clients.
-
-* [MessagePack](https://msgpack.org/)
-* [MessagePack-RPC specification](https://github.com/msgpack-rpc/msgpack-rpc/blob/master/spec.md)
+MicroDCS builds on open standards for messaging, payload description, observability and sequence logic. This page lists
+them and explains which parts the framework uses. The transport pages hold the exact mapping
+([MQTT](mqtt-transport.md), [NATS](nats-transport.md)).
 
 ## CloudEvents
 
-CloudEvents provides the common event envelope used across transports. It allows MicroDCS to carry typed payloads, metadata, tracing information, and delivery attributes in a consistent way.
+Every message is a CloudEvent 1.0. The envelope carries the type that selects the handler, the schema of the payload,
+the subject with the scope, tracing context and the delivery attributes. Processors see the transport-neutral
+`EventEnvelope`; the CloudEvents SDK is used only inside the codec ([D-36](porting/decisions.md#d-36)).
 
-### Overview and Spec
+* [CloudEvents specification 1.0](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md)
+* [Distributed tracing extension](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/extensions/distributed-tracing.md)
+  (`traceparent`, `tracestate`)
+* [Expiry time extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/expirytime.md)
+  (`expirytime`, plus `expiryinterval`)
+* [Recorded time extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/recordedtime.md)
+* [Correlation extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/correlation.md)
+  (`correlationid`, `causationid`)
+* [MQTT protocol binding](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md)
+  and [NATS protocol binding](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/nats-protocol-binding.md)
 
-* [CloudEvents primer: versioning of CloudEvents](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/primer.md#versioning-of-cloudevents)
-* [CloudEvents specification](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md)
-* [CloudEvents distributed tracing extension](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/extensions/distributed-tracing.md)
-* [CloudEvents expiry time extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/expirytime.md)
-* [CloudEvents recorded time extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/recordedtime.md)
-* [CloudEvents correlation extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/correlation.md)
+MicroDCS adds its own extension attributes:
 
-### MQTT and MessagePack
+| Attribute | Meaning |
+|---|---|
+| `method` | `PUT` (default when absent) or `DELETE`, used by station configuration events. |
+| `mdcsactionkey` | Stable key of an SFC command, the same on every re-delivery (`{job}:{action}`). Equipment deduplicates on it. |
+| `mdcserrorkind`, `mdcserrormessage`, `mdcserrorcontext` | Error description on an error event (`io.microdcs.error.v1`). The message never contains payload values. |
 
-CloudEvents defines an [MQTT binding](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/bindings/mqtt-protocol-binding.md), which MicroDCS uses as the basis for transport mapping.
+Payload fields marked `[CarriedAs]` travel as further extension attributes ([Processors](processors-dotnet.md#a-payload)).
 
-Because MicroDCS targets MQTT v5, it implements the binding in `Binary Content Mode`:
+Both transports use **binary content mode**: the attributes are transport headers under their own names, the payload is
+the message body.
 
-* `datacontenttype` is mapped to the MQTT v5 `ContentType` property.
-* `expiryinterval` is mapped to `MessageExpiryInterval`.
-* All other CloudEvent attributes — including `id`, `source`, `subject`, `type`, `dataschema`, `correlationid`, `causationid`, and entries in `custommetadata` — are transported as MQTT `UserProperty` fields using the **attribute name unchanged**, as required by the CloudEvents MQTT binding spec.
-* Other MQTT-specific properties are read from and written to `transportmetadata`.
+## MQTT v5
 
-As a secondary mapping for request/response flows, the MQTT `Correlation Data` property is populated with `causationid` if present, falling back to `id` for root/initiating events (`causationid ?? id`). This lets MQTT-native consumers match a response to its originating request without parsing `UserProperty` fields, while the primary CE attributes remain intact in `UserProperty`. The responder echoes `Correlation Data` back unchanged, as required by the MQTT v5 spec.
+MQTT v5 is the main transport. MicroDCS relies on these features ([D-46](porting/decisions.md#d-46)):
 
-> Note: despite the name similarity, the MQTT `Correlation Data` field does **not** correspond to the CE `correlationid` attribute. `correlationid` is a group-level transaction tag shared by all events in a flow and is carried exclusively as a `UserProperty`. `Correlation Data` is a per-request/response matching token that corresponds semantically to `causationid`.
+| Feature | Use |
+|---|---|
+| [User properties](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901116) | CloudEvent attributes. |
+| [Content type](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901118) | `datacontenttype`. |
+| [Request / response](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901252) | A command carries the response topic of the sending instance (`{ReplyBase}/{instance id}`). The receiver publishes its reply there. Correlation data holds the command id; it is informational, the pipeline matches on `causationid`. |
+| [Message expiry interval](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901112) | `expiryinterval`. The broker drops a message that waits longer. The sender of a command starts a local timer of the same length; when no response arrives, the processor's `[OnExpired]` handler runs. |
+| [Shared subscriptions](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901250) | `$share/{SharedGroup}/…` spreads requests over the replicas of a processor. A message can still arrive twice, so the pipeline claims each event id in Valkey before the handler runs. |
+| [QoS 1](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901236) and persistent sessions | At-least-once delivery. A message is acknowledged after the pipeline finished it. |
+| [Retained messages](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901104) | State topics: the job order publisher keeps the current orders, results and a state index for the MES. Each retained message has a message expiry (48 h by default); a zero-byte retained message deletes the topic. |
 
-For MessagePack transport, the CloudEvent is sent as a structured object, with `custommetadata` serialized into individual attributes. Transport-specific metadata is carried separately alongside the CloudEvent.
+Standard: [MQTT Version 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html).
+
+```mermaid
+sequenceDiagram
+    participant DCS as MicroDCS instance
+    participant Broker
+    participant Equipment
+    DCS->>Broker: Subscribe dcs/reply/{instance}
+    Equipment->>Broker: Subscribe line1/cell1/commands
+    DCS->>Broker: Command [topic line1/cell1/commands,<br/>response topic dcs/reply/{instance},<br/>expiry 30 s]
+    Broker->>Equipment: Command
+    Equipment->>Broker: Response [topic dcs/reply/{instance},<br/>causationid = command id]
+    Broker->>DCS: Response
+    Note over DCS: Expiry timer cancelled,<br/>[OnResponse] handler runs
+```
+
+## NATS and JetStream
+
+NATS is the second transport ([D-47](porting/decisions.md#d-47)). Requests go through JetStream streams with durable
+consumers, so they are stored and acknowledged after the pipeline. Replies are plain inbox messages to the sending
+instance (`Mdcs-Reply-To`). State topics are values in a JetStream key-value bucket with a per-message TTL. Tenancy uses
+NATS accounts.
+
+* [NATS documentation](https://docs.nats.io/), [JetStream](https://docs.nats.io/nats-concepts/jetstream),
+  [key-value store](https://docs.nats.io/nats-concepts/jetstream/key-value-store)
+
+AMQP 1.0 (S24) and Zenoh (S25) are planned transports ([D-10](porting/decisions.md#d-10),
+[D-11](porting/decisions.md#d-11)). Each transport uses its own native features; there is no lowest-common-denominator
+emulation.
 
 ## JSON Schema
 
-JSON Schema is used to define application payload models that can be turned into typed Python dataclasses.
+Each payload type names its schema in `dataschema`. The documents are generated from the .NET models, compared with
+golden files in the tests, and served by this site under
+[`/schemas/`](https://aschamberger.github.io/microdcs/schemas/greetings/v1.0.0.json) ([D-58](porting/decisions.md#d-58)):
 
-* [JSON Schema](https://json-schema.org/)
+| Document | Content |
+|---|---|
+| `schemas/greetings/v1.0.0.json` | Greetings demo payloads. |
+| `schemas/isa95-jobcontrol-v2/v2.0.0.json` | ISA-95 Job Control V2 data types. |
+| `schemas/microdcs-jobcontrol/v1.2.0.json` | MicroDCS Job Control extension: Work Master with recipe, command and response shapes, status event, state index. |
+| `schemas/machinery-jobs/v1.0.0.json` | Machinery Jobs payloads: job acceptance configuration, metadata event. |
+| `schemas/sfc-recipe/v1.1.0.json`, `v1.0.0.json` | SFC recipe format. |
+| `schemas/sfc-state/v1.0.0.json` | Stored SFC job state. |
+
+* [JSON Schema](https://json-schema.org/) (draft 2020-12)
 
 ## OpenTelemetry
 
-OpenTelemetry provides the tracing and metrics foundation for runtime observability across handlers and processors.
+Traces and metrics leave the process over OTLP only; there is no Prometheus endpoint
+([D-54](porting/decisions.md#d-54)). A message with `traceparent` continues the producer's trace in a consumer span, and
+every event published while it runs carries the context on. Details on [HTTP surface and
+observability](observability.md).
 
-* [OpenTelemetry Python zero-code instrumentation](https://opentelemetry.io/docs/zero-code/python/)
-* [OpenTelemetry for Python](https://opentelemetry.io/docs/languages/python/)
-* [OpenTelemetry messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/)
-* [OpenTelemetry RPC semantic conventions](https://opentelemetry.io/docs/specs/semconv/rpc/)
+* [OpenTelemetry .NET](https://opentelemetry.io/docs/languages/dotnet/)
+* [Messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/)
+* [OTLP exporter configuration](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
 
 ## IEC 61131-3 SFC
 
-The SFC recipe schema uses IEC 61131-3 Sequential Function Chart terminology — steps, transitions, action qualifiers (`N`, `P`, `S`, `R`, `L`, `D`, etc.), and selection/simultaneous divergence — to define machine-readable recipes without the graphical/PLC baggage of PLCopen TC6 XML. See [SFC Engine](sfc_engine.md) for the recipe format and engine architecture.
+The recipe format uses the Sequential Function Chart terms of IEC 61131-3: steps, transitions, action associations,
+selection and simultaneous branches. It is plain JSON, not PLCopen TC6 XML, which carries graphical and PLC detail a
+recipe does not need. Of the action qualifiers only `N` is supported ([D-44](porting/decisions.md#d-44)). See
+[SFC Engine](sfc-engine.md).
 
 * [IEC 61131-3 on Wikipedia](https://en.wikipedia.org/wiki/IEC_61131-3)

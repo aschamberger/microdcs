@@ -1,4 +1,4 @@
-# NATS transport in .NET
+# NATS transport
 
 This page describes `MicroDCS.Transport.Nats` ([D-47](porting/decisions.md#d-47)), the NATS binding on NATS.Net with JetStream. It is new in the .NET version; the Python version had no NATS transport. Findings: [NATS transport](porting/research/nats-transport.md).
 
@@ -18,29 +18,7 @@ A binding selects the transport with `MicroDcs:Bindings:{id}:Transport = nats`. 
 
 Section `MicroDcs:Nats`; environment names use `APP_` and `__`, for example `APP_MicroDcs__Nats__Url`.
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `Url` | string | `nats://localhost:4222` | Server URL; several URLs separated by commas |
-| `ClientName` | string | `microdcs-{instance id}` | Connection name shown by the server |
-| `Username`, `Password` | string | none | User and password. Prefer `PasswordFile` |
-| `PasswordFile` | path | none | File with the password; one trailing line break is removed. Not together with `Password` |
-| `TokenFile` | path | none | File with an authentication token |
-| `CredsFile` | path | none | `.creds` file (JWT and NKey seed); it decides the account |
-| `NKeyFile` | path | none | File with an NKey seed |
-| `TlsCaFile` | path | `/var/run/certs/ca.crt` | CA that signed the server certificate. When the file exists the connection uses TLS and trusts only this CA |
-| `RequireTls` | bool | false | End the start when `TlsCaFile` does not exist instead of connecting in plain text |
-| `TlsClientCertFile`, `TlsClientKeyFile` | path | none | PEM client certificate and key for mutual TLS. Set together; need TLS |
-| `JetStreamDomain` | string | none | JetStream domain (leaf nodes) |
-| `StreamPrefix` | string | `MDCS` | Prefix of the stream names |
-| `StreamMaxAge` | duration | 24 h | How long a stream keeps a message nobody acknowledged; zero is unlimited |
-| `Replicas` | int | 1 | Replicas of streams, consumers and the state bucket (1 to 5) |
-| `ConsumerInactiveThreshold` | duration | 1 h | The server removes a consumer that no client used for this long |
-| `AckWait` | duration | 30 s | Time the server waits for an acknowledgement before it redelivers |
-| `MaxDeliver` | int | 5 | Delivery attempts; the last failed attempt terminates the message (log and counter) |
-| `NakDelay` | duration | 5 s | Wait before a message whose processing failed is redelivered |
-| `StateBucket` | string | `microdcs-state` | Key-value bucket for state topics |
-| `OperationTimeout` | duration | 15 s | Timeout of connect, set-up and publish round trips |
-| `ReconnectMinDelay`, `ReconnectMaxDelay` | duration | 1 s, 30 s | Wait between reconnect attempts |
+Every field is in the [configuration reference](operations.md#config-nats).
 
 Use one authentication method. Binding fields used by this transport (see [Processors in .NET](processors-dotnet.md)): `Prefix`, `ScopeLevels`, `Discriminator`, `SharedGroup` and `ReplyBase` (required when the processor publishes commands). Message workers, dedupe lease and queue sizes are core options (`MicroDcs:MessageWorkers`, `DedupeLease`, `OutgoingQueueMaxSize`).
 
@@ -77,6 +55,7 @@ The envelope travels in binary content mode: attributes are NATS headers under t
 
 * Requests are delivered by JetStream and acknowledged after the pipeline finished them (dedupe `mark done` first). A crash in between means redelivery and the dedupe claim answers the duplicate.
 * A message that cannot be decoded, or whose subject has an invalid scope segment, is terminated, counted and logged. A duplicate is acknowledged.
+* A pipeline that reports `Retry` (the dedupe store is unavailable) keeps the message in its worker and runs it again every `NakDelay`, with "in progress" acknowledgements meanwhile. No delivery is used, so a Valkey outage does not turn messages into poison (warning event 219, inspector counter `retried`). A stop during the outage naks the message.
 * A handler fault sends a negative acknowledgement and the server redelivers after `NakDelay`. NATS can redeliver inside the session, so the host keeps running ([D-37](porting/decisions.md#d-37)). After `MaxDeliver` failed deliveries the message is terminated, logged and counted (`microdcs.nats.poisoned`). The failed attempt releases its dedupe claim, so the redelivery is processed at once.
 * After a connection loss a message that the server handed to the pull request of the lost connection is redelivered only after `AckWait`, so recovery can take up to that long.
 * Each consumer pulls one message at a time. A message that waits for a worker or is being processed gets an "in progress" acknowledgement every `AckWait / 3`, so a slow worker does not cause redeliveries. A consumer that the server deleted (for example after `ConsumerInactiveThreshold`) is created again, also when it was deleted while no pull request was open (between pulls or while disconnected): the server then answers no pull at all, and the transport takes the client's "no responders" or missed-heartbeat notification as the sign (warning `ConsumerNotAnswering`, event 218).

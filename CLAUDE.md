@@ -1,13 +1,13 @@
 # MicroDCS
 
 MicroDCS is a framework for distributed sequence control (DCS) applications in OT and manufacturing.
-It builds on open standards: CloudEvents over MQTT v5 (later NATS, AMQP 1.0, Zenoh), OPC UA companion
+It builds on open standards: CloudEvents over MQTT v5 and NATS (later AMQP 1.0, Zenoh), OPC UA companion
 specifications as payload models (ISA-95 Job Control, Machinery Jobs), Valkey for state, and
 OpenTelemetry.
 
-**Status: port from Python to .NET in progress.** `main` is the .NET rewrite and is not a working
-product until the parity gate (S23). The Python implementation is frozen on the `python-archive`
-branch; read it with `git show python-archive:<path>` (for example
+**Status: the port from Python to .NET is complete** (parity gate S23, release `v0.1.0` in S23a); the
+M3 extension sessions (AMQP, Zenoh, packaging, southbound) continue on `main`. The Python implementation
+is frozen on the `python-archive` branch; read it with `git show python-archive:<path>` (for example
 `git show python-archive:src/microdcs/core.py`). Python tests there are the behavioural
 specification, but the wire format and key schema are a clean break (D-2).
 
@@ -74,7 +74,7 @@ docs/schemas/               JSON Schemas named in `dataschema`, served by the do
 deploy/                     Kubernetes manifest (two Deployments by role, NetworkPolicies) and the kustomization that pins the image
 tests/k8s/                  kind overlay for scripts/k8s-test (Valkey with ACL user, Mosquitto, NetworkPolicy probes)
 compose.yaml                local dev stack: Mosquitto, NATS, Valkey (valkey-bundle), Aspire dashboard; profile `app` also runs the image with the dev MCP server
-overrides/                  Zensical template overrides (WIP announcement bar)
+overrides/                  Zensical template overrides (none active; hook for later ones)
 .claude/                    rules, skills, hooks and shared settings for Claude Code
 ```
 

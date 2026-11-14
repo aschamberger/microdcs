@@ -1,5 +1,9 @@
 # Sessions
 
+!!! note "Archived record of the port"
+    The port from Python to .NET reached its parity gate in S23 and was released as `v0.1.0` (S23a). This page is
+    kept as the record of how the port was planned and done. The extension sessions of M3 (S24 onwards) still use it.
+
 One block per session. Dependencies and status are in [the plan](index.md#sessions); working rules and the definition of done are in [the plan](index.md#working-rules-for-every-session). Each block names the research files and decisions to read before starting.
 
 ## M0 Setup

@@ -260,6 +260,34 @@ public sealed class NatsTransportTests
         }
     }
 
+    // S23a: a dedupe store outage (DeliveryOutcome.Retry) must not use up MaxDeliver and terminate the message as poison.
+    [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
+    public async Task A_message_asked_to_retry_is_redelivered_past_max_deliver_and_never_terminated()
+    {
+        var prefix = "it" + Guid.NewGuid().ToString("N")[..10];
+        await using var host = await NatsTestHost.StartAsync(
+            prefix, extra: new() { ["MicroDcs:Nats:MaxDeliver"] = "2", ["MicroDcs:Nats:NakDelay"] = "00:00:00.200" }, start: false, ct: Ct);
+        var handler = new RetryingHandler(retries: 4);
+        var transport = host.Transport;
+        await transport.StartAsync(handler, Ct);
+        try
+        {
+            await using var client = await NatsTestClient.ConnectAsync();
+            await client.PublishEventAsync($"{prefix}.site.area.events", "retry-1", NatsTestHost.HelloType, "site.area", "{\"Name\":\"Bob\"}", null, Ct);
+
+            await EventuallyAsync(() => transport.Status.Acknowledged == 1);
+            handler.Calls.ShouldBe(5);
+            transport.Status.Retried.ShouldBe(4);
+            transport.Status.Poisoned.ShouldBe(0);
+            transport.Status.Nacked.ShouldBe(0); // kept by the worker, not redelivered by the server
+        }
+        finally
+        {
+            await transport.StopReceivingAsync(Ct);
+            await transport.StopAsync(Ct);
+        }
+    }
+
     [Fact(SkipUnless = nameof(TestEndpoints.NatsConfigured), SkipType = typeof(TestEndpoints), Skip = Skip)]
     public async Task The_transport_reconnects_after_the_connection_is_cut()
     {
@@ -494,5 +522,15 @@ public sealed class NatsTransportTests
 
             return ValueTask.FromResult(DeliveryOutcome.Fault);
         }
+    }
+
+    private sealed class RetryingHandler(int retries) : IInboundHandler
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public ValueTask<DeliveryOutcome> HandleAsync(InboundMessage message, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(Interlocked.Increment(ref _calls) <= retries ? DeliveryOutcome.Retry : DeliveryOutcome.Ack);
     }
 }

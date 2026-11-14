@@ -13,31 +13,28 @@ nav = [
     {"Overview" = "overall-design.md"},
     {"Technical Standards" = "technical-standards.md"},
     {"Information Model Standards" = "information-model-standards.md"},
-    {"SFC Engine" = "sfc_engine.md"},
+    {"SFC Engine" = "sfc-engine.md"},
     {"Machinery Jobs \u2013 MES Publishing" = "machinery-jobs-mes-publishing.md"}
   ]},
   {"Development" = [
     {"Overview" = "development.md"},
-    {"Processors in .NET" = "processors-dotnet.md"},
-    {"Valkey layer in .NET" = "valkey-layer.md"},
-    {"MQTT transport in .NET" = "mqtt-transport.md"},
-    {"NATS transport in .NET" = "nats-transport.md"},
-    {"SFC core in .NET" = "sfc-core.md"},
+    {"Processors" = "processors-dotnet.md"},
+    {"MQTT transport" = "mqtt-transport.md"},
+    {"NATS transport" = "nats-transport.md"},
+    {"Valkey layer" = "valkey-layer.md"},
+    {"Persistence" = "persistence.md"},
+    {"SFC core" = "sfc-core.md"},
     {"Job models and state machine" = "job-control.md"},
     {"Inspection and MCP" = "inspection.md"},
-    {"HTTP surface and observability" = "observability.md"},
-    {"Persistence" = "persistence.md"}
+    {"HTTP surface and observability" = "observability.md"}
   ]},
   {"Operations" = [
     {"Overview" = "operations.md"},
     {"Deployment" = "deployment.md"},
     {"Security and Authorization" = "security.md"}
   ]},
-  {"Port to .NET (WIP)" = [
-    {"Plan" = "porting/index.md"},
-    {"Sessions" = "porting/sessions.md"},
+  {"Design Record" = [
     {"Decisions" = "porting/decisions.md"},
-    {"Log" = "porting/log.md"},
     {"Research" = [
       {"Porting approach (branching)" = "porting/research/branching.md"},
       {"Abstraction mapping" = "porting/research/abstraction.md"},
@@ -62,7 +59,15 @@ nav = [
       {"OPC UA spike" = "porting/research/opcua-spike.md"},
       {"Core contracts" = "porting/research/core-contracts.md"},
       {"Review triage" = "porting/research/review-triage.md"},
+      {"M1 review" = "porting/research/m1-review.md"},
+      {"Parity acceptance" = "porting/research/parity-acceptance.md"},
+      {"Docs port" = "porting/research/docs-port.md"},
       {"Python design decisions, sorted" = "porting/research/python-design-decisions.md"}
+    ]},
+    {"Port to .NET (archived)" = [
+      {"Plan" = "porting/index.md"},
+      {"Sessions" = "porting/sessions.md"},
+      {"Log" = "porting/log.md"}
     ]}
   ]}
 ]

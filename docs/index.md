@@ -1,41 +1,41 @@
 # MicroDCS Documentation
 
-!!! warning "Not yet ported"
-    This page describes the archived Python implementation on the
-    [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch. It is
-    rewritten when the .NET port reaches this area ([Port to .NET](porting/index.md)).
+MicroDCS is a .NET framework for distributed sequence control applications in OT and manufacturing. It builds on open
+standards: CloudEvents over MQTT 5 and NATS, OPC UA companion specifications as payload models (ISA-95 Job Control,
+Machinery Jobs), Valkey for state, and OpenTelemetry. It runs as a Native AOT binary in a small container.
 
-MicroDCS is an open-standards-based Python framework for building distributed sequence control applications for OT and manufacturing. The documentation focuses on how the framework is structured, which standards it builds on, and how to work with the codebase and deployment model.
+MicroDCS is pre-1.0 (0.1.x): interfaces can still change between releases.
 
-## Start Here
+## Start here
 
-If you are new to the project, use this reading path:
+1. [Concepts at a Glance](concepts.md): terms, standards and framework building blocks.
+2. [Overall Design](overall-design.md): goals, premises, layers and instance roles.
+3. [Your First Processor](your-first-processor.md): a hands-on tutorial.
+4. [SFC Engine](sfc-engine.md): recipe-driven station control on several replicas.
+5. [Machinery Jobs – MES Publishing](machinery-jobs-mes-publishing.md): state topics for the MES and resync after an
+   outage.
+6. [Technical Standards](technical-standards.md) and [Information Model Standards](information-model-standards.md):
+   the protocols and models used.
+7. [Development](development.md): toolchain, tests and CI. The pages below it are the reference per component.
+8. [Operations](operations.md), [Deployment](deployment.md) and [Security](security.md): running MicroDCS in
+   production.
 
-1. [Concepts at a Glance](concepts.md) for the key terms, standards, and framework abstractions
-2. [Overall Design](overall-design.md) for the architectural model and project assumptions
-3. [SFC Engine](sfc_engine.md) for recipe-driven station orchestration and distributed execution
-4. [Technical Standards](technical-standards.md) for the protocol and specification choices
-5. [Information Model Standards](information-model-standards.md) for the data-model background
-6. [Your First Processor](your-first-processor.md) for a hands-on tutorial building a CloudEvent processor
-7. [Machinery Jobs – MES Publishing](machinery-jobs-mes-publishing.md) for retained-topic-based MES integration and reconnect resync
-8. [Development](development.md) for local development workflow and implementation details
-9. [Persistence](persistence.md) for the Redis-backed persistence model
-10. [Security and Authorization](security.md) for the trust model, TLS, credentials and hardening
+## What MicroDCS provides
 
-## What MicroDCS Provides
-
-* A framework for event-driven sequence control applications built on open standards
-* Protocol handling for MQTT v5 and MessagePack-RPC with CloudEvents-based messaging
-* Typed application models generated from JSON Schema
-* Processor abstractions for handling commands, data, events, and metadata
-* Redis-backed persistence for delivery coordination and job state
-* OPC UA Machinery Job Management support, including hierarchical state-machine execution
-* Recipe-driven station orchestration via the SFC engine, including distributed work recovery
-* Retained MQTT topics for MES northbound integration with sequence-based reconnect resync
-* OpenTelemetry support for tracing and metrics
+* A processor model with attributes and a source generator: typed handlers, no reflection, compile-time diagnostics.
+* One message pipeline for all transports, with deduplication, scope checks, error events and bounded outgoing queues.
+* MQTT 5 and NATS JetStream transports; AMQP 1.0 and Zenoh are planned.
+* OPC UA Machinery Jobs (ISA-95 Job Control V2) as a ready processor, with station configuration and a job order state
+  machine generated from the NodeSet.
+* An SFC engine that runs IEC 61131-3 style recipes from the Work Master, shared by all replicas through Valkey.
+* State topics for the MES with a sequence-numbered state index for resync after an outage.
+* Read-only inspection, health probes, a REST API for job state, and a development MCP server with inspection and
+  maintenance tools.
+* OpenTelemetry traces and metrics over OTLP.
+* A signed container image with SBOMs, and an example Kubernetes manifest.
 
 ## Repository
 
-Source code, issues, and release history are available in the GitHub repository:
-
-* [aschamberger/microdcs](https://github.com/aschamberger/microdcs)
+Source code, issues and releases: [aschamberger/microdcs](https://github.com/aschamberger/microdcs). The code is MIT
+licensed. The earlier Python implementation is archived on the
+[`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch.

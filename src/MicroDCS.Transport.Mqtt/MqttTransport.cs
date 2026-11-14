@@ -434,7 +434,7 @@ public sealed class MqttTransport : ITransport, IStateTopicPort, IAsyncDisposabl
                 Subscription = match.Filter,
             };
             var outcome = await _handler!.HandleAsync(inbound, _stopping.Token).ConfigureAwait(false);
-            fault |= outcome == DeliveryOutcome.Fault;
+            fault |= outcome is DeliveryOutcome.Fault or DeliveryOutcome.Retry;
         }
 
         return !fault;

@@ -63,16 +63,7 @@ A status event (`ISA95JobOrderStatusEventType.v2`, intent `Event`, subject is th
 
 Once at start one replica publishes a retained metadata event (`org.opcfoundation.Machinery.Jobs.Meta.v1`, intent `Meta`) with the supported commands.
 
-| Configuration | Type | Default | Description |
-|---|---|---|---|
-| `MicroDcs:JobAcceptance:CheckEquipmentId` | bool | `true` | Equipment requirements must be in the scope's list. |
-| `MicroDcs:JobAcceptance:CheckMaterialClassId` | bool | `true` | Material classes must be in the scope's list. |
-| `MicroDcs:JobAcceptance:CheckMaterialDefinitionId` | bool | `true` | Material definitions must be in the scope's list. |
-| `MicroDcs:JobAcceptance:CheckPersonnelId` | bool | `true` | Personnel requirements must be in the scope's list. |
-| `MicroDcs:JobAcceptance:CheckPhysicalAssetId` | bool | `true` | Physical asset requirements must be in the scope's list. |
-| `MicroDcs:JobAcceptance:CheckWorkMaster` | bool | `true` | Work Masters must be known in the scope. |
-| `MicroDcs:JobAcceptance:CheckMaxDownloadableJobOrders` | bool | `true` | Limit the number of job orders of a scope. |
-| `MicroDcs:JobAcceptance:MaxDownloadableJobOrders` | int | `0` | Limit for a scope without its own; 0 means no limit. A limit set through `config.jobacceptance` always applies, also 0, which accepts nothing. |
+The `MicroDcs:JobAcceptance:*` checks are in the [configuration reference](operations.md#config-job-acceptance).
 
 The inspector `jobs` backs the MCP tools `job_orders` and `job_order`. The maintenance tool `maint_job_delete_plan` removes one order; it bypasses the state machine.
 
@@ -96,11 +87,7 @@ Delivery is at least once. A scope is rebuilt from the stored documents on its f
 
 `MicroDcs:Roles` decides what an instance runs. In production run the processors with `Processor` and one publisher with `Publisher`: a stalled MES broker or a costly index then stays out of the control path, and the publisher can use another broker through its own environment. `All`, the default, runs both in one process for development and small sites. A publisher-only instance connects but does not subscribe. One lease in Valkey lets only one instance publish, also with several replicas and during a rolling update.
 
-| Configuration | Type | Default | Description |
-|---|---|---|---|
-| `MicroDcs:JobPublisher:RetainedTtl` | TimeSpan | `48:00:00` | How long a topic stays when nothing refreshes it. Topics are refreshed at half of this. At least 2 s. |
-| `MicroDcs:JobPublisher:ReadCount` | int | `50` | Most change entries per scope in one round. |
-| `MicroDcs:JobPublisher:LeaseTtl` | TimeSpan | `00:00:15` | Lifetime of the publisher lease, renewed at a third of this. At least 3 s. |
+The `MicroDcs:JobPublisher:*` fields are in the [configuration reference](operations.md#config-job-publisher).
 
 The inspector `publisher` backs the MCP tool `publisher_status`. `maint_publisher_reset_plan` makes the publisher write a scope again, and `maint_retained_clear_plan` removes state topics from the broker.
 

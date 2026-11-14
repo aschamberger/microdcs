@@ -36,6 +36,7 @@ public sealed class NatsInspector : IInspector
                 ("received", InspectionEntries.Number(status.Received), Sensitivity.Public),
                 ("acknowledged", InspectionEntries.Number(status.Acknowledged), Sensitivity.Public),
                 ("redelivered", InspectionEntries.Number(status.Nacked), Sensitivity.Public),
+                ("retried", InspectionEntries.Number(status.Retried), Sensitivity.Public),
                 ("poisoned", InspectionEntries.Number(status.Poisoned), Sensitivity.Public),
                 ("dropped", InspectionEntries.Number(status.Dropped), Sensitivity.Public),
                 ("published", InspectionEntries.Number(status.Published), Sensitivity.Public),

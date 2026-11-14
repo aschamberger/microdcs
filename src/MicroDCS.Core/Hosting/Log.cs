@@ -58,4 +58,7 @@ internal static partial class Log
 
     [LoggerMessage(EventId = 19, Level = LogLevel.Warning, Message = "Shutdown phase {Phase}: the grace period ended, the remaining phases run without waiting")]
     public static partial void GracePeriodEnded(ILogger logger, string phase);
+
+    [LoggerMessage(EventId = 20, Level = LogLevel.Error, Message = "Dedupe store unavailable at the {Step} step for event {EventId} on binding {Binding}; the message is not acknowledged")]
+    public static partial void DedupeStoreUnavailable(ILogger logger, Exception exception, string eventId, string binding, string step);
 }

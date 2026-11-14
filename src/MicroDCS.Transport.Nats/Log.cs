@@ -58,4 +58,7 @@ internal static partial class Log
 
     [LoggerMessage(EventId = 217, Level = LogLevel.Warning, Message = "Message on binding {Binding} dropped: its reply address was rejected ({Reason}, D-48)")]
     public static partial void ReplyAddressRejected(ILogger logger, string binding, string reason);
+
+    [LoggerMessage(EventId = 219, Level = LogLevel.Warning, Message = "Message on {Subject} kept for a retry in {Delay}: a dependency of the pipeline is unavailable (not counted as a delivery)")]
+    public static partial void RetryingUnavailable(ILogger logger, string subject, TimeSpan delay);
 }

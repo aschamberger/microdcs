@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using MicroDCS.Core.Authoring;
 using MicroDCS.Core.Hosting;
+using MicroDCS.Core.Inspection;
 using MicroDCS.Core.Messaging;
 using MicroDCS.Core.Transport;
 using Microsoft.Extensions.Configuration;
@@ -118,6 +119,26 @@ internal sealed class RecordingDedupe(IDedupeStore inner, SharedLog trace) : IDe
 
     public ValueTask<TimeSpan> LeaseRemainingAsync(string source, string id, CancellationToken cancellationToken) =>
         inner.LeaseRemainingAsync(source, id, cancellationToken);
+}
+
+/// <summary>A dedupe store whose backend is down: the claim, or only the done mark, throws.</summary>
+internal sealed class FailingDedupe(bool failClaim) : IDedupeStore
+{
+    public ValueTask<ClaimState> ClaimAsync(string source, string id, string token, CancellationToken cancellationToken) =>
+        failClaim ? ValueTask.FromException<ClaimState>(new InvalidOperationException("store down")) : ValueTask.FromResult(ClaimState.Claimed);
+
+    public ValueTask MarkDoneAsync(string source, string id, CancellationToken cancellationToken) =>
+        ValueTask.FromException(new InvalidOperationException("store down"));
+
+    public int Released { get; private set; }
+
+    public ValueTask ReleaseAsync(string source, string id, string token, CancellationToken cancellationToken)
+    {
+        Released++;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<TimeSpan> LeaseRemainingAsync(string source, string id, CancellationToken cancellationToken) => ValueTask.FromResult(TimeSpan.Zero);
 }
 
 internal sealed class TestTransport(SharedLog trace, bool canRedeliver) : ITransport
@@ -411,6 +432,53 @@ public sealed class PipelineTests
 
         outcome.ShouldBe(DeliveryOutcome.Fault);
         rig.Lifetime.DidNotReceive().StopApplication();
+    }
+
+    // S23a: a Valkey outage made the claim throw out of the pipeline; MQTT then left the message unacknowledged and kept running.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_failing_dedupe_claim_asks_for_a_retry_and_stops_the_host_unless_the_transport_can_redeliver(bool canRedeliver)
+    {
+        var store = new FailingDedupe(failClaim: true);
+        await using var rig = await StartRigAsync<SampleProcessor>("sample", (s, _) => s.AddSingleton<IDedupeStore>(store), canRedeliver: canRedeliver);
+
+        var outcome = await rig.Transport.InjectAsync(Request("test.hello.v1", "p/res", """{"Name":"Bob"}"""), TestContext.Current.CancellationToken);
+
+        outcome.ShouldBe(DeliveryOutcome.Retry);
+        rig.Log.Entries.ShouldBeEmpty();
+        store.Released.ShouldBe(1); // a claim with an unknown outcome must not hold the redelivery for the whole lease
+        rig.Lifetime.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IHostApplicationLifetime.StopApplication)).ShouldBe(canRedeliver ? 0 : 1);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_failing_mark_done_asks_for_a_retry_releases_the_claim_and_stops_the_host_unless_the_transport_can_redeliver(bool canRedeliver)
+    {
+        var store = new FailingDedupe(failClaim: false);
+        await using var rig = await StartRigAsync<SampleProcessor>("sample", (s, _) => s.AddSingleton<IDedupeStore>(store), canRedeliver: canRedeliver);
+
+        var outcome = await rig.Transport.InjectAsync(Request("test.hello.v1", "p/res", """{"Name":"Bob"}"""), TestContext.Current.CancellationToken);
+
+        outcome.ShouldBe(DeliveryOutcome.Retry);
+        rig.Log.Entries.ShouldBe(["hello:Bob:p"]);
+        store.Released.ShouldBe(1);
+        rig.Lifetime.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IHostApplicationLifetime.StopApplication)).ShouldBe(canRedeliver ? 0 : 1);
+    }
+
+    [Fact]
+    public async Task A_failing_dedupe_store_is_recorded_apart_from_handler_faults()
+    {
+        var decisions = new PipelineDecisionLog(10);
+        await using var rig = await StartRigAsync<SampleProcessor>(
+            "sample",
+            (s, _) => s.AddSingleton<IDedupeStore>(new FailingDedupe(failClaim: true)).AddSingleton(decisions),
+            canRedeliver: true);
+
+        await rig.Transport.InjectAsync(Request("test.hello.v1", "p/res", """{"Name":"Bob"}"""), TestContext.Current.CancellationToken);
+
+        decisions.Newest(10).ShouldHaveSingleItem().Outcome.ShouldBe("Unavailable");
     }
 
     [Fact]

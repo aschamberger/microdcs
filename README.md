@@ -5,101 +5,65 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=aschamberger_microdcs&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=aschamberger_microdcs)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=aschamberger_microdcs&metric=coverage)](https://sonarcloud.io/summary/new_code?id=aschamberger_microdcs)
 
-> [!WARNING]
-> **Port to .NET in progress.** `main` is being rewritten in C# (.NET 11, Native AOT) and is not a
-> working product until the parity gate. The Python implementation is archived on the
-> [`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch; the
-> sections below from "Quickstart" on still describe it. Plan and progress:
-> [Port to .NET](https://aschamberger.github.io/microdcs/porting/) ([source](docs/porting/index.md)).
->
-> Build the .NET solution: `dotnet build` and `dotnet test` (SDK pinned in `global.json`).
+MicroDCS: an open-standards-based framework for distributed sequence control applications.
 
-MicroDCS: An Open-Standards-Based Framework for Distributed Sequence Control Applications.
+MicroDCS is a .NET framework for event-driven sequence control in OT and manufacturing. It carries CloudEvents over
+MQTT 5 and NATS, uses OPC UA companion specifications (ISA-95 Job Control, Machinery Jobs) as payload models, keeps
+its state in Valkey, and reports through OpenTelemetry. It runs as a Native AOT binary in a small, non-root container.
 
-MicroDCS is a Python framework for building distributed sequence control applications for OT and manufacturing. It uses MQTT v5, CloudEvents, JSON Schema, OPC UA companion specifications, and OpenTelemetry to support event-driven control flows with typed data models, protocol abstraction, and open-standard interoperability.
-
-## Quickstart (Python, archived)
-
-Get the framework installed, run the unit tests, and start the example application:
-
-```bash
-# Install dependencies
-uv sync
-
-# Run unit tests
-uv run pytest tests/unit
-
-# Run the example app
-# Requires a reachable MQTT broker and Redis server.
-uv run python -m app
-```
+**Documentation: <https://aschamberger.github.io/microdcs/>**
 
 ## Features
 
-* Open-standards foundation built around MQTT v5, CloudEvents, JSON Schema, OPC UA companion specifications, and OpenTelemetry
-* Protocol abstraction for MQTT v5 and MessagePack-RPC transports with a shared event-processing model
-* Outgoing CloudEvents over MessagePack-RPC via server-to-client notification frames
-* Typed application models generated from JSON Schema and serialized to JSON or MessagePack
-* Event-driven processor architecture for handling commands, data, events, and metadata
-* Distributed operation features including MQTT shared subscriptions, deduplication, and message expiry handling
-* Redis-backed persistence for job state, responses, and delivery coordination
-* Built-in support for OPC UA Machinery Job Management patterns, including hierarchical state-machine execution
-* Observability support through OpenTelemetry auto-instrumentation and internal tracing and metrics hooks
+* Processor model with attributes and a Roslyn source generator: typed handlers, no reflection, compile-time
+  diagnostics, Native AOT throughout.
+* One message pipeline for every transport: deduplication in Valkey, scope checks, error events, bounded outgoing
+  queues, request/response with expiry.
+* Transports: MQTT 5 (MQTTnet) and NATS JetStream; AMQP 1.0 and Zenoh are planned.
+* OPC UA Machinery Jobs (ISA-95 Job Control V2) as a ready processor: job order state machine generated from the
+  NodeSet, station configuration from the MES, status events, state topics with a sequence-numbered index for resync.
+* SFC engine: IEC 61131-3 style recipes from the Work Master, push commands and pull events, deadlines and retries,
+  pause and equipment hold, shared by all replicas through Valkey.
+* Read-only inspection, health probes, a REST API for job state, and a development MCP server with inspection and
+  maintenance tools.
+* Signed multi-platform container image (linux-x64, linux-arm64) with SBOMs, and an example Kubernetes manifest.
 
-## Usage
+## Quickstart
 
-### Initialize a new project (Python, archived)
-
-Create a new MicroDCS application with the `init` command. It scaffolds the project structure, pins Python 3.14, and prepares the dependencies needed to build a distributed sequence control application.
-
-```bash
-# Initialize in the current directory
-uvx --from git+https://github.com/aschamberger/microdcs microdcs init
-
-# Initialize in a new directory
-uvx --from git+https://github.com/aschamberger/microdcs microdcs init my-app
-```
-
-The generated project includes:
-
-1. A `uv` project pinned to Python ≥ 3.14
-2. The `microdcs` package and core development dependencies
-3. A starter project structure:
-   ```
-   app/
-     __init__.py
-     __main__.py       # wiring of handlers, bindings and processors
-     models/           # place for generated and hand-written model mixins
-     processors/       # place for CloudEventProcessor implementations
-   schemas/            # JSON Schema input files for dataclassgen
-   deploy/
-     k8s.yaml          # Kubernetes deployment manifest
-   tests/
-   .vscode/
-     settings.json
-     tasks.json
-   .github/
-     copilot-instructions.md
-   Dockerfile
-   ```
-4. Build-system and pytest configuration in `pyproject.toml`
-
-After initialization, generate typed application models from your JSON Schema files:
+Requirements: the .NET SDK from `global.json`, Docker.
 
 ```bash
-uv run microdcs dataclassgen dataclasses my-schema.schema.json
+dotnet build                       # whole solution; warnings are errors
+dotnet test                        # unit tests; integration tests skip without the compose services
+docker compose up -d --wait        # Mosquitto, NATS, Valkey and the Aspire dashboard
+
+# The greetings demo on the local broker
+APP_MicroDcs__CloudEventSource=urn:microdcs:dev \
+APP_MicroDcs__Bindings__greetings__Prefix=dev \
+APP_MicroDcs__Bindings__greetings__ScopeLevels=2 \
+dotnet run --project src/MicroDCS.App -- serve
 ```
+
+The container image:
+
+```bash
+docker pull ghcr.io/aschamberger/microdcs:0.1.0
+docker run --rm ghcr.io/aschamberger/microdcs:0.1.0 smoke
+```
+
+Next steps: [Your First Processor](https://aschamberger.github.io/microdcs/your-first-processor/),
+[Concepts](https://aschamberger.github.io/microdcs/concepts/),
+[Operations](https://aschamberger.github.io/microdcs/operations/) and
+[Development](https://aschamberger.github.io/microdcs/development/).
 
 ## Status and Support
 
-MicroDCS is pre-1.0 (version 0.1.0): interfaces can still change between releases. It is maintained
-by a single maintainer on a best-effort basis, without a service-level agreement. Questions and bug
-reports go to the GitHub issue tracker. Security problems follow [SECURITY.md](SECURITY.md). The
-code on `main` is licensed under the MIT licence (see [LICENSE](LICENSE)); the archived Python
-implementation on `python-archive` stays under the GNU Lesser General Public License v2.1.
+MicroDCS is pre-1.0 (0.1.x): interfaces can still change between releases, and NuGet packages and `dotnet new`
+templates are not published yet. It is maintained by a single maintainer on a best-effort basis, without a
+service-level agreement. Questions and bug reports go to the GitHub issue tracker. Security problems follow
+[SECURITY.md](SECURITY.md).
 
-## Additional Documentation
-
-* [Your First Processor](https://aschamberger.github.io/microdcs/your-first-processor/)
-* [Overall Design](https://aschamberger.github.io/microdcs/overall-design/)
-* [Development](https://aschamberger.github.io/microdcs/development/)
+The code on `main` is licensed under the MIT licence (see [LICENSE](LICENSE)). MicroDCS started as a Python framework;
+that implementation is archived on the
+[`python-archive`](https://github.com/aschamberger/microdcs/tree/python-archive) branch and stays under the GNU Lesser
+General Public License v2.1. The design record of the port is in [`docs/porting/`](docs/porting/index.md).
