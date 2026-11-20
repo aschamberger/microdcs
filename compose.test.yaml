@@ -58,7 +58,7 @@ services:
 
   nats:
     # JetStream with per-message TTL needs 2.11 or later (D-47). Two accounts (tenant-a, tenant-b) test tenancy (R-20).
-    image: nats:2.15-alpine@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f
+    image: nats:2.15-alpine@sha256:558394a23dd3c36f2d3a64b51865fd09908010e80a542cea5e75c2af543ed62a
     command: ["-c", "/etc/nats/nats-test.conf"]
     volumes:
       - ./tests/MicroDCS.IntegrationTests/Nats/nats-test.conf:/etc/nats/nats-test.conf:ro
