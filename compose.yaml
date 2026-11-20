@@ -32,7 +32,7 @@ services:
   # NATS with JetStream for the NATS transport (D-47). Set APP_MicroDcs__Bindings__greetings__Transport=nats and
   # APP_MicroDcs__Nats__Url=nats://localhost:4222 to run the greetings demo on it.
   nats:
-    image: nats:2.15-alpine@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f
+    image: nats:2.15-alpine@sha256:558394a23dd3c36f2d3a64b51865fd09908010e80a542cea5e75c2af543ed62a
     command: ["-js", "-m", "8222"]
     ports:
       - "127.0.0.1:4222:4222"
@@ -108,7 +108,7 @@ services:
         condition: service_healthy
 
   aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest@sha256:e69a221d6d4ce3ee9bd74b9474c073dd154ef8df7eaa535c2f50f4a554adce54
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest@sha256:e2b7cf9a4ead932de46c6fa2a289c7d6159cfcf06a51aa65f38253a8fae75407
     environment:
       ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
     ports:
