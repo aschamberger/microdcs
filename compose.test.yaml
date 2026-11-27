@@ -18,7 +18,7 @@ name: microdcs-test
 services:
   valkey:
     # valkey-bundle (D-26), same image as the dev stack; no persistence in tests.
-    image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+    image: valkey/valkey-bundle:9@sha256:cc210fe648eea982a9b3d76c429859ca150e2b653aa9b3cd81e58c9b49940404
     command: valkey-server --save "" --appendonly no
     ports:
       - "127.0.0.1:6380:6379"
@@ -31,7 +31,7 @@ services:
   # Valkey that requires authentication: the default user has a password, so a rejected AUTH leaves the connection unusable as
   # it would be in production (credential rotation test, D-49). The password is a test fixture.
   valkey-acl:
-    image: valkey/valkey-bundle:9@sha256:c64007296a2a38398d4be63847e1c9890954e45574c16cbe607883ba71c6b985
+    image: valkey/valkey-bundle:9@sha256:cc210fe648eea982a9b3d76c429859ca150e2b653aa9b3cd81e58c9b49940404
     command: valkey-server --save "" --appendonly no --requirepass harness-admin
     ports:
       - "127.0.0.1:6381:6379"
@@ -42,7 +42,7 @@ services:
       retries: 15
 
   mosquitto:
-    image: eclipse-mosquitto:2@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98
+    image: eclipse-mosquitto:2@sha256:fa12172a051310efe5bcb7a6a11b77bd5faacb82cbacd7742aa758bf024fd8e4
     # Anonymous clients are accepted; a client that names a user must know its password (secret rotation test, D-49).
     command: mosquitto -c /etc/mosquitto/mosquitto-test.conf
     volumes:
@@ -58,7 +58,7 @@ services:
 
   nats:
     # JetStream with per-message TTL needs 2.11 or later (D-47). Two accounts (tenant-a, tenant-b) test tenancy (R-20).
-    image: nats:2.15-alpine@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f
+    image: nats:2.15-alpine@sha256:558394a23dd3c36f2d3a64b51865fd09908010e80a542cea5e75c2af543ed62a
     command: ["-c", "/etc/nats/nats-test.conf"]
     volumes:
       - ./tests/MicroDCS.IntegrationTests/Nats/nats-test.conf:/etc/nats/nats-test.conf:ro
