@@ -71,7 +71,7 @@ jobs:
           mkdir -p scan-results
           scripts/scan workflows
       - if: always() && hashFiles('scan-results/zizmor.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: scan-results/zizmor.sarif
           category: zizmor
@@ -99,7 +99,7 @@ jobs:
         run: scripts/scan fs
       # Fork PRs get a read-only token; their results stay in the job log.
       - if: always() && hashFiles('scan-results/trivy-fs.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: scan-results/trivy-fs.sarif
           category: trivy-fs
@@ -162,7 +162,7 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: scripts/scan image scan-results/image.tar
       - if: always() && steps.changes.outputs.code == 'true' && hashFiles('scan-results/trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: scan-results/trivy-image.sarif
           category: trivy-image
